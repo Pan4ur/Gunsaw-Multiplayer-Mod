@@ -18,6 +18,7 @@
 - [ ] Test
 - [ ] Add more mp settings and features
 - [ ] Fix tails
+- [ ] Far objects sync
 - [ ] Switch to UDP or Steam lobbies(?)
 - [ ] Fix compatibility with Crossover on apple silicon
 - [ ] Make sure there are definitely no desyncs and crashes
