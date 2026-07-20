@@ -1,6 +1,7 @@
 using BepInEx.Logging;
 using System;
-using System.Net.WebSockets;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Collections.Generic;
 using System.IO;
@@ -8,7 +9,8 @@ using System.Threading;
 
 internal static class MultiplayerSession
 {
-    private static ClientWebSocket socket;
+    private static UdpClient socket;
+    private static volatile bool relayConnected;
     private static CancellationTokenSource socketCancellation;
     private static readonly object sendLock = new object();
     private static readonly object sendQueueLock = new object();
@@ -16,6 +18,24 @@ internal static class MultiplayerSession
     private static readonly Queue<byte[]> sendQueue = new Queue<byte[]>();
     private static readonly AutoResetEvent sendSignal = new AutoResetEvent(false);
     private static Thread sendThread;
+    private static readonly byte[] udpMagic = new byte[] { 0x47, 0x55, 0x44, 0x50 };
+    private const byte UdpAuth = 1;
+    private const byte UdpAuthOk = 2;
+    private const byte UdpData = 3;
+    private const byte UdpForwarded = 4;
+    private const byte UdpAuthFailed = 5;
+    private const int UdpFragmentPayload = 1000;
+    private static int transportMessageSequence;
+    private static readonly Dictionary<long, FragmentTransfer> fragmentTransfers =
+        new Dictionary<long, FragmentTransfer>();
+    private static readonly object reliableLock = new object();
+    private static readonly Dictionary<int, PendingReliablePacket> pendingReliable =
+        new Dictionary<int, PendingReliablePacket>();
+    private static readonly HashSet<long> receivedReliable = new HashSet<long>();
+    private static readonly Queue<long> receivedReliableOrder = new Queue<long>();
+    private static int reliableSequence;
+    private const long ReliableRetryTicks = TimeSpan.TicksPerMillisecond * 150;
+    private const int MaxReliableAttempts = 30;
     private const int MaxQueuedPackets = 2048;
     private const int MaxPendingEventPackets = 256;
     private const int MaxPendingIdentities = 64;
@@ -45,6 +65,8 @@ internal static class MultiplayerSession
     private static readonly byte[] chatHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x15 };
     private static readonly byte[] customLevelHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x16 };
     private static readonly byte[] npcPossessHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x17 };
+    private static readonly byte[] reliableHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x18 };
+    private static readonly byte[] reliableAckHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x19 };
     private static string hostScene = "";
     private static string pendingScene = "";
     private static string hostCustomLevel = "";
@@ -125,7 +147,7 @@ internal static class MultiplayerSession
         RespawnAtStart = respawnAtStart;
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
-        logger.LogInfo("Host connected to WebSocket relay " + relayAddress + " for lobby " + lobbyId + ".");
+        logger.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
     }
 
     internal static bool Connect(string relayAddress, string lobbyId, string relayKey, string playerName,
@@ -159,15 +181,15 @@ internal static class MultiplayerSession
             ResetPing();
             socket = ConnectRelay(relayAddress, lobbyId, relayKey);
             var helloPacket = PacketWithPayload(hello, Encoding.UTF8.GetBytes(localPlayerName));
-            SendPacket(helloPacket);
+            SendPacket(helloPacket, 1);
             ThreadPool.QueueUserWorkItem(_ => Receive(null));
-            logger.LogInfo("WebSocket relay handshake sent to " + relayAddress + ".");
+            logger.LogInfo("UDP relay handshake sent to " + relayAddress + ".");
             return true;
         }
         catch (Exception e)
         {
             CloseSocket();
-            error = "WebSocket connection failed: " + e.Message;
+            error = "UDP connection failed: " + e.Message;
             logger.LogError(error);
             return false;
         }
@@ -221,8 +243,8 @@ internal static class MultiplayerSession
     }
 
     internal static bool IsConnected { get { lock (statusLock) return socket != null &&
-        socket.State == WebSocketState.Open && peers.Count > 0; } }
-    internal static bool IsHosting { get { return socket != null && socket.State == WebSocketState.Open && isHost; } }
+        relayConnected && peers.Count > 0; } }
+    internal static bool IsHosting { get { return socket != null && relayConnected && isHost; } }
     internal static bool IsHost { get { return isHost; } }
     internal static int SendQueueDepth
     {
@@ -653,6 +675,7 @@ internal static class MultiplayerSession
             ushort senderId;
             var packet = ReadPacket(receiveBuffer, out senderId);
             if (packet == null) return;
+            if (!ProcessReliablePacket(ref packet, senderId)) continue;
             if ((Matches(packet, hello) || HasHeader(packet, hello)) && isHost)
             {
                 string connectedName;
@@ -877,7 +900,7 @@ internal static class MultiplayerSession
         }
         catch (ObjectDisposedException) { }
         catch (IOException) { DropRelay(!isHost, "Relay connection closed."); }
-        catch (WebSocketException) { DropRelay(!isHost, "WebSocket relay connection closed."); }
+        catch (SocketException) { DropRelay(!isHost, "UDP relay connection closed."); }
         catch (OperationCanceledException) { }
     }
 
@@ -913,6 +936,8 @@ internal static class MultiplayerSession
     private static void ResetNetworkStats()
     {
         Interlocked.Exchange(ref playerSnapshotSequence, 0);
+        Interlocked.Exchange(ref transportMessageSequence, 0);
+        Interlocked.Exchange(ref reliableSequence, 0);
         Interlocked.Exchange(ref receivedSnapshotPackets, 0);
         Interlocked.Exchange(ref lostSnapshotPackets, 0);
         Interlocked.Exchange(ref receivedBytes, 0);
@@ -931,7 +956,7 @@ internal static class MultiplayerSession
 
     private static void DropPeer(ushort peerId, bool hostLeft, string message)
     {
-        ClientWebSocket close = null;
+        UdpClient close = null;
         CancellationTokenSource cancel = null;
         lock (statusLock)
         {
@@ -946,6 +971,7 @@ internal static class MultiplayerSession
                 cancel = socketCancellation;
                 socket = null;
                 socketCancellation = null;
+                relayConnected = false;
                 PvpEnabled = false;
                 CanGrabPlayers = false;
                 GrabOnlyUnconscious = false;
@@ -957,14 +983,14 @@ internal static class MultiplayerSession
             pendingPingTicks = 0;
         }
         try { if (cancel != null) cancel.Cancel(); } catch { }
-        try { if (close != null) close.Abort(); } catch { }
+        try { if (close != null) close.Close(); } catch { }
         if (close != null) close.Dispose();
         if (cancel != null) cancel.Dispose();
     }
 
     private static void DropRelay(bool hostLeft, string message)
     {
-        ClientWebSocket close;
+        UdpClient close;
         CancellationTokenSource cancel;
         lock (statusLock)
         {
@@ -972,6 +998,7 @@ internal static class MultiplayerSession
             cancel = socketCancellation;
             socket = null;
             socketCancellation = null;
+            relayConnected = false;
             peers.Clear();
             ClearPeerQueuesLocked();
             status = message;
@@ -989,9 +1016,16 @@ internal static class MultiplayerSession
             pendingPingTicks = 0;
         }
         try { if (cancel != null) cancel.Cancel(); } catch { }
-        try { if (close != null) close.Abort(); } catch { }
+        try { if (close != null) close.Close(); } catch { }
         if (close != null) close.Dispose();
         if (cancel != null) cancel.Dispose();
+        lock (reliableLock)
+        {
+            pendingReliable.Clear();
+            receivedReliable.Clear();
+            receivedReliableOrder.Clear();
+        }
+        fragmentTransfers.Clear();
     }
 
     private static void ClearPeerQueuesLocked()
@@ -1150,7 +1184,7 @@ internal static class MultiplayerSession
     private static void Send(byte[] header, byte[] payload, ushort targetId = 0)
     {
         var current = socket;
-        if (current == null || current.State != WebSocketState.Open) return;
+        if (current == null || !relayConnected) return;
         try
         {
             var packet = new byte[header.Length + payload.Length];
@@ -1159,12 +1193,13 @@ internal static class MultiplayerSession
             SendPacket(packet, targetId);
         }
         catch (ObjectDisposedException) { }
-        catch (WebSocketException) { }
+        catch (SocketException) { }
+        catch (IOException) { }
     }
 
     private static void SendDisconnectImmediately()
     {
-        ClientWebSocket current;
+        UdpClient current;
         CancellationTokenSource cancellation;
         ushort targetId;
         lock (statusLock)
@@ -1173,7 +1208,7 @@ internal static class MultiplayerSession
             cancellation = socketCancellation;
             targetId = isHost ? (ushort)0 : hostPeerId;
         }
-        if (current == null || cancellation == null || current.State != WebSocketState.Open) return;
+        if (current == null || cancellation == null || !relayConnected) return;
 
         var payload = PacketWithPayload(disconnectHeader, new byte[] { 1 });
         var routed = new byte[sizeof(ushort) + payload.Length];
@@ -1182,7 +1217,7 @@ internal static class MultiplayerSession
         try { SendPacketBlocking(current, cancellation, routed); }
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }
-        catch (WebSocketException) { }
+        catch (SocketException) { }
         catch (IOException) { }
     }
 
@@ -1194,21 +1229,69 @@ internal static class MultiplayerSession
         return payload;
     }
 
-    private static ClientWebSocket ConnectRelay(string address, string lobbyId, string relayKey)
+    private static UdpClient ConnectRelay(string address, string lobbyId, string relayKey)
     {
-        Uri uri;
-        if (!Uri.TryCreate(address, UriKind.Absolute, out uri) ||
-            (uri.Scheme != "ws" && uri.Scheme != "wss"))
-            throw new InvalidOperationException("Invalid WebSocket relay URL.");
         if (lobbyId == null || lobbyId.Length != 32 || relayKey == null || relayKey.Length != 32)
             throw new InvalidOperationException("Invalid relay credentials.");
 
-        var client = new ClientWebSocket();
-        client.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        var candidate = (address ?? "").Trim();
+        if (!candidate.Contains("://")) candidate = "udp://" + candidate;
+        Uri uri;
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out uri) || string.IsNullOrEmpty(uri.Host))
+            throw new InvalidOperationException("Invalid UDP relay address.");
+        if (uri.Scheme != "udp")
+            throw new InvalidOperationException("UDP relay address must start with udp://.");
+        var port = uri.IsDefaultPort ? 27015 : uri.Port;
+        if (port < 1 || port > 65535) throw new InvalidOperationException("Invalid UDP relay port.");
+
+        var client = new UdpClient();
+        client.Connect(uri.Host, port);
+        client.Client.ReceiveTimeout = 500;
         socketCancellation = new CancellationTokenSource();
-        client.ConnectAsync(uri, socketCancellation.Token).GetAwaiter().GetResult();
         socket = client;
-        SendPacketBlocking(client, socketCancellation, Encoding.ASCII.GetBytes(lobbyId + relayKey));
+        relayConnected = false;
+
+        var auth = new byte[5 + 64];
+        Buffer.BlockCopy(udpMagic, 0, auth, 0, udpMagic.Length);
+        auth[4] = UdpAuth;
+        Buffer.BlockCopy(Encoding.ASCII.GetBytes(lobbyId), 0, auth, 5, 32);
+        Buffer.BlockCopy(Encoding.ASCII.GetBytes(relayKey), 0, auth, 37, 32);
+
+        var authenticated = false;
+        for (var attempt = 0; attempt < 10 && !authenticated; attempt++)
+        {
+            client.Send(auth, auth.Length);
+            try
+            {
+                IPEndPoint remote = null;
+                var response = client.Receive(ref remote);
+                if (response != null && response.Length >= 7 && HasUdpMagic(response))
+                {
+                    if (response[4] == UdpAuthFailed)
+                        throw new InvalidOperationException("UDP relay rejected the lobby key.");
+                    authenticated = response[4] == UdpAuthOk;
+                    if (authenticated)
+                    {
+                        var authenticatedPeer = BitConverter.ToUInt16(response, 5);
+                        if (localPeerId != 0 && authenticatedPeer != localPeerId)
+                            throw new InvalidOperationException("UDP relay returned a different peer ID.");
+                    }
+                }
+            }
+            catch (SocketException exception)
+            {
+                if (exception.SocketErrorCode != SocketError.TimedOut) throw;
+            }
+        }
+        if (!authenticated)
+        {
+            client.Close();
+            socket = null;
+            throw new IOException("UDP relay did not answer authentication.");
+        }
+
+        client.Client.ReceiveTimeout = 0;
+        relayConnected = true;
         StartSendWorker(client, socketCancellation);
         return client;
     }
@@ -1217,45 +1300,130 @@ internal static class MultiplayerSession
     {
         senderId = 0;
         var current = socket;
-        var cancellation = socketCancellation;
-        if (current == null || cancellation == null || current.State != WebSocketState.Open) return null;
+        if (current == null || !relayConnected) return null;
 
-        var length = 0;
-        while (true)
+        while (relayConnected)
         {
-            if (length >= buffer.Length) throw new InvalidDataException("Invalid WebSocket relay frame.");
-            var result = current.ReceiveAsync(
-                new ArraySegment<byte>(buffer, length, buffer.Length - length), cancellation.Token)
-                .GetAwaiter().GetResult();
-            if (result.MessageType == WebSocketMessageType.Close)
-                throw new IOException("WebSocket relay closed the connection.");
-            if (result.MessageType != WebSocketMessageType.Binary)
-                throw new InvalidDataException("Relay sent a non-binary WebSocket message.");
-            length += result.Count;
-            if (!result.EndOfMessage) continue;
-            if (length < sizeof(ushort))
-                throw new InvalidDataException("Relay message has no sender ID.");
-            senderId = BitConverter.ToUInt16(buffer, 0);
-            var packet = new byte[length - sizeof(ushort)];
-            Buffer.BlockCopy(buffer, sizeof(ushort), packet, 0, packet.Length);
-            Interlocked.Add(ref receivedBytes, length);
+            IPEndPoint remote = null;
+            var datagram = current.Receive(ref remote);
+            if (datagram == null || datagram.Length < 19 || !HasUdpMagic(datagram) ||
+                datagram[4] != UdpForwarded) continue;
+
+            senderId = BitConverter.ToUInt16(datagram, 5);
+            var messageId = BitConverter.ToInt32(datagram, 7);
+            var fragmentIndex = BitConverter.ToUInt16(datagram, 11);
+            var fragmentCount = BitConverter.ToUInt16(datagram, 13);
+            var totalLength = BitConverter.ToInt32(datagram, 15);
+            var fragmentLength = datagram.Length - 19;
+            if (senderId == 0 || fragmentCount == 0 || fragmentIndex >= fragmentCount ||
+                totalLength < 0 || totalLength > 4 * 1024 * 1024 || fragmentLength < 0) continue;
+
+            Interlocked.Add(ref receivedBytes, datagram.Length);
             Interlocked.Increment(ref receivedPackets);
-            return packet;
+            if (fragmentCount == 1)
+            {
+                if (fragmentLength != totalLength) continue;
+                var single = new byte[fragmentLength];
+                if (fragmentLength > 0) Buffer.BlockCopy(datagram, 19, single, 0, fragmentLength);
+                return single;
+            }
+
+            var key = ((long)senderId << 32) | (uint)messageId;
+            FragmentTransfer transfer;
+            if (!fragmentTransfers.TryGetValue(key, out transfer) || transfer.TotalLength != totalLength ||
+                transfer.Fragments.Length != fragmentCount)
+            {
+                transfer = new FragmentTransfer(totalLength, fragmentCount);
+                fragmentTransfers[key] = transfer;
+            }
+            if (transfer.Fragments[fragmentIndex] == null)
+            {
+                var fragment = new byte[fragmentLength];
+                if (fragmentLength > 0) Buffer.BlockCopy(datagram, 19, fragment, 0, fragmentLength);
+                transfer.Fragments[fragmentIndex] = fragment;
+                transfer.Received++;
+            }
+            CleanupFragmentTransfers();
+            if (transfer.Received != transfer.Fragments.Length) continue;
+
+            var packet = new byte[transfer.TotalLength];
+            var destination = 0;
+            foreach (var fragment in transfer.Fragments)
+            {
+                if (fragment == null || destination + fragment.Length > packet.Length)
+                {
+                    fragmentTransfers.Remove(key);
+                    packet = null;
+                    break;
+                }
+                Buffer.BlockCopy(fragment, 0, packet, destination, fragment.Length);
+                destination += fragment.Length;
+            }
+            fragmentTransfers.Remove(key);
+            if (packet != null && destination == packet.Length) return packet;
         }
+        return null;
     }
 
-    private static void SendPacket(byte[] packet, ushort targetId = 0, bool? priority = null)
+    private static void SendPacket(byte[] packet, ushort targetId = 0, bool? priority = null,
+        bool allowReliable = true)
     {
         if (packet == null || packet.Length == 0) return;
-        var current = socket;
-        var cancellation = socketCancellation;
-        if (current == null || cancellation == null || current.State != WebSocketState.Open)
-            throw new IOException("Relay connection is closed.");
+        if (socket == null || !relayConnected) throw new IOException("Relay connection is closed.");
 
+        if (allowReliable && ShouldSendReliable(packet))
+        {
+            if (targetId == 0 && isHost)
+            {
+                var targetPeers = PeerIds();
+                if (targetPeers.Length > 0)
+                {
+                    foreach (var peerId in targetPeers) SendPacket(packet, peerId, priority, true);
+                    return;
+                }
+            }
+            var reliableId = Interlocked.Increment(ref reliableSequence);
+            var wrapped = new byte[reliableHeader.Length + sizeof(int) + packet.Length];
+            Buffer.BlockCopy(reliableHeader, 0, wrapped, 0, reliableHeader.Length);
+            Buffer.BlockCopy(BitConverter.GetBytes(reliableId), 0, wrapped, reliableHeader.Length, sizeof(int));
+            Buffer.BlockCopy(packet, 0, wrapped, reliableHeader.Length + sizeof(int), packet.Length);
+            var routedReliable = RoutePacket(wrapped, targetId);
+            lock (reliableLock)
+            {
+                if (pendingReliable.Count >= 1024)
+                {
+                    foreach (var oldId in new List<int>(pendingReliable.Keys))
+                    {
+                        pendingReliable.Remove(oldId);
+                        break;
+                    }
+                }
+                pendingReliable[reliableId] = new PendingReliablePacket
+                {
+                    Id = reliableId,
+                    TargetId = targetId,
+                    RoutedPacket = routedReliable,
+                    LastSentTicks = DateTime.UtcNow.Ticks,
+                    Attempts = 1
+                };
+            }
+            EnqueueRoutedPacket(routedReliable, true);
+            return;
+        }
+
+        EnqueueRoutedPacket(RoutePacket(packet, targetId), priority);
+    }
+
+    private static byte[] RoutePacket(byte[] packet, ushort targetId)
+    {
         var routed = new byte[sizeof(ushort) + packet.Length];
         Buffer.BlockCopy(BitConverter.GetBytes(targetId), 0, routed, 0, sizeof(ushort));
         Buffer.BlockCopy(packet, 0, routed, sizeof(ushort), packet.Length);
+        return routed;
+    }
 
+    private static void EnqueueRoutedPacket(byte[] routed, bool? priority = null)
+    {
         var queue = (priority ?? IsLatencySensitivePacket(routed)) ? prioritySendQueue : sendQueue;
         lock (sendQueueLock)
         {
@@ -1276,6 +1444,54 @@ internal static class MultiplayerSession
             queue.Enqueue(routed);
         }
         sendSignal.Set();
+    }
+
+    private static bool ShouldSendReliable(byte[] packet)
+    {
+        // Connection handshake and damage events must survive packet loss.
+        // Position/state snapshots stay unreliable so an old packet never blocks a new one.
+        return Matches(packet, hello) || HasHeader(packet, hello) ||
+            Matches(packet, accepted) || HasHeader(packet, accepted) ||
+            HasHeader(packet, sceneHeader) || HasHeader(packet, settingsHeader) ||
+            HasHeader(packet, customLevelHeader) ||
+            HasHeader(packet, worldDamageHeader) || HasHeader(packet, npcDamageHeader) ||
+            HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader);
+    }
+
+    private static bool ProcessReliablePacket(ref byte[] packet, ushort senderId)
+    {
+        if (HasHeader(packet, reliableAckHeader) && packet.Length == reliableAckHeader.Length + sizeof(int))
+        {
+            var acknowledgedId = BitConverter.ToInt32(packet, reliableAckHeader.Length);
+            lock (reliableLock)
+            {
+                PendingReliablePacket pending;
+                if (pendingReliable.TryGetValue(acknowledgedId, out pending) &&
+                    (pending.TargetId == 0 || pending.TargetId == senderId))
+                    pendingReliable.Remove(acknowledgedId);
+            }
+            return false;
+        }
+        if (!HasHeader(packet, reliableHeader) ||
+            packet.Length <= reliableHeader.Length + sizeof(int)) return true;
+
+        var reliableId = BitConverter.ToInt32(packet, reliableHeader.Length);
+        var acknowledgement = PacketWithPayload(reliableAckHeader, BitConverter.GetBytes(reliableId));
+        SendPacket(acknowledgement, senderId, true, false);
+
+        var key = ((long)senderId << 32) | (uint)reliableId;
+        lock (reliableLock)
+        {
+            if (!receivedReliable.Add(key)) return false;
+            receivedReliableOrder.Enqueue(key);
+            while (receivedReliableOrder.Count > 512)
+                receivedReliable.Remove(receivedReliableOrder.Dequeue());
+        }
+        var innerLength = packet.Length - reliableHeader.Length - sizeof(int);
+        var inner = new byte[innerLength];
+        Buffer.BlockCopy(packet, reliableHeader.Length + sizeof(int), inner, 0, innerLength);
+        packet = inner;
+        return true;
     }
 
     private static bool IsReplaceableStatePacket(byte[] packet)
@@ -1323,7 +1539,7 @@ internal static class MultiplayerSession
         return true;
     }
 
-    private static void StartSendWorker(ClientWebSocket client, CancellationTokenSource cancellation)
+    private static void StartSendWorker(UdpClient client, CancellationTokenSource cancellation)
     {
         lock (sendQueueLock)
         {
@@ -1332,17 +1548,17 @@ internal static class MultiplayerSession
         }
         var worker = new Thread(() => SendLoop(client, cancellation));
         worker.IsBackground = true;
-        worker.Name = "Gunsaw WebSocket sender";
+        worker.Name = "Gunsaw UDP sender";
         worker.Priority = ThreadPriority.AboveNormal;
         sendThread = worker;
         worker.Start();
     }
 
-    private static void SendLoop(ClientWebSocket client, CancellationTokenSource cancellation)
+    private static void SendLoop(UdpClient client, CancellationTokenSource cancellation)
     {
         try
         {
-            while (!cancellation.IsCancellationRequested && client.State == WebSocketState.Open)
+            while (!cancellation.IsCancellationRequested && relayConnected)
             {
                 byte[] packet = null;
                 lock (sendQueueLock)
@@ -1350,55 +1566,107 @@ internal static class MultiplayerSession
                     if (prioritySendQueue.Count > 0) packet = prioritySendQueue.Dequeue();
                     else if (sendQueue.Count > 0) packet = sendQueue.Dequeue();
                 }
-                if (packet == null)
-                {
-                    sendSignal.WaitOne(100);
-                    continue;
-                }
-                SendPacketBlocking(client, cancellation, packet);
+                if (packet != null) SendPacketBlocking(client, cancellation, packet);
+                ResendReliablePackets(client, cancellation);
+                if (packet == null) sendSignal.WaitOne(25);
             }
         }
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }
-        catch (WebSocketException exception)
+        catch (SocketException exception)
         {
-            SetStatus("WebSocket send failed: " + exception.Message);
+            if (relayConnected) SetStatus("UDP send failed: " + exception.Message);
         }
         catch (IOException exception)
         {
-            SetStatus("WebSocket send failed: " + exception.Message);
+            if (relayConnected) SetStatus("UDP send failed: " + exception.Message);
         }
     }
 
-    private static void SendPacketBlocking(ClientWebSocket client, CancellationTokenSource cancellation,
-        byte[] packet)
+    private static void ResendReliablePackets(UdpClient client, CancellationTokenSource cancellation)
+    {
+        var now = DateTime.UtcNow.Ticks;
+        var due = new List<byte[]>();
+        lock (reliableLock)
+        {
+            var remove = new List<int>();
+            foreach (var pair in pendingReliable)
+            {
+                var pending = pair.Value;
+                if (now - pending.LastSentTicks < ReliableRetryTicks) continue;
+                if (pending.Attempts >= MaxReliableAttempts)
+                {
+                    remove.Add(pair.Key);
+                    continue;
+                }
+                pending.Attempts++;
+                pending.LastSentTicks = now;
+                due.Add(pending.RoutedPacket);
+            }
+            foreach (var id in remove) pendingReliable.Remove(id);
+        }
+        foreach (var packet in due) SendPacketBlocking(client, cancellation, packet);
+    }
+
+    private static void SendPacketBlocking(UdpClient client, CancellationTokenSource cancellation,
+        byte[] routedPacket)
     {
         lock (sendLock)
         {
-            if (client == null || cancellation == null || client.State != WebSocketState.Open)
+            if (client == null || cancellation == null || cancellation.IsCancellationRequested || !relayConnected)
                 throw new IOException("Relay connection is closed.");
-            client.SendAsync(new ArraySegment<byte>(packet), WebSocketMessageType.Binary, true,
-                cancellation.Token).GetAwaiter().GetResult();
-            Interlocked.Add(ref sentBytes, packet.Length);
-            Interlocked.Increment(ref sentPackets);
+            if (routedPacket == null || routedPacket.Length < sizeof(ushort)) return;
+
+            var targetId = BitConverter.ToUInt16(routedPacket, 0);
+            var totalLength = routedPacket.Length - sizeof(ushort);
+            var messageId = Interlocked.Increment(ref transportMessageSequence);
+            var fragmentCount = Math.Max(1, (totalLength + UdpFragmentPayload - 1) / UdpFragmentPayload);
+            if (fragmentCount > ushort.MaxValue) throw new InvalidDataException("UDP packet is too large.");
+
+            for (var index = 0; index < fragmentCount; index++)
+            {
+                var sourceOffset = sizeof(ushort) + index * UdpFragmentPayload;
+                var length = Math.Min(UdpFragmentPayload, totalLength - index * UdpFragmentPayload);
+                var datagram = new byte[19 + length];
+                Buffer.BlockCopy(udpMagic, 0, datagram, 0, udpMagic.Length);
+                datagram[4] = UdpData;
+                Buffer.BlockCopy(BitConverter.GetBytes(targetId), 0, datagram, 5, sizeof(ushort));
+                Buffer.BlockCopy(BitConverter.GetBytes(messageId), 0, datagram, 7, sizeof(int));
+                Buffer.BlockCopy(BitConverter.GetBytes((ushort)index), 0, datagram, 11, sizeof(ushort));
+                Buffer.BlockCopy(BitConverter.GetBytes((ushort)fragmentCount), 0, datagram, 13, sizeof(ushort));
+                Buffer.BlockCopy(BitConverter.GetBytes(totalLength), 0, datagram, 15, sizeof(int));
+                if (length > 0) Buffer.BlockCopy(routedPacket, sourceOffset, datagram, 19, length);
+                client.Send(datagram, datagram.Length);
+                Interlocked.Add(ref sentBytes, datagram.Length);
+                Interlocked.Increment(ref sentPackets);
+            }
         }
+    }
+
+    private static bool HasUdpMagic(byte[] packet)
+    {
+        return packet != null && packet.Length >= udpMagic.Length &&
+            packet[0] == udpMagic[0] && packet[1] == udpMagic[1] &&
+            packet[2] == udpMagic[2] && packet[3] == udpMagic[3];
+    }
+
+    private static void CleanupFragmentTransfers()
+    {
+        if (fragmentTransfers.Count < 128) return;
+        var cutoff = DateTime.UtcNow.Ticks - TimeSpan.TicksPerSecond * 5;
+        var stale = new List<long>();
+        foreach (var pair in fragmentTransfers)
+            if (pair.Value.CreatedTicks < cutoff) stale.Add(pair.Key);
+        foreach (var key in stale) fragmentTransfers.Remove(key);
     }
 
     private static void CloseSocket(bool graceful = false)
     {
         var current = socket;
         var cancellation = socketCancellation;
+        relayConnected = false;
         socket = null;
         socketCancellation = null;
-        if (graceful && current != null && current.State == WebSocketState.Open)
-        {
-            try
-            {
-                current.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Leaving lobby.",
-                    CancellationToken.None).Wait(250);
-            }
-            catch { }
-        }
         try { if (cancellation != null) cancellation.Cancel(); } catch { }
         sendSignal.Set();
         lock (sendQueueLock)
@@ -1406,13 +1674,18 @@ internal static class MultiplayerSession
             sendQueue.Clear();
             prioritySendQueue.Clear();
         }
-
-        try { if (current != null && !graceful) current.Abort(); } catch { }
+        lock (reliableLock)
+        {
+            pendingReliable.Clear();
+            receivedReliable.Clear();
+            receivedReliableOrder.Clear();
+        }
+        fragmentTransfers.Clear();
+        try { if (current != null) current.Close(); } catch { }
         if (current != null) current.Dispose();
         if (cancellation != null) cancellation.Dispose();
         sendThread = null;
     }
-
 
     private static byte[] PacketWithPayload(byte[] header, byte[] payload)
     {
@@ -1461,6 +1734,30 @@ internal static class MultiplayerSession
             TotalLength = totalLength;
             Chunks = new byte[chunkCount][];
         }
+    }
+
+    private sealed class FragmentTransfer
+    {
+        internal readonly int TotalLength;
+        internal readonly byte[][] Fragments;
+        internal readonly long CreatedTicks;
+        internal int Received;
+
+        internal FragmentTransfer(int totalLength, int fragmentCount)
+        {
+            TotalLength = totalLength;
+            Fragments = new byte[fragmentCount][];
+            CreatedTicks = DateTime.UtcNow.Ticks;
+        }
+    }
+
+    private sealed class PendingReliablePacket
+    {
+        internal int Id;
+        internal ushort TargetId;
+        internal byte[] RoutedPacket = new byte[0];
+        internal long LastSentTicks;
+        internal int Attempts;
     }
 
     private sealed class ChatMessage

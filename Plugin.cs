@@ -17,14 +17,14 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.1";
+    public const string PluginVersion = "0.3.2";
 
     private readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
     private bool visible;
     private string status = "Select an option.";
-    private string lobbyServerAddress = "gunsaw.e621.su";
-    private string lobbyName = "My lobby";
+    private string lobbyServerAddress = "gunsawudp.e621.su";
+    private string lobbyName = "Lobby";
     private string playerName = "Player";
     private bool createPvp;
     private bool createCanGrab = true;
@@ -56,9 +56,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void Awake()
     {
         KeepMultiplayerRunningInBackground();
-        masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsaw.e621.su", "Lobby directory URL.");
+        masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsawudp.e621.su", "Lobby directory URL.");
         if (masterUrl.Value == "http://127.0.0.1:18080" ||
-            masterUrl.Value == "http://gunsaw.e621.su") masterUrl.Value = "https://gunsaw.e621.su";
+            masterUrl.Value == "http://gunsawudp.e621.su") masterUrl.Value = "https://gunsawudp.e621.su";
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
         new Harmony(PluginGuid).PatchAll();
         avatarReplication = gameObject.AddComponent<NetworkAvatarReplication>();
@@ -66,7 +66,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         npcReplication = gameObject.AddComponent<NpcReplication>();
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
         World = worldReplication;
-        Logger.LogInfo("Gunsaw Multiplayer 0.3.1 loaded.");
+        Logger.LogInfo("Gunsaw Multiplayer 0.3.2 loaded.");
     }
 
     private void Start()
@@ -401,7 +401,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             Logger, out error)) { status = error; return; }
         avatarReplication.Configure(playerName);
         multiplayerHud.ResetChat();
-        status = "Connecting through WebSocket relay " + address + "...";
+        status = "Connecting through UDP relay " + address + "...";
     }
 
     private void CreateLobbyInDirectory(string body, int respawnTime, int maxPlayers)
@@ -452,10 +452,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private string DefaultRelayAddress()
     {
-        Uri uri;
-        if (!Uri.TryCreate(masterUrl.Value, UriKind.Absolute, out uri)) return "";
-        var scheme = uri.Scheme == Uri.UriSchemeHttps ? "wss" : "ws";
-        return scheme + "://" + uri.Authority + "/ws";
+        return "udp://gunsawudp.e621.su:27015";
     }
 
     private static string HttpAt(string server, string method, string path, string body, string authorization)

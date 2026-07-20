@@ -543,7 +543,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var target = pair.Value;
             if (body == null) continue;
             var alpha = Mathf.Clamp01((Time.unscaledTime - target.startedAt) /
-                CurrentSnapshotInterval());
+                Mathf.Max(0.001f, target.duration));
             body.transform.position = Vector3.Lerp(target.fromPosition, target.position, alpha);
             body.transform.rotation = Quaternion.Lerp(target.fromRotation, target.rotation, alpha);
         }
@@ -2150,22 +2150,41 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void SetTarget(BinaryReader reader, Rigidbody2D body)
     {
         var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        var rotation = reader.ReadSingle();
+        var rotation = Quaternion.Euler(0f, 0f, reader.ReadSingle());
         if (body == null) return;
-        var target = new TargetState
+
+        var now = Time.unscaledTime;
+        TargetState previous;
+        var hasPrevious = targets.TryGetValue(body, out previous);
+        if (!receivedFirstSnapshot || !hasPrevious)
+        {
+            body.transform.position = position;
+            body.transform.rotation = rotation;
+            targets[body] = new TargetState
+            {
+                fromPosition = position,
+                fromRotation = rotation,
+                position = position,
+                rotation = rotation,
+                startedAt = now,
+                receivedAt = now,
+                duration = CurrentSnapshotInterval()
+            };
+            return;
+        }
+
+        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
+            CurrentSnapshotInterval(), 0.30f);
+        targets[body] = new TargetState
         {
             fromPosition = body.transform.position,
             fromRotation = body.transform.rotation,
             position = position,
-            rotation = Quaternion.Euler(0f, 0f, rotation),
-            startedAt = Time.unscaledTime
+            rotation = rotation,
+            startedAt = now,
+            receivedAt = now,
+            duration = arrivalInterval
         };
-        targets[body] = target;
-        if (!receivedFirstSnapshot)
-        {
-            body.transform.position = position;
-            body.transform.rotation = target.rotation;
-        }
     }
 
     private static void SkipBody(BinaryReader reader)
@@ -2254,6 +2273,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
+        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
+            CurrentSnapshotInterval(), 0.30f);
         worldTargets[transform] = new WorldTargetState
         {
             fromPosition = transform.position,
@@ -2262,7 +2283,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             rotation = target.rotation,
             startedAt = now,
             receivedAt = now,
-                duration = CurrentSnapshotInterval()
+            duration = arrivalInterval
         };
     }
 
@@ -3101,6 +3122,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public Vector3 position;
         public Quaternion rotation;
         public float startedAt;
+        public float receivedAt;
+        public float duration;
     }
     private struct WorldTargetState
     {
