@@ -64,7 +64,7 @@ available in `GunsawMultiplayer/lib/`. For the standard local installation, the 
 
 ## Running your own lobby server
 
-The relay/lobby service lives in [LobbyServer](). It provides the HTTP
+The relay/lobby service lives in [LobbyServer](https://github.com/Pan4ur/Gunsaw-Lobby-Server). It provides the HTTP
 lobby API and the WebSocket endpoint used by the mod. A public deployment needs HTTPS and
 WSS, normally through the included Caddy or Nginx reverse-proxy examples
 
