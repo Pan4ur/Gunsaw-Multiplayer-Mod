@@ -9,6 +9,7 @@ using UnityEngine.SceneManagement;
 
 internal sealed class WorldReplication : MonoBehaviour
 {
+    internal static WorldReplication Instance;
     internal const byte WeaponPickup = 1;
     internal const byte WeaponAmmoGet = 2;
     internal const byte ButtonActivate = 3;
@@ -17,7 +18,6 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private const float SnapshotInterval = 1f / 50f;
     private const float ClientAuthorityGrace = 0.35f;
-    private const float DiscoveryInterval = 0.5f;
 
     private const bool DiagnosticsEnabled = false;
     private readonly Dictionary<string, Rigidbody2D> bodies = new Dictionary<string, Rigidbody2D>();
@@ -61,12 +61,11 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly HashSet<string> seenSnapshotFires = new HashSet<string>();
     private readonly HashSet<string> seenSnapshotAudio = new HashSet<string>();
     private float nextSnapshot;
-    private float nextDiscovery;
-    private float nextHostLoadRadiusUpdate;
     private float nextDiagnostics;
     private float nextManifest;
     private bool wasConnected;
     private bool wasHost;
+    private bool discoveredScene;
     private string activeScene = "";
     private string diagnosticPath = "";
     private int callbackContacts;
@@ -93,12 +92,30 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void Awake()
     {
+        Instance = this;
         if (!DiagnosticsEnabled) return;
         diagnosticPath = Path.Combine(Paths.BepInExRootPath,
             "world-sync-" + System.Diagnostics.Process.GetCurrentProcess().Id + ".log");
         try { File.WriteAllText(diagnosticPath, "Gunsaw Multiplayer world sync diagnostics\n"); }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
+    }
+
+    internal static void TrackDroppedWeapons()
+    {
+        var current = Instance;
+        if (current == null || !MultiplayerSession.IsHost) return;
+        foreach (var dropped in FindObjectsOfType<DroppedWeapon>())
+        {
+            if (dropped == null) continue;
+            foreach (var body in dropped.GetComponentsInChildren<Rigidbody2D>(true))
+            {
+                if (body == null) continue;
+                var id = current.Id(body);
+                current.bodies[id] = body;
+                current.droppedWeapons[body] = dropped;
+            }
+        }
     }
 
     private void Update()
@@ -112,8 +129,8 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             if (wasConnected) RestoreClientWorld();
             activeScene = scene;
-            nextDiscovery = 0f;
             nextSnapshot = 0f;
+            discoveredScene = false;
         }
 
         if (!MultiplayerSession.IsConnected)
@@ -126,14 +143,14 @@ internal sealed class WorldReplication : MonoBehaviour
 
         if (!wasConnected)
         {
-            nextDiscovery = 0f;
             nextSnapshot = 0f;
+            discoveredScene = false;
         }
         wasConnected = true;
         wasHost = isHost;
-        if (Time.unscaledTime >= nextDiscovery)
+        if (!discoveredScene)
         {
-            nextDiscovery = Time.unscaledTime + DiscoveryInterval;
+            discoveredScene = true;
             RefreshWorldBodies();
             RefreshButtons();
             RefreshProximityDoors();
@@ -274,58 +291,6 @@ internal sealed class WorldReplication : MonoBehaviour
         if (IsInteractivePropBody(body)) return true;
         return !IsGameplayOwned(body) && IsMechanismBody(body);
     }
-
-    internal void MaintainHostLoadRadius()
-    {
-        if (!MultiplayerSession.IsHost || Time.unscaledTime < nextHostLoadRadiusUpdate) return;
-        nextHostLoadRadiusUpdate = Time.unscaledTime + 0.1f;
-        var remotePlayers = NetworkAvatarReplication.RemotePlayers();
-        if (remotePlayers.Length == 0) return;
-        var loadDistance = Mathf.Max(0f, PlayerPrefs.GetFloat("loadDistance", 1800f));
-        foreach (var unloader in Resources.FindObjectsOfTypeAll<ObjectUnloader>())
-        {
-            if (unloader == null || !unloader.gameObject.scene.isLoaded ||
-                IsGameplayOwned(unloader)) continue;
-            var position = (Vector2)unloader.transform.position;
-            var nearRemotePlayer = false;
-            foreach (var remote in remotePlayers)
-            {
-                if (remote == null || remote.Body == null || !remote.Body.isAlive) continue;
-                if (((Vector2)remote.Body.transform.position - position).sqrMagnitude >= loadDistance) continue;
-                nearRemotePlayer = true;
-                break;
-            }
-            if (!nearRemotePlayer) continue;
-            var body = unloader.GetComponent<Rigidbody2D>();
-            if (body != null)
-            {
-                body.simulated = true;
-            }
-            var sprite = unloader.GetComponent<SpriteRenderer>();
-            if (sprite != null) sprite.enabled = true;
-            var crate = unloader.GetComponent<CrateScript>();
-            if (crate != null) crate.enabled = true;
-        }
-
-        foreach (var spawner in Resources.FindObjectsOfTypeAll<MiniCrateSpawner>())
-        {
-            if (spawner == null || !spawner.gameObject.scene.isLoaded ||
-                IsGameplayOwned(spawner)) continue;
-            var position = (Vector2)spawner.transform.position;
-            var nearRemotePlayer = false;
-            foreach (var remote in remotePlayers)
-            {
-                if (remote == null || remote.Body == null || !remote.Body.isAlive) continue;
-                if (((Vector2)remote.Body.transform.position - position).sqrMagnitude >= loadDistance) continue;
-                nearRemotePlayer = true;
-                break;
-            }
-            if (!nearRemotePlayer) continue;
-            if (!spawner.gameObject.activeSelf) spawner.gameObject.SetActive(true);
-            spawner.enabled = true;
-        }
-    }
-
 
     private static bool IsInteractivePropBody(Rigidbody2D body)
     {

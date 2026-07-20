@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Text;
 using System.Threading;
 using UnityEngine;
@@ -117,6 +118,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lock (mainThreadActionsLock)
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
+        MultiplayerLoadDistance.Apply();
         MultiplayerSession.SetHostScene(SceneManager.GetActiveScene().name);
         if (Time.unscaledTime < customLevelPhysicsRefreshUntil &&
             Time.unscaledTime >= nextCustomLevelPhysicsRefresh)
@@ -640,8 +642,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (player == null || player.bodyScript == null) return;
         var presets = Resources.FindObjectsOfTypeAll<WeaponPreset>();
         if (presets == null || presets.Length == 0) { status = "No weapon presets loaded."; return; }
-        var choices = new System.Collections.Generic.List<WeaponPreset>();
-        foreach (var preset in presets) if (preset != null && preset.sprite != null) choices.Add(preset);
+        var choices = new List<WeaponPreset>();
+        foreach (var preset in presets)
+            if (preset != null && preset.sprite != null) choices.Add(preset);
         if (choices.Count == 0) { status = "No usable weapon presets loaded."; return; }
         var prefab = Resources.Load<GameObject>("Spawnables/PickupWeapon");
         if (prefab == null) { status = "Pickup weapon prefab not found."; return; }
@@ -650,6 +653,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (pickup == null) { status = "Pickup component not found."; return; }
         var weapon = choices[UnityEngine.Random.Range(0, choices.Count)];
         pickup.ChangeWeapon(weapon, weapon.magSize);
+        WorldReplication.TrackDroppedWeapons();
         status = "Spawned " + weapon.name + ".";
     }
 
@@ -725,12 +729,78 @@ internal static class MultiplayerGameManagerFocusPatch
 {
     private static void Prefix()
     {
+        MultiplayerLoadDistance.Apply();
         MultiplayerTimeControl.KeepMultiplayerActive();
     }
 
     private static void Postfix()
     {
-        NpcReplication.MaintainHostLoadRadius();
+        MultiplayerLoadDistance.Apply();
+    }
+}
+
+[HarmonyPatch(typeof(ResourceManager), "Awake")]
+internal static class MultiplayerResourceLoadDistancePatch
+{
+    private static void Postfix()
+    {
+        MultiplayerLoadDistance.Apply();
+    }
+}
+
+[HarmonyPatch(typeof(GameManager), "Switch")]
+internal static class MultiplayerVanillaBodySwitchPatch
+{
+    private static bool Prefix(LimbScript limb)
+    {
+        if (!MultiplayerSession.IsConnected) return true;
+        return !NpcReplication.TryPossessLocalPlayer(limb);
+    }
+}
+
+[HarmonyPatch(typeof(GameManager), "IsOnscreen", new[] { typeof(BodyScript) })]
+internal static class MultiplayerNpcOnScreenPatch
+{
+    private static void Postfix(BodyScript body, ref bool __result)
+    {
+        if (body != null && MultiplayerSession.IsHosting && !body.isPlayer)
+        {
+            body.onScreen = true;
+            __result = true;
+        }
+    }
+}
+
+[HarmonyPatch(typeof(LimbScript), "OnWillRenderObject")]
+internal static class MultiplayerLimbAnimationPatch
+{
+    private static bool Prefix(LimbScript __instance)
+    {
+        var body = __instance == null ? null : __instance.body;
+        if (body == null || NpcReplication.IsPossessionRenderGuard(body) ||
+            NpcReplication.IsClientProxy(body) || NetworkAvatarReplication.IsRemoteAvatarBody(body))
+            return false;
+        return true;
+    }
+
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var focusedGetter = AccessTools.PropertyGetter(typeof(Application), nameof(Application.isFocused));
+        var replacement = AccessTools.Method(typeof(MultiplayerLimbAnimationPatch), nameof(IsAnimationFocused));
+        foreach (var instruction in instructions)
+        {
+            if (focusedGetter != null && instruction.Calls(focusedGetter))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = replacement;
+            }
+            yield return instruction;
+        }
+    }
+
+    private static bool IsAnimationFocused()
+    {
+        return Application.isFocused || MultiplayerSession.IsHosting || MultiplayerSession.IsConnected;
     }
 }
 
@@ -945,8 +1015,11 @@ internal static class ClientNpcDeathPatch
 {
     private static bool Prefix(BodyScript __instance)
     {
+        if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer)
+            __instance.dropWeapon = false;
         if (NetworkAvatarReplication.BlockLocalRespawnDeath(__instance)) return false;
         if (NetworkAvatarReplication.HandleHostRemoteDeath(__instance)) return false;
+        NpcReplication.PrepareAuthoritativeNpcDeath(__instance);
         return !NpcReplication.HandleClientDeath(__instance);
     }
 
@@ -1000,6 +1073,7 @@ internal static class ClientNpcDropWeaponPatch
     private static void Postfix(BodyScript __instance, bool __state)
     {
         if (__state) NetworkAvatarReplication.ConsumeLocalDeathWeapon(__instance, false);
+        WorldReplication.TrackDroppedWeapons();
     }
 }
 
@@ -1011,6 +1085,11 @@ internal static class ClientNpcDropWeaponSinglePatch
         if (NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, false)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
+
+    private static void Postfix()
+    {
+        WorldReplication.TrackDroppedWeapons();
+    }
 }
 
 [HarmonyPatch(typeof(BodyScript), "DropAllWeapons")]
@@ -1021,6 +1100,11 @@ internal static class ClientNpcDropAllWeaponsPatch
         if (NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, true)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
+
+    private static void Postfix()
+    {
+        WorldReplication.TrackDroppedWeapons();
+    }
 }
 
 [HarmonyPatch(typeof(LimbScript), "OnCollisionEnter2D")]
@@ -1028,7 +1112,10 @@ internal static class ClientNpcLimbCollisionPatch
 {
     private static bool Prefix(LimbScript __instance)
     {
-        return __instance == null || !NpcReplication.IsClientProxy(__instance.body);
+        return __instance == null ||
+            (!NpcReplication.IsClientProxy(__instance.body) &&
+             !NpcReplication.IsLocallyPossessedBody(__instance.body) &&
+             !NetworkAvatarReplication.IsRemoteAvatarBody(__instance.body));
     }
 }
 
@@ -1047,6 +1134,25 @@ internal static class ClientSawCollisionStayPatch
     private static bool Prefix(SawScript __instance, Collision2D collision)
     {
         return ClientSawCollisionPatch.ShouldRun(__instance, collision);
+    }
+}
+
+[HarmonyPatch]
+internal static class MultiplayerDamageBarsPatch
+{
+    private static MethodBase TargetMethod()
+    {
+        return AccessTools.Method(typeof(BloodBars), new string(new[]
+        { 'F', 'i', 'x', 'e', 'd', 'U', 'p', 'd', 'a', 't', 'e' }));
+    }
+
+    private static void Prefix(BloodBars __instance)
+    {
+        var player = PlayerScript.player;
+        if (!MultiplayerSession.IsConnected || __instance == null || player == null ||
+            __instance.body != player.bodyScript) return;
+
+        __instance.constTreshold = float.NegativeInfinity;
     }
 }
 

@@ -11,6 +11,7 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NetworkAvatarReplication : MonoBehaviour
 {
+    private const bool TailDiagnosticsEnabled = false;
     private const float SnapshotInterval = 1f / 50f;
     private const float VisualSnapshotInterval = 1f / 50f;
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
@@ -102,6 +103,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool localWasAlive = true;
     private float respawnAt = -1f;
     private bool localRespawnPending;
+    private int localRespawnGeneration;
     private static float localRespawnProtectionUntil = -1f;
     private const float RespawnProtectionSeconds = 3f;
     private GUIStyle respawnStyle;
@@ -120,6 +122,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         NetworkAvatarReplication replica;
         return replicas.TryGetValue(peerId, out replica) && replica != null ? replica.remoteBody : null;
+    }
+
+    internal static bool IsRemoteAvatarBody(BodyScript body)
+    {
+        return ReplicaForBody(body) != null;
     }
 
     internal static void ForceRefreshRemotePhysics()
@@ -148,6 +155,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             body.limbs[0] == null || body.limbs[11] == null || body.limbs[14] == null ||
             GameManager.main == null || ResourceManager.main == null || ScreenFXManager.main == null)
             return false;
+        if (MultiplayerSession.IsConnected) body.dropWeapon = false;
 
         var buttons = PlayerButtonsField == null ? null : PlayerButtonsField.GetValue(player) as ButtonScript[];
         if (buttons != null)
@@ -157,6 +165,83 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     PlayerButtonsField.SetValue(player, null);
                     break;
                 }
+        return true;
+    }
+
+    internal static void CompleteVanillaBodySwitch(BodyScript body)
+    {
+        if (instance == null || body == null) return;
+        instance.localRespawnGeneration++;
+        instance.respawnAt = -1f;
+        instance.localRespawnPending = false;
+        instance.localWasAlive = true;
+        instance.localDeathPosition = body.transform.position;
+        localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
+        localPlayerInstance = PlayerScript.player;
+        localGlobalBody = body.transform;
+        RestoreLocalPlayerSingleton();
+    }
+
+    internal static bool ReplaceLocalPlayerBody(BodyScript oldBody, BodyScript newBody)
+    {
+        var player = PlayerScript.player;
+        if (instance == null || player == null || newBody == null ||
+            newBody.limbs == null || newBody.limbs.Count == 0)
+            return false;
+
+        instance.localRespawnGeneration++;
+        instance.respawnAt = -1f;
+        instance.localRespawnPending = false;
+        instance.localWasAlive = true;
+        instance.localDeathPosition = newBody.transform.position;
+        localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
+
+        if (oldBody != null)
+        {
+            oldBody.OnWeaponChanged.RemoveListener(player.BodyWeaponChanged);
+            oldBody.OnDeath.RemoveListener(player.OnDied);
+            oldBody.OnAmmoChanged.RemoveListener(player.BodyAmmoChanged);
+        }
+
+        EnsureRespawnWeaponSlots(newBody);
+        newBody.isPlayer = true;
+        newBody.team = "goodguys";
+        newBody.crateDamage = true;
+        newBody.isWalking = false;
+        newBody.isAlive = true;
+        newBody.health = Mathf.Max(1f, newBody.maxHealth);
+        newBody.dropWeapon = false;
+        newBody.CurrentState = 0;
+        newBody.controlState = 0;
+        newBody.noLegs = false;
+        newBody.deHeaded = false;
+        newBody.onScreen = true;
+        newBody.EnterFullControl();
+        newBody.WakeUp();
+
+        var levitator = newBody.GetComponent<LevitatorScript>();
+        if (levitator == null) levitator = newBody.gameObject.AddComponent<LevitatorScript>();
+        levitator.levitMask = LayerMask.GetMask("Ground");
+        levitator.grabMask = LayerMask.GetMask("Default", "Ground", "Entity", "EntityStand", "DropWeapon");
+        levitator.rb = newBody.rb;
+        levitator.refBody = newBody;
+        var weaponBack = newBody.GetComponent<WeaponBackShow>();
+        if (weaponBack != null) weaponBack.active = true;
+
+        player.bodyScript = newBody;
+        player.levit = levitator;
+        player.enabled = true;
+        localPlayerInstance = player;
+        localGlobalBody = newBody.transform;
+        RestoreLocalPlayerSingleton();
+        EnsurePlayerAmmoDisplaySlots(player);
+        newBody.OnWeaponChanged.AddListener(player.BodyWeaponChanged);
+        newBody.OnDeath.AddListener(player.OnDied);
+        newBody.OnAmmoChanged.AddListener(player.BodyAmmoChanged);
+        player.BodyWeaponChanged();
+        player.BodyAmmoChanged();
+        player.UnDie();
+        if (CameraFollow.cam != null) CameraFollow.cam.target = newBody.transform;
         return true;
     }
 
@@ -232,13 +317,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         var player = PlayerScript.player;
         return suppressedTargetScreenEffects > 0 ||
+            Time.unscaledTime < suppressedCameraUntil ||
             (MultiplayerSession.IsConnected && MultiplayerSession.PvpEnabled &&
             player != null && player.bodyScript != null && currentShooter == player.bodyScript);
     }
 
     internal static bool SuppressTargetedScreenEffect()
     {
-        return suppressedTargetScreenEffects > 0;
+        return suppressedTargetScreenEffects > 0 || Time.unscaledTime < suppressedCameraUntil;
     }
 
     internal static TargetScreenEffectState BeginTargetScreenEffect(BodyScript target)
@@ -278,6 +364,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         instance = this;
         coordinator = true;
+        if (!TailDiagnosticsEnabled) return;
         tailDiagnosticPath = Path.Combine(Paths.BepInExRootPath,
             "tail-debug-" + System.Diagnostics.Process.GetCurrentProcess().Id + ".log");
         try
@@ -596,6 +683,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (remoteBody == null) { Destroy(avatar); return; }
         remoteBody.WakeUp();
         remoteBody.isPlayer = true;
+        remoteBody.dropWeapon = false;
         remoteBody.team = RemoteTeam(localBody);
         foreach (var chatter in avatar.GetComponentsInChildren<Chatter>(true)) DestroyImmediate(chatter);
         foreach (var ai in avatar.GetComponentsInChildren<AIScript>(true)) DestroyImmediate(ai);
@@ -974,7 +1062,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (currentShooter == null) return;
         var localPlayer = PlayerScript.player;
-        if (!MultiplayerSession.PvpEnabled || localPlayer == null || currentShooter != localPlayer.bodyScript) return;
+
+        if (localPlayer == null || currentShooter != localPlayer.bodyScript) return;
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
@@ -1103,23 +1192,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void SpawnRemoteDeathDropIfNeeded(float amount)
     {
         pendingRemoteDamage += amount;
-        if (remoteDeathDropSpawned || remoteBody == null || !lastRemoteAlive ||
-            lastRemoteHealth - pendingRemoteDamage > 0f || remoteBody.weapon == null || remoteBody.unarmed) return;
         remoteDeathDropSpawned = true;
-        if (GameManager.main != null && GameManager.main.hardMode)
-            remoteBody.DropAllWeapons();
-        else
-        {
-            remoteBody.dropWeapon = true;
-            remoteBody.DropWeapon();
-        }
     }
 
     internal static bool BlockNetworkPlayerDrop(BodyScript body, bool allWeapons)
     {
         var player = PlayerScript.player;
-        if (!applyingNetworkPlayerDamage || MultiplayerSession.IsHost || player == null ||
-            body != player.bodyScript) return false;
+        if (!MultiplayerSession.IsConnected || player == null || body == null) return false;
+        if (body != player.bodyScript && !IsRemoteAvatarBody(body)) return false;
         ClearDroppedWeapon(body, allWeapons);
         return true;
     }
@@ -1174,6 +1254,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
+
         if (localWasAlive)
         {
             localWasAlive = false;
@@ -1190,6 +1271,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (localRespawnPending) return;
         localRespawnPending = true;
+        var generation = ++localRespawnGeneration;
         respawnAt = -1f;
         localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
         var prefabPath = ResolveCharacterPrefab(oldBody);
@@ -1246,14 +1328,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         localGlobalBody = newBody.transform;
         RestoreLocalPlayerSingleton();
         localWasAlive = true;
-        StartCoroutine(FinalizeLocalRespawn(newBody, oldBody));
+        StartCoroutine(FinalizeLocalRespawn(newBody, oldBody, generation));
     }
 
-    private IEnumerator FinalizeLocalRespawn(BodyScript newBody, BodyScript oldBody)
+    private IEnumerator FinalizeLocalRespawn(BodyScript newBody, BodyScript oldBody, int generation)
     {
         yield return null;
         try
         {
+            if (generation != localRespawnGeneration)
+            {
+                var current = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
+                if (newBody != null && newBody != current) Destroy(newBody.transform.root.gameObject);
+                yield break;
+            }
             if (newBody == null || newBody.limbs == null ||
                 newBody.limbs.Count == 0) yield break;
             EnsureRespawnWeaponSlots(oldBody);
@@ -1411,7 +1499,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (remoteBody != null && player != null && player.bodyScript != null)
             remoteBody.team = RemoteTeam(player.bodyScript);
 
-        var simulated = MultiplayerSession.PvpEnabled || MultiplayerSession.CanGrabPlayers;
+        var simulated = MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
+            MultiplayerSession.CanGrabPlayers;
         var passiveGrabProxy = !MultiplayerSession.IsHost && !MultiplayerSession.PvpEnabled &&
             MultiplayerSession.CanGrabPlayers;
         if (remotePhysicsModeKnown && simulated == lastRemoteSimulated &&
@@ -1428,7 +1517,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             body.angularVelocity = 0f;
         }
         foreach (var pair in remoteColliderTriggers)
-            if (pair.Key != null) pair.Key.isTrigger = pair.Value || passiveGrabProxy || !MultiplayerSession.PvpEnabled;
+            if (pair.Key != null) pair.Key.isTrigger = pair.Value || passiveGrabProxy ||
+                (!MultiplayerSession.PvpEnabled && !MultiplayerSession.IsHost);
         if (MultiplayerSession.IsHost)
             foreach (var prop in FindObjectsOfType<Rigidbody2D>())
                 if (prop != null && (prop.GetComponentInParent<CrateScript>() != null ||

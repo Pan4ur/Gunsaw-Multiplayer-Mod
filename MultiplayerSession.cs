@@ -44,6 +44,7 @@ internal static class MultiplayerSession
     private static readonly byte[] disconnectHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x14 };
     private static readonly byte[] chatHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x15 };
     private static readonly byte[] customLevelHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x16 };
+    private static readonly byte[] npcPossessHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x17 };
     private static string hostScene = "";
     private static string pendingScene = "";
     private static string hostCustomLevel = "";
@@ -62,6 +63,7 @@ internal static class MultiplayerSession
     private static readonly Queue<PeerPayload> shotVisuals = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> playerGrabs = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> npcGrabs = new Queue<PeerPayload>();
+    private static readonly Queue<PeerPayload> npcPossessions = new Queue<PeerPayload>();
     private static readonly Queue<ChatMessage> chatMessages = new Queue<ChatMessage>();
     private static readonly HashSet<long> receivedChatIds = new HashSet<long>();
     private static readonly Queue<long> receivedChatOrder = new Queue<long>();
@@ -222,6 +224,21 @@ internal static class MultiplayerSession
         socket.State == WebSocketState.Open && peers.Count > 0; } }
     internal static bool IsHosting { get { return socket != null && socket.State == WebSocketState.Open && isHost; } }
     internal static bool IsHost { get { return isHost; } }
+    internal static int SendQueueDepth
+    {
+        get { lock (sendQueueLock) return sendQueue.Count + prioritySendQueue.Count; }
+    }
+    internal static int PayloadQueueDepth
+    {
+        get
+        {
+            lock (statusLock)
+                return worldSnapshots.Count + worldInputs.Count + worldDamage.Count +
+                    npcSnapshots.Count + npcDamage.Count + worldInteractions.Count +
+                    playerDamage.Count + pvpDamage.Count + shotVisuals.Count +
+                    playerGrabs.Count + npcGrabs.Count;
+        }
+    }
     internal static bool PvpEnabled { get; private set; }
     internal static bool CanGrabPlayers { get; private set; }
     internal static bool GrabOnlyUnconscious { get; private set; }
@@ -417,6 +434,12 @@ internal static class MultiplayerSession
         if (!isHost) Send(npcDamageHeader, data, 1);
     }
 
+    internal static void SendNpcPossession(string id)
+    {
+        if (isHost || string.IsNullOrEmpty(id)) return;
+        Send(npcPossessHeader, Encoding.UTF8.GetBytes(id), 1);
+    }
+
     private static void SendCustomLevel(string levelJson, ushort targetId = 0)
     {
         var data = Encoding.UTF8.GetBytes(levelJson);
@@ -499,7 +522,7 @@ internal static class MultiplayerSession
         Buffer.BlockCopy(BitConverter.GetBytes(id), 0, payload, 0, sizeof(int));
         payload[sizeof(int)] = system ? (byte)1 : (byte)0;
         Buffer.BlockCopy(encoded, 0, payload, sizeof(int) + 1, encoded.Length);
-        // WebSocket is reliable, so the UDP-era duplicate send is unnecessary.
+
         Send(chatHeader, payload);
     }
 
@@ -590,6 +613,11 @@ internal static class MultiplayerSession
     internal static bool TryTakeNpcGrab(out ushort peerId, out byte[] data)
     {
         return TryTakePayload(npcGrabs, out peerId, out data);
+    }
+
+    internal static bool TryTakeNpcPossession(out ushort peerId, out byte[] data)
+    {
+        return TryTakePayload(npcPossessions, out peerId, out data);
     }
 
     internal static bool TryTakeChat(out ushort peerId, out string sender, out string message)
@@ -744,6 +772,12 @@ internal static class MultiplayerSession
                 var data = new byte[packet.Length - npcDamageHeader.Length];
                 Buffer.BlockCopy(packet, npcDamageHeader.Length, data, 0, data.Length);
                 EnqueuePayload(npcDamage, senderId, data);
+            }
+            else if (isHost && HasHeader(packet, npcPossessHeader))
+            {
+                var data = new byte[packet.Length - npcPossessHeader.Length];
+                Buffer.BlockCopy(packet, npcPossessHeader.Length, data, 0, data.Length);
+                EnqueuePayload(npcPossessions, senderId, data);
             }
             else if (isHost && HasHeader(packet, worldInteractionHeader))
             {
@@ -977,6 +1011,7 @@ internal static class MultiplayerSession
         shotVisuals.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();
+        npcPossessions.Clear();
         chatMessages.Clear();
         receivedChatIds.Clear();
         receivedChatOrder.Clear();
