@@ -19,11 +19,14 @@
 - [ ] Add more mp settings and features
 - [ ] Fix tails
 - [X] Far objects sync
-- [ ] Switch to UDP or Steam lobbies(?)
+- [ ] Switch to UDP
 - [ ] Fix compatibility with Crossover on apple silicon
 - [ ] Make sure there are definitely no desyncs and crashes
 - [ ] Refactor god classes
 - [ ] Fix or disable the process of transferring into another body
+- [ ] Add interpolation
+- [ ] Reduce the packet rate by stopping the transmission of packets for stationary entities
+- [ ] Improve MP Window
 
 ## Installation
 
