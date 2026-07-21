@@ -17,10 +17,19 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.3";
+    public const string PluginVersion = "0.3.2";
 
     private readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
+    private ConfigEntry<string> savedPlayerName;
+    private ConfigEntry<string> savedLobbyName;
+    private ConfigEntry<bool> savedCreatePvp;
+    private ConfigEntry<bool> savedCreateCanGrab;
+    private ConfigEntry<bool> savedCreateGrabOnlyUnconscious;
+    private ConfigEntry<bool> savedCreateAllowRespawn;
+    private ConfigEntry<bool> savedCreateRespawnAtStart;
+    private ConfigEntry<string> savedCreateRespawnTime;
+    private ConfigEntry<string> savedCreateMaxPlayers;
     private bool visible;
     private string status = "Select an option.";
     private string lobbyServerAddress = "gunsawudp.e621.su";
@@ -60,13 +69,36 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (masterUrl.Value == "http://127.0.0.1:18080" ||
             masterUrl.Value == "http://gunsawudp.e621.su") masterUrl.Value = "https://gunsawudp.e621.su";
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
+        savedPlayerName = Config.Bind("Lobby", "PlayerName", playerName, "Name shown to other players.");
+        savedLobbyName = Config.Bind("Lobby", "LobbyName", lobbyName, "Default name for new lobbies.");
+        savedCreatePvp = Config.Bind("Lobby", "Pvp", createPvp, "Enable PvP in new lobbies.");
+        savedCreateCanGrab = Config.Bind("Lobby", "CanGrab", createCanGrab, "Allow player grabbing in new lobbies.");
+        savedCreateGrabOnlyUnconscious = Config.Bind("Lobby", "GrabOnlyUnconscious", createGrabOnlyUnconscious,
+            "Limit grabbing to unconscious players in new lobbies.");
+        savedCreateAllowRespawn = Config.Bind("Lobby", "AllowRespawn", createAllowRespawn,
+            "Allow respawning in new lobbies.");
+        savedCreateRespawnAtStart = Config.Bind("Lobby", "RespawnAtStart", createRespawnAtStart,
+            "Respawn players at level start in new lobbies.");
+        savedCreateRespawnTime = Config.Bind("Lobby", "RespawnTime", createRespawnTime,
+            "Default respawn delay in seconds.");
+        savedCreateMaxPlayers = Config.Bind("Lobby", "MaxPlayers", createMaxPlayers,
+            "Default maximum player count.");
+        playerName = savedPlayerName.Value;
+        lobbyName = savedLobbyName.Value;
+        createPvp = savedCreatePvp.Value;
+        createCanGrab = savedCreateCanGrab.Value;
+        createGrabOnlyUnconscious = savedCreateGrabOnlyUnconscious.Value;
+        createAllowRespawn = savedCreateAllowRespawn.Value;
+        createRespawnAtStart = savedCreateRespawnAtStart.Value;
+        createRespawnTime = savedCreateRespawnTime.Value;
+        createMaxPlayers = savedCreateMaxPlayers.Value;
         new Harmony(PluginGuid).PatchAll();
         avatarReplication = gameObject.AddComponent<NetworkAvatarReplication>();
         worldReplication = gameObject.AddComponent<WorldReplication>();
         npcReplication = gameObject.AddComponent<NpcReplication>();
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
         World = worldReplication;
-        Logger.LogInfo("Gunsaw Multiplayer 0.3.3 loaded.");
+        Logger.LogInfo("Gunsaw Multiplayer 0.3.2 loaded.");
     }
 
     private void Start()
@@ -275,6 +307,34 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
         GUILayout.EndScrollView();
         GUILayout.EndArea();
+        SaveLobbyPreferences();
+    }
+
+    private void SaveLobbyPreferences()
+    {
+        var changed = false;
+        if (savedPlayerName.Value != playerName) { savedPlayerName.Value = playerName; changed = true; }
+        if (savedLobbyName.Value != lobbyName) { savedLobbyName.Value = lobbyName; changed = true; }
+        if (savedCreatePvp.Value != createPvp) { savedCreatePvp.Value = createPvp; changed = true; }
+        if (savedCreateCanGrab.Value != createCanGrab) { savedCreateCanGrab.Value = createCanGrab; changed = true; }
+        if (savedCreateGrabOnlyUnconscious.Value != createGrabOnlyUnconscious)
+        {
+            savedCreateGrabOnlyUnconscious.Value = createGrabOnlyUnconscious;
+            changed = true;
+        }
+        if (savedCreateAllowRespawn.Value != createAllowRespawn)
+        {
+            savedCreateAllowRespawn.Value = createAllowRespawn;
+            changed = true;
+        }
+        if (savedCreateRespawnAtStart.Value != createRespawnAtStart)
+        {
+            savedCreateRespawnAtStart.Value = createRespawnAtStart;
+            changed = true;
+        }
+        if (savedCreateRespawnTime.Value != createRespawnTime) { savedCreateRespawnTime.Value = createRespawnTime; changed = true; }
+        if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
+        if (changed) Config.Save();
     }
 
     private void RefreshLobbies()
@@ -746,6 +806,41 @@ internal static class MultiplayerGameManagerFocusPatch
     }
 }
 
+[HarmonyPatch(typeof(GameManager), "MainMenu")]
+internal static class MultiplayerClientMainMenuPatch
+{
+    private static void Prefix()
+    {
+        if (SceneLoader.main != null)
+        {
+            SceneLoader.main.levelEditString = "";
+            SceneLoader.main.hadEditorWarning = false;
+        }
+
+
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHosting) return;
+        MultiplayerSession.Shutdown();
+    }
+}
+
+[HarmonyPatch(typeof(GameManager), "BackToEditor")]
+internal static class MultiplayerBackToEditorRedirectPatch
+{
+    private static bool Prefix()
+    {
+        if (SceneLoader.main != null)
+        {
+            SceneLoader.main.levelEditString = "";
+            SceneLoader.main.hadEditorWarning = false;
+            SceneLoader.main.LoadScene("LevelSelect");
+        }
+        else SceneManager.LoadScene("LevelSelect");
+        if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting)
+            MultiplayerSession.Shutdown();
+        return false;
+    }
+}
+
 [HarmonyPatch(typeof(ResourceManager), "Awake")]
 internal static class MultiplayerResourceLoadDistancePatch
 {
@@ -787,6 +882,8 @@ internal static class MultiplayerLimbAnimationPatch
         if (body == null || NpcReplication.IsPossessionRenderGuard(body) ||
             NpcReplication.IsClientProxy(body) || NetworkAvatarReplication.IsRemoteAvatarBody(body))
             return false;
+
+        if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
         return true;
     }
 
@@ -970,12 +1067,55 @@ internal static class MultiplayerTimeControl
 [HarmonyPatch(typeof(CrateScript), "Damage")]
 internal static class ClientCrateDamagePatch
 {
-    private static bool Prefix(CrateScript __instance, float dmg)
+    private sealed class CrateDebrisCapture
     {
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+        internal readonly HashSet<int> ExistingBodies = new HashSet<int>();
+    }
+
+    private static bool Prefix(CrateScript __instance, float dmg, out CrateDebrisCapture __state)
+    {
+        __state = null;
+        if (!MultiplayerSession.IsConnected) return true;
+        if (GunsawMultiplayerPlugin.World != null &&
+            GunsawMultiplayerPlugin.World.TryProtectNetworkCrateDebrisDamage(__instance, dmg)) return false;
+        if (MultiplayerSession.IsHost)
+        {
+            if (__instance != null && __instance.breakType == CrateScript.BreakType.None &&
+                __instance.objOnDestroy != null && __instance.health - dmg <= 0f)
+            {
+                __state = new CrateDebrisCapture();
+                foreach (var body in UnityEngine.Object.FindObjectsOfType<Rigidbody2D>())
+                    if (body != null) __state.ExistingBodies.Add(body.GetInstanceID());
+            }
+            return true;
+        }
         if (GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.QueueDamage(__instance, dmg);
         return false;
+    }
+
+    private static void Postfix(CrateScript __instance, CrateDebrisCapture __state)
+    {
+        if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
+        {
+            WorldReplication.TrackDroppedWeapons();
+            if (__state == null || GunsawMultiplayerPlugin.World == null) return;
+            var created = new List<Rigidbody2D>();
+            foreach (var body in UnityEngine.Object.FindObjectsOfType<Rigidbody2D>())
+                if (body != null && !__state.ExistingBodies.Contains(body.GetInstanceID())) created.Add(body);
+            GunsawMultiplayerPlugin.World.RegisterDestroyedCrateDebris(__instance, created.ToArray());
+        }
+    }
+}
+
+[HarmonyPatch(typeof(CrateScript), "OnWillRenderObject")]
+internal static class ClientPalletDebrisAutoBreakPatch
+{
+    private static bool Prefix(CrateScript __instance)
+    {
+        if (!MultiplayerSession.IsConnected || GunsawMultiplayerPlugin.World == null) return true;
+
+        return !GunsawMultiplayerPlugin.World.IsNetworkCrateDebris(__instance);
     }
 }
 
@@ -1191,6 +1331,7 @@ internal static class ClientDroppedWeaponAmmoPatch
 {
     private static void Prefix(DroppedWeapon __instance, BodyScript body)
     {
+        if (!MultiplayerSession.IsHost && __instance != null) __instance.pickupCool = -1f;
         if (GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.QueueWeaponInteraction(__instance, body, WorldReplication.WeaponAmmoGet);
     }
@@ -1211,6 +1352,36 @@ internal static class MultiplayerWeaponShotPatch
     {
         NetworkAvatarReplication.CompleteWeaponShot(__state, __exception == null);
         return __exception;
+    }
+}
+
+[HarmonyPatch(typeof(WeaponScript), "Shoot")]
+internal static class MultiplayerWeaponSpreadPatch
+{
+    private static readonly MethodInfo RandomRange = AccessTools.Method(typeof(UnityEngine.Random), "Range",
+        new[] { typeof(float), typeof(float) });
+    private static readonly MethodInfo NextWeaponSpread = AccessTools.Method(
+        typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.NextWeaponSpread));
+
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var code = new List<CodeInstruction>(instructions);
+        for (var index = 2; index < code.Count; index++)
+        {
+            if (!code[index].Calls(RandomRange) || !IsFloatConstant(code[index - 2], -1f) ||
+                !IsFloatConstant(code[index - 1], 1f)) continue;
+            code[index] = new CodeInstruction(OpCodes.Pop);
+            code.Insert(index + 1, new CodeInstruction(OpCodes.Pop));
+            code.Insert(index + 2, new CodeInstruction(OpCodes.Call, NextWeaponSpread));
+            break;
+        }
+        return code;
+    }
+
+    private static bool IsFloatConstant(CodeInstruction instruction, float value)
+    {
+        return instruction.opcode == OpCodes.Ldc_R4 && instruction.operand is float current &&
+            Mathf.Approximately(current, value);
     }
 }
 

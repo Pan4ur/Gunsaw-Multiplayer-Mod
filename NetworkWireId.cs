@@ -2,8 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-// Fixed-width identifiers for the wire.  They are derived from the original
-// string, so either peer can calculate them without a fragile sync dictionary.
+
 internal static class NetworkWireId
 {
     private const ulong OffsetBasis = 14695981039346656037UL;

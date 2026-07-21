@@ -4,8 +4,10 @@ using UnityEngine;
 
 internal static class MultiplayerLoadDistance
 {
-    // Gunsaw's ObjectUnloader compares squared distance directly to this preference.
-    private const float DefaultTickDistanceSqr = 1800f;
+    private const float DefaultTickDistanceSqr = 1800f; // TODO SETTING
+
+
+
     private const float SimulationRefreshInterval = 0.2f;
     private static readonly List<Vector2> playerPositions = new List<Vector2>();
     private static readonly Dictionary<Rigidbody2D, bool> savedSimulationStates =
@@ -22,7 +24,6 @@ internal static class MultiplayerLoadDistance
         var active = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected;
         if (active)
         {
-            // Keep every object spawned. Simulation culling below is deliberately separate.
             ResourceManager.maxDistance = float.PositiveInfinity;
             ObjectUnloader.dist = float.PositiveInfinity;
             ObjectUnloader.distTwo = float.PositiveInfinity;
@@ -53,6 +54,11 @@ internal static class MultiplayerLoadDistance
         if (!IsHostSimulationActive() || body == null || body.isPlayer ||
             body.GetComponentInParent<NetworkReplica>() != null) return true;
         return IsNearAnyPlayer(body.transform.position);
+    }
+
+    internal static bool IsNpcNearAnyPlayer(BodyScript body)
+    {
+        return body != null && IsNearAnyPlayer(body.transform.position);
     }
 
     internal static bool ShouldTickWorld(Component component)
@@ -96,7 +102,6 @@ internal static class MultiplayerLoadDistance
     {
         if (!IsHostSimulationActive() || unloader == null) return false;
         ApplyWorldBody(unloader.GetComponent<Rigidbody2D>());
-        // Do not let ObjectUnloader hide the sprite or undo our player-based simulation state.
         return true;
     }
 
@@ -125,12 +130,16 @@ internal static class MultiplayerLoadDistance
         playerPositions.Clear();
         var localPlayer = PlayerScript.player;
         if (localPlayer != null) AddPlayerPosition(localPlayer.bodyScript);
-        foreach (var remote in NetworkAvatarReplication.RemotePlayers()) AddPlayerPosition(remote.Body);
+        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        {
+            if (remote.HasAuthoritativePosition) playerPositions.Add(remote.AuthoritativePosition);
+            else AddPlayerPosition(remote.Body, true);
+        }
     }
 
-    private static void AddPlayerPosition(BodyScript body)
+    private static void AddPlayerPosition(BodyScript body, bool allowInactive = false)
     {
-        if (body == null || !body.gameObject.activeInHierarchy) return;
+        if (body == null || (!allowInactive && !body.gameObject.activeInHierarchy)) return;
         playerPositions.Add(body.rb == null ? (Vector2)body.transform.position : body.rb.position);
     }
 
@@ -280,6 +289,7 @@ internal static class MultiplayerFireTickCullPatch
 {
     private static bool Prefix(FireScript __instance)
     {
+        if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHost) return false;
         return MultiplayerLoadDistance.ShouldTickWorld(__instance);
     }
 }

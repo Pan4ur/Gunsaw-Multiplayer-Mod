@@ -24,21 +24,21 @@
 
 ### Sync Fixes
 - [x] Far objects sync
-- [ ] Fix shooting randomization desync
-- [ ] Fix barrel fire desync
-- [ ] Fix NPC shooting tracers not being visible to other players
-- [ ] Fix pallet desync when breaking into two parts
-- [ ] Fix dead entity body state (e.g., closed eyes) mismatch with host
-- [ ] Fix ammo indicator desync on weapons dropped by killed entities (blinks on host, doesn't show on clients)
-- [ ] Sync bullet hit effects
-- [ ] Add interp
+- [X] Fix shooting randomization desync
+- [X] Fix barrel fire desync
+- [X] Fix NPC shooting tracers not being visible to other players
+- [X] Fix pallet desync when breaking into two parts
+- [X] Fix dead entity body state (e.g., closed eyes) mismatch with host
+- [X] Fix ammo indicator desync on weapons dropped by killed entities (blinks on host, doesn't show on clients)
+- [X] Sync bullet hit effects
+- [X] Add interp
 - [ ] Make sure there are definitely no desyncs and crashes
 
 ### Gameplay
-- [ ] Fix avatar
+- [X] Fix avatar
 - [ ] Fix tails
-- [ ] Fix destruction of lightbulbs from hits
-- [ ] Fix weapon dropping at the beginning of the game
+- [X] Fix destruction of lightbulbs from hits
+- [X] Fix weapon dropping at the beginning of the game
 - [ ] Fix or disable the process of transferring into another body
 - [ ] Real gameplay test
 

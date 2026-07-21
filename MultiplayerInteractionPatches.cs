@@ -57,3 +57,17 @@ internal static class MultiplayerPlayerWoundPatch
         return __exception;
     }
 }
+
+[HarmonyPatch(typeof(GlassScript), "Damage")]
+internal static class MultiplayerGlassDamagePatch
+{
+    internal static bool ApplyingNetworkState;
+
+    private static bool Prefix(GlassScript __instance, float dmg, Vector3 bulletPos)
+    {
+        if (ApplyingNetworkState || !MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+        if (GunsawMultiplayerPlugin.World != null)
+            GunsawMultiplayerPlugin.World.QueueGlassDamage(__instance, dmg, bulletPos);
+        return false;
+    }
+}

@@ -16,6 +16,11 @@ internal static class MultiplayerDiagnostics
     internal static void Write(string message)
     {
         if (!Enabled) return;
+        WriteCore(message);
+    }
+
+    private static void WriteCore(string message)
+    {
         if (string.IsNullOrEmpty(message)) return;
         try
         {

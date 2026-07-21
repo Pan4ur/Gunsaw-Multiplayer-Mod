@@ -67,6 +67,7 @@ internal static class MultiplayerSession
     private static readonly byte[] npcPossessHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x17 };
     private static readonly byte[] reliableHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x18 };
     private static readonly byte[] reliableAckHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x19 };
+    private static readonly byte[] worldEnvironmentHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1A };
     private static string hostScene = "";
     private static string pendingScene = "";
     private static string hostCustomLevel = "";
@@ -75,6 +76,7 @@ internal static class MultiplayerSession
     private static readonly Queue<PeerIdentity> identities = new Queue<PeerIdentity>();
     private static readonly Dictionary<ushort, byte[]> snapshots = new Dictionary<ushort, byte[]>();
     private static readonly Queue<PeerPayload> worldSnapshots = new Queue<PeerPayload>();
+    private static readonly Queue<PeerPayload> worldEnvironments = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> worldInputs = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> worldDamage = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> npcSnapshots = new Queue<PeerPayload>();
@@ -449,6 +451,11 @@ internal static class MultiplayerSession
         if (isHost) Send(worldHeader, data);
     }
 
+    internal static void SendWorldEnvironment(byte[] data)
+    {
+        if (isHost && data != null) Send(worldEnvironmentHeader, data);
+    }
+
     internal static void SendWorldInput(byte[] data)
     {
         if (!isHost) Send(worldInputHeader, data, 1);
@@ -608,6 +615,11 @@ internal static class MultiplayerSession
     internal static bool TryTakeWorldSnapshot(out byte[] data)
     {
         ushort ignored; return TryTakePayload(worldSnapshots, out ignored, out data);
+    }
+
+    internal static bool TryTakeWorldEnvironment(out byte[] data)
+    {
+        ushort ignored; return TryTakePayload(worldEnvironments, out ignored, out data);
     }
 
     internal static bool TryTakeWorldInput(out ushort peerId, out byte[] data)
@@ -801,6 +813,12 @@ internal static class MultiplayerSession
                 var data = new byte[packet.Length - worldHeader.Length];
                 Buffer.BlockCopy(packet, worldHeader.Length, data, 0, data.Length);
                 EnqueueLatestPayload(worldSnapshots, senderId, data);
+            }
+            else if (!isHost && HasHeader(packet, worldEnvironmentHeader))
+            {
+                var data = new byte[packet.Length - worldEnvironmentHeader.Length];
+                Buffer.BlockCopy(packet, worldEnvironmentHeader.Length, data, 0, data.Length);
+                EnqueueLatestPayload(worldEnvironments, senderId, data);
             }
             else if (isHost && HasHeader(packet, worldInputHeader))
             {
@@ -1074,6 +1092,7 @@ internal static class MultiplayerSession
         snapshots.Clear();
         receivedSnapshotSequences.Clear();
         worldSnapshots.Clear();
+        worldEnvironments.Clear();
         worldInputs.Clear();
         worldDamage.Clear();
         npcSnapshots.Clear();
@@ -1488,13 +1507,13 @@ internal static class MultiplayerSession
 
     private static bool ShouldSendReliable(byte[] packet)
     {
-        // Connection handshake and damage events must survive packet loss.
-        // Position/state snapshots stay unreliable so an old packet never blocks a new one.
         return Matches(packet, hello) || HasHeader(packet, hello) ||
             Matches(packet, accepted) || HasHeader(packet, accepted) ||
             HasHeader(packet, sceneHeader) || HasHeader(packet, settingsHeader) ||
             HasHeader(packet, customLevelHeader) ||
             HasHeader(packet, worldDamageHeader) || HasHeader(packet, npcDamageHeader) ||
+            HasHeader(packet, worldEnvironmentHeader) ||
+            HasHeader(packet, worldInteractionHeader) ||
             HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader);
     }
 
@@ -1546,6 +1565,7 @@ internal static class MultiplayerSession
     private static bool IsLatencySensitivePacket(byte[] packet)
     {
         return !HasRoutedHeader(packet, worldHeader) && !HasRoutedHeader(packet, npcHeader) &&
+            !HasRoutedHeader(packet, worldEnvironmentHeader) &&
             !HasRoutedHeader(packet, customLevelHeader) && !HasRoutedHeader(packet, sceneHeader);
     }
 

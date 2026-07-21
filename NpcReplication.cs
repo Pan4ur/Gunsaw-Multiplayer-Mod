@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using System.Text;
 using BepInEx;
@@ -10,8 +11,10 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NpcReplication : MonoBehaviour
 {
-    // Version 8 uses loss-tolerant 16-bit rotation angles in NPC pose snapshots.
-    private const byte ProtocolVersion = 8;
+    private const byte ProtocolVersion = 10;
+    private const byte CompressedSnapshotMarker = 0xFF;
+    private const int CompressionThresholdBytes = 256;
+    private const int MaxDecompressedSnapshotBytes = 1024 * 1024;
     private const float RotationToWire = ushort.MaxValue / 360f;
     private const float RotationFromWire = 360f / ushort.MaxValue;
 
@@ -82,6 +85,8 @@ internal sealed class NpcReplication : MonoBehaviour
     private string lastApplyError = "none";
     internal static NpcReplication Instance;
     internal static bool ApplyingAuthoritativeDeath;
+
+    internal static bool IsEvaluatingAuthoritativePose { get; private set; }
 
     internal int TotalNpcCount
     {
@@ -163,7 +168,7 @@ internal sealed class NpcReplication : MonoBehaviour
             if (Time.unscaledTime >= nextSnapshot)
             {
                 nextSnapshot = Time.unscaledTime + SnapshotInterval;
-                AnimateHostOffscreenNpcs();
+                AnimateHostNpcs();
                 var snapshot = SerializeSnapshot();
                 if (snapshot != null) MultiplayerSession.SendNpcSnapshot(snapshot);
             }
@@ -301,27 +306,36 @@ internal sealed class NpcReplication : MonoBehaviour
         }
     }
 
-    private void AnimateHostOffscreenNpcs()
+    private void AnimateHostNpcs()
     {
-        var manager = GameManager.main;
-        if (manager == null || LimbRenderCallback == null) return;
+        if (LimbRenderCallback == null) return;
         foreach (var body in hostNpcs.Values)
         {
-            if (body == null || !body.gameObject.activeInHierarchy ||
-                manager.IsOnscreen((Vector2)body.transform.position) ||
-                MultiplayerLoadDistance.IsNpcSimulationCulled(body)) continue;
+            if (body == null || !body.gameObject.activeInHierarchy || !MultiplayerLoadDistance.IsNpcNearAnyPlayer(body)) continue;
             var layout = HostLayout(body);
-            for (var index = 0; index < layout.Limbs.Count; index++)
+            IsEvaluatingAuthoritativePose = true;
+            try
             {
-                var limb = layout.Limbs[index] as LimbScript;
-                if (limb == null || !limb.gameObject.activeInHierarchy) continue;
-                var callback = index < layout.LimbRenderCallbacks.Length
-                    ? layout.LimbRenderCallbacks[index] : null;
-                if (callback == null) continue;
-                try { callback(); }
-                catch (Exception) { }
+                for (var index = 0; index < layout.Limbs.Count; index++)
+                {
+                    var limb = layout.Limbs[index] as LimbScript;
+                    if (limb == null || !limb.gameObject.activeInHierarchy) continue;
+                    var callback = index < layout.LimbRenderCallbacks.Length
+                        ? layout.LimbRenderCallbacks[index] : null;
+                    if (callback == null) continue;
+                    try { callback(); }
+                    catch (Exception) { }
+                }
             }
+            finally { IsEvaluatingAuthoritativePose = false; }
         }
+    }
+
+    internal static bool IsHostNpc(BodyScript body)
+    {
+        var instance = Instance;
+        return body != null && MultiplayerSession.IsHost && instance != null &&
+            instance.hostIds.ContainsKey(body);
     }
 
     internal static bool IsNpcRigBody(Rigidbody2D rigidbody)
@@ -417,7 +431,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 writer.Write(state.Data);
                 AddWireBreakdown(state.Breakdown);
             }
-            var packet = stream.ToArray();
+            var packet = CompressSnapshot(stream.ToArray());
             lastPacketBytes = packet.Length;
             lastStateCount = changed.Count;
             sentPacketsWindow++;
@@ -432,6 +446,45 @@ internal sealed class NpcReplication : MonoBehaviour
         var buffer = stream.GetBuffer();
         for (var index = 0; index < previous.Length; index++) if (buffer[index] != previous[index]) return false;
         return true;
+    }
+
+    private static byte[] CompressSnapshot(byte[] packet)
+    {
+        if (packet == null || packet.Length < CompressionThresholdBytes) return packet;
+        using (var stream = new MemoryStream(packet.Length))
+        {
+            stream.WriteByte(CompressedSnapshotMarker);
+            using (var compressor = new DeflateStream(stream, CompressionLevel.Fastest, true))
+                compressor.Write(packet, 0, packet.Length);
+            var compressed = stream.ToArray();
+            return compressed.Length < packet.Length ? compressed : packet;
+        }
+    }
+
+    private static bool TryDecompressSnapshot(byte[] packet, out byte[] result)
+    {
+        result = packet;
+        if (packet == null || packet.Length == 0) return false;
+        if (packet[0] != CompressedSnapshotMarker) return true;
+        try
+        {
+            using (var input = new MemoryStream(packet, 1, packet.Length - 1, false))
+            using (var decompressor = new DeflateStream(input, CompressionMode.Decompress))
+            using (var output = new MemoryStream())
+            {
+                var buffer = new byte[4096];
+                int read;
+                while ((read = decompressor.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    if (output.Length + read > MaxDecompressedSnapshotBytes) return false;
+                    output.Write(buffer, 0, read);
+                }
+                result = output.ToArray();
+                return result.Length > 0;
+            }
+        }
+        catch (InvalidDataException) { return false; }
+        catch (IOException) { return false; }
     }
 
     private void WriteState(BinaryWriter writer, string id, BodyScript body, bool includeIdentity,
@@ -465,6 +518,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 writer.Write((ushort)destroyOnDeath.Count);
                 foreach (GameObject item in destroyOnDeath) writer.Write(item != null && item.activeSelf);
                 WritePose(writer, body.rb);
+                WriteTransform(writer, body.Arms);
                 breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
 
                 sectionStarted = writer.BaseStream.Position;
@@ -485,6 +539,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 {
                     var limb = limbs[limbIndex] as LimbScript;
                     WritePose(writer, limb.rb);
+                    WriteTransform(writer, limb == null ? null : limb.transform);
                     var fire = limbIndex < layout.LimbFires.Length ? layout.LimbFires[limbIndex] : null;
                     writer.Write((byte)((limb.dismembered ? 1 : 0) | (IsBurning(fire) ? 2 : 0)));
                 }
@@ -512,6 +567,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
                 sectionStarted = writer.BaseStream.Position;
                 WriteLine(writer, layout.WeaponLaserLine);
+                WriteVisuals(writer, layout);
                 breakdown.Effects += (int)(writer.BaseStream.Position - sectionStarted);
     }
 
@@ -569,9 +625,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 idsByWire[wire] = known;
                 return known;
             }
-        // A client already has the scene NPCs under their stable local IDs.
-        // Resolve to that key before descriptor matching; otherwise multiple
-        // similar NPCs can be paired with the wrong visual proxy.
+
         foreach (var known in clientNpcs.Keys)
             if (NetworkWireId.FromString(known) == wire)
             {
@@ -589,7 +643,9 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         try
         {
-            using (var reader = new BinaryReader(new MemoryStream(packet)))
+            byte[] decoded;
+            if (!TryDecompressSnapshot(packet, out decoded)) return;
+            using (var reader = new BinaryReader(new MemoryStream(decoded)))
             {
                 if (reader.ReadByte() != ProtocolVersion) return;
                 var sequence = reader.ReadInt32();
@@ -645,6 +701,7 @@ internal sealed class NpcReplication : MonoBehaviour
         state.DeathObjects = new bool[deathObjectCount];
         for (var index = 0; index < deathObjectCount; index++) state.DeathObjects[index] = reader.ReadBoolean();
         state.Body = ReadPose(reader);
+        state.Arms = ReadTransform(reader);
         var rigBodyCount = reader.ReadUInt16();
         state.RigBodies = new RigPose[rigBodyCount];
         for (var index = 0; index < rigBodyCount; index++)
@@ -654,10 +711,11 @@ internal sealed class NpcReplication : MonoBehaviour
         for (var index = 0; index < limbCount; index++)
         {
             var pose = ReadPose(reader);
+            var visual = ReadTransform(reader);
             var flags = reader.ReadByte();
             state.Limbs[index] = new LimbState
             {
-                Pose = pose, Dismembered = (flags & 1) != 0, Burning = (flags & 2) != 0
+                Pose = pose, Visual = visual, Dismembered = (flags & 1) != 0, Burning = (flags & 2) != 0
             };
         }
         var tailBaseCount = reader.ReadUInt16();
@@ -673,6 +731,7 @@ internal sealed class NpcReplication : MonoBehaviour
         state.Weapons = new ulong[weaponCount];
         for (var index = 0; index < weaponCount; index++) state.Weapons[index] = reader.ReadUInt64();
         state.Laser = ReadLine(reader);
+        state.Visuals = ReadVisuals(reader);
         return state;
     }
 
@@ -826,6 +885,9 @@ internal sealed class NpcReplication : MonoBehaviour
         CacheDismembermentVisuals(proxy);
         CacheFireVisuals(proxy);
         CacheRigBodies(proxy);
+        proxy.SpriteRenderers = root.GetComponentsInChildren<SpriteRenderer>(true);
+        proxy.Particles = root.GetComponentsInChildren<ParticleSystem>(true);
+        proxy.Lights = GetLights(root);
         FreezeProxy(proxy);
         return proxy;
     }
@@ -895,6 +957,7 @@ internal sealed class NpcReplication : MonoBehaviour
             if (item != null) item.SetActive(state.DeathObjects[index]);
         }
         SetTarget(proxy, body.rb, state.Body);
+        SetTransformTarget(proxy, body.Arms, state.Arms);
         foreach (var rigState in state.RigBodies)
         {
             Rigidbody2D rigBody;
@@ -914,6 +977,10 @@ internal sealed class NpcReplication : MonoBehaviour
             var limb = limbs[index] as LimbScript;
             if (limb == null) continue;
             SetTarget(proxy, limb.rb, state.Limbs[index].Pose);
+            if (limb.rb != null)
+                SetTransformTarget(proxy, limb.rb.transform, TransformPose.From(state.Limbs[index].Pose));
+
+            SetTransformTarget(proxy, limb.transform, state.Limbs[index].Visual);
             limb.dismembered = state.Limbs[index].Dismembered;
             SetRemoteFire(proxy, index, limb, state.Limbs[index].Burning);
         }
@@ -922,7 +989,11 @@ internal sealed class NpcReplication : MonoBehaviour
         for (var index = 0; index < state.TailBases.Length && index < tailBases.Count; index++)
         {
             var tailBase = tailBases[index] as Rigidbody2D;
-            if (tailBase != null) SetTarget(proxy, tailBase, state.TailBases[index]);
+            if (tailBase != null)
+            {
+                SetTarget(proxy, tailBase, state.TailBases[index]);
+                SetTransformTarget(proxy, tailBase.transform, TransformPose.From(state.TailBases[index]));
+            }
         }
         SetTransformTargets(proxy, GetTransforms(body, "tails"), state.Tails);
         SetTransformTarget(proxy, GetTransform(body, "gunTransform"), state.Gun);
@@ -931,6 +1002,7 @@ internal sealed class NpcReplication : MonoBehaviour
         SetTransformTarget(proxy, body.weapon == null ? null : body.weapon.transform, state.Weapon);
         ApplyLine(state.Laser, GetFieldValue<LineRenderer>(body, "wepLaserLine"),
             GetFieldValue<GameObject>(body, "wepLaser"));
+        ApplyVisuals(proxy, state.Visuals);
         ApplyDismembermentVisuals(proxy);
         proxy.ReceivedFirstState = true;
     }
@@ -1152,13 +1224,15 @@ internal sealed class NpcReplication : MonoBehaviour
         if (rigidbody == null) return;
         var body = rigidbody.GetComponentInParent<BodyScript>();
         NpcProxy proxy;
-        if (body == null || !Instance.clientBodies.TryGetValue(body, out proxy) || proxy == null ||
-            !proxy.ReceivedFirstState || proxy.LastHostAlive) return;
+        if (body == null) return;
+        if (!Instance.clientBodies.TryGetValue(body, out proxy) || proxy == null) return;
+        if (!proxy.ReceivedFirstState || proxy.LastHostAlive) return;
         ulong rigId = 0;
         var found = false;
         foreach (var pair in proxy.RigBodies)
             if (pair.Value == rigidbody) { rigId = pair.Key; found = true; break; }
-        if (!found) return;
+
+        if (!found) rigId = RigId(NpcRoot(proxy.Body).transform, rigidbody);
 
         EnableLocalCorpsePhysics(proxy);
         proxy.LocalPhysicsUntil = Time.unscaledTime + 0.15f;
@@ -1273,11 +1347,15 @@ internal sealed class NpcReplication : MonoBehaviour
                 BodyScript body;
                 var remotePlayer = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
                 if (!hostNpcs.TryGetValue(id, out body) || body == null || body.isAlive ||
-                    remotePlayer == null || !remotePlayer.isAlive) return;
+                    remotePlayer == null || !remotePlayer.isAlive)
+                    return;
                 Rigidbody2D target = null;
-                foreach (var candidate in GetRigBodies(body))
+                foreach (var candidate in NpcRoot(body).GetComponentsInChildren<Rigidbody2D>(true))
                     if (RigId(NpcRoot(body).transform, candidate) == rigId) { target = candidate; break; }
-                if (target == null || !target.simulated || target.bodyType != RigidbodyType2D.Dynamic) return;
+                if (target == null)
+                    return;
+                target.simulated = true;
+                target.bodyType = RigidbodyType2D.Dynamic;
                 var force = point - target.position;
                 if (force.magnitude > 5f) force = force.normalized * 5f;
                 target.AddForceAtPosition(force * 100f, target.transform.TransformPoint(localPoint));
@@ -1668,7 +1746,10 @@ internal sealed class NpcReplication : MonoBehaviour
             GunTransform = GetTransform(body, "gunTransform"),
             GunAnimationTransform = GetTransform(body, "gunAnimTransform"),
             Weapons = GetList(body, "weapons"),
-            WeaponLaserLine = GetFieldValue<LineRenderer>(body, "wepLaserLine")
+            WeaponLaserLine = GetFieldValue<LineRenderer>(body, "wepLaserLine"),
+            SpriteRenderers = NpcRoot(body).GetComponentsInChildren<SpriteRenderer>(true),
+            Particles = NpcRoot(body).GetComponentsInChildren<ParticleSystem>(true),
+            Lights = GetLights(NpcRoot(body))
         };
         hostLayouts[body] = layout;
         return layout;
@@ -1789,6 +1870,189 @@ internal sealed class NpcReplication : MonoBehaviour
             writer.Write(position.y);
             writer.Write(position.z);
         }
+    }
+
+    private static void WriteVisuals(BinaryWriter writer, HostNpcLayout layout)
+    {
+        writer.Write((ushort)layout.SpriteRenderers.Length);
+        foreach (var renderer in layout.SpriteRenderers)
+        {
+            var flags = renderer != null && renderer.gameObject.activeSelf ? 1 : 0;
+            if (renderer != null && renderer.enabled) flags |= 2;
+            writer.Write((byte)flags);
+            WriteColor32(writer, renderer == null ? Color.clear : renderer.color);
+        }
+        writer.Write((ushort)layout.Particles.Length);
+        foreach (var particle in layout.Particles)
+        {
+            var flags = particle != null && particle.gameObject.activeSelf ? 1 : 0;
+            if (particle != null && particle.isPlaying) flags |= 2;
+            writer.Write((byte)flags);
+        }
+        writer.Write((ushort)layout.Lights.Length);
+        foreach (var light in layout.Lights)
+        {
+            var flags = light != null && light.gameObject.activeSelf ? 1 : 0;
+            if (light != null && light.enabled) flags |= 2;
+            writer.Write((byte)flags);
+            writer.Write(GetFloatMember(light, "intensity", 0f));
+            WriteColor32(writer, GetColorMember(light, "color", Color.white));
+        }
+    }
+
+    private static NpcVisualState ReadVisuals(BinaryReader reader)
+    {
+        var state = new NpcVisualState();
+        var rendererCount = reader.ReadUInt16();
+        state.Renderers = new RendererVisualState[rendererCount];
+        for (var index = 0; index < rendererCount; index++)
+        {
+            var flags = reader.ReadByte();
+            state.Renderers[index] = new RendererVisualState
+            {
+                Active = (flags & 1) != 0,
+                Enabled = (flags & 2) != 0,
+                Color = ReadColor32(reader)
+            };
+        }
+        var particleCount = reader.ReadUInt16();
+        state.Particles = new ParticleVisualState[particleCount];
+        for (var index = 0; index < particleCount; index++)
+        {
+            var flags = reader.ReadByte();
+            state.Particles[index] = new ParticleVisualState
+            {
+                Active = (flags & 1) != 0,
+                Playing = (flags & 2) != 0
+            };
+        }
+        var lightCount = reader.ReadUInt16();
+        state.Lights = new LightVisualState[lightCount];
+        for (var index = 0; index < lightCount; index++)
+        {
+            var flags = reader.ReadByte();
+            state.Lights[index] = new LightVisualState
+            {
+                Active = (flags & 1) != 0,
+                Enabled = (flags & 2) != 0,
+                Intensity = reader.ReadSingle(),
+                Color = ReadColor32(reader)
+            };
+        }
+        return state;
+    }
+
+    private static void ApplyVisuals(NpcProxy proxy, NpcVisualState state)
+    {
+        if (proxy == null) return;
+        for (var index = 0; index < state.Renderers.Length && index < proxy.SpriteRenderers.Length; index++)
+        {
+            var renderer = proxy.SpriteRenderers[index];
+            if (renderer == null) continue;
+
+            if (!IsCoreNpcRenderer(renderer))
+            {
+                renderer.gameObject.SetActive(state.Renderers[index].Active);
+                renderer.enabled = state.Renderers[index].Enabled;
+            }
+            renderer.color = state.Renderers[index].Color;
+        }
+        for (var index = 0; index < state.Particles.Length && index < proxy.Particles.Length; index++)
+        {
+            var particle = proxy.Particles[index];
+            if (particle == null) continue;
+            particle.gameObject.SetActive(state.Particles[index].Active);
+            if (!state.Particles[index].Active) continue;
+            if (state.Particles[index].Playing)
+            {
+                if (!particle.isPlaying) particle.Play(true);
+            }
+            else if (particle.isPlaying)
+                particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+        for (var index = 0; index < state.Lights.Length && index < proxy.Lights.Length; index++)
+        {
+            var light = proxy.Lights[index];
+            if (light == null) continue;
+            light.gameObject.SetActive(state.Lights[index].Active);
+            light.enabled = state.Lights[index].Enabled;
+            SetFloatMember(light, "intensity", state.Lights[index].Intensity);
+            SetColorMember(light, "color", state.Lights[index].Color);
+        }
+    }
+
+    private static Behaviour[] GetLights(GameObject root)
+    {
+        if (root == null) return new Behaviour[0];
+        var lights = new List<Behaviour>();
+        foreach (var behaviour in root.GetComponentsInChildren<Behaviour>(true))
+            if (behaviour != null && behaviour.GetType().Name == "Light2D") lights.Add(behaviour);
+        return lights.ToArray();
+    }
+
+    private static bool IsCoreNpcRenderer(SpriteRenderer renderer)
+    {
+        return renderer.GetComponentInParent<LimbScript>() != null ||
+               renderer.GetComponentInParent<WeaponScript>() != null;
+    }
+
+    private static float GetFloatMember(object instance, string name, float fallback)
+    {
+        if (instance == null) return fallback;
+        var type = instance.GetType();
+        var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (property != null && property.PropertyType == typeof(float)) return (float)property.GetValue(instance, null);
+        var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        return field != null && field.FieldType == typeof(float) ? (float)field.GetValue(instance) : fallback;
+    }
+
+    private static Color GetColorMember(object instance, string name, Color fallback)
+    {
+        if (instance == null) return fallback;
+        var type = instance.GetType();
+        var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (property != null && property.PropertyType == typeof(Color)) return (Color)property.GetValue(instance, null);
+        var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        return field != null && field.FieldType == typeof(Color) ? (Color)field.GetValue(instance) : fallback;
+    }
+
+    private static void SetFloatMember(object instance, string name, float value)
+    {
+        if (instance == null) return;
+        var type = instance.GetType();
+        var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (property != null && property.PropertyType == typeof(float) && property.CanWrite)
+        {
+            property.SetValue(instance, value, null);
+            return;
+        }
+        var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (field != null && field.FieldType == typeof(float)) field.SetValue(instance, value);
+    }
+
+    private static void SetColorMember(object instance, string name, Color value)
+    {
+        if (instance == null) return;
+        var type = instance.GetType();
+        var property = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (property != null && property.PropertyType == typeof(Color) && property.CanWrite)
+        {
+            property.SetValue(instance, value, null);
+            return;
+        }
+        var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (field != null && field.FieldType == typeof(Color)) field.SetValue(instance, value);
+    }
+
+    private static void WriteColor32(BinaryWriter writer, Color color)
+    {
+        var value = (Color32)color;
+        writer.Write(value.r); writer.Write(value.g); writer.Write(value.b); writer.Write(value.a);
+    }
+
+    private static Color ReadColor32(BinaryReader reader)
+    {
+        return new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
     }
 
     private static LineState ReadLine(BinaryReader reader)
@@ -1931,6 +2195,9 @@ internal sealed class NpcReplication : MonoBehaviour
         public Transform GunAnimationTransform;
         public IList Weapons = new ArrayList();
         public LineRenderer WeaponLaserLine;
+        public SpriteRenderer[] SpriteRenderers = new SpriteRenderer[0];
+        public ParticleSystem[] Particles = new ParticleSystem[0];
+        public Behaviour[] Lights = new Behaviour[0];
     }
 
     private struct NpcSerializedState
@@ -1982,6 +2249,9 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly HashSet<GameObject> OwnedFireVisuals = new HashSet<GameObject>();
         public readonly Dictionary<SpriteRenderer, Sprite> OriginalDismemberSprites = new Dictionary<SpriteRenderer, Sprite>();
         public readonly Dictionary<Joint2D, bool> OriginalJointStates = new Dictionary<Joint2D, bool>();
+        public SpriteRenderer[] SpriteRenderers = new SpriteRenderer[0];
+        public ParticleSystem[] Particles = new ParticleSystem[0];
+        public Behaviour[] Lights = new Behaviour[0];
     }
 
     private sealed class NpcState
@@ -2004,6 +2274,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public float BurnIntensity;
         public bool[] DeathObjects = new bool[0];
         public Pose Body;
+        public TransformPose Arms;
         public RigPose[] RigBodies = new RigPose[0];
         public LimbState[] Limbs = new LimbState[0];
         public Pose[] TailBases = new Pose[0];
@@ -2015,6 +2286,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public int WeaponAmmo;
         public ulong[] Weapons = new ulong[0];
         public LineState Laser;
+        public NpcVisualState Visuals = new NpcVisualState();
     }
 
     private sealed class NpcIdentity
@@ -2027,6 +2299,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private struct LimbState
     {
         public Pose Pose;
+        public TransformPose Visual;
         public bool Dismembered;
         public bool Burning;
     }
@@ -2035,6 +2308,34 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         public ulong Id;
         public Pose Pose;
+    }
+
+    private sealed class NpcVisualState
+    {
+        public RendererVisualState[] Renderers = new RendererVisualState[0];
+        public ParticleVisualState[] Particles = new ParticleVisualState[0];
+        public LightVisualState[] Lights = new LightVisualState[0];
+    }
+
+    private struct RendererVisualState
+    {
+        public bool Active;
+        public bool Enabled;
+        public Color Color;
+    }
+
+    private struct ParticleVisualState
+    {
+        public bool Active;
+        public bool Playing;
+    }
+
+    private struct LightVisualState
+    {
+        public bool Active;
+        public bool Enabled;
+        public float Intensity;
+        public Color Color;
     }
 
     private struct Pose

@@ -4,6 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using BepInEx;
+using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -15,21 +16,27 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte ButtonActivate = 3;
     internal const byte DoorActivate = 4;
     internal const byte ZoneActivate = 5;
+    internal const byte GlassDamage = 6;
 
     private const float SnapshotInterval = 1f / 50f;
     private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
+    private static readonly FieldInfo GlassHealthField = AccessTools.Field(typeof(GlassScript), "health");
+    private static readonly FieldInfo DroppedWeaponAmmoSpriteField =
+        AccessTools.Field(typeof(DroppedWeapon), "ammoSprite");
 
     private const bool DiagnosticsEnabled = false;
     private readonly Dictionary<string, Rigidbody2D> bodies = new Dictionary<string, Rigidbody2D>();
     private readonly Dictionary<Rigidbody2D, string> ids = new Dictionary<Rigidbody2D, string>();
-    // Runtime objects do not exist on a client before their first snapshot.
-    // Keep their generated local key bound to the original wire ID so later
-    // client input still addresses the host object correctly.
+
     private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
     private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
-    private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons =
-        new Dictionary<Rigidbody2D, DroppedWeapon>();
+
+    private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons = new Dictionary<Rigidbody2D, DroppedWeapon>();
+
+    private readonly Dictionary<string, float> pendingDestroyedWeaponPickups = new Dictionary<string, float>();
+
+    private readonly HashSet<string> clientDestroyedBodyIds = new HashSet<string>();
     private readonly Dictionary<Rigidbody2D, State> received = new Dictionary<Rigidbody2D, State>();
     private readonly Dictionary<string, ClientBodyState> pushes = new Dictionary<string, ClientBodyState>();
     private readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new Dictionary<Rigidbody2D, float>();
@@ -41,6 +48,8 @@ internal sealed class WorldReplication : MonoBehaviour
     private int nextRuntimeId;
     private readonly Dictionary<Rigidbody2D, LocalSettings> localSettings = new Dictionary<Rigidbody2D, LocalSettings>();
     private readonly HashSet<Rigidbody2D> clientCreatedBodies = new HashSet<Rigidbody2D>();
+    private readonly HashSet<Rigidbody2D> networkCrateDebrisBodies = new HashSet<Rigidbody2D>();
+    private readonly Dictionary<CrateScript, float> networkCrateDebrisDamageUntil = new Dictionary<CrateScript, float>();
     private readonly Dictionary<GameObject, bool> clientHiddenObjects = new Dictionary<GameObject, bool>();
     private readonly Dictionary<MonoBehaviour, bool> clientControllers = new Dictionary<MonoBehaviour, bool>();
     private readonly HashSet<Rigidbody2D> initializedBodies = new HashSet<Rigidbody2D>();
@@ -57,6 +66,12 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<ActivateZoneScript, string> activationZoneIds =
         new Dictionary<ActivateZoneScript, string>();
     private readonly Dictionary<string, float> nextZoneActivation = new Dictionary<string, float>();
+    private readonly Dictionary<string, GlassScript> glasses = new Dictionary<string, GlassScript>();
+    private readonly Dictionary<GlassScript, string> glassIds = new Dictionary<GlassScript, string>();
+    private readonly HashSet<string> destroyedGlass = new HashSet<string>();
+    private readonly Dictionary<string, LampState> lamps = new Dictionary<string, LampState>();
+    private readonly Dictionary<Collider2D, string> lampIds = new Dictionary<Collider2D, string>();
+    private readonly HashSet<string> destroyedLamps = new HashSet<string>();
     private readonly Dictionary<FireScript, string> fireIds = new Dictionary<FireScript, string>();
     private readonly Dictionary<string, FireScript> fires = new Dictionary<string, FireScript>();
     private readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new Dictionary<FireScript, FireLocalSettings>();
@@ -68,10 +83,13 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly HashSet<string> seenSnapshotAudio = new HashSet<string>();
     private byte[] lastSerializedWorld;
     private byte[] lastSerializedEnvironment;
+    private byte[] lastReliableEnvironment;
     private readonly Dictionary<string, byte[]> lastSerializedBodyStates =
         new Dictionary<string, byte[]>();
     private readonly Dictionary<string, float> lastChangedBodyAt = new Dictionary<string, float>();
     private float nextSnapshot;
+    private float nextReliableEnvironment;
+    private float nextFireRefresh;
     private float nextFullWorldSnapshot;
     private float nextDiagnostics;
     private float nextManifest;
@@ -175,6 +193,16 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
+    internal void RegisterDestroyedCrateDebris(CrateScript crate, Rigidbody2D[] debrisBodies)
+    {
+        if (!MultiplayerSession.IsHost || crate == null || crate.breakType != CrateScript.BreakType.None ||
+            debrisBodies == null || debrisBodies.Length == 0) return;
+        var crateBody = crate.GetComponent<Rigidbody2D>();
+        if (crateBody == null) return;
+        var crateId = Id(crateBody);
+        RegisterCrateDebrisBodies(crateId, debrisBodies, false);
+    }
+
     internal void ApplyDistanceCulling()
     {
         if (!MultiplayerSession.IsHost) return;
@@ -227,9 +255,15 @@ internal sealed class WorldReplication : MonoBehaviour
             RefreshButtons();
             RefreshProximityDoors();
             RefreshActivationZones();
+            RefreshGlasses();
             RefreshWorldFires();
             RefreshWorldControllers();
             RefreshMechanismAudio();
+        }
+        if (Time.unscaledTime >= nextFireRefresh)
+        {
+            nextFireRefresh = Time.unscaledTime + 0.1f;
+            RefreshWorldFires();
         }
         if (isHost)
         {
@@ -244,7 +278,12 @@ internal sealed class WorldReplication : MonoBehaviour
         byte[] latestSnapshot = null;
         while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot)) latestSnapshot = snapshot;
         if (latestSnapshot != null) ReadSnapshot(latestSnapshot);
+        byte[] environment;
+        byte[] latestEnvironment = null;
+        while (MultiplayerSession.TryTakeWorldEnvironment(out environment)) latestEnvironment = environment;
+        if (latestEnvironment != null) ApplyEnvironment(latestEnvironment);
         AnimateClientSaws();
+        AnimateClientDroppedWeaponIndicators();
     }
 
     private void FixedUpdate()
@@ -265,6 +304,14 @@ internal sealed class WorldReplication : MonoBehaviour
                 nextSnapshot = Time.unscaledTime + SnapshotInterval;
                 var snapshot = SerializeWorld();
                 if (snapshot != null) MultiplayerSession.SendWorldSnapshot(snapshot);
+                if (lastSerializedEnvironment != null &&
+                    Time.unscaledTime >= nextReliableEnvironment &&
+                    !BytesEqual(lastReliableEnvironment, lastSerializedEnvironment))
+                {
+                    nextReliableEnvironment = Time.unscaledTime + 0.1f;
+                    MultiplayerSession.SendWorldEnvironment(lastSerializedEnvironment);
+                    lastReliableEnvironment = lastSerializedEnvironment;
+                }
             }
             return;
         }
@@ -454,6 +501,12 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
+    private void AnimateClientDroppedWeaponIndicators()
+    {
+        foreach (var dropped in droppedWeapons.Values)
+            SynchronizeDroppedWeaponAmmoIndicator(dropped);
+    }
+
     private void DisableControllers<T>(T[] controllers) where T : MonoBehaviour
     {
         foreach (var controller in controllers)
@@ -563,6 +616,8 @@ internal sealed class WorldReplication : MonoBehaviour
         clientControllers.Clear();
         bodies.Clear();
         droppedWeapons.Clear();
+        pendingDestroyedWeaponPickups.Clear();
+        clientDestroyedBodyIds.Clear();
         received.Clear();
         pushes.Clear();
         locallyControlledUntil.Clear();
@@ -582,6 +637,12 @@ internal sealed class WorldReplication : MonoBehaviour
         activationZones.Clear();
         activationZoneIds.Clear();
         nextZoneActivation.Clear();
+        glasses.Clear();
+        glassIds.Clear();
+        destroyedGlass.Clear();
+        lamps.Clear();
+        lampIds.Clear();
+        destroyedLamps.Clear();
         foreach (var pair in clientFireSettings)
         {
             if (pair.Key == null) continue;
@@ -596,6 +657,8 @@ internal sealed class WorldReplication : MonoBehaviour
         foreach (var body in clientCreatedBodies)
             if (body != null) Destroy(body.gameObject);
         clientCreatedBodies.Clear();
+        networkCrateDebrisBodies.Clear();
+        networkCrateDebrisDamageUntil.Clear();
         clientFireSettings.Clear();
         clientCreatedFires.Clear();
         fireIds.Clear();
@@ -613,9 +676,12 @@ internal sealed class WorldReplication : MonoBehaviour
         idsByWire.Clear();
         lastSerializedWorld = null;
         lastSerializedEnvironment = null;
+        lastReliableEnvironment = null;
         lastSerializedBodyStates.Clear();
         lastChangedBodyAt.Clear();
         nextFullWorldSnapshot = 0f;
+        nextReliableEnvironment = 0f;
+        nextFireRefresh = 0f;
         nextActivitySample = 0f;
         sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
         sentPacketsPerSecond = sentStatesPerSecond = receivedPacketsPerSecond = receivedStatesPerSecond = 0;
@@ -676,6 +742,22 @@ internal sealed class WorldReplication : MonoBehaviour
             {
                 writer.Write(WireId(pair.Key)); writer.Write(pair.Value != null);
                 uint activations; buttonActivations.TryGetValue(pair.Key, out activations); writer.Write(activations);
+            }
+            CaptureDestroyedGlass();
+            writer.Write((ushort)Math.Min(ushort.MaxValue, destroyedGlass.Count));
+            var writtenGlass = 0;
+            foreach (var id in destroyedGlass)
+            {
+                if (writtenGlass++ >= ushort.MaxValue) break;
+                writer.Write(WireId(id));
+            }
+            CaptureDestroyedLamps();
+            writer.Write((ushort)Math.Min(ushort.MaxValue, destroyedLamps.Count));
+            var writtenLamps = 0;
+            foreach (var id in destroyedLamps)
+            {
+                if (writtenLamps++ >= ushort.MaxValue) break;
+                writer.Write(WireId(id));
             }
             var fireCount = 0;
             foreach (var pair in fires) if (pair.Value != null && fireCount < ushort.MaxValue) fireCount++;
@@ -774,6 +856,7 @@ internal sealed class WorldReplication : MonoBehaviour
         foreach (var id in mechanismAudio.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in proximityDoors.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in activationZones.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in glasses.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         return null;
     }
 
@@ -814,6 +897,11 @@ internal sealed class WorldReplication : MonoBehaviour
                     Rigidbody2D body;
                     if (destroyed)
                     {
+                        clientDestroyedBodyIds.Add(id);
+                        float pendingUntil;
+                        if (pendingDestroyedWeaponPickups.TryGetValue(id, out pendingUntil) &&
+                            Time.unscaledTime >= pendingUntil)
+                            pendingDestroyedWeaponPickups.Remove(id);
                         if (bodies.TryGetValue(id, out body) && body != null)
                         {
                             if (IsGameplayOwned(body))
@@ -824,16 +912,20 @@ internal sealed class WorldReplication : MonoBehaviour
                             }
                             var crate = body.GetComponentInParent<CrateScript>();
                             if (crate != null && crate.objOnDestroy != null)
-                                Instantiate(crate.objOnDestroy, crate.transform.position, crate.transform.rotation);
+                            {
+                                var debris = Instantiate(crate.objOnDestroy, crate.transform.position, crate.transform.rotation);
+                                if (crate.breakType == CrateScript.BreakType.None)
+                                    RegisterCrateDebrisBodies(id, debris.GetComponentsInChildren<Rigidbody2D>(true), true);
+                            }
+
+                            var objectToRemove = crate != null ? crate.gameObject : body.gameObject;
                             if (clientCreatedBodies.Remove(body))
                             {
-                                if (body.gameObject != null) Destroy(body.gameObject);
+                                if (objectToRemove != null) Destroy(objectToRemove);
                             }
-                            else if (body.gameObject != null)
+                            else if (objectToRemove != null)
                             {
-                                if (!clientHiddenObjects.ContainsKey(body.gameObject))
-                                    clientHiddenObjects[body.gameObject] = body.gameObject.activeSelf;
-                                body.gameObject.SetActive(false);
+                                HideClientObjectHierarchy(objectToRemove);
                             }
                             ids.Remove(body);
                         }
@@ -855,10 +947,18 @@ internal sealed class WorldReplication : MonoBehaviour
                         simulated = reader.ReadBoolean(),
                         awake = reader.ReadBoolean()
                     };
+
+                    if (clientDestroyedBodyIds.Contains(id)) continue;
                     if (isDropped)
                     {
                         var weaponId = reader.ReadUInt64();
                         var ammo = reader.ReadInt32();
+                        float pendingUntil;
+                        if (pendingDestroyedWeaponPickups.TryGetValue(id, out pendingUntil))
+                        {
+                            if (Time.unscaledTime < pendingUntil) continue;
+                            pendingDestroyedWeaponPickups.Remove(id);
+                        }
                         if (!bodies.TryGetValue(id, out body) || body == null)
                             body = CreateDroppedWeapon(id, weaponId, ammo, state.position, state.rotation);
                         else
@@ -892,6 +992,12 @@ internal sealed class WorldReplication : MonoBehaviour
             var buttonCount = reader.ReadUInt16();
             for (var index = 0; index < buttonCount; index++)
                 ApplyButtonState(ResolveWireId(reader.ReadUInt64()), reader.ReadBoolean(), reader.ReadUInt32());
+            var glassCount = reader.ReadUInt16();
+            for (var index = 0; index < glassCount; index++)
+                ApplyGlassState(ResolveWireId(reader.ReadUInt64()));
+            var lampCount = reader.ReadUInt16();
+            for (var index = 0; index < lampCount; index++)
+                ApplyLampState(ResolveWireId(reader.ReadUInt64()));
             seenSnapshotFires.Clear();
             var fireCount = reader.ReadUInt16();
             for (var index = 0; index < fireCount; index++)
@@ -918,7 +1024,8 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void ApplyAuthoritativeState(Rigidbody2D body, State state)
     {
-        var mechanism = IsMechanismBody(body) && !IsInteractivePropBody(body);
+        var mechanism = (IsMechanismBody(body) && !IsInteractivePropBody(body)) ||
+            networkCrateDebrisBodies.Contains(body);
         float controlUntil;
         if (!mechanism && locallyControlledUntil.TryGetValue(body, out controlUntil))
         {
@@ -1073,15 +1180,20 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
+            var id = Id(rigidbody);
             writer.Write(operation);
-            writer.Write(WireId(Id(rigidbody)));
+            writer.Write(WireId(id));
             var slot = dropped.stats == null ? -1 : dropped.stats.slot;
             var oldWeapon = slot >= 0 && slot < body.weapons.Count ? body.weapons[slot] : null;
             var oldAmmo = slot >= 0 && slot < body.weaponAmmos.Count ? body.weaponAmmos[slot] : 0;
+            if (operation == WeaponPickup && oldWeapon == null)
+                pendingDestroyedWeaponPickups[id] = Time.unscaledTime + 1.5f;
             writer.Write(slot);
             writer.Write(NetworkWireId.FromString(oldWeapon == null ? "" : oldWeapon.name));
             writer.Write(oldAmmo);
             writer.Write(dropped.stats != null && body.weapons.Contains(dropped.stats));
+            writer.Write(body.transform.position.x);
+            writer.Write(body.transform.position.y);
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
             weaponRequestsSent++;
         }
@@ -1131,6 +1243,21 @@ internal sealed class WorldReplication : MonoBehaviour
         uint count;
         buttonActivations.TryGetValue(id, out count);
         buttonActivations[id] = count + 1;
+    }
+
+    internal void QueueGlassDamage(GlassScript glass, float damage, Vector3 bulletPosition)
+    {
+        if (MultiplayerSession.IsHost || glass == null || damage <= 0f) return;
+        var id = GlassId(glass);
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(GlassDamage);
+            writer.Write(WireId(id));
+            writer.Write(damage);
+            writer.Write(bulletPosition.x); writer.Write(bulletPosition.y); writer.Write(bulletPosition.z);
+            MultiplayerSession.SendWorldInteraction(stream.ToArray());
+        }
     }
 
     private byte[] SerializePushes()
@@ -1384,10 +1511,17 @@ internal sealed class WorldReplication : MonoBehaviour
                     ApplyZoneActivation(id, peerId);
                     return;
                 }
+                if (operation == GlassDamage)
+                {
+                    ApplyGlassDamage(id, peerId, reader.ReadSingle(),
+                        new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
+                    return;
+                }
                 var slot = reader.ReadInt32();
                 var oldWeaponId = reader.ReadUInt64();
                 var oldAmmo = reader.ReadInt32();
                 var clientOwnsWeapon = reader.ReadBoolean();
+                var requestedPosition = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 Rigidbody2D rigidbody;
                 var remoteBody = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
                 if ((operation != WeaponPickup && operation != WeaponAmmoGet) || remoteBody == null ||
@@ -1397,18 +1531,18 @@ internal sealed class WorldReplication : MonoBehaviour
                     return;
                 }
                 var dropped = rigidbody.GetComponentInParent<DroppedWeapon>();
-                if (dropped == null || (remoteBody.transform.position - dropped.transform.position).sqrMagnitude > 25f)
+                if (dropped == null || (requestedPosition - (Vector2)dropped.transform.position).sqrMagnitude > 25f)
                 {
                     weaponRequestsRejected++;
                     return;
                 }
-                if (operation == WeaponPickup && slot >= 0 && slot < remoteBody.weapons.Count &&
-                    slot < remoteBody.weaponAmmos.Count)
+                if (operation == WeaponPickup && (slot < 0 || slot >= remoteBody.weapons.Count ||
+                    slot >= remoteBody.weaponAmmos.Count || dropped.stats == null))
                 {
-                    remoteBody.weapons[slot] = FindWeaponPreset(oldWeaponId);
-                    remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
+                    weaponRequestsRejected++;
+                    return;
                 }
-                else if (operation == WeaponAmmoGet && clientOwnsWeapon && dropped.stats != null &&
+                if (operation == WeaponAmmoGet && clientOwnsWeapon && dropped.stats != null &&
                     slot >= 0 && slot < remoteBody.weapons.Count)
                 {
                     remoteBody.weapons[slot] = dropped.stats;
@@ -1417,7 +1551,16 @@ internal sealed class WorldReplication : MonoBehaviour
                 remoteBody.isPlayer = false;
                 try
                 {
-                    if (operation == WeaponPickup) dropped.PickupWeapon(remoteBody);
+                    if (operation == WeaponPickup)
+                    {
+                        var pickedWeapon = dropped.stats;
+                        remoteBody.weapons[slot] = FindWeaponPreset(oldWeaponId);
+                        remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
+                        ReplaceDroppedWeaponWithPrevious(dropped, remoteBody, pickedWeapon);
+                        remoteBody.weapons[slot] = pickedWeapon;
+                        remoteBody.weaponAmmos[slot] = 0;
+                        remoteBody.ChangeWeapon(slot);
+                    }
                     else if (clientOwnsWeapon) dropped.AmmoGet(remoteBody);
                     else UnloadDroppedWeapon(dropped);
                 }
@@ -1484,6 +1627,142 @@ internal sealed class WorldReplication : MonoBehaviour
             };
             fire.enabled = false;
         }
+    }
+
+    private void RefreshGlasses()
+    {
+        foreach (var glass in FindObjectsOfType<GlassScript>())
+        {
+            if (glass == null || glassIds.ContainsKey(glass)) continue;
+            var id = GlassId(glass);
+            glassIds[glass] = id;
+            glasses[id] = glass;
+        }
+        RefreshLamps();
+    }
+
+    private void RefreshLamps()
+    {
+        foreach (var collider in FindObjectsOfType<CircleCollider2D>())
+        {
+            if (collider == null || lampIds.ContainsKey(collider) ||
+                !collider.gameObject.name.StartsWith("Lamp (")) continue;
+            var light = collider.GetComponent("Light2D") as Behaviour;
+            if (light == null) continue;
+            var id = ComponentId(collider);
+            lampIds[collider] = id;
+            lamps[id] = new LampState { Object = collider.gameObject, Light = light, Collider = collider };
+        }
+    }
+
+    private void CaptureDestroyedLamps()
+    {
+        foreach (var pair in lamps)
+            if (LampIsDestroyed(pair.Value)) destroyedLamps.Add(pair.Key);
+    }
+
+    private static bool LampIsDestroyed(LampState lamp)
+    {
+        return lamp == null || lamp.Object == null || !lamp.Object.activeSelf ||
+            lamp.Light == null || !lamp.Light.enabled || lamp.Collider == null || !lamp.Collider.enabled;
+    }
+
+    internal void ApplyRemoteLampHits(Vector2 origin, IList<Vector2> directions)
+    {
+        if (directions == null) return;
+        foreach (var direction in directions)
+        {
+            if (direction.sqrMagnitude < 0.01f) continue;
+            foreach (var hit in Physics2D.RaycastAll(origin, direction.normalized, 100f))
+            {
+                string id;
+                if (hit.collider == null || !lampIds.TryGetValue(hit.collider, out id)) continue;
+                LampState lamp;
+                if (!lamps.TryGetValue(id, out lamp)) continue;
+                BreakLamp(id, lamp, hit.point);
+                break;
+            }
+        }
+    }
+
+    private void ApplyLampState(string id)
+    {
+        LampState lamp;
+        if (!lamps.TryGetValue(id, out lamp))
+        {
+            RefreshLamps();
+            if (!lamps.TryGetValue(id, out lamp)) return;
+        }
+        BreakLamp(id, lamp, lamp.Object == null ? Vector2.zero : lamp.Object.transform.position);
+    }
+
+    private void BreakLamp(string id, LampState lamp, Vector2 hitPoint)
+    {
+        if (lamp == null) return;
+        var lampObject = lamp.Object;
+        if (lampObject != null)
+        {
+            var position = (Vector2)lampObject.transform.position;
+            Destroy(lampObject);
+            Sound.Play(Resources.Load<AudioClip>("Sounds/LightBreak"), hitPoint);
+            Instantiate(Resources.Load("Spawnables/LampShards"), hitPoint, Quaternion.identity);
+            Destroy(Instantiate(Resources.Load("Spawnables/Shock"), position, Quaternion.identity), 15f);
+        }
+        destroyedLamps.Add(id);
+    }
+
+    private sealed class LampState
+    {
+        internal GameObject Object;
+        internal Behaviour Light;
+        internal Collider2D Collider;
+    }
+
+    private string GlassId(GlassScript glass)
+    {
+        string id;
+        if (glassIds.TryGetValue(glass, out id)) return id;
+        id = ComponentId(glass);
+        glassIds[glass] = id;
+        glasses[id] = glass;
+        return id;
+    }
+
+    private void CaptureDestroyedGlass()
+    {
+        foreach (var pair in glasses)
+            if (IsGlassBroken(pair.Value)) destroyedGlass.Add(pair.Key);
+    }
+
+    private static bool IsGlassBroken(GlassScript glass)
+    {
+        if (glass == null) return true;
+        return GlassHealthField != null && GlassHealthField.GetValue(glass) is float value && value <= 0f;
+    }
+
+    private void ApplyGlassDamage(string id, ushort peerId, float damage, Vector3 bulletPosition)
+    {
+        GlassScript glass;
+        var remoteBody = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
+        if (!glasses.TryGetValue(id, out glass) || glass == null || remoteBody == null ||
+            !remoteBody.isAlive || ((Vector2)remoteBody.transform.position - (Vector2)glass.transform.position).sqrMagnitude > 10000f)
+            return;
+        glass.Damage(Mathf.Max(0f, damage), bulletPosition);
+        if (IsGlassBroken(glass)) destroyedGlass.Add(id);
+    }
+
+    private void ApplyGlassState(string id)
+    {
+        GlassScript glass;
+        if (!glasses.TryGetValue(id, out glass) || glass == null)
+        {
+            RefreshGlasses();
+            if (!glasses.TryGetValue(id, out glass) || glass == null) return;
+        }
+        if (IsGlassBroken(glass)) return;
+        MultiplayerGlassDamagePatch.ApplyingNetworkState = true;
+        try { glass.Damage(float.MaxValue, glass.transform.position); }
+        finally { MultiplayerGlassDamagePatch.ApplyingNetworkState = false; }
     }
 
     private void ApplyFireState(string id, Vector2 position, float rotation, float fuel,
@@ -1684,6 +1963,74 @@ internal sealed class WorldReplication : MonoBehaviour
         return path.ToString();
     }
 
+    private void RegisterCrateDebrisBodies(string crateId, Rigidbody2D[] debrisBodies, bool clientCreated)
+    {
+        if (string.IsNullOrEmpty(crateId) || debrisBodies == null) return;
+
+        Array.Sort(debrisBodies, CompareCrateDebrisBodies);
+        for (var index = 0; index < debrisBodies.Length; index++)
+        {
+            var body = debrisBodies[index];
+            if (body == null) continue;
+            var id = crateId + "/debris#" + index;
+            bodies[id] = body;
+            ids[body] = id;
+            droppedWeapons[body] = null;
+            networkCrateDebrisBodies.Add(body);
+            var debrisCrate = body.GetComponentInParent<CrateScript>();
+            if (debrisCrate != null)
+            {
+                networkCrateDebrisDamageUntil[debrisCrate] = Time.unscaledTime + 0.75f;
+            }
+            if (!clientCreated) continue;
+            clientCreatedBodies.Add(body);
+            if (debrisCrate != null) debrisCrate.enabled = false;
+        }
+    }
+
+    internal bool IsNetworkCrateDebris(CrateScript crate)
+    {
+        if (crate == null) return false;
+        foreach (var body in crate.GetComponentsInChildren<Rigidbody2D>(true))
+            if (body != null && networkCrateDebrisBodies.Contains(body)) return true;
+        return false;
+    }
+
+    internal bool TryProtectNetworkCrateDebrisDamage(CrateScript crate, float damageAmount)
+    {
+        if (crate == null) return false;
+        float until;
+        if (!networkCrateDebrisDamageUntil.TryGetValue(crate, out until)) return false;
+        var now = Time.unscaledTime;
+        var protect = now < until;
+        if (protect) networkCrateDebrisDamageUntil[crate] = now + 0.75f;
+        return protect;
+    }
+
+    private static int CompareCrateDebrisBodies(Rigidbody2D left, Rigidbody2D right)
+    {
+        if (ReferenceEquals(left, right)) return 0;
+        if (left == null) return -1;
+        if (right == null) return 1;
+        var byName = string.CompareOrdinal(left.name, right.name);
+        return byName != 0 ? byName : left.transform.GetSiblingIndex().CompareTo(right.transform.GetSiblingIndex());
+    }
+
+    private void HideClientObjectHierarchy(GameObject value)
+    {
+        if (value == null) return;
+        var transforms = value.GetComponentsInChildren<Transform>(true);
+        foreach (var transform in transforms)
+        {
+            if (transform == null || transform.gameObject == null) continue;
+            var child = transform.gameObject;
+            if (!clientHiddenObjects.ContainsKey(child))
+                clientHiddenObjects[child] = child.activeSelf;
+        }
+        for (var index = transforms.Length - 1; index >= 0; index--)
+            if (transforms[index] != null) transforms[index].gameObject.SetActive(false);
+    }
+
     private string Id(Rigidbody2D body)
     {
         string id;
@@ -1743,6 +2090,7 @@ internal sealed class WorldReplication : MonoBehaviour
         bodies[id] = body;
         ids[body] = id;
         clientCreatedBodies.Add(body);
+        droppedWeapons[body] = dropped;
         MakeClientControlled(body);
         return body;
     }
@@ -1788,10 +2136,7 @@ internal sealed class WorldReplication : MonoBehaviour
         if (dropped.stats != weapon || dropped.ammoAmount != ammo)
             dropped.ChangeWeapon(weapon, ammo);
         dropped.ammoAmount = ammo;
-        var ammoSpriteField = typeof(DroppedWeapon).GetField("ammoSprite",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        var ammoSprite = ammoSpriteField == null ? null : ammoSpriteField.GetValue(dropped) as SpriteRenderer;
-        if (ammoSprite != null) ammoSprite.enabled = ammo > 0;
+        SynchronizeDroppedWeaponAmmoIndicator(dropped);
         if (ammo <= 0 && weapon.magExtractedSprite != null)
         {
             var renderer = dropped.GetComponent<SpriteRenderer>();
@@ -1806,10 +2151,7 @@ internal sealed class WorldReplication : MonoBehaviour
         var renderer = dropped.GetComponent<SpriteRenderer>();
         if (renderer != null && dropped.stats.magExtractedSprite != null)
             renderer.sprite = dropped.stats.magExtractedSprite;
-        var ammoSpriteField = typeof(DroppedWeapon).GetField("ammoSprite",
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        var ammoSprite = ammoSpriteField == null ? null : ammoSpriteField.GetValue(dropped) as SpriteRenderer;
-        if (ammoSprite != null) ammoSprite.enabled = false;
+        SynchronizeDroppedWeaponAmmoIndicator(dropped);
         var rigidbody = dropped.GetComponent<Rigidbody2D>();
         if (rigidbody != null)
         {
@@ -1817,6 +2159,69 @@ internal sealed class WorldReplication : MonoBehaviour
                 UnityEngine.Random.Range(-1.5f, 1.5f)), ForceMode2D.Impulse);
             rigidbody.AddTorque(UnityEngine.Random.Range(-1.5f, 1.5f), ForceMode2D.Impulse);
         }
+    }
+
+    private static void ReplaceDroppedWeaponWithPrevious(DroppedWeapon dropped, BodyScript body,
+        WeaponPreset pickedWeapon)
+    {
+        if (dropped == null || body == null || pickedWeapon == null) return;
+        if (body.currentWeapon == pickedWeapon.slot && body.weapon != null && body.weapon.isReloading)
+            body.weapon.CancelReload();
+        var previousWeapon = body.weapons[pickedWeapon.slot];
+        var previousAmmo = body.weaponAmmos[pickedWeapon.slot];
+        dropped.pickupCool = 0.5f;
+        dropped.ChangeWeapon(previousWeapon, previousAmmo);
+        if (previousWeapon == null) return;
+        dropped.ammoAmount = previousAmmo;
+        var rigidbody = dropped.GetComponent<Rigidbody2D>();
+        if (rigidbody == null) return;
+        if (body.currentWeapon == pickedWeapon.slot && body.weapon != null)
+        {
+            dropped.transform.position = body.weapon.transform.position;
+            dropped.transform.rotation = body.weapon.transform.rotation;
+            if (body.isRight)
+            {
+                rigidbody.velocity = body.weapon.transform.right * 6f;
+                dropped.transform.localScale = Vector2.one;
+            }
+            else
+            {
+                rigidbody.velocity = -body.weapon.transform.right * 6f;
+                dropped.transform.localScale = new Vector2(-1f, 1f);
+            }
+            rigidbody.angularVelocity = UnityEngine.Random.Range(-50f, 50f);
+        }
+        else if (body.mainTorso != null)
+        {
+            if (body.isRight)
+            {
+                dropped.transform.position = body.mainTorso.transform.position - body.mainTorso.transform.right * 0.3f;
+                dropped.transform.localScale = Vector2.one;
+                dropped.transform.eulerAngles = body.mainTorso.transform.eulerAngles - new Vector3(0f, 0f, 90f);
+            }
+            else
+            {
+                dropped.transform.position = body.mainTorso.transform.position + body.mainTorso.transform.right * 0.3f;
+                dropped.transform.localScale = new Vector2(-1f, 1f);
+                dropped.transform.eulerAngles = body.mainTorso.transform.eulerAngles + new Vector3(0f, 0f, 90f);
+            }
+        }
+    }
+
+    internal static void SynchronizeDroppedWeaponAmmoIndicator(DroppedWeapon dropped)
+    {
+        if (dropped == null) return;
+        var ammoSprite = DroppedWeaponAmmoSpriteField == null ? null :
+            DroppedWeaponAmmoSpriteField.GetValue(dropped) as SpriteRenderer;
+        if (ammoSprite == null) return;
+        var weapon = dropped.stats;
+        var player = PlayerScript.player;
+        if (weapon != null && player != null && player.ammoImages != null &&
+            weapon.ammoType >= 0 && weapon.ammoType < player.ammoImages.Length)
+            ammoSprite.sprite = player.ammoImages[weapon.ammoType];
+        ammoSprite.transform.position = dropped.transform.position + Vector3.up * 0.6f;
+        ammoSprite.transform.rotation = Quaternion.identity;
+        ammoSprite.enabled = dropped.ammoAmount > 0 && Mathf.PingPong(Time.time, 0.3f) > 0.15f;
     }
 
     private static WeaponPreset FindWeaponPreset(string weaponName)
