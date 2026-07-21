@@ -15,19 +15,42 @@
 
 ## TODO
 
-- [ ] Test
-- [ ] Add more mp settings and features
-- [ ] Fix tails
-- [X] Far objects sync
-- [X] Switch to UDP
-- [ ] Fix compatibility with Crossover on apple silicon
-- [ ] Make sure there are definitely no desyncs and crashes
-- [ ] Refactor god classes
-- [ ] Fix or disable the process of transferring into another body
-- [ ] Add interpolation
-- [ ] Reduce the packet rate by stopping the transmission of packets for stationary entities
-- [ ] Improve MP Window
+### Net
+- [x] Switch to UDP
+- [ ] Reduce the packet rate (send movement and pose packets only when changed for stationary entities)
+- [ ] Improve packet serialization (implement string hashing or short id) to reduce packet size
+- [ ] Optimize far objects, keep them on the map but disable ticking
 
+
+### Sync Fixes
+- [x] Far objects sync
+- [ ] Fix shooting randomization desync
+- [ ] Fix barrel fire desync
+- [ ] Fix NPC shooting tracers not being visible to other players
+- [ ] Fix pallet desync when breaking into two parts
+- [ ] Fix dead entity body state (e.g., closed eyes) mismatch with host
+- [ ] Fix ammo indicator desync on weapons dropped by killed entities (blinks on host, doesn't show on clients)
+- [ ] Sync bullet hit effects
+- [ ] Add interp
+- [ ] Make sure there are definitely no desyncs and crashes
+
+### Gameplay
+- [ ] Fix avatar
+- [ ] Fix tails
+- [ ] Fix destruction of props/lightbulbs from hits
+- [ ] Fix weapon dropping at the beginning of the game
+- [ ] Fix or disable the process of transferring into another body
+- [ ] Real gameplay test
+
+### UI
+- [ ] Improve MP Window
+- [ ] Add more MP settings and features
+
+### Architecture
+- [ ] Refactor god classes
+- [ ] Fix compatibility with CrossOver on Apple Silicon
+- [ ] Reduce the load on the server's CPU
+ 
 ## Installation
 
 1. Download [Gunsaw](https://orsonik.itch.io/gunsaw-demo/purchase)
