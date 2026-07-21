@@ -11,15 +11,17 @@ using System.Text;
 using System.Threading;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using TMPro;
+using UnityEngine.UI;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
 public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.4";
+    public const string PluginVersion = "0.3.5";
 
-    private readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
+    internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
     private ConfigEntry<string> savedPlayerName;
     private ConfigEntry<string> savedLobbyName;
@@ -30,19 +32,19 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<bool> savedCreateRespawnAtStart;
     private ConfigEntry<string> savedCreateRespawnTime;
     private ConfigEntry<string> savedCreateMaxPlayers;
-    private bool visible;
-    private string status = "Select an option.";
-    private string lobbyServerAddress = "gunsawudp.e621.su";
-    private string lobbyName = "Lobby";
-    private string playerName = "Player";
-    private bool createPvp;
-    private bool createCanGrab = true;
-    private bool createGrabOnlyUnconscious = true;
-    private bool createAllowRespawn = true;
-    private bool createRespawnAtStart = true;
-    private string createRespawnTime = "5";
-    private string createMaxPlayers = "4";
-    private string customLevelJson = "";
+    internal bool visible;
+    internal string status = "Select an option.";
+    internal string lobbyServerAddress = "gunsawudp.e621.su";
+    internal string lobbyName = "Lobby";
+    internal string playerName = "Player";
+    internal bool createPvp;
+    internal bool createCanGrab = true;
+    internal bool createGrabOnlyUnconscious = true;
+    internal bool createAllowRespawn = true;
+    internal bool createRespawnAtStart = true;
+    internal string createRespawnTime = "5";
+    internal string createMaxPlayers = "4";
+    internal string customLevelJson = "";
     private string receivedCustomLevelJson = "";
     private bool waitingForCustomLevel;
     private float customLevelPhysicsRefreshUntil;
@@ -52,6 +54,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private WorldReplication worldReplication;
     private NpcReplication npcReplication;
     private MultiplayerHud multiplayerHud;
+    private MultiplayerLobbyUi multiplayerLobbyUi;
     private int debugWeaponSequence;
     private bool gameplayTypesLogged;
     private string hostedLobbyId = "";
@@ -97,8 +100,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         worldReplication = gameObject.AddComponent<WorldReplication>();
         npcReplication = gameObject.AddComponent<NpcReplication>();
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
+        multiplayerLobbyUi = gameObject.AddComponent<MultiplayerLobbyUi>();
         World = worldReplication;
-        Logger.LogInfo("Gunsaw Multiplayer 0.3.4 loaded.");
+        Logger.LogInfo("Gunsaw Multiplayer 0.3.5 loaded.");
     }
 
     private void Start()
@@ -125,25 +129,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal static WorldReplication World;
 
-    private void OnGUI()
-    {
-        if (UnityEngine.Object.FindObjectOfType<MainMenuManager>() == null)
-            return;
-
-        if (!visible)
-        {
-            if (GUI.Button(new Rect(20, Screen.height - 65, 210, 42), "MULTIPLAYER"))
-            {
-                visible = true;
-                RefreshLobbies();
-            }
-            return;
-        }
-
-        var window = new Rect((Screen.width - 680) / 2f, (Screen.height - 590) / 2f, 680, 590);
-        GUI.ModalWindow(9191, window, DrawWindow, "GUNSAW MULTIPLAYER");
-    }
-
     private void Update()
     {
         KeepMultiplayerRunningInBackground();
@@ -162,6 +147,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             ? MultiplayerSession.LocalPlayerName : playerName;
         multiplayerHud.Configure(sessionName,
             MultiplayerSession.IsHosting ? hostedLobbyDisplayName : lobbyName, visible);
+        multiplayerLobbyUi.Configure(this);
 
         if (!gameplayTypesLogged && UnityEngine.Object.FindObjectOfType<PlayerScript>() != null)
         {
@@ -238,79 +224,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         else if (Input.anyKeyDown) debugWeaponSequence = 0;
     }
 
-    private void DrawWindow(int windowId)
-    {
-        GUI.Label(new Rect(18, 35, 640, 24), "Choose a lobby server, create a lobby, or join one from the list.");
-        GUI.Label(new Rect(18, 62, 100, 22), "Name");
-        playerName = GUI.TextField(new Rect(120, 60, 190, 24), playerName, 32);
-        GUI.Label(new Rect(330, 62, 90, 22), "Lobby");
-        lobbyName = GUI.TextField(new Rect(420, 60, 160, 24), lobbyName, 48);
-        createPvp = GUI.Toggle(new Rect(590, 61, 72, 24), createPvp, "Pvp");
-        createCanGrab = GUI.Toggle(new Rect(18, 92, 115, 24), createCanGrab, "Can grab");
-        createGrabOnlyUnconscious = GUI.Toggle(new Rect(145, 92, 235, 24),
-            createGrabOnlyUnconscious, "Can grab only unconscious");
-        GUI.Label(new Rect(395, 94, 105, 22), "Max players");
-        createMaxPlayers = GUI.TextField(new Rect(505, 91, 44, 24), createMaxPlayers, 2);
-        createAllowRespawn = GUI.Toggle(new Rect(18, 122, 135, 24), createAllowRespawn, "Allow respawn");
-        var controlsEnabled = GUI.enabled;
-        GUI.enabled = controlsEnabled && createAllowRespawn;
-        GUI.Label(new Rect(165, 124, 105, 22), "Respawn time");
-        createRespawnTime = GUI.TextField(new Rect(274, 121, 52, 24), createRespawnTime, 4);
-        GUI.Label(new Rect(331, 124, 50, 22), "seconds");
-        createRespawnAtStart = GUI.Toggle(new Rect(395, 122, 190, 24), createRespawnAtStart,
-            "Respawn at start");
-        GUI.enabled = controlsEnabled;
-
-        if (GUI.Button(new Rect(18, 152, 180, 32), "Paste custom level"))
-            PasteCustomLevel();
-        GUI.Label(new Rect(208, 157, 285, 22), string.IsNullOrEmpty(customLevelJson)
-            ? "Custom level: not loaded" : "Custom level: loaded");
-        GUI.enabled = controlsEnabled && MultiplayerSession.IsHosting && !string.IsNullOrEmpty(customLevelJson);
-        if (GUI.Button(new Rect(500, 152, 162, 32), "Start custom level"))
-            StartCustomLevel();
-
-        GUI.enabled = controlsEnabled && !MultiplayerSession.IsHosting;
-        if (GUI.Button(new Rect(18, 192, 180, 32), "Create lobby"))
-            CreateLobby();
-        GUI.enabled = controlsEnabled;
-        if (GUI.Button(new Rect(208, 192, 180, 32), "Refresh"))
-            RefreshLobbies();
-        if (MultiplayerSession.IsHosting)
-            GUI.Label(new Rect(405, 194, 185, 28), "HOSTING - " +
-                MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS");
-        if (GUI.Button(new Rect(598, 12, 65, 25), "Close"))
-            visible = false;
-
-        GUI.Label(new Rect(18, 237, 100, 22), "Lobby server");
-        lobbyServerAddress = GUI.TextField(new Rect(120, 235, 250, 24), lobbyServerAddress, 255);
-        GUI.enabled = controlsEnabled && !MultiplayerSession.IsHosting;
-        if (GUI.Button(new Rect(380, 234, 110, 27), "Connect"))
-            ConnectLobbyServer();
-        GUI.enabled = controlsEnabled;
-
-        GUI.Label(new Rect(18, 272, 640, 22), status);
-        GUI.Label(new Rect(18, 299, 640, 22), "Public lobbies");
-        GUILayout.BeginArea(new Rect(18, 322, 645, 248));
-        scroll = GUILayout.BeginScrollView(scroll);
-        foreach (var lobby in lobbies)
-        {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(lobby.name + "  |  " + lobby.hostName + "  |  " + lobby.map + "  |  " +
-                (lobby.pvp ? "Pvp" : "Co-op") + "  |  " +
-                (lobby.canGrab ? (lobby.grabOnlyUnconscious ? "Grab down" : "Grab any") : "No grab") +
-                "  |  " + (lobby.allowRespawn
-                    ? "Respawn " + lobby.respawnTime + "s " + (lobby.respawnAtStart ? "Start" : "Death")
-                    : "No respawn") +
-                "  |  " + lobby.players + "/" + lobby.maxPlayers, GUILayout.Width(500));
-            if (GUILayout.Button("Join", GUILayout.Width(100))) JoinLobby(lobby.id);
-            GUILayout.EndHorizontal();
-        }
-        GUILayout.EndScrollView();
-        GUILayout.EndArea();
-        SaveLobbyPreferences();
-    }
-
-    private void SaveLobbyPreferences()
+    internal void SaveLobbyPreferences()
     {
         var changed = false;
         if (savedPlayerName.Value != playerName) { savedPlayerName.Value = playerName; changed = true; }
@@ -337,7 +251,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (changed) Config.Save();
     }
 
-    private void RefreshLobbies()
+    internal void RefreshLobbies()
     {
         var server = masterUrl.Value.TrimEnd('/');
         status = "Refreshing lobbies from " + DisplayServerAddress(server) + "...";
@@ -353,7 +267,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         });
     }
 
-    private void ConnectLobbyServer()
+    internal void ConnectLobbyServer()
     {
         if (MultiplayerSession.IsHosting)
         {
@@ -374,7 +288,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         RefreshLobbies();
     }
 
-    private void PasteCustomLevel()
+    internal void PasteCustomLevel()
     {
         var clipboard = (GUIUtility.systemCopyBuffer ?? "").Trim();
         if (string.IsNullOrEmpty(clipboard))
@@ -401,7 +315,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
     }
 
-    private void StartCustomLevel()
+    internal void StartCustomLevel()
     {
         if (!MultiplayerSession.IsHosting)
         {
@@ -433,7 +347,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         loader.LoadScene("LevelLoader");
     }
 
-    private void CreateLobby()
+    internal void CreateLobby()
     {
         try
         {
@@ -455,7 +369,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         catch (Exception e) { status = "Could not create lobby: " + e.Message; }
     }
 
-    private void JoinLobby(string id)
+    internal void JoinLobby(string id)
     {
         try
         {
@@ -464,10 +378,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         catch (Exception e) { status = "Could not join lobby: " + e.Message; }
     }
 
-    private void ConnectRelay(string address, string lobbyId, string relayKey, ushort peerId, int maxPlayers)
+    private void ConnectRelay(string address, string lobbyId, string relayKey, ushort peerId, ushort hostPeerId,
+        int maxPlayers)
     {
         string error;
-        if (!MultiplayerSession.Connect(address, lobbyId, relayKey, playerName, peerId, maxPlayers,
+        if (!MultiplayerSession.Connect(address, lobbyId, relayKey, playerName, peerId, hostPeerId, maxPlayers,
             Logger, out error)) { status = error; return; }
         avatarReplication.Configure(playerName);
         multiplayerHud.ResetChat();
@@ -505,10 +420,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var relayKey = JsonString(response, "relayKey");
             var relayAddress = JsonString(response, "relayAddress");
             var peerId = (ushort)Mathf.Clamp(JsonInt(response, "peerId"), 2, 16);
+            var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 16);
             var maxPlayers = Mathf.Clamp(JsonInt(response, "maxPlayers"), 2, 16);
             if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayAddress();
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
-            RunOnMainThread(() => ConnectRelay(relayAddress, lobbyId, relayKey, peerId, maxPlayers));
+            RunOnMainThread(() => ConnectRelay(relayAddress, lobbyId, relayKey, peerId, hostPeerId, maxPlayers));
         }
         catch (Exception exception) { RunOnMainThread(() => status = "Could not join lobby: " + exception.Message); }
     }
@@ -724,7 +640,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         status = "Spawned " + weapon.name + ".";
     }
 
-    [Serializable] private sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; }
+    [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; }
     [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; }
 }
 
@@ -816,7 +732,6 @@ internal static class MultiplayerClientMainMenuPatch
             SceneLoader.main.levelEditString = "";
             SceneLoader.main.hadEditorWarning = false;
         }
-
 
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHosting) return;
         MultiplayerSession.Shutdown();
@@ -1114,7 +1029,6 @@ internal static class ClientPalletDebrisAutoBreakPatch
     private static bool Prefix(CrateScript __instance)
     {
         if (!MultiplayerSession.IsConnected || GunsawMultiplayerPlugin.World == null) return true;
-
         return !GunsawMultiplayerPlugin.World.IsNetworkCrateDebris(__instance);
     }
 }

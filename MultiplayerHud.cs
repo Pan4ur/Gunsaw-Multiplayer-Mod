@@ -17,13 +17,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private bool focusChat;
     private bool waitForChatOpenKeyRelease;
     private Vector2 chatScroll;
-    private GUIStyle titleStyle;
-    private GUIStyle rowStyle;
-    private GUIStyle chatStyle;
-    private GUIStyle bubbleStyle;
-    private GUIStyle mutedStyle;
-    private GUIStyle replicationMarkerStyle;
-    private GUIStyle replicationMarkerShadowStyle;
     private bool replicationDebugOverlayEnabled;
     private bool networkStatsVisible;
     private GameObject networkStatsObject;
@@ -34,10 +27,16 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private float nextNetworkStatsUpdate;
     private static readonly FieldInfo FpsTextField = AccessTools.Field(typeof(GameManager), "fpsText");
     private static readonly FieldInfo PerformanceTextField = AccessTools.Field(typeof(GameManager), "performanceText");
+    private MultiplayerHudUi nativeUi;
 
     internal static MultiplayerHud Instance { get; private set; }
 
     internal static bool IsTyping { get; private set; }
+    internal bool ChatOpen => chatOpen;
+    internal IReadOnlyList<ChatEntry> ChatHistory => history;
+    internal string ChatInput { get => input; set => input = SanitizeMessage(value); }
+    internal bool NetworkStatsVisible => networkStatsVisible;
+    internal string NetworkStatsText => networkStatsTextValue;
 
     internal void Configure(string playerName, string lobbyName, bool menuOpen)
     {
@@ -102,6 +101,20 @@ internal sealed class MultiplayerHud : MonoBehaviour
             CloseChat();
             return;
         }
+        if (!waitForChatOpenKeyRelease && enter)
+            Submit();
+    }
+
+    private void LateUpdate()
+    {
+        if (nativeUi == null) nativeUi = gameObject.GetComponent<MultiplayerHudUi>() ?? gameObject.AddComponent<MultiplayerHudUi>();
+        if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
+        {
+            nativeUi.BeginDebugFrame();
+            if (WorldReplication.Instance != null) WorldReplication.Instance.DrawReplicationDebugOverlay(null, null, null);
+            if (NpcReplication.Instance != null) NpcReplication.Instance.DrawReplicationDebugOverlay(null, null, null);
+        }
+        nativeUi.Configure(this);
     }
 
     private void UpdateNetworkStatsWidget()
@@ -255,7 +268,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         nextNetworkStatsUpdate = 0f;
     }
 
-    private void Submit()
+    internal void Submit()
     {
         var message = SanitizeMessage(input);
         input = "";
@@ -267,7 +280,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         CloseChat();
     }
 
-    private void CloseChat()
+    internal void CloseChat()
     {
         chatOpen = false;
         focusChat = false;
@@ -297,222 +310,12 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (Instance != null) Instance.AddMessage("SYSTEM", message, false);
     }
 
-    private void OnGUI()
-    {
-        if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
-        EnsureStyles();
-        var previousDepth = GUI.depth;
-        GUI.depth = -50;
-        if (networkStatsVisible && MultiplayerSession.IsConnected && networkStatsObject == null &&
-            !string.IsNullOrEmpty(networkStatsTextValue))
-            GUI.Label(new Rect(18f, Screen.height - 348f, 920f, 330f), networkStatsTextValue, mutedStyle);
-        if (MultiplayerSession.IsHosting) DrawHostStatus();
-        if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
-        {
-            var camera = Camera.main;
-            if (camera != null)
-            {
-                var world = WorldReplication.Instance;
-                var npc = NpcReplication.Instance;
-                if (world != null)
-                    world.DrawReplicationDebugOverlay(camera, replicationMarkerStyle, replicationMarkerShadowStyle);
-                if (npc != null)
-                    npc.DrawReplicationDebugOverlay(camera, replicationMarkerStyle, replicationMarkerShadowStyle);
-            }
-        }
-        if (Input.GetKey(KeyCode.Tab) && !chatOpen) DrawPlayerList();
-        if (MultiplayerSession.IsConnected)
-        {
-            if (chatOpen) DrawOpenChat();
-            else DrawRecentChat();
-            DrawChatBubbles();
-        }
-        GUI.depth = previousDepth;
-    }
-
-    private void DrawHostStatus()
-    {
-        const float width = 300f;
-        var height = MultiplayerSession.IsConnected ? 86f : 70f;
-        var rect = new Rect(Screen.width - width - 18f, 18f, width, height);
-        GUI.Box(rect, GUIContent.none);
-        GUI.Label(new Rect(rect.x + 12f, rect.y + 8f, width - 24f, 22f),
-            "HOSTING  " + (string.IsNullOrEmpty(hostedLobbyName) ? "LOBBY" : hostedLobbyName), titleStyle);
-        GUI.Label(new Rect(rect.x + 12f, rect.y + 32f, width - 24f, 20f),
-            "Players " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers +
-            (MultiplayerSession.PlayerCount == 1 ? " - waiting for players" : ""), mutedStyle);
-        if (MultiplayerSession.PlayerCount > 1)
-            GUI.Label(new Rect(rect.x + 12f, rect.y + 55f, width - 24f, 20f),
-                (MultiplayerSession.PlayerCount - 1) + " remote player(s) connected", rowStyle);
-    }
-
-    private void DrawPlayerList()
-    {
-        const float width = 430f;
-        var remotePlayers = NetworkAvatarReplication.RemotePlayers();
-        var rows = 1 + remotePlayers.Length;
-        var height = 50f + rows * 34f;
-        var rect = new Rect((Screen.width - width) * 0.5f, 54f, width, height);
-        GUI.Box(rect, GUIContent.none);
-        GUI.Label(new Rect(rect.x + 14f, rect.y + 8f, width - 28f, 26f), "PLAYERS", titleStyle);
-        var y = rect.y + 42f;
-        DrawPlayerRow(new Rect(rect.x + 14f, y, width - 28f, 28f), localName,
-            MultiplayerSession.IsHost, LocalBody(), -1);
-        for (var index = 0; index < remotePlayers.Length; index++)
-        {
-            var remote = remotePlayers[index];
-            DrawPlayerRow(new Rect(rect.x + 14f, y + (index + 1) * 34f, width - 28f, 28f),
-                remote.Name, remote.PeerId == 1, remote.Body, remote.PingMs);
-        }
-    }
-
-    private void DrawPlayerRow(Rect rect, string name, bool host, BodyScript body, int ping)
-    {
-        GUI.Box(rect, GUIContent.none);
-        var state = PlayerState(body);
-        var suffix = ping >= 0 ? "  " + ping + " ms" : "";
-        GUI.Label(new Rect(rect.x + 9f, rect.y + 3f, rect.width - 18f, rect.height - 6f),
-            (host ? "[HOST]  " : "") + SanitizeName(name) + state + suffix, rowStyle);
-    }
-
-    private void DrawOpenChat()
-    {
-        var width = Mathf.Min(560f, Screen.width - 36f);
-        const float historyHeight = 230f;
-        var x = 18f;
-        var inputY = Screen.height - 52f;
-        var historyRect = new Rect(x, inputY - historyHeight - 8f, width, historyHeight);
-        GUI.Box(historyRect, GUIContent.none);
-        GUILayout.BeginArea(new Rect(historyRect.x + 8f, historyRect.y + 8f,
-            historyRect.width - 16f, historyRect.height - 16f));
-        chatScroll = GUILayout.BeginScrollView(chatScroll);
-        foreach (var entry in history)
-            GUILayout.Label("[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message, chatStyle);
-        GUILayout.EndScrollView();
-        GUILayout.EndArea();
-
-        var current = Event.current;
-        if (!waitForChatOpenKeyRelease && current.type == EventType.KeyDown &&
-            (current.keyCode == KeyCode.Return || current.keyCode == KeyCode.KeypadEnter))
-        {
-            current.Use();
-            Submit();
-            return;
-        }
-
-        GUI.SetNextControlName("GunsawMultiplayerChat");
-        input = GUI.TextField(new Rect(x, inputY, width, 30f), input, 160);
-        if (focusChat)
-        {
-            GUI.FocusControl("GunsawMultiplayerChat");
-            focusChat = false;
-        }
-    }
-
-    private void DrawRecentChat()
-    {
-        var now = Time.unscaledTime;
-        var recent = new List<ChatEntry>();
-        for (var index = history.Count - 1; index >= 0 && recent.Count < 5; index--)
-            if (now - history[index].CreatedAt <= FeedLifetime) recent.Insert(0, history[index]);
-        if (recent.Count == 0) return;
-        var width = Mathf.Min(560f, Screen.width - 36f);
-        var height = recent.Count * 24f + 12f;
-        var rect = new Rect(18f, Screen.height - height - 30f, width, height);
-        GUI.Box(rect, GUIContent.none);
-        for (var index = 0; index < recent.Count; index++)
-            GUI.Label(new Rect(rect.x + 8f, rect.y + 6f + index * 24f, rect.width - 16f, 22f),
-                recent[index].Sender + ": " + recent[index].Message, chatStyle);
-    }
-
-    private void DrawChatBubbles()
-    {
-        ChatEntry local = null;
-        var remote = new Dictionary<ushort, ChatEntry>();
-        var now = Time.unscaledTime;
-        for (var index = history.Count - 1; index >= 0; index--)
-        {
-            var entry = history[index];
-            if (now - entry.CreatedAt > BubbleLifetime) break;
-            if (entry.Local && local == null) local = entry;
-            if (!entry.Local && !remote.ContainsKey(entry.PeerId)) remote[entry.PeerId] = entry;
-        }
-        if (local != null) DrawBubble(LocalBody(), local.Message);
-        foreach (var pair in remote)
-            DrawBubble(NetworkAvatarReplication.RemoteBodyForPeer(pair.Key), pair.Value.Message);
-    }
-
-    private void DrawBubble(BodyScript body, string message)
-    {
-        if (body == null || body.rb == null || Camera.main == null) return;
-        var world = (Vector3)body.rb.position + Vector3.down * 1.4f;
-        var screen = Camera.main.WorldToScreenPoint(world);
-        if (screen.z <= 0f) return;
-        var content = new GUIContent(message);
-        var size = bubbleStyle.CalcSize(content);
-        var width = Mathf.Clamp(size.x + 18f, 70f, 300f);
-        var height = Mathf.Clamp(bubbleStyle.CalcHeight(content, width - 12f) + 10f, 28f, 80f);
-        var rect = new Rect(Mathf.Clamp(screen.x - width * 0.5f, 6f, Screen.width - width - 6f),
-            Mathf.Clamp(Screen.height - screen.y, 6f, Screen.height - height - 6f), width, height);
-        GUI.Box(rect, GUIContent.none);
-        GUI.Label(new Rect(rect.x + 6f, rect.y + 4f, rect.width - 12f, rect.height - 8f), content, bubbleStyle);
-    }
-
-    private void EnsureStyles()
-    {
-        if (titleStyle != null) return;
-        titleStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 16,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleLeft
-        };
-        rowStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 14,
-            alignment = TextAnchor.MiddleLeft
-        };
-        mutedStyle = new GUIStyle(rowStyle);
-        mutedStyle.normal.textColor = new Color(0.72f, 0.76f, 0.8f, 1f);
-        chatStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 14,
-            wordWrap = true,
-            richText = false
-        };
-        bubbleStyle = new GUIStyle(chatStyle)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontStyle = FontStyle.Bold
-        };
-        replicationMarkerStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 18,
-            fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter,
-            wordWrap = false,
-            clipping = TextClipping.Overflow
-        };
-        replicationMarkerShadowStyle = new GUIStyle(replicationMarkerStyle);
-        replicationMarkerShadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.95f);
-    }
-
+    // Compatibility hook for the existing diagnostic callers. The old IMGUI markers
+    // intentionally no longer render; player-facing UI lives on the native Canvas.
     internal static void DrawReplicationMarker(Camera camera, Vector3 position, bool sent,
         GUIStyle style, GUIStyle shadowStyle)
     {
-        var screenPosition = camera.WorldToScreenPoint(position);
-        if (screenPosition.z <= 0f || screenPosition.x < -200f || screenPosition.x > Screen.width + 200f ||
-            screenPosition.y < -80f || screenPosition.y > Screen.height + 80f) return;
-        var rect = new Rect(screenPosition.x - 12f, Screen.height - screenPosition.y - 12f, 24f, 24f);
-        style.normal.textColor = sent ? Color.green : Color.red;
-        var previousDepth = GUI.depth;
-        GUI.depth = 10;
-        GUI.Label(new Rect(rect.x - 1f, rect.y, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
-        GUI.Label(new Rect(rect.x + 1f, rect.y, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
-        GUI.Label(new Rect(rect.x, rect.y - 1f, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
-        GUI.Label(new Rect(rect.x, rect.y + 1f, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
-        GUI.Label(rect, sent ? "1" : "0", style);
-        GUI.depth = previousDepth;
+        if (Instance != null && Instance.nativeUi != null) Instance.nativeUi.AddDebugMarker(position, sent);
     }
 
     private static BodyScript LocalBody()
@@ -543,7 +346,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         return result.Length > 160 ? result.Substring(0, 160) : result;
     }
 
-    private sealed class ChatEntry
+    internal sealed class ChatEntry
     {
         internal string Sender;
         internal string Message;

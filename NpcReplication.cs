@@ -11,6 +11,7 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NpcReplication : MonoBehaviour
 {
+    // Version 10 adds renderer, particle, and light state for NPC-specific visual effects.
     private const byte ProtocolVersion = 10;
     private const byte CompressedSnapshotMarker = 0xFF;
     private const int CompressionThresholdBytes = 256;
@@ -85,7 +86,9 @@ internal sealed class NpcReplication : MonoBehaviour
     private string lastApplyError = "none";
     internal static NpcReplication Instance;
     internal static bool ApplyingAuthoritativeDeath;
-
+    // Unity only invokes LimbScript.OnWillRenderObject for a renderer seen by the host camera.
+    // Keep that callback under our control while writing a network snapshot so its visual pose is
+    // evaluated exactly once even when only a client can see the NPC.
     internal static bool IsEvaluatingAuthoritativePose { get; private set; }
 
     internal int TotalNpcCount
@@ -539,6 +542,8 @@ internal sealed class NpcReplication : MonoBehaviour
                 {
                     var limb = limbs[limbIndex] as LimbScript;
                     WritePose(writer, limb.rb);
+                    // OnWillRenderObject animates the LimbScript GameObject itself.  Its animBody
+                    // is merely a child sprite and remains static for several NPC prefabs.
                     WriteTransform(writer, limb == null ? null : limb.transform);
                     var fire = limbIndex < layout.LimbFires.Length ? layout.LimbFires[limbIndex] : null;
                     writer.Write((byte)((limb.dismembered ? 1 : 0) | (IsBurning(fire) ? 2 : 0)));
@@ -625,7 +630,9 @@ internal sealed class NpcReplication : MonoBehaviour
                 idsByWire[wire] = known;
                 return known;
             }
-
+        // A client already has the scene NPCs under their stable local IDs.
+        // Resolve to that key before descriptor matching; otherwise multiple
+        // similar NPCs can be paired with the wrong visual proxy.
         foreach (var known in clientNpcs.Keys)
             if (NetworkWireId.FromString(known) == wire)
             {
@@ -979,7 +986,9 @@ internal sealed class NpcReplication : MonoBehaviour
             SetTarget(proxy, limb.rb, state.Limbs[index].Pose);
             if (limb.rb != null)
                 SetTransformTarget(proxy, limb.rb.transform, TransformPose.From(state.Limbs[index].Pose));
-
+            // This is the transform modified by LimbScript.MoveLimb on the host.  Applying the
+            // authoritative visual pose here keeps legs and arms independent of the client's
+            // camera and disabled local NPC behaviours.
             SetTransformTarget(proxy, limb.transform, state.Limbs[index].Visual);
             limb.dismembered = state.Limbs[index].Dismembered;
             SetRemoteFire(proxy, index, limb, state.Limbs[index].Burning);
@@ -1231,7 +1240,8 @@ internal sealed class NpcReplication : MonoBehaviour
         var found = false;
         foreach (var pair in proxy.RigBodies)
             if (pair.Value == rigidbody) { rigId = pair.Key; found = true; break; }
-
+        // Limb rigidbodies are intentionally excluded from the snapshot-only rig cache,
+        // but a corpse can be grabbed by any limb (for example, its head).
         if (!found) rigId = RigId(NpcRoot(proxy.Body).transform, rigidbody);
 
         EnableLocalCorpsePhysics(proxy);
@@ -1949,7 +1959,9 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             var renderer = proxy.SpriteRenderers[index];
             if (renderer == null) continue;
-
+            // LimbScript and WeaponScript renderers are driven locally by the NPC animation
+            // and weapon setup code.  The host may have them disabled while they are outside
+            // its camera, which must not hide an intact limb or the equipped weapon remotely.
             if (!IsCoreNpcRenderer(renderer))
             {
                 renderer.gameObject.SetActive(state.Renderers[index].Active);

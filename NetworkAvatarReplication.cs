@@ -12,6 +12,9 @@ using UnityEngine.SceneManagement;
 internal sealed class NetworkAvatarReplication : MonoBehaviour
 {
     private const bool TailDiagnosticsEnabled = false;
+    // Keep one received snapshot behind the sender. This makes interpolation use
+    // two authoritative samples instead of restarting from a frame-dependent
+    // displayed position whenever a UDP packet arrives.
     private const bool BufferedRemoteInterpolation = true;
     private const float SnapshotInterval = 1f / 50f;
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
@@ -24,6 +27,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         new Dictionary<string, WeaponPreset>();
     private static string selectedCharacterPrefab = "";
     private BodyScript remoteBody;
+    // This is independent of the displayed avatar object, which may be hidden or interpolating.
     private Vector2 lastAuthoritativePosition;
     private bool hasAuthoritativePosition;
     private GameObject remoteAvatar;
@@ -573,6 +577,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (remoteAvatar == null) return;
         UpdateRemotePhysicsMode();
 
+        // Move the physics-driven limbs before their visual children. Applying the
+        // gun transforms first made the weapon inherit one frame of stale hand
+        // position while the player was moving.
         foreach (var pair in targets)
         {
             var body = pair.Key;
@@ -625,42 +632,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void OnGUI()
     {
-        if (coordinator)
-        {
-            if (MultiplayerSession.IsHosting || MultiplayerSession.IsConnected) DrawRespawnCountdown();
-            return;
-        }
-        if (!MultiplayerSession.IsConnected) return;
-        if (remoteBody == null || remoteBody.rb == null) return;
-        var camera = Camera.main;
-        if (camera == null) return;
-        var scale = Mathf.Clamp(Mathf.Abs(remoteBody.characterScale), 0.7f, 1.8f);
-        var world = (Vector3)remoteBody.rb.position + Vector3.up * (1.35f * scale);
-        var screen = camera.WorldToScreenPoint(world);
-        if (screen.z <= 0f || screen.x < -200f || screen.x > Screen.width + 200f ||
-            screen.y < -80f || screen.y > Screen.height + 80f) return;
-
-        EnsureNameTagStyles();
-        var content = new GUIContent(RemoteNameTag(remoteBody));
-        var size = remoteNameTagStyle.CalcSize(content);
-        var width = Mathf.Min(size.x + 14f, Screen.width - 12f);
-        var rect = new Rect(
-            Mathf.Clamp(screen.x - width * 0.5f, 6f, Screen.width - width - 6f),
-            Screen.height - screen.y - 12f,
-            width,
-            Mathf.Max(24f, size.y + 4f));
-        remoteNameTagStyle.normal.textColor = !remoteBody.isAlive
-            ? new Color(1f, 0.28f, 0.28f, 1f)
-            : !remoteBody.IsConsc() ? new Color(1f, 0.72f, 0.22f, 1f) : Color.white;
-
-        var previousDepth = GUI.depth;
-        GUI.depth = 10;
-        GUI.Label(new Rect(rect.x - 1f, rect.y, rect.width, rect.height), content, remoteNameTagShadowStyle);
-        GUI.Label(new Rect(rect.x + 1f, rect.y, rect.width, rect.height), content, remoteNameTagShadowStyle);
-        GUI.Label(new Rect(rect.x, rect.y - 1f, rect.width, rect.height), content, remoteNameTagShadowStyle);
-        GUI.Label(new Rect(rect.x, rect.y + 1f, rect.width, rect.height), content, remoteNameTagShadowStyle);
-        GUI.Label(rect, content, remoteNameTagStyle);
-        GUI.depth = previousDepth;
+        if (coordinator && (MultiplayerSession.IsHosting || MultiplayerSession.IsConnected)) DrawRespawnCountdown();
     }
 
     private void EnsureNameTagStyles()
@@ -1119,8 +1091,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 var tailRootCount = reader.ReadUInt16();
                 for (var index = 0; index < tailRootCount; index++) SkipBody(reader);
                 ReadWorldTransform(reader, remoteBody.Arms);
+                // gunTransform is attached to Arms, so its local pose stays stable while
+                // the whole remote player is interpolating through world space.
                 ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
                 ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
+                // The weapon is already attached to the hand rig. Keep consuming its
+                // legacy network transform, but do not apply it a second time in world
+                // space: that competes with the rig and makes it shake while moving.
                 ReadWorldTarget(reader, null);
                 var remoteHealth = reader.ReadSingle();
                 if (MultiplayerSession.IsHost)
@@ -1377,6 +1354,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var player = PlayerScript.player;
         if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || body == null) return false;
         var isLocalPlayer = player != null && body == player.bodyScript;
+        // PlayerScript.player is assigned after the first body is created. The initial body is
+        // already parented to PlayerScript but still has isPlayer=false during that short window.
         var isStartingPlayerBody = body.GetComponentInParent<PlayerScript>() != null;
         if (!isLocalPlayer && !isStartingPlayerBody && !body.isPlayer && !IsRemoteAvatarBody(body)) return false;
         ClearDroppedWeapon(body, allWeapons);
@@ -2290,6 +2269,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return end;
     }
 
+    // The normal shot packet already carries the exact spread directions. Replaying only
+    // the cosmetic portion of the impact here keeps wall holes, sparks and hit sounds in
+    // sync without applying damage or modifying the remote world's physics.
     private void CreateRemoteBulletImpact(WeaponPreset preset, Vector2 origin, Vector2 direction,
         bool ignoreRemoteAvatar)
     {
@@ -2314,7 +2296,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 if (penetration < 0) return;
                 continue;
             }
-
+            // Lamps are destroyed by the synchronized world state, which also recreates
+            // their shards and shock effect. Do not duplicate them from a shot visual.
             if (collider.transform.gameObject.CompareTag("Lamp")) return;
 
             if (preset.HitSounds != null && preset.HitSounds.Count > 0)
@@ -2730,6 +2713,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             writer.Write(path);
             if (renderer == null)
             {
+                // Character models may rebuild a renderer while a cached layout is
+                // still valid. Keep the packet shape intact until next validation.
                 writer.Write(false);
                 writer.Write("");
                 WriteColor(writer, Color.white);
@@ -2828,6 +2813,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             while (ancestor != null && ancestor != root)
             {
                 var ancestorRenderer = ancestor.GetComponent<SpriteRenderer>();
+                // Cosmetic roots (for example ChristmasHat) sit directly below the
+                // head. Their child sprites must not remain visible if the root is off.
                 if (ancestorRenderer != null && !ancestorRenderer.enabled &&
                     ancestor.parent != null && ancestor.parent.name == "Head")
                 {

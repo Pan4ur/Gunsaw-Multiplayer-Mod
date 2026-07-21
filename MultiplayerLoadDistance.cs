@@ -4,10 +4,8 @@ using UnityEngine;
 
 internal static class MultiplayerLoadDistance
 {
-    private const float DefaultTickDistanceSqr = 1800f; // TODO SETTING
-
-
-
+    // Gunsaw's ObjectUnloader compares squared distance directly to this preference.
+    private const float DefaultTickDistanceSqr = 1800f;
     private const float SimulationRefreshInterval = 0.2f;
     private static readonly List<Vector2> playerPositions = new List<Vector2>();
     private static readonly Dictionary<Rigidbody2D, bool> savedSimulationStates =
@@ -24,6 +22,7 @@ internal static class MultiplayerLoadDistance
         var active = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected;
         if (active)
         {
+            // Keep every object spawned. Simulation culling below is deliberately separate.
             ResourceManager.maxDistance = float.PositiveInfinity;
             ObjectUnloader.dist = float.PositiveInfinity;
             ObjectUnloader.distTwo = float.PositiveInfinity;
@@ -102,6 +101,7 @@ internal static class MultiplayerLoadDistance
     {
         if (!IsHostSimulationActive() || unloader == null) return false;
         ApplyWorldBody(unloader.GetComponent<Rigidbody2D>());
+        // Do not let ObjectUnloader hide the sprite or undo our player-based simulation state.
         return true;
     }
 
@@ -130,6 +130,8 @@ internal static class MultiplayerLoadDistance
         playerPositions.Clear();
         var localPlayer = PlayerScript.player;
         if (localPlayer != null) AddPlayerPosition(localPlayer.bodyScript);
+        // The display object can be hidden or one frame behind. Use the coordinate decoded from
+        // the remote player's latest packet so an NPC near that player is never culled by host range.
         foreach (var remote in NetworkAvatarReplication.RemotePlayers())
         {
             if (remote.HasAuthoritativePosition) playerPositions.Add(remote.AuthoritativePosition);

@@ -28,14 +28,21 @@ internal sealed class WorldReplication : MonoBehaviour
     private const bool DiagnosticsEnabled = false;
     private readonly Dictionary<string, Rigidbody2D> bodies = new Dictionary<string, Rigidbody2D>();
     private readonly Dictionary<Rigidbody2D, string> ids = new Dictionary<Rigidbody2D, string>();
-
+    // Runtime objects do not exist on a client before their first snapshot.
+    // Keep their generated local key bound to the original wire ID so later
+    // client input still addresses the host object correctly.
     private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
     private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
-
-    private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons = new Dictionary<Rigidbody2D, DroppedWeapon>();
-
-    private readonly Dictionary<string, float> pendingDestroyedWeaponPickups = new Dictionary<string, float>();
-
+    private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons =
+        new Dictionary<Rigidbody2D, DroppedWeapon>();
+    // A local pickup in an empty slot destroys the item immediately. Ignore stale host
+    // snapshots that were sent before the host processed that pickup, otherwise the item
+    // can be instantiated again on the client for a frame (or until the next full snapshot).
+    private readonly Dictionary<string, float> pendingDestroyedWeaponPickups =
+        new Dictionary<string, float>();
+    // Snapshots are sent over UDP and can arrive out of order. Once the host has
+    // destroyed a body, an older state must not recreate its crate on a client:
+    // its later destroy snapshot would otherwise instantiate debris a second time.
     private readonly HashSet<string> clientDestroyedBodyIds = new HashSet<string>();
     private readonly Dictionary<Rigidbody2D, State> received = new Dictionary<Rigidbody2D, State>();
     private readonly Dictionary<string, ClientBodyState> pushes = new Dictionary<string, ClientBodyState>();
@@ -917,7 +924,9 @@ internal sealed class WorldReplication : MonoBehaviour
                                 if (crate.breakType == CrateScript.BreakType.None)
                                     RegisterCrateDebrisBodies(id, debris.GetComponentsInChildren<Rigidbody2D>(true), true);
                             }
-
+                            // A crate can have visual children which are not on the tracked
+                            // Rigidbody2D. Hiding that body alone leaves the original pallet
+                            // visible next to its host-created split pieces.
                             var objectToRemove = crate != null ? crate.gameObject : body.gameObject;
                             if (clientCreatedBodies.Remove(body))
                             {
@@ -947,7 +956,8 @@ internal sealed class WorldReplication : MonoBehaviour
                         simulated = reader.ReadBoolean(),
                         awake = reader.ReadBoolean()
                     };
-
+                    // Ignore stale pre-destruction UDP states. Automatic weapons
+                    // produce several in-flight snapshots around the breaking frame.
                     if (clientDestroyedBodyIds.Contains(id)) continue;
                     if (isDropped)
                     {
@@ -1553,6 +1563,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 {
                     if (operation == WeaponPickup)
                     {
+                        // BodyWepPickup normally performs these operations across its pickup animation:
+                        // turn the ground item into the previous weapon, clear the slot, then equip the
+                        // picked weapon. The host has no running pickup animation for a remote avatar,
+                        // so complete the same transaction immediately and atomically.
                         var pickedWeapon = dropped.stats;
                         remoteBody.weapons[slot] = FindWeaponPreset(oldWeaponId);
                         remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
@@ -1966,7 +1980,8 @@ internal sealed class WorldReplication : MonoBehaviour
     private void RegisterCrateDebrisBodies(string crateId, Rigidbody2D[] debrisBodies, bool clientCreated)
     {
         if (string.IsNullOrEmpty(crateId) || debrisBodies == null) return;
-
+        // FindObjectsOfType and GetComponentsInChildren use different enumeration orders.
+        // A stable order is required because the index is part of the wire ID.
         Array.Sort(debrisBodies, CompareCrateDebrisBodies);
         for (var index = 0; index < debrisBodies.Length; index++)
         {
@@ -1984,6 +1999,8 @@ internal sealed class WorldReplication : MonoBehaviour
             }
             if (!clientCreated) continue;
             clientCreatedBodies.Add(body);
+            // These objects were instantiated from the host's destruction snapshot.
+            // Their local CrateScript must not run a second destruction path on a client.
             if (debrisCrate != null) debrisCrate.enabled = false;
         }
     }

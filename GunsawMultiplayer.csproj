@@ -19,6 +19,9 @@
     <Reference Include="UnityEngine.Physics2DModule"><HintPath>lib/UnityEngine.Physics2DModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>lib/UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.TextRenderingModule"><HintPath>lib/UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>C:\Games\Gunsaw\Gunsaw_Data\Managed\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>C:\Games\Gunsaw\Gunsaw_Data\Managed\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>C:\Games\Gunsaw\Gunsaw_Data\Managed\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>lib/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

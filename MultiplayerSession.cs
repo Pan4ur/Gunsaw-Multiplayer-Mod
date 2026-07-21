@@ -165,7 +165,7 @@ internal static class MultiplayerSession
     }
 
     internal static bool Connect(string relayAddress, string lobbyId, string relayKey, string playerName,
-        ushort assignedPeerId, int lobbyMaxPlayers, ManualLogSource logger, out string error)
+        ushort assignedPeerId, ushort assignedHostPeerId, int lobbyMaxPlayers, ManualLogSource logger, out string error)
     {
         error = "";
         try
@@ -182,7 +182,7 @@ internal static class MultiplayerSession
                 customLevelTransfer = null;
                 localPlayerName = NormalizePlayerName(playerName);
                 localPeerId = assignedPeerId;
-                hostPeerId = 0;
+                hostPeerId = assignedHostPeerId == 0 ? (ushort)1 : assignedHostPeerId;
                 maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
             }
             isHost = false;
@@ -195,7 +195,7 @@ internal static class MultiplayerSession
             ResetPing();
             socket = ConnectRelay(relayAddress, lobbyId, relayKey);
             var helloPacket = PacketWithPayload(hello, Encoding.UTF8.GetBytes(localPlayerName));
-            SendPacket(helloPacket, 1);
+            SendPacket(helloPacket, hostPeerId, true, true, true);
             ThreadPool.QueueUserWorkItem(_ => Receive(null));
             logger.LogInfo("UDP relay handshake sent to " + relayAddress + ".");
             return true;
@@ -1303,8 +1303,37 @@ internal static class MultiplayerSession
         var port = uri.IsDefaultPort ? 27015 : uri.Port;
         if (port < 1 || port > 65535) throw new InvalidOperationException("Invalid UDP relay port.");
 
-        var client = new UdpClient();
-        client.Connect(uri.Host, port);
+        // Do not let UdpClient.Connect(string, int) pick the address family. Mono under
+        // Wine can resolve a dual-stack host to IPv6 first even when the relay only
+        // listens on IPv4, while the old WebSocket transport hid that distinction.
+        var addresses = Dns.GetHostAddresses(uri.Host);
+        Array.Sort(addresses, (left, right) =>
+        {
+            var leftRank = left.AddressFamily == AddressFamily.InterNetwork ? 0 : 1;
+            var rightRank = right.AddressFamily == AddressFamily.InterNetwork ? 0 : 1;
+            return leftRank.CompareTo(rightRank);
+        });
+
+        UdpClient client = null;
+        Exception lastConnectError = null;
+        foreach (var relayAddress in addresses)
+        {
+            if (relayAddress.AddressFamily != AddressFamily.InterNetwork &&
+                relayAddress.AddressFamily != AddressFamily.InterNetworkV6) continue;
+            try
+            {
+                var candidateClient = new UdpClient(relayAddress.AddressFamily);
+                candidateClient.Connect(new IPEndPoint(relayAddress, port));
+                client = candidateClient;
+                break;
+            }
+            catch (Exception exception)
+            {
+                lastConnectError = exception;
+            }
+        }
+        if (client == null)
+            throw new IOException("Could not create a UDP socket for " + uri.Host + ".", lastConnectError);
         client.Client.ReceiveTimeout = 500;
         socketCancellation = new CancellationTokenSource();
         socket = client;
@@ -1320,6 +1349,10 @@ internal static class MultiplayerSession
         for (var attempt = 0; attempt < 10 && !authenticated; attempt++)
         {
             client.Send(auth, auth.Length);
+            // Mono in Wine may ignore ReceiveTimeout on a UDP socket and block the
+            // Unity main thread forever here. Poll has a reliable timeout on both
+            // the Windows and Wine socket implementations.
+            if (!client.Client.Poll(500000, SelectMode.SelectRead)) continue;
             try
             {
                 IPEndPoint remote = null;
@@ -1425,7 +1458,7 @@ internal static class MultiplayerSession
     }
 
     private static void SendPacket(byte[] packet, ushort targetId = 0, bool? priority = null,
-        bool allowReliable = true)
+        bool allowReliable = true, bool sendImmediately = false)
     {
         if (packet == null || packet.Length == 0) return;
         if (socket == null || !relayConnected) throw new IOException("Relay connection is closed.");
@@ -1466,7 +1499,8 @@ internal static class MultiplayerSession
                     Attempts = 1
                 };
             }
-            EnqueueRoutedPacket(routedReliable, true);
+            if (sendImmediately) SendPacketImmediately(wrapped, targetId);
+            else EnqueueRoutedPacket(routedReliable, true);
             return;
         }
 
@@ -1480,6 +1514,16 @@ internal static class MultiplayerSession
         Buffer.BlockCopy(packet, 0, routed, sizeof(ushort), packet.Length);
         return routed;
     }
+
+    private static void SendPacketImmediately(byte[] packet, ushort targetId)
+    {
+        var current = socket;
+        var cancellation = socketCancellation;
+        if (current == null || cancellation == null || !relayConnected)
+            throw new IOException("Relay connection is closed.");
+        SendPacketBlocking(current, cancellation, RoutePacket(packet, targetId));
+    }
+
 
     private static void EnqueueRoutedPacket(byte[] routed, bool? priority = null)
     {
@@ -1507,6 +1551,8 @@ internal static class MultiplayerSession
 
     private static bool ShouldSendReliable(byte[] packet)
     {
+        // Connection handshake and damage events must survive packet loss.
+        // Position/state snapshots stay unreliable so an old packet never blocks a new one.
         return Matches(packet, hello) || HasHeader(packet, hello) ||
             Matches(packet, accepted) || HasHeader(packet, accepted) ||
             HasHeader(packet, sceneHeader) || HasHeader(packet, settingsHeader) ||
