@@ -17,7 +17,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.2";
+    public const string PluginVersion = "0.3.3";
 
     private readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
@@ -98,7 +98,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         npcReplication = gameObject.AddComponent<NpcReplication>();
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
         World = worldReplication;
-        Logger.LogInfo("Gunsaw Multiplayer 0.3.2 loaded.");
+        Logger.LogInfo("Gunsaw Multiplayer 0.3.3 loaded.");
     }
 
     private void Start()
