@@ -43,12 +43,12 @@
 - [ ] Real gameplay test
 
 ### UI
-- [ ] Improve MP Window
+- [X] Improve MP Window
 - [ ] Add more MP settings and features
 
 ### Architecture
 - [ ] Refactor god classes
-- [ ] Fix compatibility with CrossOver on Apple Silicon
+- [X] Fix compatibility with CrossOver on Apple Silicon
 - [ ] Reduce the load on the server's CPU
  
 ## Installation
@@ -92,9 +92,7 @@ available in `GunsawMultiplayer/lib/`. For the standard local installation, the 
 
 ## Running your own lobby server
 
-The relay/lobby service lives in [LobbyServer](https://github.com/Pan4ur/Gunsaw-Lobby-Server). It provides the HTTP
-lobby API and the WebSocket endpoint used by the mod. A public deployment needs HTTPS and
-WSS, normally through the included Caddy or Nginx reverse-proxy examples
+The relay/lobby service lives in [LobbyServer](https://github.com/Pan4ur/Gunsaw-Lobby-Server)
 
 ## Contributing
 
