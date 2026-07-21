@@ -1,6 +1,6 @@
 # Gunsaw Multiplayer Mod
 
-> **WIP, MVP, IN-DEV — not production-ready.**  This is an unofficial multiplayer mod for
+> **WIP, IN-DEV — not production-ready. (overall, it's already playable)**  This is an unofficial multiplayer mod for
 > [Gunsaw](https://orsonik.itch.io/gunsaw-demo). It is actively being developed and
 > can contain desyncs, crashes, incomplete mechanics, and compatibility issues
 
@@ -20,7 +20,7 @@
 - [X] Reduce the packet rate (send movement and pose packets only when changed for stationary entities)
 - [X] Improve packet serialization (implement string hashing or short id) to reduce packet size
 - [X] Optimize far objects, keep them on the map but disable ticking
-
+- [ ] Fix Hello handshake (it doesn't always work and crashes the lobby sometimes)
 
 ### Sync Fixes
 - [x] Far objects sync
@@ -40,6 +40,8 @@
 - [X] Fix destruction of lightbulbs from hits
 - [X] Fix weapon dropping at the beginning of the game
 - [ ] Fix or disable the process of transferring into another body
+- [ ] Add teams
+- [ ] Add colored respawn points
 - [ ] Real gameplay test
 
 ### UI
