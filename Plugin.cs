@@ -186,6 +186,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
 
         if (MultiplayerHud.IsTyping) return;
+        if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.R))
+        {
+            multiplayerHud.ToggleReplicationDebugOverlay();
+            return;
+        }
+        if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.S))
+        {
+            multiplayerHud.ToggleNetworkStats();
+            return;
+        }
         if (Input.GetKeyDown(KeyCode.Space)) debugWeaponSequence = 1;
         else if (debugWeaponSequence == 1 && Input.GetKeyDown(KeyCode.End)) debugWeaponSequence = 2;
         else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.G))
@@ -1222,9 +1232,11 @@ internal static class MultiplayerPlayerKickPatch
 [HarmonyPatch(typeof(AIScript), "FixedUpdate")]
 internal static class MultiplayerNpcTargetPatch
 {
-    private static void Prefix(AIScript __instance)
+    private static bool Prefix(AIScript __instance)
     {
+        if (__instance == null || !MultiplayerLoadDistance.ShouldTickNpc(__instance.body)) return false;
         NetworkAvatarReplication.PrepareNpcTarget(__instance);
+        return true;
     }
 }
 

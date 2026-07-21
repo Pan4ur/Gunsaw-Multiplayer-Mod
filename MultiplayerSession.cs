@@ -105,12 +105,24 @@ internal static class MultiplayerSession
     private static long sentBytes;
     private static long receivedPackets;
     private static long sentPackets;
+    private static long sentNpcBytes;
+    private static long sentWorldBytes;
+    private static long sentAvatarBytes;
+    private static long sentOtherBytes;
     private static readonly object networkStatsLock = new object();
     private static long statsSampleTicks;
     private static long sampledReceivedBytes;
     private static long sampledSentBytes;
+    private static long sampledSentNpcBytes;
+    private static long sampledSentWorldBytes;
+    private static long sampledSentAvatarBytes;
+    private static long sampledSentOtherBytes;
     private static int receivedBytesPerSecond;
     private static int sentBytesPerSecond;
+    private static int sentNpcBytesPerSecond;
+    private static int sentWorldBytesPerSecond;
+    private static int sentAvatarBytesPerSecond;
+    private static int sentOtherBytesPerSecond;
     private static string localPlayerName = "Player";
     private static ushort localPeerId;
     private static ushort hostPeerId;
@@ -293,14 +305,26 @@ internal static class MultiplayerSession
             {
                 var rx = Interlocked.Read(ref receivedBytes);
                 var tx = Interlocked.Read(ref sentBytes);
+                var txNpc = Interlocked.Read(ref sentNpcBytes);
+                var txWorld = Interlocked.Read(ref sentWorldBytes);
+                var txAvatar = Interlocked.Read(ref sentAvatarBytes);
+                var txOther = Interlocked.Read(ref sentOtherBytes);
                 if (statsSampleTicks != 0 && elapsedTicks > 0)
                 {
                     var seconds = elapsedTicks / (double)TimeSpan.TicksPerSecond;
                     receivedBytesPerSecond = (int)Math.Max(0, (rx - sampledReceivedBytes) / seconds);
                     sentBytesPerSecond = (int)Math.Max(0, (tx - sampledSentBytes) / seconds);
+                    sentNpcBytesPerSecond = (int)Math.Max(0, (txNpc - sampledSentNpcBytes) / seconds);
+                    sentWorldBytesPerSecond = (int)Math.Max(0, (txWorld - sampledSentWorldBytes) / seconds);
+                    sentAvatarBytesPerSecond = (int)Math.Max(0, (txAvatar - sampledSentAvatarBytes) / seconds);
+                    sentOtherBytesPerSecond = (int)Math.Max(0, (txOther - sampledSentOtherBytes) / seconds);
                 }
                 sampledReceivedBytes = rx;
                 sampledSentBytes = tx;
+                sampledSentNpcBytes = txNpc;
+                sampledSentWorldBytes = txWorld;
+                sampledSentAvatarBytes = txAvatar;
+                sampledSentOtherBytes = txOther;
                 statsSampleTicks = now;
             }
 
@@ -311,6 +335,10 @@ internal static class MultiplayerSession
                 PingMs = ping,
                 ReceivedBytesPerSecond = receivedBytesPerSecond,
                 SentBytesPerSecond = sentBytesPerSecond,
+                SentNpcBytesPerSecond = sentNpcBytesPerSecond,
+                SentWorldBytesPerSecond = sentWorldBytesPerSecond,
+                SentAvatarBytesPerSecond = sentAvatarBytesPerSecond,
+                SentOtherBytesPerSecond = sentOtherBytesPerSecond,
                 PacketLossPercent = received + lost == 0 ? 0f : (float)(lost * 100.0 / (received + lost))
             };
         }
@@ -456,10 +484,10 @@ internal static class MultiplayerSession
         if (!isHost) Send(npcDamageHeader, data, 1);
     }
 
-    internal static void SendNpcPossession(string id)
+    internal static void SendNpcPossession(ulong id)
     {
-        if (isHost || string.IsNullOrEmpty(id)) return;
-        Send(npcPossessHeader, Encoding.UTF8.GetBytes(id), 1);
+        if (isHost || id == 0UL) return;
+        Send(npcPossessHeader, BitConverter.GetBytes(id), 1);
     }
 
     private static void SendCustomLevel(string levelJson, ushort targetId = 0)
@@ -944,13 +972,25 @@ internal static class MultiplayerSession
         Interlocked.Exchange(ref sentBytes, 0);
         Interlocked.Exchange(ref receivedPackets, 0);
         Interlocked.Exchange(ref sentPackets, 0);
+        Interlocked.Exchange(ref sentNpcBytes, 0);
+        Interlocked.Exchange(ref sentWorldBytes, 0);
+        Interlocked.Exchange(ref sentAvatarBytes, 0);
+        Interlocked.Exchange(ref sentOtherBytes, 0);
         lock (networkStatsLock)
         {
             statsSampleTicks = 0;
             sampledReceivedBytes = 0;
             sampledSentBytes = 0;
+            sampledSentNpcBytes = 0;
+            sampledSentWorldBytes = 0;
+            sampledSentAvatarBytes = 0;
+            sampledSentOtherBytes = 0;
             receivedBytesPerSecond = 0;
             sentBytesPerSecond = 0;
+            sentNpcBytesPerSecond = 0;
+            sentWorldBytesPerSecond = 0;
+            sentAvatarBytesPerSecond = 0;
+            sentOtherBytesPerSecond = 0;
         }
     }
 
@@ -1621,6 +1661,7 @@ internal static class MultiplayerSession
             var totalLength = routedPacket.Length - sizeof(ushort);
             var messageId = Interlocked.Increment(ref transportMessageSequence);
             var fragmentCount = Math.Max(1, (totalLength + UdpFragmentPayload - 1) / UdpFragmentPayload);
+            var trafficKind = ClassifyOutgoingTraffic(routedPacket);
             if (fragmentCount > ushort.MaxValue) throw new InvalidDataException("UDP packet is too large.");
 
             for (var index = 0; index < fragmentCount; index++)
@@ -1638,9 +1679,35 @@ internal static class MultiplayerSession
                 if (length > 0) Buffer.BlockCopy(routedPacket, sourceOffset, datagram, 19, length);
                 client.Send(datagram, datagram.Length);
                 Interlocked.Add(ref sentBytes, datagram.Length);
+                AddOutgoingTrafficBytes(trafficKind, datagram.Length);
                 Interlocked.Increment(ref sentPackets);
             }
         }
+    }
+
+    private static byte ClassifyOutgoingTraffic(byte[] routedPacket)
+    {
+        const int packetOffset = sizeof(ushort);
+        if (HasHeaderAt(routedPacket, packetOffset, npcHeader)) return 1;
+        if (HasHeaderAt(routedPacket, packetOffset, worldHeader)) return 2;
+        if (HasHeaderAt(routedPacket, packetOffset, snapshotHeader)) return 3;
+        return 0;
+    }
+
+    private static bool HasHeaderAt(byte[] packet, int offset, byte[] header)
+    {
+        if (packet == null || header == null || offset < 0 || packet.Length < offset + header.Length) return false;
+        for (var index = 0; index < header.Length; index++)
+            if (packet[offset + index] != header[index]) return false;
+        return true;
+    }
+
+    private static void AddOutgoingTrafficBytes(byte kind, int bytes)
+    {
+        if (kind == 1) Interlocked.Add(ref sentNpcBytes, bytes);
+        else if (kind == 2) Interlocked.Add(ref sentWorldBytes, bytes);
+        else if (kind == 3) Interlocked.Add(ref sentAvatarBytes, bytes);
+        else Interlocked.Add(ref sentOtherBytes, bytes);
     }
 
     private static bool HasUdpMagic(byte[] packet)
@@ -1792,5 +1859,9 @@ internal struct NetworkDebugStats
     internal int PingMs;
     internal int ReceivedBytesPerSecond;
     internal int SentBytesPerSecond;
+    internal int SentNpcBytesPerSecond;
+    internal int SentWorldBytesPerSecond;
+    internal int SentAvatarBytesPerSecond;
+    internal int SentOtherBytesPerSecond;
     internal float PacketLossPercent;
 }

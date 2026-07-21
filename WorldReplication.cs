@@ -17,11 +17,17 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte ZoneActivate = 5;
 
     private const float SnapshotInterval = 1f / 50f;
+    private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
 
     private const bool DiagnosticsEnabled = false;
     private readonly Dictionary<string, Rigidbody2D> bodies = new Dictionary<string, Rigidbody2D>();
     private readonly Dictionary<Rigidbody2D, string> ids = new Dictionary<Rigidbody2D, string>();
+    // Runtime objects do not exist on a client before their first snapshot.
+    // Keep their generated local key bound to the original wire ID so later
+    // client input still addresses the host object correctly.
+    private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
+    private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
     private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons =
         new Dictionary<Rigidbody2D, DroppedWeapon>();
     private readonly Dictionary<Rigidbody2D, State> received = new Dictionary<Rigidbody2D, State>();
@@ -60,7 +66,13 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new Dictionary<AudioSource, bool>();
     private readonly HashSet<string> seenSnapshotFires = new HashSet<string>();
     private readonly HashSet<string> seenSnapshotAudio = new HashSet<string>();
+    private byte[] lastSerializedWorld;
+    private byte[] lastSerializedEnvironment;
+    private readonly Dictionary<string, byte[]> lastSerializedBodyStates =
+        new Dictionary<string, byte[]>();
+    private readonly Dictionary<string, float> lastChangedBodyAt = new Dictionary<string, float>();
     private float nextSnapshot;
+    private float nextFullWorldSnapshot;
     private float nextDiagnostics;
     private float nextManifest;
     private bool wasConnected;
@@ -85,10 +97,55 @@ internal sealed class WorldReplication : MonoBehaviour
     private int receivedSnapshotPackets;
     private int receivedSnapshotStates;
     private int missingSnapshotBodies;
+    private int lastSentPropCount;
+    private int lastSentOtherCount;
+    private int culledPropCount;
+    private int culledOtherCount;
+    private float nextActivitySample;
+    private int sentPacketsWindow;
+    private int sentStatesWindow;
+    private int receivedPacketsWindow;
+    private int receivedStatesWindow;
+    private int sentPacketsPerSecond;
+    private int sentStatesPerSecond;
+    private int receivedPacketsPerSecond;
+    private int receivedStatesPerSecond;
     private string lastQueuedId = "";
     private string lastMissingInputId = "";
     private string lastRejectedInputId = "";
     private string lastMissingSnapshotId = "";
+
+    internal int TotalPropCount
+    {
+        get
+        {
+            var count = 0;
+            foreach (var body in bodies.Values)
+                if (body != null && IsInteractivePropBody(body)) count++;
+            return count;
+        }
+    }
+
+    internal int TotalOtherCount
+    {
+        get
+        {
+            var count = buttons.Count + mechanismAudio.Count;
+            foreach (var fire in fires.Values) if (fire != null) count++;
+            foreach (var body in bodies.Values)
+                if (body != null && !IsInteractivePropBody(body)) count++;
+            return count;
+        }
+    }
+
+    internal int LastSnapshotPropCount { get { return lastSentPropCount; } }
+    internal int LastSnapshotOtherCount { get { return lastSentOtherCount; } }
+    internal int CulledPropCount { get { return culledPropCount; } }
+    internal int CulledOtherCount { get { return culledOtherCount; } }
+    internal int SentPacketsPerSecond { get { return sentPacketsPerSecond; } }
+    internal int SentStatesPerSecond { get { return sentStatesPerSecond; } }
+    internal int ReceivedPacketsPerSecond { get { return receivedPacketsPerSecond; } }
+    internal int ReceivedStatesPerSecond { get { return receivedStatesPerSecond; } }
 
     private void Awake()
     {
@@ -118,8 +175,23 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
+    internal void ApplyDistanceCulling()
+    {
+        if (!MultiplayerSession.IsHost) return;
+        culledPropCount = 0;
+        culledOtherCount = 0;
+        foreach (var body in bodies.Values)
+        {
+            MultiplayerLoadDistance.ApplyWorldBody(body);
+            if (!MultiplayerLoadDistance.IsSimulationCulled(body)) continue;
+            if (IsInteractivePropBody(body)) culledPropCount++;
+            else culledOtherCount++;
+        }
+    }
+
     private void Update()
     {
+        SampleActivity();
         if (DiagnosticsEnabled) WriteDiagnostics();
         var scene = SceneManager.GetActiveScene().name;
         var isHost = MultiplayerSession.IsHost;
@@ -177,6 +249,9 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void FixedUpdate()
     {
+        var performanceStarted = MultiplayerPerformance.Start();
+        try
+        {
         if (!MultiplayerSession.IsConnected) return;
         if (MultiplayerSession.IsHost)
         {
@@ -188,7 +263,8 @@ internal sealed class WorldReplication : MonoBehaviour
             if (Time.unscaledTime >= nextSnapshot)
             {
                 nextSnapshot = Time.unscaledTime + SnapshotInterval;
-                MultiplayerSession.SendWorldSnapshot(SerializeWorld());
+                var snapshot = SerializeWorld();
+                if (snapshot != null) MultiplayerSession.SendWorldSnapshot(snapshot);
             }
             return;
         }
@@ -209,6 +285,11 @@ internal sealed class WorldReplication : MonoBehaviour
             nextSnapshot = Time.unscaledTime + SnapshotInterval;
             MultiplayerSession.SendWorldInput(SerializePushes());
             MultiplayerSession.SendWorldDamage(SerializeDamage());
+        }
+        }
+        finally
+        {
+            MultiplayerPerformance.AddWorld(performanceStarted);
         }
     }
 
@@ -528,6 +609,16 @@ internal sealed class WorldReplication : MonoBehaviour
         clientAudioWasPlaying.Clear();
         mechanismAudioIds.Clear();
         mechanismAudio.Clear();
+        wireIds.Clear();
+        idsByWire.Clear();
+        lastSerializedWorld = null;
+        lastSerializedEnvironment = null;
+        lastSerializedBodyStates.Clear();
+        lastChangedBodyAt.Clear();
+        nextFullWorldSnapshot = 0f;
+        nextActivitySample = 0f;
+        sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
+        sentPacketsPerSecond = sentStatesPerSecond = receivedPacketsPerSecond = receivedStatesPerSecond = 0;
     }
 
     private byte[] SerializeWorld()
@@ -536,82 +627,173 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var writer = new BinaryWriter(stream))
         {
             var states = new List<KeyValuePair<string, Rigidbody2D>>(bodies);
-            writer.Write((ushort)states.Count);
+            var fullSnapshot = Time.unscaledTime >= nextFullWorldSnapshot;
+            if (fullSnapshot) nextFullWorldSnapshot = Time.unscaledTime + FullSnapshotInterval;
+            var changedStates = new List<byte[]>();
+            var changedPropCount = 0;
+            var changedOtherBodyCount = 0;
             foreach (var pair in states)
             {
-                var body = pair.Value;
-                writer.Write(pair.Key);
-                var destroyed = body == null;
-                writer.Write(destroyed);
-                if (destroyed) continue;
-                DroppedWeapon dropped;
-                droppedWeapons.TryGetValue(body, out dropped);
-                var crate = body.GetComponentInParent<CrateScript>();
-                writer.Write(dropped != null);
-                writer.Write(crate != null);
-                if (crate != null) writer.Write(CleanCloneName(crate.transform.root.name));
-                writer.Write(body.position.x); writer.Write(body.position.y);
-                writer.Write(body.rotation);
-                writer.Write(body.velocity.x); writer.Write(body.velocity.y);
-                writer.Write(body.angularVelocity);
-                writer.Write(body.gravityScale);
-                writer.Write((int)body.constraints);
-                writer.Write((byte)body.bodyType);
-                writer.Write(body.simulated);
-                writer.Write(body.IsAwake());
-                if (dropped != null)
+                var state = SerializeBodyState(pair.Key, pair.Value);
+                byte[] previous;
+                var stateChanged = !lastSerializedBodyStates.TryGetValue(pair.Key, out previous) ||
+                    !BytesEqual(previous, state);
+                if (fullSnapshot || stateChanged)
                 {
-                    writer.Write(dropped.stats == null ? "" : dropped.stats.name);
-                    writer.Write(dropped.ammoAmount);
+                    changedStates.Add(state);
+                    if (stateChanged) lastChangedBodyAt[pair.Key] = Time.unscaledTime;
+                    if (pair.Value != null && IsInteractivePropBody(pair.Value)) changedPropCount++;
+                    else changedOtherBodyCount++;
                 }
+                lastSerializedBodyStates[pair.Key] = state;
             }
-            writer.Write(Physics2D.gravity.x);
-            writer.Write(Physics2D.gravity.y);
+            writer.Write((ushort)changedStates.Count);
+            foreach (var state in changedStates) writer.Write(state);
+            var environment = SerializeEnvironment();
+            var includeEnvironment = fullSnapshot || !BytesEqual(lastSerializedEnvironment, environment);
+            writer.Write(includeEnvironment);
+            if (includeEnvironment) writer.Write(environment);
+            lastSerializedEnvironment = environment;
+            var packet = stream.ToArray();
+            if (!fullSnapshot && BytesEqual(lastSerializedWorld, packet)) return null;
+            lastSerializedWorld = packet;
+            lastSentPropCount = changedPropCount;
+            lastSentOtherCount = changedOtherBodyCount + (includeEnvironment ? buttons.Count + fires.Count + mechanismAudio.Count : 0);
+            sentPacketsWindow++;
+            sentStatesWindow += changedStates.Count + (includeEnvironment ? buttons.Count + fires.Count + mechanismAudio.Count : 0);
+            return packet;
+        }
+    }
+
+    private byte[] SerializeEnvironment()
+    {
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(Physics2D.gravity.x); writer.Write(Physics2D.gravity.y);
             writer.Write((ushort)buttons.Count);
             foreach (var pair in buttons)
             {
-                writer.Write(pair.Key);
-                writer.Write(pair.Value != null);
-                uint activations;
-                buttonActivations.TryGetValue(pair.Key, out activations);
-                writer.Write(activations);
+                writer.Write(WireId(pair.Key)); writer.Write(pair.Value != null);
+                uint activations; buttonActivations.TryGetValue(pair.Key, out activations); writer.Write(activations);
             }
             var fireCount = 0;
-            foreach (var pair in fires)
-                if (pair.Value != null && fireCount < ushort.MaxValue) fireCount++;
+            foreach (var pair in fires) if (pair.Value != null && fireCount < ushort.MaxValue) fireCount++;
             writer.Write((ushort)fireCount);
             var writtenFires = 0;
             foreach (var pair in fires)
             {
                 var fire = pair.Value;
                 if (fire == null || writtenFires >= fireCount) continue;
-                writer.Write(pair.Key);
-                writer.Write(fire.transform.position.x);
-                writer.Write(fire.transform.position.y);
-                writer.Write(fire.transform.eulerAngles.z);
-                writer.Write(fire.fuel);
-                writer.Write(fire.canIgnite);
-                writer.Write(fire.damageMult);
-                writer.Write(fire.fuelConsMult);
-                writtenFires++;
+                writer.Write(WireId(pair.Key)); writer.Write(fire.transform.position.x); writer.Write(fire.transform.position.y);
+                writer.Write(fire.transform.eulerAngles.z); writer.Write(fire.fuel); writer.Write(fire.canIgnite);
+                writer.Write(fire.damageMult); writer.Write(fire.fuelConsMult); writtenFires++;
             }
             var audioCount = 0;
-            foreach (var pair in mechanismAudio)
-                if (pair.Value != null && audioCount < ushort.MaxValue) audioCount++;
+            foreach (var pair in mechanismAudio) if (pair.Value != null && audioCount < ushort.MaxValue) audioCount++;
             writer.Write((ushort)audioCount);
             var writtenAudio = 0;
             foreach (var pair in mechanismAudio)
             {
                 if (pair.Value == null || writtenAudio >= audioCount) continue;
-                writer.Write(pair.Key);
-                writer.Write(pair.Value.isPlaying);
-                writer.Write(pair.Value.loop);
-                writer.Write(pair.Value.volume);
-                writer.Write(pair.Value.pitch);
-                writtenAudio++;
+                writer.Write(WireId(pair.Key)); writer.Write(pair.Value.isPlaying); writer.Write(pair.Value.loop);
+                writer.Write(pair.Value.volume); writer.Write(pair.Value.pitch); writtenAudio++;
             }
             return stream.ToArray();
         }
+    }
+
+    internal void DrawReplicationDebugOverlay(Camera camera, GUIStyle style, GUIStyle shadowStyle)
+    {
+        foreach (var pair in bodies)
+        {
+            var body = pair.Value;
+            if (body == null) continue;
+            float changedAt;
+            MultiplayerHud.DrawReplicationMarker(camera, body.worldCenterOfMass,
+                lastChangedBodyAt.TryGetValue(pair.Key, out changedAt) &&
+                Time.unscaledTime - changedAt <= 1f, style, shadowStyle);
+        }
+    }
+
+    private byte[] SerializeBodyState(string id, Rigidbody2D body)
+    {
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(WireId(id));
+            var destroyed = body == null;
+            writer.Write(destroyed);
+            if (destroyed) return stream.ToArray();
+            DroppedWeapon dropped;
+            droppedWeapons.TryGetValue(body, out dropped);
+            var crate = body.GetComponentInParent<CrateScript>();
+            writer.Write(dropped != null); writer.Write(crate != null);
+            if (crate != null) writer.Write(CleanCloneName(crate.transform.root.name));
+            writer.Write(body.position.x); writer.Write(body.position.y); writer.Write(body.rotation);
+            writer.Write(body.velocity.x); writer.Write(body.velocity.y); writer.Write(body.angularVelocity);
+            writer.Write(body.gravityScale); writer.Write((int)body.constraints);
+            writer.Write((byte)body.bodyType); writer.Write(body.simulated); writer.Write(body.IsAwake());
+            if (dropped != null)
+            {
+                writer.Write(NetworkWireId.FromString(dropped.stats == null ? "" : dropped.stats.name));
+                writer.Write(dropped.ammoAmount);
+            }
+            return stream.ToArray();
+        }
+    }
+
+    private ulong WireId(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return 0UL;
+        ulong wire;
+        if (wireIds.TryGetValue(id, out wire)) return wire;
+        wire = NetworkWireId.FromString(id);
+        wireIds[id] = wire;
+        idsByWire[wire] = id;
+        return wire;
+    }
+
+    private string ResolveWireId(ulong wire)
+    {
+        if (wire == 0UL) return "";
+        string id;
+        if (idsByWire.TryGetValue(wire, out id)) return id;
+        id = FindKnownWireId(wire);
+        if (id == null) id = "net/" + wire.ToString("X16");
+        wireIds[id] = wire;
+        idsByWire[wire] = id;
+        return id;
+    }
+
+    private string FindKnownWireId(ulong wire)
+    {
+        foreach (var id in bodies.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in buttons.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in fires.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in mechanismAudio.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in proximityDoors.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in activationZones.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        return null;
+    }
+
+    private static bool BytesEqual(byte[] left, byte[] right)
+    {
+        if (left == right) return true;
+        if (left == null || right == null || left.Length != right.Length) return false;
+        for (var index = 0; index < left.Length; index++) if (left[index] != right[index]) return false;
+        return true;
+    }
+
+    private void SampleActivity()
+    {
+        if (Time.unscaledTime < nextActivitySample) return;
+        nextActivitySample = Time.unscaledTime + 1f;
+        sentPacketsPerSecond = sentPacketsWindow;
+        sentStatesPerSecond = sentStatesWindow;
+        receivedPacketsPerSecond = receivedPacketsWindow;
+        receivedStatesPerSecond = receivedStatesWindow;
+        sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
     }
 
     private void ReadSnapshot(byte[] data)
@@ -623,9 +805,11 @@ internal sealed class WorldReplication : MonoBehaviour
             {
                 var count = reader.ReadUInt16();
                 receivedSnapshotStates += count;
+                receivedPacketsWindow++;
+                receivedStatesWindow += count;
                 for (var index = 0; index < count; index++)
                 {
-                    var id = reader.ReadString();
+                    var id = ResolveWireId(reader.ReadUInt64());
                     var destroyed = reader.ReadBoolean();
                     Rigidbody2D body;
                     if (destroyed)
@@ -673,12 +857,12 @@ internal sealed class WorldReplication : MonoBehaviour
                     };
                     if (isDropped)
                     {
-                        var weaponName = reader.ReadString();
+                        var weaponId = reader.ReadUInt64();
                         var ammo = reader.ReadInt32();
                         if (!bodies.TryGetValue(id, out body) || body == null)
-                            body = CreateDroppedWeapon(id, weaponName, ammo, state.position, state.rotation);
+                            body = CreateDroppedWeapon(id, weaponId, ammo, state.position, state.rotation);
                         else
-                            SynchronizeDroppedWeapon(body.GetComponentInParent<DroppedWeapon>(), weaponName, ammo);
+                            SynchronizeDroppedWeapon(body.GetComponentInParent<DroppedWeapon>(), weaponId, ammo);
                     }
                     else if (isCrate && (!bodies.TryGetValue(id, out body) || body == null))
                     {
@@ -694,46 +878,42 @@ internal sealed class WorldReplication : MonoBehaviour
                         lastMissingSnapshotId = id;
                     }
                 }
-                Physics2D.gravity = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var buttonCount = reader.ReadUInt16();
-                for (var index = 0; index < buttonCount; index++)
-                {
-                    var id = reader.ReadString();
-                    var exists = reader.ReadBoolean();
-                    var activations = reader.ReadUInt32();
-                    ApplyButtonState(id, exists, activations);
-                }
-                seenSnapshotFires.Clear();
-                var fireCount = reader.ReadUInt16();
-                for (var index = 0; index < fireCount; index++)
-                {
-                    var id = reader.ReadString();
-                    var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                    var rotation = reader.ReadSingle();
-                    var fuel = reader.ReadSingle();
-                    var canIgnite = reader.ReadBoolean();
-                    var damageMult = reader.ReadSingle();
-                    var fuelConsMult = reader.ReadSingle();
-                    seenSnapshotFires.Add(id);
-                    ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
-                }
-                RemoveMissingFires(seenSnapshotFires);
-                seenSnapshotAudio.Clear();
-                var audioCount = reader.ReadUInt16();
-                for (var index = 0; index < audioCount; index++)
-                {
-                    var id = reader.ReadString();
-                    var playing = reader.ReadBoolean();
-                    var loop = reader.ReadBoolean();
-                    var volume = reader.ReadSingle();
-                    var pitch = reader.ReadSingle();
-                    seenSnapshotAudio.Add(id);
-                    ApplyMechanismAudio(id, playing, loop, volume, pitch);
-                }
-                StopMissingMechanismAudio(seenSnapshotAudio);
+                if (reader.ReadBoolean()) ApplyEnvironment(reader.ReadBytes(reader.ReadInt32()));
             }
         }
         catch (EndOfStreamException) { }
+    }
+
+    private void ApplyEnvironment(byte[] data)
+    {
+        using (var reader = new BinaryReader(new MemoryStream(data)))
+        {
+            Physics2D.gravity = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+            var buttonCount = reader.ReadUInt16();
+            for (var index = 0; index < buttonCount; index++)
+                ApplyButtonState(ResolveWireId(reader.ReadUInt64()), reader.ReadBoolean(), reader.ReadUInt32());
+            seenSnapshotFires.Clear();
+            var fireCount = reader.ReadUInt16();
+            for (var index = 0; index < fireCount; index++)
+            {
+                var id = ResolveWireId(reader.ReadUInt64());
+                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                var rotation = reader.ReadSingle(); var fuel = reader.ReadSingle(); var canIgnite = reader.ReadBoolean();
+                var damageMult = reader.ReadSingle(); var fuelConsMult = reader.ReadSingle();
+                seenSnapshotFires.Add(id); ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
+            }
+            RemoveMissingFires(seenSnapshotFires);
+            seenSnapshotAudio.Clear();
+            var audioCount = reader.ReadUInt16();
+            for (var index = 0; index < audioCount; index++)
+            {
+                var id = ResolveWireId(reader.ReadUInt64());
+                var playing = reader.ReadBoolean(); var loop = reader.ReadBoolean();
+                var volume = reader.ReadSingle(); var pitch = reader.ReadSingle();
+                seenSnapshotAudio.Add(id); ApplyMechanismAudio(id, playing, loop, volume, pitch);
+            }
+            StopMissingMechanismAudio(seenSnapshotAudio);
+        }
     }
 
     private void ApplyAuthoritativeState(Rigidbody2D body, State state)
@@ -894,12 +1074,12 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write(operation);
-            writer.Write(Id(rigidbody));
+            writer.Write(WireId(Id(rigidbody)));
             var slot = dropped.stats == null ? -1 : dropped.stats.slot;
             var oldWeapon = slot >= 0 && slot < body.weapons.Count ? body.weapons[slot] : null;
             var oldAmmo = slot >= 0 && slot < body.weaponAmmos.Count ? body.weaponAmmos[slot] : 0;
             writer.Write(slot);
-            writer.Write(oldWeapon == null ? "" : oldWeapon.name);
+            writer.Write(NetworkWireId.FromString(oldWeapon == null ? "" : oldWeapon.name));
             writer.Write(oldAmmo);
             writer.Write(dropped.stats != null && body.weapons.Contains(dropped.stats));
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
@@ -915,7 +1095,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write(ButtonActivate);
-            writer.Write(id);
+            writer.Write(WireId(id));
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
     }
@@ -927,7 +1107,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write(DoorActivate);
-            writer.Write(ProximityDoorId(opener));
+            writer.Write(WireId(ProximityDoorId(opener)));
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
     }
@@ -939,7 +1119,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write(ZoneActivate);
-            writer.Write(ActivationZoneId(zone));
+            writer.Write(WireId(ActivationZoneId(zone)));
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
     }
@@ -970,7 +1150,7 @@ internal sealed class WorldReplication : MonoBehaviour
             sentStates += pushes.Count;
             foreach (var pair in pushes)
             {
-                writer.Write(pair.Key);
+                writer.Write(WireId(pair.Key));
                 writer.Write(pair.Value.position.x); writer.Write(pair.Value.position.y);
                 writer.Write(pair.Value.rotation);
                 writer.Write(pair.Value.velocity.x); writer.Write(pair.Value.velocity.y);
@@ -987,7 +1167,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write((ushort)damage.Count);
-            foreach (var pair in damage) { writer.Write(pair.Key); writer.Write(pair.Value); }
+            foreach (var pair in damage) { writer.Write(WireId(pair.Key)); writer.Write(pair.Value); }
             damage.Clear();
             return stream.ToArray();
         }
@@ -1003,7 +1183,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 var count = reader.ReadUInt16();
                 for (var index = 0; index < count; index++)
                 {
-                    var id = reader.ReadString();
+                    var id = ResolveWireId(reader.ReadUInt64());
                     var predicted = new ClientBodyState
                     {
                         position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
@@ -1169,7 +1349,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 var count = reader.ReadUInt16();
                 for (var index = 0; index < count; index++)
                 {
-                    var id = reader.ReadString();
+                    var id = ResolveWireId(reader.ReadUInt64());
                     var amount = Mathf.Clamp(reader.ReadSingle(), 0f, 100f);
                     Rigidbody2D body;
                     if (!bodies.TryGetValue(id, out body) || body == null) continue;
@@ -1188,7 +1368,7 @@ internal sealed class WorldReplication : MonoBehaviour
             using (var reader = new BinaryReader(new MemoryStream(data)))
             {
                 var operation = reader.ReadByte();
-                var id = reader.ReadString();
+                var id = ResolveWireId(reader.ReadUInt64());
                 if (operation == ButtonActivate)
                 {
                     ApplyButtonActivation(id, peerId);
@@ -1205,7 +1385,7 @@ internal sealed class WorldReplication : MonoBehaviour
                     return;
                 }
                 var slot = reader.ReadInt32();
-                var oldWeaponName = reader.ReadString();
+                var oldWeaponId = reader.ReadUInt64();
                 var oldAmmo = reader.ReadInt32();
                 var clientOwnsWeapon = reader.ReadBoolean();
                 Rigidbody2D rigidbody;
@@ -1225,7 +1405,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 if (operation == WeaponPickup && slot >= 0 && slot < remoteBody.weapons.Count &&
                     slot < remoteBody.weaponAmmos.Count)
                 {
-                    remoteBody.weapons[slot] = FindWeaponPreset(oldWeaponName);
+                    remoteBody.weapons[slot] = FindWeaponPreset(oldWeaponId);
                     remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
                 }
                 else if (operation == WeaponAmmoGet && clientOwnsWeapon && dropped.stats != null &&
@@ -1549,11 +1729,11 @@ internal sealed class WorldReplication : MonoBehaviour
         return ordinal;
     }
 
-    private Rigidbody2D CreateDroppedWeapon(string id, string weaponName, int ammo, Vector2 position, float rotation)
+    private Rigidbody2D CreateDroppedWeapon(string id, ulong weaponId, int ammo, Vector2 position, float rotation)
     {
         var prefab = Resources.Load<GameObject>("Spawnables/PickupWeapon");
         if (prefab == null) return null;
-        var weapon = FindWeaponPreset(weaponName);
+        var weapon = FindWeaponPreset(weaponId);
         if (weapon == null) return null;
         var dropped = Instantiate(prefab, position, Quaternion.Euler(0f, 0f, rotation)).GetComponent<DroppedWeapon>();
         if (dropped == null) return null;
@@ -1600,10 +1780,10 @@ internal sealed class WorldReplication : MonoBehaviour
         return body;
     }
 
-    private static void SynchronizeDroppedWeapon(DroppedWeapon dropped, string weaponName, int ammo)
+    private static void SynchronizeDroppedWeapon(DroppedWeapon dropped, ulong weaponId, int ammo)
     {
         if (dropped == null) return;
-        var weapon = FindWeaponPreset(weaponName);
+        var weapon = FindWeaponPreset(weaponId);
         if (weapon == null) return;
         if (dropped.stats != weapon || dropped.ammoAmount != ammo)
             dropped.ChangeWeapon(weapon, ammo);
@@ -1643,6 +1823,14 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         foreach (var candidate in Resources.FindObjectsOfTypeAll<WeaponPreset>())
             if (candidate != null && candidate.name == weaponName) return candidate;
+        return null;
+    }
+
+    private static WeaponPreset FindWeaponPreset(ulong weaponId)
+    {
+        if (weaponId == 0UL) return null;
+        foreach (var candidate in Resources.FindObjectsOfTypeAll<WeaponPreset>())
+            if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId) return candidate;
         return null;
     }
 

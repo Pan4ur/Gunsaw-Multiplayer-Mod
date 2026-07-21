@@ -10,18 +10,30 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NpcReplication : MonoBehaviour
 {
-    private const byte ProtocolVersion = 4;
+    // Version 8 uses loss-tolerant 16-bit rotation angles in NPC pose snapshots.
+    private const byte ProtocolVersion = 8;
+    private const float RotationToWire = ushort.MaxValue / 360f;
+    private const float RotationFromWire = 360f / ushort.MaxValue;
 
     private const float SnapshotInterval = 1f / 50f;
     private const float DiscoveryInterval = 1f;
+    private const float FullSnapshotInterval = 1f;
     private const bool DiagnosticsEnabled = false;
     private static readonly MethodInfo LimbRenderCallback = typeof(LimbScript).GetMethod(
         "OnWillRenderObject", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly Dictionary<string, FieldInfo> bodyFieldCache =
+        new Dictionary<string, FieldInfo>();
     private readonly Dictionary<BodyScript, string> hostIds = new Dictionary<BodyScript, string>();
     private readonly Dictionary<string, BodyScript> hostNpcs = new Dictionary<string, BodyScript>();
+    private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
+    private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
     private readonly Dictionary<BodyScript, HostNpcLayout> hostLayouts =
         new Dictionary<BodyScript, HostNpcLayout>();
+    private readonly Dictionary<string, byte[]> lastSentStates = new Dictionary<string, byte[]>();
+    private readonly Dictionary<string, MemoryStream> stateScratch = new Dictionary<string, MemoryStream>();
+    private readonly Dictionary<string, float> lastChangedNpcAt = new Dictionary<string, float>();
     private readonly Dictionary<string, NpcProxy> clientNpcs = new Dictionary<string, NpcProxy>();
+    private readonly Dictionary<string, NpcIdentity> clientIdentities = new Dictionary<string, NpcIdentity>();
     private readonly Dictionary<BodyScript, NpcProxy> clientBodies = new Dictionary<BodyScript, NpcProxy>();
     private readonly HashSet<NpcProxy> clientProxies = new HashSet<NpcProxy>();
     private readonly HashSet<string> locallyPossessedNpcIds = new HashSet<string>();
@@ -30,6 +42,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private readonly Dictionary<string, float> prefabRetryAt = new Dictionary<string, float>();
     private float nextSnapshot;
     private float nextDiscovery;
+    private float nextFullSnapshot;
     private int sendSequence;
     private int receivedSequence = -1;
     private bool wasConnected;
@@ -39,6 +52,28 @@ internal sealed class NpcReplication : MonoBehaviour
     private float nextDiagnostics;
     private int lastPacketBytes;
     private int lastStateCount;
+    private int culledNpcCount;
+    private float nextActivitySample;
+    private int sentPacketsWindow;
+    private int sentStatesWindow;
+    private int receivedPacketsWindow;
+    private int receivedStatesWindow;
+    private int sentPacketsPerSecond;
+    private int sentStatesPerSecond;
+    private int receivedPacketsPerSecond;
+    private int receivedStatesPerSecond;
+    private int coreBytesWindow;
+    private int rigBytesWindow;
+    private int limbBytesWindow;
+    private int tailBytesWindow;
+    private int weaponBytesWindow;
+    private int effectsBytesWindow;
+    private int coreBytesPerSecond;
+    private int rigBytesPerSecond;
+    private int limbBytesPerSecond;
+    private int tailBytesPerSecond;
+    private int weaponBytesPerSecond;
+    private int effectsBytesPerSecond;
     private int createdFromNetwork;
     private int missingPrefabs;
     private int reboundExisting;
@@ -47,6 +82,24 @@ internal sealed class NpcReplication : MonoBehaviour
     private string lastApplyError = "none";
     internal static NpcReplication Instance;
     internal static bool ApplyingAuthoritativeDeath;
+
+    internal int TotalNpcCount
+    {
+        get { return MultiplayerSession.IsHost ? hostNpcs.Count : clientProxies.Count; }
+    }
+
+    internal int LastSnapshotNpcCount { get { return lastStateCount; } }
+    internal int CulledNpcCount { get { return culledNpcCount; } }
+    internal int SentPacketsPerSecond { get { return sentPacketsPerSecond; } }
+    internal int SentStatesPerSecond { get { return sentStatesPerSecond; } }
+    internal int ReceivedPacketsPerSecond { get { return receivedPacketsPerSecond; } }
+    internal int ReceivedStatesPerSecond { get { return receivedStatesPerSecond; } }
+    internal int CoreBytesPerSecond { get { return coreBytesPerSecond; } }
+    internal int RigBytesPerSecond { get { return rigBytesPerSecond; } }
+    internal int LimbBytesPerSecond { get { return limbBytesPerSecond; } }
+    internal int TailBytesPerSecond { get { return tailBytesPerSecond; } }
+    internal int WeaponBytesPerSecond { get { return weaponBytesPerSecond; } }
+    internal int EffectsBytesPerSecond { get { return effectsBytesPerSecond; } }
 
     private void Awake()
     {
@@ -61,6 +114,10 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void Update()
     {
+        var performanceStarted = MultiplayerPerformance.Start();
+        try
+        {
+        SampleActivity();
         if (DiagnosticsEnabled) WriteDiagnostics();
         var scene = SceneManager.GetActiveScene().name;
         var isHost = MultiplayerSession.IsHost;
@@ -107,7 +164,8 @@ internal sealed class NpcReplication : MonoBehaviour
             {
                 nextSnapshot = Time.unscaledTime + SnapshotInterval;
                 AnimateHostOffscreenNpcs();
-                MultiplayerSession.SendNpcSnapshot(SerializeSnapshot());
+                var snapshot = SerializeSnapshot();
+                if (snapshot != null) MultiplayerSession.SendNpcSnapshot(snapshot);
             }
             return;
         }
@@ -117,6 +175,11 @@ internal sealed class NpcReplication : MonoBehaviour
         byte[] latestPacket = null;
         while (MultiplayerSession.TryTakeNpcSnapshot(out packet)) latestPacket = packet;
         if (latestPacket != null) ApplySnapshot(latestPacket);
+        }
+        finally
+        {
+            MultiplayerPerformance.AddNpc(performanceStarted);
+        }
     }
 
     private void LateUpdate()
@@ -126,6 +189,17 @@ internal sealed class NpcReplication : MonoBehaviour
         foreach (var proxy in clientProxies)
             if (proxy != null && proxy.Root != null && !proxy.NetworkVisible && proxy.Root.activeSelf)
                 proxy.Root.SetActive(false);
+    }
+
+    internal void ApplyDistanceCulling()
+    {
+        if (!MultiplayerSession.IsHost) return;
+        culledNpcCount = 0;
+        foreach (var body in hostNpcs.Values)
+        {
+            MultiplayerLoadDistance.ApplyNpc(body);
+            if (MultiplayerLoadDistance.IsNpcSimulationCulled(body)) culledNpcCount++;
+        }
     }
 
     private void RefreshHostNpcs(BodyScript localBody)
@@ -200,7 +274,8 @@ internal sealed class NpcReplication : MonoBehaviour
     private void ApplyRemotePossession(ushort peerId, byte[] packet)
     {
         if (packet == null || packet.Length == 0) return;
-        var id = Encoding.UTF8.GetString(packet);
+        if (packet.Length != sizeof(ulong)) return;
+        var id = ResolveWireId(BitConverter.ToUInt64(packet, 0));
         if (string.IsNullOrEmpty(id)) return;
         remotelyPossessedNpcIds.Add(id);
         BodyScript body;
@@ -233,13 +308,18 @@ internal sealed class NpcReplication : MonoBehaviour
         foreach (var body in hostNpcs.Values)
         {
             if (body == null || !body.gameObject.activeInHierarchy ||
-                manager.IsOnscreen((Vector2)body.transform.position)) continue;
-            foreach (var item in GetList(body, "limbs"))
+                manager.IsOnscreen((Vector2)body.transform.position) ||
+                MultiplayerLoadDistance.IsNpcSimulationCulled(body)) continue;
+            var layout = HostLayout(body);
+            for (var index = 0; index < layout.Limbs.Count; index++)
             {
-                var limb = item as LimbScript;
+                var limb = layout.Limbs[index] as LimbScript;
                 if (limb == null || !limb.gameObject.activeInHierarchy) continue;
-                try { LimbRenderCallback.Invoke(limb, null); }
-                catch (TargetInvocationException) { }
+                var callback = index < layout.LimbRenderCallbacks.Length
+                    ? layout.LimbRenderCallbacks[index] : null;
+                if (callback == null) continue;
+                try { callback(); }
+                catch (Exception) { }
             }
         }
     }
@@ -278,21 +358,98 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private byte[] SerializeSnapshot()
     {
+        var fullSnapshot = Time.unscaledTime >= nextFullSnapshot;
+        if (fullSnapshot) nextFullSnapshot = Time.unscaledTime + FullSnapshotInterval;
+        var changed = new List<NpcSerializedState>();
+        var liveIds = new HashSet<string>();
+        foreach (var pair in hostNpcs)
+        {
+            if (pair.Value == null) continue;
+            liveIds.Add(pair.Key);
+            MemoryStream scratch;
+            if (!stateScratch.TryGetValue(pair.Key, out scratch))
+            {
+                scratch = new MemoryStream(4096);
+                stateScratch[pair.Key] = scratch;
+            }
+            scratch.SetLength(0);
+            var stateBreakdown = new NpcWireBreakdown();
+            using (var writer = new BinaryWriter(scratch, Encoding.UTF8, true))
+                WriteState(writer, pair.Key, pair.Value, false, ref stateBreakdown);
+            byte[] previous;
+            var stateChanged = !lastSentStates.TryGetValue(pair.Key, out previous) || !StreamEquals(scratch, previous);
+            if (fullSnapshot || stateChanged)
+            {
+                NpcSerializedState state;
+                if (fullSnapshot)
+                {
+                    var fullBreakdown = new NpcWireBreakdown();
+                    using (var fullState = new MemoryStream())
+                    using (var writer = new BinaryWriter(fullState))
+                    {
+                        WriteState(writer, pair.Key, pair.Value, true, ref fullBreakdown);
+                        state = new NpcSerializedState { Data = fullState.ToArray(), Breakdown = fullBreakdown };
+                    }
+                }
+                else state = new NpcSerializedState { Data = scratch.ToArray(), Breakdown = stateBreakdown };
+                changed.Add(state);
+                if (stateChanged) lastChangedNpcAt[pair.Key] = Time.unscaledTime;
+                if (stateChanged) lastSentStates[pair.Key] = fullSnapshot ? scratch.ToArray() : state.Data;
+            }
+        }
+        if (fullSnapshot)
+        {
+            var stale = new List<string>();
+            foreach (var id in lastSentStates.Keys) if (!liveIds.Contains(id)) stale.Add(id);
+            foreach (var id in stale) lastSentStates.Remove(id);
+            foreach (var id in stale) stateScratch.Remove(id);
+        }
+        if (!fullSnapshot && changed.Count == 0) return null;
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write(ProtocolVersion);
             writer.Write(++sendSequence);
-            writer.Write((ushort)hostNpcs.Count);
-            foreach (var pair in hostNpcs)
+            writer.Write(fullSnapshot);
+            writer.Write((ushort)changed.Count);
+            foreach (var state in changed)
             {
-                var body = pair.Value;
-                var layout = HostLayout(body);
-                writer.Write(pair.Key);
-                writer.Write(CleanCloneName(NpcRoot(body).name));
+                writer.Write(state.Data);
+                AddWireBreakdown(state.Breakdown);
+            }
+            var packet = stream.ToArray();
+            lastPacketBytes = packet.Length;
+            lastStateCount = changed.Count;
+            sentPacketsWindow++;
+            sentStatesWindow += changed.Count;
+            return packet;
+        }
+    }
+
+    private static bool StreamEquals(MemoryStream stream, byte[] previous)
+    {
+        if (previous == null || stream.Length != previous.Length) return false;
+        var buffer = stream.GetBuffer();
+        for (var index = 0; index < previous.Length; index++) if (buffer[index] != previous[index]) return false;
+        return true;
+    }
+
+    private void WriteState(BinaryWriter writer, string id, BodyScript body, bool includeIdentity,
+        ref NpcWireBreakdown breakdown)
+    {
+            var layout = HostLayout(body);
+            var sectionStarted = writer.BaseStream.Position;
+            writer.Write(WireId(id));
+                writer.Write(includeIdentity);
+            if (includeIdentity)
+            {
+                writer.Write(CleanCloneName(layout.Root == null ? "" : layout.Root.name));
                 writer.Write(body.characterName ?? "");
                 writer.Write(body.speciesName ?? "");
-                writer.Write(NpcRoot(body).activeSelf);
+            }
+                breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
+                sectionStarted = writer.BaseStream.Position;
+                writer.Write(layout.Root != null && layout.Root.activeSelf);
                 writer.Write(body.isRight);
                 writer.Write((int)body.CurrentState);
                 writer.Write((int)body.controlState);
@@ -308,7 +465,9 @@ internal sealed class NpcReplication : MonoBehaviour
                 writer.Write((ushort)destroyOnDeath.Count);
                 foreach (GameObject item in destroyOnDeath) writer.Write(item != null && item.activeSelf);
                 WritePose(writer, body.rb);
+                breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
 
+                sectionStarted = writer.BaseStream.Position;
                 var rigBodies = layout.RigBodies;
                 writer.Write((ushort)rigBodies.Length);
                 for (var rigIndex = 0; rigIndex < rigBodies.Length; rigIndex++)
@@ -317,36 +476,113 @@ internal sealed class NpcReplication : MonoBehaviour
                     writer.Write(layout.RigIds[rigIndex]);
                     WritePose(writer, rigBody);
                 }
+                breakdown.Rig += (int)(writer.BaseStream.Position - sectionStarted);
 
+                sectionStarted = writer.BaseStream.Position;
                 var limbs = layout.Limbs;
                 writer.Write((ushort)limbs.Count);
-                foreach (LimbScript limb in limbs)
+                for (var limbIndex = 0; limbIndex < limbs.Count; limbIndex++)
                 {
+                    var limb = limbs[limbIndex] as LimbScript;
                     WritePose(writer, limb.rb);
-                    writer.Write(limb.dismembered);
-                    writer.Write(IsBurning(limb));
+                    var fire = limbIndex < layout.LimbFires.Length ? layout.LimbFires[limbIndex] : null;
+                    writer.Write((byte)((limb.dismembered ? 1 : 0) | (IsBurning(fire) ? 2 : 0)));
                 }
+                breakdown.Limbs += (int)(writer.BaseStream.Position - sectionStarted);
 
+                sectionStarted = writer.BaseStream.Position;
                 var tailBases = layout.TailBases;
                 writer.Write((ushort)tailBases.Count);
                 foreach (Rigidbody2D tailBase in tailBases) WritePose(writer, tailBase);
                 WriteTransforms(writer, layout.Tails);
+                breakdown.Tails += (int)(writer.BaseStream.Position - sectionStarted);
+
+                sectionStarted = writer.BaseStream.Position;
                 WriteTransform(writer, layout.GunTransform);
                 WriteTransform(writer, layout.GunAnimationTransform);
                 WriteTransform(writer, body.weapon == null ? null : body.weapon.transform);
 
                 writer.Write(body.currentWeapon);
                 writer.Write(body.weapon == null ? 0 : body.weapon.ammo);
-                var weapons = GetList(body, "weapons");
+                var weapons = layout.Weapons;
                 writer.Write((ushort)weapons.Count);
-                foreach (WeaponPreset preset in weapons) writer.Write(preset == null ? "" : preset.name);
-                WriteLine(writer, GetFieldValue<LineRenderer>(body, "wepLaserLine"));
-            }
-            var packet = stream.ToArray();
-            lastPacketBytes = packet.Length;
-            lastStateCount = hostNpcs.Count;
-            return packet;
+                foreach (WeaponPreset preset in weapons)
+                    writer.Write(NetworkWireId.FromString(preset == null ? "" : preset.name));
+                breakdown.Weapons += (int)(writer.BaseStream.Position - sectionStarted);
+
+                sectionStarted = writer.BaseStream.Position;
+                WriteLine(writer, layout.WeaponLaserLine);
+                breakdown.Effects += (int)(writer.BaseStream.Position - sectionStarted);
+    }
+
+    private void AddWireBreakdown(NpcWireBreakdown breakdown)
+    {
+        coreBytesWindow += breakdown.Core;
+        rigBytesWindow += breakdown.Rig;
+        limbBytesWindow += breakdown.Limbs;
+        tailBytesWindow += breakdown.Tails;
+        weaponBytesWindow += breakdown.Weapons;
+        effectsBytesWindow += breakdown.Effects;
+    }
+
+    internal void DrawReplicationDebugOverlay(Camera camera, GUIStyle style, GUIStyle shadowStyle)
+    {
+        foreach (var pair in hostNpcs)
+        {
+            var body = pair.Value;
+            if (body == null) continue;
+            float changedAt;
+            MultiplayerHud.DrawReplicationMarker(camera, body.transform.position,
+                lastChangedNpcAt.TryGetValue(pair.Key, out changedAt) &&
+                Time.unscaledTime - changedAt <= 1f, style, shadowStyle);
         }
+    }
+
+    private static bool BytesEqual(byte[] left, byte[] right)
+    {
+        if (left == right) return true;
+        if (left == null || right == null || left.Length != right.Length) return false;
+        for (var index = 0; index < left.Length; index++) if (left[index] != right[index]) return false;
+        return true;
+    }
+
+    private ulong WireId(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return 0UL;
+        ulong wire;
+        if (wireIds.TryGetValue(id, out wire)) return wire;
+        wire = NetworkWireId.FromString(id);
+        wireIds[id] = wire;
+        idsByWire[wire] = id;
+        return wire;
+    }
+
+    private string ResolveWireId(ulong wire)
+    {
+        if (wire == 0UL) return "";
+        string id;
+        if (idsByWire.TryGetValue(wire, out id)) return id;
+        foreach (var known in hostNpcs.Keys)
+            if (NetworkWireId.FromString(known) == wire)
+            {
+                wireIds[known] = wire;
+                idsByWire[wire] = known;
+                return known;
+            }
+        // A client already has the scene NPCs under their stable local IDs.
+        // Resolve to that key before descriptor matching; otherwise multiple
+        // similar NPCs can be paired with the wrong visual proxy.
+        foreach (var known in clientNpcs.Keys)
+            if (NetworkWireId.FromString(known) == wire)
+            {
+                wireIds[known] = wire;
+                idsByWire[wire] = known;
+                return known;
+            }
+        id = "net/" + wire.ToString("X16");
+        wireIds[id] = wire;
+        idsByWire[wire] = id;
+        return id;
     }
 
     private void ApplySnapshot(byte[] packet)
@@ -358,26 +594,40 @@ internal sealed class NpcReplication : MonoBehaviour
                 if (reader.ReadByte() != ProtocolVersion) return;
                 var sequence = reader.ReadInt32();
                 if (sequence <= receivedSequence) return;
+                var fullSnapshot = reader.ReadBoolean();
                 var count = reader.ReadUInt16();
                 var states = new List<NpcState>(count);
                 for (var index = 0; index < count; index++) states.Add(ReadState(reader));
                 receivedSequence = sequence;
                 lastPacketBytes = packet.Length;
                 lastStateCount = count;
-                ApplyStates(states);
+                receivedPacketsWindow++;
+                receivedStatesWindow += count;
+                ApplyStates(states, fullSnapshot);
             }
         }
         catch (EndOfStreamException) { }
     }
 
-    private static NpcState ReadState(BinaryReader reader)
+    private NpcState ReadState(BinaryReader reader)
     {
+        var id = ResolveWireId(reader.ReadUInt64());
+        NpcIdentity identity;
+        if (reader.ReadBoolean())
+        {
+            identity = new NpcIdentity
+            {
+                RootName = reader.ReadString(), CharacterName = reader.ReadString(), SpeciesName = reader.ReadString()
+            };
+            clientIdentities[id] = identity;
+        }
+        else clientIdentities.TryGetValue(id, out identity);
         var state = new NpcState
         {
-            Id = reader.ReadString(),
-            RootName = reader.ReadString(),
-            CharacterName = reader.ReadString(),
-            SpeciesName = reader.ReadString(),
+            Id = id,
+            RootName = identity == null ? "" : identity.RootName,
+            CharacterName = identity == null ? "" : identity.CharacterName,
+            SpeciesName = identity == null ? "" : identity.SpeciesName,
             Active = reader.ReadBoolean(),
             IsRight = reader.ReadBoolean(),
             CurrentState = reader.ReadInt32(),
@@ -402,12 +652,14 @@ internal sealed class NpcReplication : MonoBehaviour
         var limbCount = reader.ReadUInt16();
         state.Limbs = new LimbState[limbCount];
         for (var index = 0; index < limbCount; index++)
+        {
+            var pose = ReadPose(reader);
+            var flags = reader.ReadByte();
             state.Limbs[index] = new LimbState
             {
-                Pose = ReadPose(reader),
-                Dismembered = reader.ReadBoolean(),
-                Burning = reader.ReadBoolean()
+                Pose = pose, Dismembered = (flags & 1) != 0, Burning = (flags & 2) != 0
             };
+        }
         var tailBaseCount = reader.ReadUInt16();
         state.TailBases = new Pose[tailBaseCount];
         for (var index = 0; index < tailBaseCount; index++) state.TailBases[index] = ReadPose(reader);
@@ -418,16 +670,17 @@ internal sealed class NpcReplication : MonoBehaviour
         state.WeaponSlot = reader.ReadInt32();
         state.WeaponAmmo = reader.ReadInt32();
         var weaponCount = reader.ReadUInt16();
-        state.Weapons = new string[weaponCount];
-        for (var index = 0; index < weaponCount; index++) state.Weapons[index] = reader.ReadString();
+        state.Weapons = new ulong[weaponCount];
+        for (var index = 0; index < weaponCount; index++) state.Weapons[index] = reader.ReadUInt64();
         state.Laser = ReadLine(reader);
         return state;
     }
 
-    private void ApplyStates(List<NpcState> states)
+    private void ApplyStates(List<NpcState> states, bool fullSnapshot)
     {
-        foreach (var proxy in clientProxies)
-            if (proxy != null) proxy.NetworkVisible = false;
+        if (fullSnapshot)
+            foreach (var proxy in clientProxies)
+                if (proxy != null) proxy.NetworkVisible = false;
         var claimed = new HashSet<NpcProxy>();
         foreach (var state in states)
         {
@@ -446,8 +699,9 @@ internal sealed class NpcReplication : MonoBehaviour
             }
         }
 
-        foreach (var proxy in clientProxies)
-            if (!claimed.Contains(proxy) && proxy.Root != null) proxy.Root.SetActive(false);
+        if (fullSnapshot)
+            foreach (var proxy in clientProxies)
+                if (!claimed.Contains(proxy) && proxy.Root != null) proxy.Root.SetActive(false);
     }
 
     private NpcProxy FindOrCreateProxy(NpcState state, HashSet<NpcProxy> claimed)
@@ -819,7 +1073,7 @@ internal sealed class NpcReplication : MonoBehaviour
             return false;
         }
 
-        if (!MultiplayerSession.IsHost) MultiplayerSession.SendNpcPossession(id);
+        if (!MultiplayerSession.IsHost) MultiplayerSession.SendNpcPossession(current.WireId(id));
         current.locallyPossessedNpcIds.Add(id);
         current.possessionRenderGuardUntil = Time.unscaledTime + 0.5f;
         if (proxy != null)
@@ -911,7 +1165,7 @@ internal sealed class NpcReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(proxy.NetworkId);
+            writer.Write(Instance.WireId(proxy.NetworkId));
             writer.Write(rigId);
             writer.Write(levitator.point.x);
             writer.Write(levitator.point.y);
@@ -971,7 +1225,7 @@ internal sealed class NpcReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(id);
+            writer.Write(WireId(id));
             writer.Write(amount);
             writer.Write(critical);
             MultiplayerSession.SendNpcDamage(stream.ToArray());
@@ -989,7 +1243,7 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             using (var reader = new BinaryReader(new MemoryStream(packet)))
             {
-                var id = reader.ReadString();
+                var id = ResolveWireId(reader.ReadUInt64());
                 var amount = Mathf.Clamp(reader.ReadSingle(), 0f, 1000f);
                 var critical = reader.ReadBoolean();
                 BodyScript body;
@@ -1009,7 +1263,7 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             using (var reader = new BinaryReader(new MemoryStream(packet)))
             {
-                var id = reader.ReadString();
+                var id = ResolveWireId(reader.ReadUInt64());
                 var rigId = reader.ReadUInt64();
                 var point = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 var localPoint = new Vector2(reader.ReadSingle(), reader.ReadSingle());
@@ -1046,7 +1300,7 @@ internal sealed class NpcReplication : MonoBehaviour
             for (var index = 0; index < state.Weapons.Length; index++)
             {
                 var preset = FindWeaponPreset(state.Weapons[index]);
-                if (preset != null || string.IsNullOrEmpty(state.Weapons[index])) weapons[index] = preset;
+                if (preset != null || state.Weapons[index] == 0UL) weapons[index] = preset;
                 else resolved = false;
             }
             if (resolved) proxy.AppliedInventory = inventoryKey;
@@ -1076,6 +1330,14 @@ internal sealed class NpcReplication : MonoBehaviour
         if (string.IsNullOrEmpty(name)) return null;
         foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
             if (preset != null && preset.name == name) return preset;
+        return null;
+    }
+
+    private static WeaponPreset FindWeaponPreset(ulong weaponId)
+    {
+        if (weaponId == 0UL) return null;
+        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
+            if (preset != null && NetworkWireId.FromString(preset.name) == weaponId) return preset;
         return null;
     }
 
@@ -1179,12 +1441,9 @@ internal sealed class NpcReplication : MonoBehaviour
         }
     }
 
-    private static bool IsBurning(LimbScript limb)
+    private static bool IsBurning(FireScript fire)
     {
-        foreach (var fire in limb.GetComponentsInChildren<FireScript>(true))
-            if (fire != null && fire.gameObject.activeInHierarchy && fire.GetComponentInParent<LimbScript>() == limb)
-                return true;
-        return false;
+        return fire != null && fire.gameObject.activeInHierarchy;
     }
 
     private static void SetRemoteFire(NpcProxy proxy, int limbIndex, LimbScript limb, bool burning)
@@ -1269,7 +1528,34 @@ internal sealed class NpcReplication : MonoBehaviour
         receivedSequence = -1;
         sendSequence = 0;
         nextSnapshot = 0f;
+        nextFullSnapshot = 0f;
         nextDiscovery = 0f;
+        lastSentStates.Clear();
+        stateScratch.Clear();
+        lastChangedNpcAt.Clear();
+        nextActivitySample = 0f;
+        sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
+        sentPacketsPerSecond = sentStatesPerSecond = receivedPacketsPerSecond = receivedStatesPerSecond = 0;
+        coreBytesWindow = rigBytesWindow = limbBytesWindow = tailBytesWindow = weaponBytesWindow = effectsBytesWindow = 0;
+        coreBytesPerSecond = rigBytesPerSecond = limbBytesPerSecond = tailBytesPerSecond = weaponBytesPerSecond = effectsBytesPerSecond = 0;
+    }
+
+    private void SampleActivity()
+    {
+        if (Time.unscaledTime < nextActivitySample) return;
+        nextActivitySample = Time.unscaledTime + 1f;
+        sentPacketsPerSecond = sentPacketsWindow;
+        sentStatesPerSecond = sentStatesWindow;
+        receivedPacketsPerSecond = receivedPacketsWindow;
+        receivedStatesPerSecond = receivedStatesWindow;
+        coreBytesPerSecond = coreBytesWindow;
+        rigBytesPerSecond = rigBytesWindow;
+        limbBytesPerSecond = limbBytesWindow;
+        tailBytesPerSecond = tailBytesWindow;
+        weaponBytesPerSecond = weaponBytesWindow;
+        effectsBytesPerSecond = effectsBytesWindow;
+        sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
+        coreBytesWindow = rigBytesWindow = limbBytesWindow = tailBytesWindow = weaponBytesWindow = effectsBytesWindow = 0;
     }
 
     private void WriteDiagnostics()
@@ -1325,19 +1611,25 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static void WritePose(BinaryWriter writer, Rigidbody2D body)
     {
-        if (body == null) { writer.Write(0f); writer.Write(0f); writer.Write(0f); return; }
+        if (body == null) { writer.Write(0f); writer.Write(0f); WriteRotation(writer, 0f); return; }
         writer.Write(body.position.x);
         writer.Write(body.position.y);
-        writer.Write(body.rotation);
+        WriteRotation(writer, body.rotation);
     }
 
     private static Rigidbody2D[] GetRigBodies(BodyScript body)
     {
         var result = new List<Rigidbody2D>();
+        var dedicatedBodies = new HashSet<Rigidbody2D>();
+        if (body.rb != null) dedicatedBodies.Add(body.rb);
+        foreach (LimbScript limb in GetList(body, "limbs"))
+            if (limb != null && limb.rb != null) dedicatedBodies.Add(limb.rb);
+        foreach (Rigidbody2D tailBase in GetList(body, "tailBases"))
+            if (tailBase != null) dedicatedBodies.Add(tailBase);
         foreach (var rigBody in NpcRoot(body).GetComponentsInChildren<Rigidbody2D>(true))
         {
             if (rigBody == null || rigBody.GetComponentInParent<WeaponScript>() != null ||
-                rigBody.GetComponentInParent<DroppedWeapon>() != null) continue;
+                rigBody.GetComponentInParent<DroppedWeapon>() != null || dedicatedBodies.Contains(rigBody)) continue;
             result.Add(rigBody);
         }
         return result.ToArray();
@@ -1351,19 +1643,43 @@ internal sealed class NpcReplication : MonoBehaviour
         var rigIds = new ulong[rigBodies.Length];
         for (var index = 0; index < rigBodies.Length; index++)
             rigIds[index] = RigId(NpcRoot(body).transform, rigBodies[index]);
+        var limbs = GetList(body, "limbs");
+        var limbRenderCallbacks = new Action[limbs.Count];
+        var limbFires = new FireScript[limbs.Count];
+        for (var index = 0; index < limbs.Count; index++)
+        {
+            var limb = limbs[index] as LimbScript;
+            if (limb == null || LimbRenderCallback == null) continue;
+            try { limbRenderCallbacks[index] = (Action)LimbRenderCallback.CreateDelegate(typeof(Action), limb); }
+            catch (ArgumentException) { }
+            limbFires[index] = FindLimbFire(limb);
+        }
         layout = new HostNpcLayout
         {
+            Root = NpcRoot(body),
             DestroyOnDeath = GetList(body, "destroyOnDeath"),
             RigBodies = rigBodies,
             RigIds = rigIds,
-            Limbs = GetList(body, "limbs"),
+            Limbs = limbs,
+            LimbRenderCallbacks = limbRenderCallbacks,
+            LimbFires = limbFires,
             TailBases = GetList(body, "tailBases"),
             Tails = GetTransforms(body, "tails"),
             GunTransform = GetTransform(body, "gunTransform"),
-            GunAnimationTransform = GetTransform(body, "gunAnimTransform")
+            GunAnimationTransform = GetTransform(body, "gunAnimTransform"),
+            Weapons = GetList(body, "weapons"),
+            WeaponLaserLine = GetFieldValue<LineRenderer>(body, "wepLaserLine")
         };
         hostLayouts[body] = layout;
         return layout;
+    }
+
+    private static FireScript FindLimbFire(LimbScript limb)
+    {
+        if (limb == null) return null;
+        foreach (var fire in limb.GetComponentsInChildren<FireScript>(true))
+            if (fire != null && fire.GetComponentInParent<LimbScript>() == limb) return fire;
+        return null;
     }
 
     private static void CacheRigBodies(NpcProxy proxy)
@@ -1409,7 +1725,7 @@ internal sealed class NpcReplication : MonoBehaviour
         return new Pose
         {
             Position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-            Rotation = reader.ReadSingle()
+            Rotation = ReadRotation(reader)
         };
     }
 
@@ -1429,10 +1745,10 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static void WriteTransform(BinaryWriter writer, Transform transform)
     {
-        if (transform == null) { writer.Write(0f); writer.Write(0f); writer.Write(0f); return; }
+        if (transform == null) { writer.Write(0f); writer.Write(0f); WriteRotation(writer, 0f); return; }
         writer.Write(transform.position.x);
         writer.Write(transform.position.y);
-        writer.Write(transform.eulerAngles.z);
+        WriteRotation(writer, transform.eulerAngles.z);
     }
 
     private static TransformPose ReadTransform(BinaryReader reader)
@@ -1440,8 +1756,18 @@ internal sealed class NpcReplication : MonoBehaviour
         return new TransformPose
         {
             Position = new Vector3(reader.ReadSingle(), reader.ReadSingle(), 0f),
-            Rotation = reader.ReadSingle()
+            Rotation = ReadRotation(reader)
         };
+    }
+
+    private static void WriteRotation(BinaryWriter writer, float rotation)
+    {
+        writer.Write((ushort)Mathf.RoundToInt(Mathf.Repeat(rotation, 360f) * RotationToWire));
+    }
+
+    private static float ReadRotation(BinaryReader reader)
+    {
+        return reader.ReadUInt16() * RotationFromWire;
     }
 
     private static void WriteLine(BinaryWriter writer, LineRenderer line)
@@ -1514,28 +1840,39 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static IList GetList(BodyScript body, string name)
     {
-        var field = typeof(BodyScript).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var field = GetBodyField(name);
         if (field == null) return new ArrayList();
         return field.GetValue(body) as IList ?? new ArrayList();
     }
 
     private static Transform[] GetTransforms(BodyScript body, string name)
     {
-        var field = typeof(BodyScript).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var field = GetBodyField(name);
         return field == null ? new Transform[0] : field.GetValue(body) as Transform[] ?? new Transform[0];
     }
 
     private static Transform GetTransform(BodyScript body, string name)
     {
-        var field = typeof(BodyScript).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var field = GetBodyField(name);
         return field == null ? null : (Transform)field.GetValue(body);
     }
 
     private static T GetFieldValue<T>(object instance, string name) where T : class
     {
         if (instance == null) return null;
-        var field = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var field = instance is BodyScript
+            ? GetBodyField(name)
+            : instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         return field == null ? null : field.GetValue(instance) as T;
+    }
+
+    private static FieldInfo GetBodyField(string name)
+    {
+        FieldInfo field;
+        if (bodyFieldCache.TryGetValue(name, out field)) return field;
+        field = typeof(BodyScript).GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        bodyFieldCache[name] = field;
+        return field;
     }
 
     private static string StableId(BodyScript body)
@@ -1581,14 +1918,35 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private sealed class HostNpcLayout
     {
+        public GameObject Root;
         public IList DestroyOnDeath = new ArrayList();
         public Rigidbody2D[] RigBodies = new Rigidbody2D[0];
         public ulong[] RigIds = new ulong[0];
         public IList Limbs = new ArrayList();
+        public Action[] LimbRenderCallbacks = new Action[0];
+        public FireScript[] LimbFires = new FireScript[0];
         public IList TailBases = new ArrayList();
         public Transform[] Tails = new Transform[0];
         public Transform GunTransform;
         public Transform GunAnimationTransform;
+        public IList Weapons = new ArrayList();
+        public LineRenderer WeaponLaserLine;
+    }
+
+    private struct NpcSerializedState
+    {
+        public byte[] Data;
+        public NpcWireBreakdown Breakdown;
+    }
+
+    private struct NpcWireBreakdown
+    {
+        public int Core;
+        public int Rig;
+        public int Limbs;
+        public int Tails;
+        public int Weapons;
+        public int Effects;
     }
 
     private sealed class NpcProxy
@@ -1655,8 +2013,15 @@ internal sealed class NpcReplication : MonoBehaviour
         public TransformPose Weapon;
         public int WeaponSlot;
         public int WeaponAmmo;
-        public string[] Weapons = new string[0];
+        public ulong[] Weapons = new ulong[0];
         public LineState Laser;
+    }
+
+    private sealed class NpcIdentity
+    {
+        public string RootName = "";
+        public string CharacterName = "";
+        public string SpeciesName = "";
     }
 
     private struct LimbState

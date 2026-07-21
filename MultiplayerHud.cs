@@ -22,6 +22,10 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private GUIStyle chatStyle;
     private GUIStyle bubbleStyle;
     private GUIStyle mutedStyle;
+    private GUIStyle replicationMarkerStyle;
+    private GUIStyle replicationMarkerShadowStyle;
+    private bool replicationDebugOverlayEnabled;
+    private bool networkStatsVisible;
     private GameObject networkStatsObject;
     private Component networkStatsText;
     private Component networkStatsTemplate;
@@ -51,6 +55,19 @@ internal sealed class MultiplayerHud : MonoBehaviour
         CloseChat();
     }
 
+    internal void ToggleReplicationDebugOverlay()
+    {
+        replicationDebugOverlayEnabled = !replicationDebugOverlayEnabled;
+        AddSystemMessage("Replication markers: " + (replicationDebugOverlayEnabled ? "ON" : "OFF"));
+    }
+
+    internal void ToggleNetworkStats()
+    {
+        networkStatsVisible = !networkStatsVisible;
+        if (!networkStatsVisible) DestroyNetworkStatsWidget();
+        AddSystemMessage("Network debug: " + (networkStatsVisible ? "ON" : "OFF"));
+    }
+
     private void Update()
     {
         string sender;
@@ -65,7 +82,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
             if (chatOpen) CloseChat();
             return;
         }
-        UpdateNetworkStatsWidget();
+        if (networkStatsVisible) UpdateNetworkStatsWidget();
+        else if (networkStatsObject != null) DestroyNetworkStatsWidget();
         var enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
         if (!chatOpen && enter)
         {
@@ -91,12 +109,70 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (Time.unscaledTime >= nextNetworkStatsUpdate)
         {
             nextNetworkStatsUpdate = Time.unscaledTime + 0.25f;
+            MultiplayerPerformance.Sample();
             var stats = MultiplayerSession.DebugStats();
-            networkStatsTextValue = string.Format("PING {0} ms   RX {1:0.0} KB/s   TX {2:0.0} KB/s   PLOSS {3:0.0}%",
+            var npc = NpcReplication.Instance;
+            var world = WorldReplication.Instance;
+            networkStatsTextValue = string.Format("PING {0} ms   RX {1:0.0} KB/s   TX {2:0.0} KB/s   PLOSS {3:0.0}%\n" +
+                "OUT/s  NPC P:{4} S:{5}   WORLD P:{6} S:{7}\n" +
+                "IN/s   NPC P:{8} S:{9}   WORLD P:{10} S:{11}\n" +
+                "LAST  NPC {12}/{13}   PROPS {14}/{15}   OTHER {16}/{17}\n" +
+                "SLEEP NPC {18}   PROPS {19}   OTHER {20}\n" +
+                "CPU/s  NPC {21:0.0}ms  WORLD {22:0.0}ms  AVATAR {23:0.0}ms  DIST {24:0.0}ms\n" +
+                "AV S {25:0.0}ms  A {26:0.0}ms\n" +
+                "TX MIX  NPC {27:0.0}KB {28:0}%  WORLD {29:0.0}KB {30:0}%\n" +
+                "        AVATAR {31:0.0}KB {32:0}%  OTHER {33:0.0}KB {34:0}%\n" +
+                "NPC PART  core {35:0.0}  rig {36:0.0}  limbs {37:0.0} KB/s\n" +
+                "          tails {38:0.0}  weapon {39:0.0}  fx {40:0.0} KB/s\n" +
+                "AV PART   core {41:0.0}  limbs {42:0.0}  rig {43:0.0}  weapon {44:0.0}\n" +
+                "          fx {45:0.0}  visual {46:0.0} KB/s",
                 stats.PingMs < 0 ? "-" : stats.PingMs.ToString(),
                 stats.ReceivedBytesPerSecond / 1024f,
                 stats.SentBytesPerSecond / 1024f,
-                stats.PacketLossPercent);
+                stats.PacketLossPercent,
+                npc == null ? 0 : npc.SentPacketsPerSecond,
+                npc == null ? 0 : npc.SentStatesPerSecond,
+                world == null ? 0 : world.SentPacketsPerSecond,
+                world == null ? 0 : world.SentStatesPerSecond,
+                npc == null ? 0 : npc.ReceivedPacketsPerSecond,
+                npc == null ? 0 : npc.ReceivedStatesPerSecond,
+                world == null ? 0 : world.ReceivedPacketsPerSecond,
+                world == null ? 0 : world.ReceivedStatesPerSecond,
+                npc == null ? 0 : npc.TotalNpcCount,
+                npc == null ? 0 : npc.LastSnapshotNpcCount,
+                world == null ? 0 : world.TotalPropCount,
+                world == null ? 0 : world.LastSnapshotPropCount,
+                world == null ? 0 : world.TotalOtherCount,
+                world == null ? 0 : world.LastSnapshotOtherCount,
+                npc == null ? 0 : npc.CulledNpcCount,
+                world == null ? 0 : world.CulledPropCount,
+                world == null ? 0 : world.CulledOtherCount,
+                MultiplayerPerformance.NpcMillisecondsPerSecond,
+                MultiplayerPerformance.WorldMillisecondsPerSecond,
+                MultiplayerPerformance.AvatarMillisecondsPerSecond,
+                MultiplayerPerformance.DistanceMillisecondsPerSecond,
+                MultiplayerPerformance.AvatarSerializeMillisecondsPerSecond,
+                MultiplayerPerformance.AvatarApplyMillisecondsPerSecond,
+                stats.SentNpcBytesPerSecond / 1024f,
+                TrafficPercent(stats.SentNpcBytesPerSecond, stats.SentBytesPerSecond),
+                stats.SentWorldBytesPerSecond / 1024f,
+                TrafficPercent(stats.SentWorldBytesPerSecond, stats.SentBytesPerSecond),
+                stats.SentAvatarBytesPerSecond / 1024f,
+                TrafficPercent(stats.SentAvatarBytesPerSecond, stats.SentBytesPerSecond),
+                stats.SentOtherBytesPerSecond / 1024f,
+                TrafficPercent(stats.SentOtherBytesPerSecond, stats.SentBytesPerSecond),
+                (npc == null ? 0 : npc.CoreBytesPerSecond) / 1024f,
+                (npc == null ? 0 : npc.RigBytesPerSecond) / 1024f,
+                (npc == null ? 0 : npc.LimbBytesPerSecond) / 1024f,
+                (npc == null ? 0 : npc.TailBytesPerSecond) / 1024f,
+                (npc == null ? 0 : npc.WeaponBytesPerSecond) / 1024f,
+                (npc == null ? 0 : npc.EffectsBytesPerSecond) / 1024f,
+                NetworkAvatarReplication.AvatarCoreBytesPerSecond / 1024f,
+                NetworkAvatarReplication.AvatarLimbBytesPerSecond / 1024f,
+                NetworkAvatarReplication.AvatarRigBytesPerSecond / 1024f,
+                NetworkAvatarReplication.AvatarWeaponBytesPerSecond / 1024f,
+                NetworkAvatarReplication.AvatarEffectsBytesPerSecond / 1024f,
+                NetworkAvatarReplication.AvatarVisualBytesPerSecond / 1024f);
         }
         var manager = GameManager.main;
         if (manager == null) return;
@@ -115,6 +191,11 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (field == null) return null;
         var value = field.GetValue(manager) as Component;
         return value != null && value.GetType().GetProperty("text") != null ? value : null;
+    }
+
+    private static float TrafficPercent(int bytes, int total)
+    {
+        return total <= 0 ? 0f : bytes * 100f / total;
     }
 
     private void CreateNetworkStatsWidget(Component template)
@@ -138,11 +219,29 @@ internal sealed class MultiplayerHud : MonoBehaviour
         var cloneRect = clone.transform as RectTransform;
         if (sourceRect != null && cloneRect != null)
         {
-            cloneRect.anchoredPosition = sourceRect.anchoredPosition +
-                new Vector2(0f, -Mathf.Max(20f, sourceRect.rect.height + 2f));
-            cloneRect.sizeDelta = new Vector2(Mathf.Max(sourceRect.sizeDelta.x, 430f), sourceRect.sizeDelta.y);
+            cloneRect.anchorMin = Vector2.zero;
+            cloneRect.anchorMax = Vector2.zero;
+            cloneRect.pivot = Vector2.zero;
+            cloneRect.anchoredPosition = new Vector2(18f, 18f);
+            cloneRect.sizeDelta = new Vector2(Mathf.Max(sourceRect.sizeDelta.x, 920f),
+                Mathf.Max(sourceRect.sizeDelta.y, 330f));
         }
+        ConfigureNetworkStatsTextOverflow();
         clone.SetActive(true);
+    }
+
+    private void ConfigureNetworkStatsTextOverflow()
+    {
+        if (networkStatsText == null) return;
+        var type = networkStatsText.GetType();
+        var wrapping = type.GetProperty("enableWordWrapping");
+        if (wrapping != null && wrapping.CanWrite) wrapping.SetValue(networkStatsText, false, null);
+        var overflow = type.GetProperty("overflowMode");
+        if (overflow != null && overflow.CanWrite && overflow.PropertyType.IsEnum)
+        {
+            try { overflow.SetValue(networkStatsText, Enum.Parse(overflow.PropertyType, "Overflow"), null); }
+            catch (ArgumentException) { }
+        }
     }
 
     private void DestroyNetworkStatsWidget()
@@ -204,10 +303,23 @@ internal sealed class MultiplayerHud : MonoBehaviour
         EnsureStyles();
         var previousDepth = GUI.depth;
         GUI.depth = -50;
-        if (MultiplayerSession.IsConnected && networkStatsObject == null &&
+        if (networkStatsVisible && MultiplayerSession.IsConnected && networkStatsObject == null &&
             !string.IsNullOrEmpty(networkStatsTextValue))
-            GUI.Label(new Rect(18f, 42f, 520f, 22f), networkStatsTextValue, mutedStyle);
+            GUI.Label(new Rect(18f, Screen.height - 348f, 920f, 330f), networkStatsTextValue, mutedStyle);
         if (MultiplayerSession.IsHosting) DrawHostStatus();
+        if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
+        {
+            var camera = Camera.main;
+            if (camera != null)
+            {
+                var world = WorldReplication.Instance;
+                var npc = NpcReplication.Instance;
+                if (world != null)
+                    world.DrawReplicationDebugOverlay(camera, replicationMarkerStyle, replicationMarkerShadowStyle);
+                if (npc != null)
+                    npc.DrawReplicationDebugOverlay(camera, replicationMarkerStyle, replicationMarkerShadowStyle);
+            }
+        }
         if (Input.GetKey(KeyCode.Tab) && !chatOpen) DrawPlayerList();
         if (MultiplayerSession.IsConnected)
         {
@@ -373,6 +485,34 @@ internal sealed class MultiplayerHud : MonoBehaviour
             alignment = TextAnchor.MiddleCenter,
             fontStyle = FontStyle.Bold
         };
+        replicationMarkerStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 18,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleCenter,
+            wordWrap = false,
+            clipping = TextClipping.Overflow
+        };
+        replicationMarkerShadowStyle = new GUIStyle(replicationMarkerStyle);
+        replicationMarkerShadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.95f);
+    }
+
+    internal static void DrawReplicationMarker(Camera camera, Vector3 position, bool sent,
+        GUIStyle style, GUIStyle shadowStyle)
+    {
+        var screenPosition = camera.WorldToScreenPoint(position);
+        if (screenPosition.z <= 0f || screenPosition.x < -200f || screenPosition.x > Screen.width + 200f ||
+            screenPosition.y < -80f || screenPosition.y > Screen.height + 80f) return;
+        var rect = new Rect(screenPosition.x - 12f, Screen.height - screenPosition.y - 12f, 24f, 24f);
+        style.normal.textColor = sent ? Color.green : Color.red;
+        var previousDepth = GUI.depth;
+        GUI.depth = 10;
+        GUI.Label(new Rect(rect.x - 1f, rect.y, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
+        GUI.Label(new Rect(rect.x + 1f, rect.y, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
+        GUI.Label(new Rect(rect.x, rect.y - 1f, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
+        GUI.Label(new Rect(rect.x, rect.y + 1f, rect.width, rect.height), sent ? "1" : "0", shadowStyle);
+        GUI.Label(rect, sent ? "1" : "0", style);
+        GUI.depth = previousDepth;
     }
 
     private static BodyScript LocalBody()
