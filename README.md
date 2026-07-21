@@ -37,7 +37,7 @@
 ### Gameplay
 - [ ] Fix avatar
 - [ ] Fix tails
-- [ ] Fix destruction of props/lightbulbs from hits
+- [ ] Fix destruction of lightbulbs from hits
 - [ ] Fix weapon dropping at the beginning of the game
 - [ ] Fix or disable the process of transferring into another body
 - [ ] Real gameplay test
