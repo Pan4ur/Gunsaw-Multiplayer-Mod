@@ -17,9 +17,9 @@
 
 ### Net
 - [x] Switch to UDP
-- [ ] Reduce the packet rate (send movement and pose packets only when changed for stationary entities)
-- [ ] Improve packet serialization (implement string hashing or short id) to reduce packet size
-- [ ] Optimize far objects, keep them on the map but disable ticking
+- [X] Reduce the packet rate (send movement and pose packets only when changed for stationary entities)
+- [X] Improve packet serialization (implement string hashing or short id) to reduce packet size
+- [X] Optimize far objects, keep them on the map but disable ticking
 
 
 ### Sync Fixes
