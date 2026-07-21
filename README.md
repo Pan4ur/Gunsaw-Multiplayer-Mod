@@ -71,7 +71,7 @@ The mod currently uses a default lobby server. Idk how long it will stay online,
 
 ## Custom levels
 
-1. Create and export a level in Gunsaw's level editor
+1. Create and export a level in Gunsaw's level editor or copy it [here](https://gunsaw-level-codes.jimmyking.dev/)
 2. Host a multiplayer lobby
 3. In the multiplayer window, choose **Paste custom level**. The exported level code must be
    in the clipboard
