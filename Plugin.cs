@@ -48,6 +48,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal ConnectionMode createConnectionMode = ConnectionMode.Auto;
     private string receivedCustomLevelJson = "";
     private bool waitingForCustomLevel;
+    private string requestedHostScene = "";
     private float customLevelPhysicsRefreshUntil;
     private float nextCustomLevelPhysicsRefresh;
     private Vector2 scroll;
@@ -189,6 +190,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         string sceneToLoad;
         if (MultiplayerSession.TryTakeScene(out sceneToLoad))
         {
+            var activeScene = SceneManager.GetActiveScene().name;
+            if (sceneToLoad == requestedHostScene || sceneToLoad == activeScene)
+            {
+                status = "Already in host scene " + sceneToLoad + ".";
+                return;
+            }
+            requestedHostScene = sceneToLoad;
             if (sceneToLoad == "LevelLoader")
             {
                 if (!string.IsNullOrEmpty(receivedCustomLevelJson))
@@ -390,6 +398,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         string error;
         if (!MultiplayerSession.Connect(address, lobbyId, relayKey, playerName, peerId, hostPeerId, maxPlayers,
             mode, Logger, out error)) { status = error; return; }
+        requestedHostScene = "";
         avatarReplication.Configure(playerName);
         multiplayerHud.ResetChat();
         status = "Connecting via " + mode + " through UDP relay " + address + "...";
@@ -814,7 +823,6 @@ internal static class MultiplayerLimbAnimationPatch
             NpcReplication.IsClientProxy(body) || NetworkAvatarReplication.IsRemoteAvatarBody(body))
             return false;
 
-
         if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
         return true;
     }
@@ -1055,7 +1063,6 @@ internal static class ClientPalletDebrisAutoBreakPatch
     private static bool Prefix(CrateScript __instance)
     {
         if (!MultiplayerSession.IsConnected || GunsawMultiplayerPlugin.World == null) return true;
-
         return !GunsawMultiplayerPlugin.World.IsNetworkCrateDebris(__instance);
     }
 }

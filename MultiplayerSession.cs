@@ -95,6 +95,7 @@ internal static class MultiplayerSession
     private static readonly byte[] worldEnvironmentHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1A };
     private static string hostScene = "";
     private static string pendingScene = "";
+    private static string lastReceivedHostScene = "";
     private static string hostCustomLevel = "";
     private static string pendingCustomLevel = "";
     private static readonly Dictionary<ushort, PeerState> peers = new Dictionary<ushort, PeerState>();
@@ -171,6 +172,8 @@ internal static class MultiplayerSession
             hostDisconnectPending = false;
             hostCustomLevel = "";
             pendingCustomLevel = "";
+            pendingScene = "";
+            lastReceivedHostScene = "";
             customLevelTransfer = null;
             localPlayerName = NormalizePlayerName(playerName);
             localPeerId = assignedPeerId == 0 ? (ushort)1 : assignedPeerId;
@@ -213,6 +216,8 @@ internal static class MultiplayerSession
                 hostDisconnectPending = false;
                 hostCustomLevel = "";
                 pendingCustomLevel = "";
+                pendingScene = "";
+                lastReceivedHostScene = "";
                 customLevelTransfer = null;
                 localPlayerName = NormalizePlayerName(playerName);
                 localPeerId = assignedPeerId;
@@ -529,6 +534,8 @@ internal static class MultiplayerSession
         {
             peers.Clear();
             ClearPeerQueuesLocked();
+            pendingScene = "";
+            lastReceivedHostScene = "";
         }
     }
 
@@ -886,7 +893,12 @@ internal static class MultiplayerSession
                 var scene = Encoding.UTF8.GetString(packet, sceneHeader.Length, packet.Length - sceneHeader.Length);
                 if (!string.IsNullOrEmpty(scene))
                 {
-                    lock (statusLock) pendingScene = scene;
+                    lock (statusLock)
+                    {
+                        if (scene == lastReceivedHostScene) continue;
+                        lastReceivedHostScene = scene;
+                        pendingScene = scene;
+                    }
                 }
             }
             else if (HasHeader(packet, identityHeader))
