@@ -210,8 +210,25 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private TMP_InputField CreateInput(Transform parent, Vector2 position, Vector2 size)
     {
         var go = new GameObject("ChatInput", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline), typeof(TMP_InputField)); go.transform.SetParent(parent, false); Rect(go.GetComponent<RectTransform>(), position, size); var image = go.GetComponent<Image>(); image.color = new Color(0.17f, 0.17f, 0.17f, 0.86f); var outline = go.GetComponent<Outline>(); outline.effectColor = new Color(0.58f, 0.58f, 0.58f, 0.78f); outline.effectDistance = new Vector2(1f, -1f);
+        var viewportObject = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+        viewportObject.transform.SetParent(go.transform, false);
+        var viewport = viewportObject.GetComponent<RectTransform>();
+        viewport.anchorMin = Vector2.zero;
+        viewport.anchorMax = Vector2.one;
+        viewport.offsetMin = new Vector2(8f, 0f);
+        viewport.offsetMax = new Vector2(-8f, 0f);
         var field = go.GetComponent<TMP_InputField>(); field.targetGraphic = image; field.characterLimit = 160;
-        var text = Text(go.transform, "", Vector2.zero, new Vector2(size.x - 16f, size.y), 19, TextAlignmentOptions.Left); text.margin = new Vector4(8f, 0f, 8f, 0f); text.enableWordWrapping = false; field.textViewport = text.rectTransform; field.textComponent = text; return field;
+        field.lineType = TMP_InputField.LineType.SingleLine;
+        var text = Text(viewport, "", Vector2.zero, Vector2.zero, 19, TextAlignmentOptions.Left);
+        text.rectTransform.anchorMin = Vector2.zero;
+        text.rectTransform.anchorMax = Vector2.one;
+        text.rectTransform.offsetMin = Vector2.zero;
+        text.rectTransform.offsetMax = Vector2.zero;
+        text.margin = Vector4.zero;
+        text.enableWordWrapping = false;
+        field.textViewport = viewport;
+        field.textComponent = text;
+        return field;
     }
 
     private static void Rect(RectTransform rect, Vector2 position, Vector2 size) { rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f); rect.pivot = new Vector2(0.5f, 0.5f); rect.anchoredPosition = position; rect.sizeDelta = size; }

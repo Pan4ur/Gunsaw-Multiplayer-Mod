@@ -1,3 +1,4 @@
+using BepInEx;
 using BepInEx.Logging;
 using System;
 using System.Net;
@@ -16,6 +17,7 @@ internal enum ConnectionMode
 
 internal static class MultiplayerSession
 {
+    private static ManualLogSource sessionLogger;
     private static UdpClient socket;
     private static volatile bool relayConnected;
     private static IPEndPoint relayEndpoint;
@@ -39,6 +41,7 @@ internal static class MultiplayerSession
     private const int P2PKeySize = 16;
     private const long P2PConnectTimeoutTicks = TimeSpan.TicksPerSecond * 5;
     private const long P2PKeepAliveTicks = TimeSpan.TicksPerSecond * 10;
+    private const long P2PProbeRetryTicks = TimeSpan.TicksPerMillisecond * 500;
     private const int UdpFragmentPayload = 1000;
     private static int transportMessageSequence;
     private static readonly Dictionary<long, FragmentTransfer> fragmentTransfers =
@@ -160,6 +163,7 @@ internal static class MultiplayerSession
     {
         CloseSocket();
         ResetNetworkStats();
+        sessionLogger = logger;
         lock (statusLock)
         {
             peers.Clear();
@@ -177,9 +181,10 @@ internal static class MultiplayerSession
             p2pHelloSent = true;
             p2pConnectStartedTicks = DateTime.UtcNow.Ticks;
         }
+        isHost = true;
+        MultiplayerDiagnosticLog.StartSession(true);
         socket = ConnectRelay(relayAddress, lobbyId, relayKey);
         if (connectionMode != ConnectionMode.Relay) EnableP2P();
-        isHost = true;
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
         GrabOnlyUnconscious = canGrabPlayers && grabOnlyUnconscious;
@@ -200,6 +205,7 @@ internal static class MultiplayerSession
         {
             CloseSocket();
             ResetNetworkStats();
+            sessionLogger = logger;
             lock (statusLock)
             {
                 peers.Clear();
@@ -218,6 +224,7 @@ internal static class MultiplayerSession
                 p2pConnectStartedTicks = DateTime.UtcNow.Ticks;
             }
             isHost = false;
+            MultiplayerDiagnosticLog.StartSession(false);
             PvpEnabled = false;
             CanGrabPlayers = false;
             GrabOnlyUnconscious = false;
@@ -334,10 +341,14 @@ internal static class MultiplayerSession
             lock (statusLock)
             {
                 if (connectionMode == ConnectionMode.Relay) return "RELAY";
-                if (connectionMode == ConnectionMode.P2P) return "P2P";
                 var direct = 0;
                 foreach (var peer in p2pPeers.Values) if (peer.Connected) direct++;
                 var total = peers.Count;
+                if (connectionMode == ConnectionMode.P2P)
+                {
+                    if (total == 0) return relayFallback ? "P2P + RELAY" : "P2P: CONNECTING";
+                    return direct >= total ? "P2P" : "P2P + RELAY";
+                }
                 if (total == 0) return relayFallback ? "AUTO: RELAY" : "AUTO: CONNECTING";
                 if (direct >= total) return "AUTO: P2P";
                 if (direct == 0) return "AUTO: RELAY";
@@ -456,6 +467,7 @@ internal static class MultiplayerSession
             nextP2PKeepAliveTicks = now + P2PKeepAliveTicks;
             SendControlToRelay(UdpKeepAlive);
         }
+        RetryP2PProbes(now);
         if (isHost || p2pHelloSent) return;
         if (IsP2PConnected(hostPeerId))
         {
@@ -466,10 +478,29 @@ internal static class MultiplayerSession
         if (connectionMode == ConnectionMode.Auto)
         {
             relayFallback = true;
+            LogP2PWarning("P2P direct connection timed out; falling back to relay.");
             SendInitialHello();
             return;
         }
+        LogP2PWarning("P2P direct connection timed out.");
         DropRelay(true, "P2P connection timed out. Try Auto or Relay mode.");
+    }
+
+    private static void RetryP2PProbes(long now)
+    {
+        var peersToProbe = new List<ushort>();
+        lock (statusLock)
+        {
+            foreach (var pair in p2pPeers)
+            {
+                var peer = pair.Value;
+                if (peer == null || peer.Endpoint == null || peer.Connected || now < peer.NextProbeTicks)
+                    continue;
+                peer.NextProbeTicks = now + P2PProbeRetryTicks;
+                peersToProbe.Add(pair.Key);
+            }
+        }
+        foreach (var peerId in peersToProbe) SendDirectProbe(peerId);
     }
 
     private static void SendInitialHello()
@@ -1386,9 +1417,6 @@ internal static class MultiplayerSession
         var port = uri.IsDefaultPort ? 27015 : uri.Port;
         if (port < 1 || port > 65535) throw new InvalidOperationException("Invalid UDP relay port.");
 
-        // Do not let UdpClient.Connect(string, int) pick the address family. Mono under
-        // Wine can resolve a dual-stack host to IPv6 first even when the relay only
-        // listens on IPv4, while the old WebSocket transport hid that distinction.
         var addresses = Dns.GetHostAddresses(uri.Host);
         Array.Sort(addresses, (left, right) =>
         {
@@ -1434,6 +1462,7 @@ internal static class MultiplayerSession
         for (var attempt = 0; attempt < 10 && !authenticated; attempt++)
         {
             client.Send(auth, auth.Length, endpoint);
+
             if (!client.Client.Poll(500000, SelectMode.SelectRead)) continue;
             try
             {
@@ -1549,7 +1578,12 @@ internal static class MultiplayerSession
 
     private static void EnableP2P()
     {
-        if (p2pKey == null || p2pKey.Length != P2PKeySize) return;
+        if (p2pKey == null || p2pKey.Length != P2PKeySize)
+        {
+            LogP2PWarning("P2P unavailable: UDP relay did not provide a valid P2P key.");
+            return;
+        }
+        LogP2PInfo("P2P enabled; waiting for relay candidates.");
         SendControlToRelay(UdpP2PEnable);
     }
 
@@ -1568,14 +1602,42 @@ internal static class MultiplayerSession
     {
         if (packet.Length < 10) return;
         var peerId = BitConverter.ToUInt16(packet, 5);
-        var port = BitConverter.ToUInt16(packet, 7);
+        var littleEndianPort = BitConverter.ToUInt16(packet, 7);
+        var networkEndianPort = (ushort)((packet[7] << 8) | packet[8]);
         var length = packet[9];
-        if (peerId == 0 || peerId == localPeerId || port == 0 || (length != 4 && length != 16) ||
+        if (peerId == 0 || peerId == localPeerId || littleEndianPort == 0 ||
+            (length != 4 && length != 16) ||
             packet.Length != 10 + length) return;
         var address = new byte[length];
         Buffer.BlockCopy(packet, 10, address, 0, length);
-        lock (statusLock) p2pPeers[peerId] = new P2PPeer { Endpoint = new IPEndPoint(new IPAddress(address), port) };
-        SendDirectProbe(peerId);
+        var endpoint = new IPEndPoint(new IPAddress(address), littleEndianPort);
+        var alternateEndpoint = networkEndianPort == 0 || networkEndianPort == littleEndianPort
+            ? null
+            : new IPEndPoint(new IPAddress(address), networkEndianPort);
+        var shouldProbe = false;
+        lock (statusLock)
+        {
+            P2PPeer peer;
+            var knownEndpoint = p2pPeers.TryGetValue(peerId, out peer) &&
+                (EndpointsEqual(peer.Endpoint, endpoint) || EndpointsEqual(peer.Endpoint, alternateEndpoint) ||
+                 EndpointsEqual(peer.AlternateEndpoint, endpoint) ||
+                 EndpointsEqual(peer.AlternateEndpoint, alternateEndpoint));
+            if (!knownEndpoint)
+            {
+                peer = new P2PPeer { Endpoint = endpoint, AlternateEndpoint = alternateEndpoint };
+                p2pPeers[peerId] = peer;
+                shouldProbe = true;
+            }
+            else
+            {
+                peer.AlternateEndpoint = alternateEndpoint;
+                if (!peer.Connected) shouldProbe = true;
+            }
+            if (shouldProbe) peer.NextProbeTicks = DateTime.UtcNow.Ticks + P2PProbeRetryTicks;
+        }
+        LogP2PInfo("P2P candidate for peer " + peerId + ": " + endpoint +
+            (alternateEndpoint == null ? "" : " (alternate byte order: " + alternateEndpoint + ")") + ".");
+        if (shouldProbe) SendDirectProbe(peerId);
     }
 
     private static bool TryAcceptDirectPacket(byte[] datagram, IPEndPoint remote, out ushort senderId)
@@ -1583,17 +1645,34 @@ internal static class MultiplayerSession
         senderId = 0;
         if (datagram.Length < 35 || datagram[4] != UdpDirectData || p2pKey == null) return false;
         senderId = BitConverter.ToUInt16(datagram, 5);
-        if (senderId == 0 || senderId == localPeerId) return false;
-        for (var index = 0; index < P2PKeySize; index++) if (datagram[7 + index] != p2pKey[index]) return false;
+        if (senderId == 0 || senderId == localPeerId)
+        {
+            LogP2PWarning("P2P direct packet rejected from " + remote + ": invalid peer ID " + senderId + ".");
+            return false;
+        }
+        for (var index = 0; index < P2PKeySize; index++)
+            if (datagram[7 + index] != p2pKey[index])
+            {
+                LogP2PWarning("P2P direct packet rejected from " + remote + ": lobby key mismatch.");
+                return false;
+            }
         var wasConnected = false;
         lock (statusLock)
         {
             P2PPeer peer;
-            if (!p2pPeers.TryGetValue(senderId, out peer) || !EndpointsEqual(peer.Endpoint, remote)) return false;
+            if (!p2pPeers.TryGetValue(senderId, out peer))
+            {
+                LogP2PWarning("P2P direct packet rejected from " + remote + ": peer " + senderId + " has no candidate.");
+                return false;
+            }
+
+            if (!EndpointsEqual(peer.Endpoint, remote)) peer.Endpoint = remote;
             wasConnected = peer.Connected;
             peer.Connected = true;
+            peer.NextProbeTicks = 0;
             p2pPeers[senderId] = peer;
         }
+        if (!wasConnected) LogP2PInfo("P2P direct path authenticated with peer " + senderId + " from " + remote + ".");
         if (BitConverter.ToInt32(datagram, 23) == 0 && BitConverter.ToUInt16(datagram, 27) == 0 &&
             BitConverter.ToUInt16(datagram, 29) == 1 && BitConverter.ToInt32(datagram, 31) == 0)
         {
@@ -1628,7 +1707,8 @@ internal static class MultiplayerSession
     private static void SendDirectProbe(ushort peerId)
     {
         IPEndPoint endpoint;
-        if (!TryGetP2PCandidate(peerId, out endpoint)) return;
+        IPEndPoint alternateEndpoint;
+        if (!TryGetP2PCandidates(peerId, out endpoint, out alternateEndpoint)) return;
         var probe = new byte[35];
         Buffer.BlockCopy(udpMagic, 0, probe, 0, udpMagic.Length);
         probe[4] = UdpDirectData;
@@ -1636,16 +1716,23 @@ internal static class MultiplayerSession
         Buffer.BlockCopy(p2pKey, 0, probe, 7, P2PKeySize);
         Buffer.BlockCopy(BitConverter.GetBytes((ushort)1), 0, probe, 29, sizeof(ushort));
         try { socket.Send(probe, probe.Length, endpoint); } catch (SocketException) { } catch (ObjectDisposedException) { }
+        if (alternateEndpoint != null && !EndpointsEqual(endpoint, alternateEndpoint))
+            try { socket.Send(probe, probe.Length, alternateEndpoint); }
+            catch (SocketException) { }
+            catch (ObjectDisposedException) { }
     }
 
-    private static bool TryGetP2PCandidate(ushort peerId, out IPEndPoint endpoint)
+    private static bool TryGetP2PCandidates(ushort peerId, out IPEndPoint endpoint,
+        out IPEndPoint alternateEndpoint)
     {
         endpoint = null;
+        alternateEndpoint = null;
         lock (statusLock)
         {
             P2PPeer peer;
             if (!p2pPeers.TryGetValue(peerId, out peer)) return false;
             endpoint = peer.Endpoint;
+            alternateEndpoint = peer.AlternateEndpoint;
             return endpoint != null && p2pKey != null;
         }
     }
@@ -1653,6 +1740,18 @@ internal static class MultiplayerSession
     private static bool EndpointsEqual(IPEndPoint left, IPEndPoint right)
     {
         return left != null && right != null && left.Port == right.Port && left.Address.Equals(right.Address);
+    }
+
+    private static void LogP2PInfo(string message)
+    {
+        sessionLogger?.LogInfo(message);
+        MultiplayerDiagnosticLog.Write(isHost, "INFO", message);
+    }
+
+    private static void LogP2PWarning(string message)
+    {
+        sessionLogger?.LogWarning(message);
+        MultiplayerDiagnosticLog.Write(isHost, "WARN", message);
     }
 
     private static void SendPacket(byte[] packet, ushort targetId = 0, bool? priority = null,
@@ -1936,7 +2035,8 @@ internal static class MultiplayerSession
                 SendDirectPacketBlocking(client, routedPacket, directEndpoint);
                 return;
             }
-            if (connectionMode == ConnectionMode.P2P) return;
+
+            if (connectionMode == ConnectionMode.P2P) relayFallback = true;
             var totalLength = routedPacket.Length - sizeof(ushort);
             var messageId = Interlocked.Increment(ref transportMessageSequence);
             var fragmentCount = Math.Max(1, (totalLength + UdpFragmentPayload - 1) / UdpFragmentPayload);
@@ -2139,7 +2239,9 @@ internal static class MultiplayerSession
     private sealed class P2PPeer
     {
         internal IPEndPoint Endpoint;
+        internal IPEndPoint AlternateEndpoint;
         internal bool Connected;
+        internal long NextProbeTicks;
     }
 
     private sealed class ChatMessage
@@ -2166,6 +2268,46 @@ internal static class MultiplayerSession
         internal string Name = "Player";
         internal long LastPacketTicks;
         internal int PingMs = -1;
+    }
+}
+
+internal static class MultiplayerDiagnosticLog
+{
+    private static readonly object fileLock = new object();
+
+    internal static void StartSession(bool host)
+    {
+        try
+        {
+            lock (fileLock)
+                File.WriteAllText(PathFor(host), Timestamp() + " session started (" +
+                    (host ? "host" : "client") + ")." + Environment.NewLine);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    internal static void Write(bool host, string level, string message)
+    {
+        try
+        {
+            lock (fileLock)
+                File.AppendAllText(PathFor(host), Timestamp() + " [" + level + "] " +
+                    (message ?? "") + Environment.NewLine);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private static string PathFor(bool host)
+    {
+        return Path.Combine(Paths.BepInExRootPath,
+            "GunsawMultiplayer-" + (host ? "host" : "client") + ".log");
+    }
+
+    private static string Timestamp()
+    {
+        return DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
     }
 }
 

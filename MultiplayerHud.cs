@@ -34,7 +34,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     internal static bool IsTyping { get; private set; }
     internal bool ChatOpen => chatOpen;
     internal IReadOnlyList<ChatEntry> ChatHistory => history;
-    internal string ChatInput { get => input; set => input = SanitizeMessage(value); }
+    internal string ChatInput { get => input; set => input = value ?? ""; }
     internal bool NetworkStatsVisible => networkStatsVisible;
     internal string NetworkStatsText => networkStatsTextValue;
 
@@ -310,8 +310,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (Instance != null) Instance.AddMessage("SYSTEM", message, false);
     }
 
-    // Compatibility hook for the existing diagnostic callers. The old IMGUI markers
-    // intentionally no longer render; player-facing UI lives on the native Canvas.
     internal static void DrawReplicationMarker(Camera camera, Vector3 position, bool sent,
         GUIStyle style, GUIStyle shadowStyle)
     {

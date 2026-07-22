@@ -12,9 +12,6 @@ using UnityEngine.SceneManagement;
 internal sealed class NetworkAvatarReplication : MonoBehaviour
 {
     private const bool TailDiagnosticsEnabled = false;
-    // Keep one received snapshot behind the sender. This makes interpolation use
-    // two authoritative samples instead of restarting from a frame-dependent
-    // displayed position whenever a UDP packet arrives.
     private const bool BufferedRemoteInterpolation = true;
     private const float SnapshotInterval = 1f / 50f;
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
@@ -27,7 +24,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         new Dictionary<string, WeaponPreset>();
     private static string selectedCharacterPrefab = "";
     private BodyScript remoteBody;
-    // This is independent of the displayed avatar object, which may be hidden or interpolating.
     private Vector2 lastAuthoritativePosition;
     private bool hasAuthoritativePosition;
     private GameObject remoteAvatar;
@@ -109,6 +105,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<int, BodyScript> lastDamageSources =
         new Dictionary<int, BodyScript>();
     private static readonly HashSet<int> announcedDeaths = new HashSet<int>();
+    private static BodyScript suppressNpcKillEffectFor;
     private bool coordinator;
     private ushort remotePeerId;
     private float lastRemoteHealth;
@@ -315,6 +312,29 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (victim == null) return null;
         BodyScript source;
         return lastDamageSources.TryGetValue(victim.GetInstanceID(), out source) ? source : null;
+    }
+
+    internal static void RouteNpcKillScreenEffect(BodyScript victim)
+    {
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || victim == null ||
+            victim.isPlayer) return;
+        var killer = DamageSourceFor(victim);
+        var replica = ReplicaForBody(killer);
+        if (replica == null || replica.remotePeerId == 0) return;
+
+        suppressNpcKillEffectFor = victim;
+    }
+
+    internal static bool AllowNpcKillScreenEffect()
+    {
+        if (suppressNpcKillEffectFor == null) return true;
+        suppressNpcKillEffectFor = null;
+        return false;
+    }
+
+    internal static void EndNpcKillScreenEffect(BodyScript victim)
+    {
+        if (suppressNpcKillEffectFor == victim) suppressNpcKillEffectFor = null;
     }
 
     internal static bool BeginDeathAnnouncement(BodyScript victim)
@@ -577,9 +597,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (remoteAvatar == null) return;
         UpdateRemotePhysicsMode();
 
-        // Move the physics-driven limbs before their visual children. Applying the
-        // gun transforms first made the weapon inherit one frame of stale hand
-        // position while the player was moving.
         foreach (var pair in targets)
         {
             var body = pair.Key;
@@ -1091,13 +1108,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 var tailRootCount = reader.ReadUInt16();
                 for (var index = 0; index < tailRootCount; index++) SkipBody(reader);
                 ReadWorldTransform(reader, remoteBody.Arms);
-                // gunTransform is attached to Arms, so its local pose stays stable while
-                // the whole remote player is interpolating through world space.
                 ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
                 ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
-                // The weapon is already attached to the hand rig. Keep consuming its
-                // legacy network transform, but do not apply it a second time in world
-                // space: that competes with the rig and makes it shake while moving.
                 ReadWorldTarget(reader, null);
                 var remoteHealth = reader.ReadSingle();
                 if (MultiplayerSession.IsHost)
@@ -1241,14 +1253,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static void ApplyPlayerDamage(BodyScript body, byte[] data)
     {
         if (body == null) return;
-
-        if (Time.unscaledTime < localRespawnProtectionUntil) return;
         try
         {
             using (var reader = new BinaryReader(new MemoryStream(data)))
             {
                 var amount = Mathf.Clamp(reader.ReadSingle(), 0f, 1000f);
                 var critical = reader.ReadBoolean();
+                var effectType = reader.BaseStream.Position < reader.BaseStream.Length ? reader.ReadByte() : (byte)0;
+                if (effectType == 2)
+                {
+                    ApplyExplosionImpulse(body, reader);
+                    return;
+                }
+                if (Time.unscaledTime < localRespawnProtectionUntil) return;
                 if (amount > 0f && body.isAlive)
                 {
                     body.health -= amount;
@@ -1256,11 +1273,47 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     try { body.Damaged(critical); }
                     finally { applyingNetworkPlayerDamage = false; }
                 }
-                if (reader.BaseStream.Position >= reader.BaseStream.Length || reader.ReadByte() != 1) return;
+                if (effectType != 1) return;
                 ApplyNetworkWound(body, reader);
             }
         }
         catch (EndOfStreamException) { }
+    }
+
+    private static void ApplyExplosionImpulse(BodyScript body, BinaryReader reader)
+    {
+        var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        var range = reader.ReadSingle();
+        var force = reader.ReadSingle();
+        if (!IsFinite(position.x) || !IsFinite(position.y) || !IsFinite(range) || !IsFinite(force) ||
+            range <= 0f || force <= 0f) return;
+        range = Mathf.Min(range, 100f);
+        force = Mathf.Min(force, 1000f);
+
+        if (body.rb != null) body.lastMoveDir = body.rb.velocity;
+        body.EnterHalfControl();
+
+        var affected = new HashSet<Rigidbody2D>();
+        if (body.rb != null && affected.Add(body.rb))
+            ApplyExplosionForce(body.rb, body.rb.position, position, range, force);
+        foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
+        {
+            if (collider == null) continue;
+            var rigidbody = collider.attachedRigidbody;
+            if (rigidbody == null || !affected.Add(rigidbody)) continue;
+            ApplyExplosionForce(rigidbody, collider.transform.position, position, range, force);
+        }
+    }
+
+    private static bool ApplyExplosionForce(Rigidbody2D rigidbody, Vector2 targetPosition,
+        Vector2 origin, float range, float force)
+    {
+        var offset = targetPosition - origin;
+        if (offset.sqrMagnitude > range * range) return false;
+        var direction = offset.sqrMagnitude > 0.0001f ? offset.normalized : Vector2.up;
+        rigidbody.AddForce(direction * force * rigidbody.mass, ForceMode2D.Impulse);
+        rigidbody.AddTorque(UnityEngine.Random.Range(-force, force), ForceMode2D.Impulse);
+        return true;
     }
 
     internal static bool BlockLocalRespawnDeath(BodyScript body)
@@ -1354,8 +1407,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var player = PlayerScript.player;
         if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || body == null) return false;
         var isLocalPlayer = player != null && body == player.bodyScript;
-        // PlayerScript.player is assigned after the first body is created. The initial body is
-        // already parented to PlayerScript but still has isPlayer=false during that short window.
         var isStartingPlayerBody = body.GetComponentInParent<PlayerScript>() != null;
         if (!isLocalPlayer && !isStartingPlayerBody && !body.isPlayer && !IsRemoteAvatarBody(body)) return false;
         ClearDroppedWeapon(body, allWeapons);
@@ -1608,6 +1659,30 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             player.bodyScript.ammoAmount = new List<int>();
         while (player.bodyScript.ammoAmount.Count < required)
             player.bodyScript.ammoAmount.Add(0);
+    }
+
+    internal static bool PrepareWeaponReload(WeaponScript weapon)
+    {
+        if (weapon == null || weapon.stats == null || weapon.body == null) return false;
+
+        var body = weapon.body;
+        var ammoType = weapon.stats.ammoType;
+        if (ammoType < 0) return false;
+        if (body.ammoAmount == null) body.ammoAmount = new List<int>();
+        while (body.ammoAmount.Count <= ammoType) body.ammoAmount.Add(0);
+
+        var slot = body.currentWeapon;
+        if (slot < 0) return false;
+        if (body.weaponAmmos == null) body.weaponAmmos = new List<int>();
+        while (body.weaponAmmos.Count <= slot) body.weaponAmmos.Add(0);
+
+        if (!weapon.stats.hasSpecialReload) return true;
+        if (weapon.stats.specialAnims == null) return false;
+        var animationIndex = body.ammoAmount[ammoType] < weapon.stats.magSize &&
+            body.ammoAmount[ammoType] < weapon.stats.magSize - weapon.ammo
+            ? weapon.stats.magSize - body.ammoAmount[ammoType]
+            : weapon.ammo;
+        return animationIndex >= 0 && animationIndex < weapon.stats.specialAnims.Length;
     }
 
     private static void EnsureLocalPlayerSingleton()
@@ -1977,6 +2052,52 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return state;
     }
 
+    internal static void ReplicateExplosionImpulse(GameObject explosionObject, Vector2 position,
+        float range, float force)
+    {
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || !IsFinite(position.x) ||
+            !IsFinite(position.y) || !IsFinite(range) || !IsFinite(force) || range <= 0f || force <= 0f)
+            return;
+        foreach (var replica in replicas.Values)
+        {
+            if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0 ||
+                !BodyMayBeAffectedByExplosion(replica.remoteBody, explosionObject, position, range)) continue;
+            using (var stream = new MemoryStream())
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(0f);
+                writer.Write(false);
+                writer.Write((byte)2);
+                writer.Write(position.x);
+                writer.Write(position.y);
+                writer.Write(range);
+                writer.Write(force);
+                MultiplayerSession.SendPlayerDamage(replica.remotePeerId, stream.ToArray());
+            }
+        }
+    }
+
+    private static bool BodyMayBeAffectedByExplosion(BodyScript body, GameObject explosionObject,
+        Vector2 position, float range)
+    {
+        foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
+        {
+            if (collider == null || collider.attachedRigidbody == null ||
+                ((Vector2)collider.transform.position - position).sqrMagnitude > range * range) continue;
+            var blocked = false;
+            foreach (var hit in Physics2D.LinecastAll(position, collider.transform.position,
+                LayerMask.GetMask("Ground")))
+            {
+                if (hit.collider == null || hit.collider.gameObject == explosionObject ||
+                    hit.collider.gameObject == collider.attachedRigidbody.gameObject) continue;
+                blocked = true;
+                break;
+            }
+            if (!blocked) return true;
+        }
+        return false;
+    }
+
     internal static void ConfigureProjectileCollisions(Component projectile, BodyScript shooter)
     {
         var player = PlayerScript.player;
@@ -2269,9 +2390,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return end;
     }
 
-    // The normal shot packet already carries the exact spread directions. Replaying only
-    // the cosmetic portion of the impact here keeps wall holes, sparks and hit sounds in
-    // sync without applying damage or modifying the remote world's physics.
     private void CreateRemoteBulletImpact(WeaponPreset preset, Vector2 origin, Vector2 direction,
         bool ignoreRemoteAvatar)
     {
@@ -2296,8 +2414,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 if (penetration < 0) return;
                 continue;
             }
-            // Lamps are destroyed by the synchronized world state, which also recreates
-            // their shards and shock effect. Do not duplicate them from a shot visual.
+
             if (collider.transform.gameObject.CompareTag("Lamp")) return;
 
             if (preset.HitSounds != null && preset.HitSounds.Count > 0)
@@ -2713,8 +2830,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             writer.Write(path);
             if (renderer == null)
             {
-                // Character models may rebuild a renderer while a cached layout is
-                // still valid. Keep the packet shape intact until next validation.
                 writer.Write(false);
                 writer.Write("");
                 WriteColor(writer, Color.white);
@@ -2813,8 +2928,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             while (ancestor != null && ancestor != root)
             {
                 var ancestorRenderer = ancestor.GetComponent<SpriteRenderer>();
-                // Cosmetic roots (for example ChristmasHat) sit directly below the
-                // head. Their child sprites must not remain visible if the root is off.
                 if (ancestorRenderer != null && !ancestorRenderer.enabled &&
                     ancestor.parent != null && ancestor.parent.name == "Head")
                 {
@@ -3727,5 +3840,14 @@ internal static class PlayerAmmoDisplaySlotGuardPatch
     private static void Prefix(PlayerScript __instance)
     {
         NetworkAvatarReplication.EnsurePlayerAmmoDisplaySlots(__instance);
+    }
+}
+
+[HarmonyPatch(typeof(WeaponScript), "ReloadWeapon")]
+internal static class WeaponReloadStateGuardPatch
+{
+    private static bool Prefix(WeaponScript __instance)
+    {
+        return NetworkAvatarReplication.PrepareWeaponReload(__instance);
     }
 }

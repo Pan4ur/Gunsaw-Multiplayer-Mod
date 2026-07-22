@@ -11,6 +11,8 @@ using UnityEngine.SceneManagement;
 internal sealed class WorldReplication : MonoBehaviour
 {
     internal static WorldReplication Instance;
+
+    // пиздец почему это не енам
     internal const byte WeaponPickup = 1;
     internal const byte WeaponAmmoGet = 2;
     internal const byte ButtonActivate = 3;
@@ -24,25 +26,15 @@ internal sealed class WorldReplication : MonoBehaviour
     private static readonly FieldInfo GlassHealthField = AccessTools.Field(typeof(GlassScript), "health");
     private static readonly FieldInfo DroppedWeaponAmmoSpriteField =
         AccessTools.Field(typeof(DroppedWeapon), "ammoSprite");
-
     private const bool DiagnosticsEnabled = false;
     private readonly Dictionary<string, Rigidbody2D> bodies = new Dictionary<string, Rigidbody2D>();
     private readonly Dictionary<Rigidbody2D, string> ids = new Dictionary<Rigidbody2D, string>();
-    // Runtime objects do not exist on a client before their first snapshot.
-    // Keep their generated local key bound to the original wire ID so later
-    // client input still addresses the host object correctly.
     private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
     private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
     private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons =
         new Dictionary<Rigidbody2D, DroppedWeapon>();
-    // A local pickup in an empty slot destroys the item immediately. Ignore stale host
-    // snapshots that were sent before the host processed that pickup, otherwise the item
-    // can be instantiated again on the client for a frame (or until the next full snapshot).
     private readonly Dictionary<string, float> pendingDestroyedWeaponPickups =
         new Dictionary<string, float>();
-    // Snapshots are sent over UDP and can arrive out of order. Once the host has
-    // destroyed a body, an older state must not recreate its crate on a client:
-    // its later destroy snapshot would otherwise instantiate debris a second time.
     private readonly HashSet<string> clientDestroyedBodyIds = new HashSet<string>();
     private readonly Dictionary<Rigidbody2D, State> received = new Dictionary<Rigidbody2D, State>();
     private readonly Dictionary<string, ClientBodyState> pushes = new Dictionary<string, ClientBodyState>();
@@ -68,10 +60,8 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, QDoorOpen> proximityDoors = new Dictionary<string, QDoorOpen>();
     private readonly Dictionary<QDoorOpen, string> proximityDoorIds = new Dictionary<QDoorOpen, string>();
     private readonly Dictionary<string, float> nextDoorActivation = new Dictionary<string, float>();
-    private readonly Dictionary<string, ActivateZoneScript> activationZones =
-        new Dictionary<string, ActivateZoneScript>();
-    private readonly Dictionary<ActivateZoneScript, string> activationZoneIds =
-        new Dictionary<ActivateZoneScript, string>();
+    private readonly Dictionary<string, ActivateZoneScript> activationZones = new Dictionary<string, ActivateZoneScript>();
+    private readonly Dictionary<ActivateZoneScript, string> activationZoneIds = new Dictionary<ActivateZoneScript, string>();
     private readonly Dictionary<string, float> nextZoneActivation = new Dictionary<string, float>();
     private readonly Dictionary<string, GlassScript> glasses = new Dictionary<string, GlassScript>();
     private readonly Dictionary<GlassScript, string> glassIds = new Dictionary<GlassScript, string>();
@@ -91,8 +81,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private byte[] lastSerializedWorld;
     private byte[] lastSerializedEnvironment;
     private byte[] lastReliableEnvironment;
-    private readonly Dictionary<string, byte[]> lastSerializedBodyStates =
-        new Dictionary<string, byte[]>();
+    private readonly Dictionary<string, byte[]> lastSerializedBodyStates = new Dictionary<string, byte[]>();
     private readonly Dictionary<string, float> lastChangedBodyAt = new Dictionary<string, float>();
     private float nextSnapshot;
     private float nextReliableEnvironment;
@@ -443,6 +432,9 @@ internal sealed class WorldReplication : MonoBehaviour
             IsSafetyRailingBody(body));
     }
 
+    // CustJoint can be destroyed when a safety railing tears loose.  Keep recognizing the
+    // rail by its prefab hierarchy after that point, otherwise its Rigidbody is removed from
+    // the world snapshot exactly on the frame it needs to be replicated.
     private static bool IsSafetyRailingBody(Rigidbody2D body)
     {
         if (body == null) return false;
@@ -985,8 +977,8 @@ internal sealed class WorldReplication : MonoBehaviour
                         safetyRailing = reader.ReadBoolean(),
                         safetyRailingAttached = reader.ReadBoolean()
                     };
-
-
+                    // Ignore stale pre-destruction UDP states. Automatic weapons
+                    // produce several in-flight snapshots around the breaking frame.
                     if (clientDestroyedBodyIds.Contains(id)) continue;
                     if (isDropped)
                     {
@@ -1670,7 +1662,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 enabled = fire.enabled,
                 active = fire.gameObject.activeSelf
             };
-
+            // Clients normally receive fires as host-authoritative visual state.  Keep the
+            // simulation asleep except around their own body, where FireScript is also the
+            // game's collision/ignition code.  Disabling it everywhere made a client immune
+            // to visible world fire.
             fire.enabled = ShouldTickClientFire(fire);
         }
     }
@@ -1680,13 +1675,17 @@ internal sealed class WorldReplication : MonoBehaviour
         if (fire == null) return false;
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
 
-
+        // Fires attached to an ignited limb must keep running so their normal visual and
+        // damage lifecycle remains intact.  They are not world objects and are skipped by
+        // RefreshWorldFires.
         if (fire.GetComponentInParent<BodyScript>() != null) return true;
 
         var player = PlayerScript.player;
         var body = player == null ? null : player.bodyScript;
         if (body == null) return false;
 
+        // Activate a little before contact.  Testing each limb, rather than body root,
+        // covers a hand or foot reaching into fire while the torso stays farther away.
         const float activationDistanceSqr = 9f;
         foreach (var limb in body.GetComponentsInChildren<LimbScript>(true))
         {

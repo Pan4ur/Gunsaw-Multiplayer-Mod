@@ -19,7 +19,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.6";
+    public const string PluginVersion = "0.3.7";
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
@@ -103,7 +103,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
         multiplayerLobbyUi = gameObject.AddComponent<MultiplayerLobbyUi>();
         World = worldReplication;
-        Logger.LogInfo("Gunsaw Multiplayer 0.3.6 loaded.");
+        Logger.LogInfo("Gunsaw Multiplayer 0.3.7 loaded.");
     }
 
     private void Start()
@@ -204,7 +204,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             SceneManager.LoadScene(sceneToLoad);
         }
 
-        if (MultiplayerHud.IsTyping) return;
+        if (MultiplayerHud.IsTyping || (multiplayerHud != null && multiplayerHud.ChatOpen)) return;
         if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.R))
         {
             multiplayerHud.ToggleReplicationDebugOverlay();
@@ -364,7 +364,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 map = "Host chooses level", maxPlayers = maxPlayers, hostPort = 27016, pvp = createPvp,
                 canGrab = createCanGrab, grabOnlyUnconscious = createGrabOnlyUnconscious,
                 allowRespawn = createAllowRespawn, respawnTime = respawnTime,
-                respawnAtStart = createRespawnAtStart });
+                respawnAtStart = createRespawnAtStart,
+                hostP2P = createConnectionMode != ConnectionMode.Relay,
+                connectionMode = createConnectionMode.ToString() });
             ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, maxPlayers));
         }
         catch (Exception e) { status = "Could not create lobby: " + e.Message; }
@@ -374,20 +376,23 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         try
         {
-            ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(id));
+            var mode = ConnectionMode.Auto;
+            foreach (var lobby in lobbies)
+                if (lobby.id == id) { mode = lobby.connectionMode; break; }
+            ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(id, mode));
         }
         catch (Exception e) { status = "Could not join lobby: " + e.Message; }
     }
 
     private void ConnectRelay(string address, string lobbyId, string relayKey, ushort peerId, ushort hostPeerId,
-        int maxPlayers)
+        int maxPlayers, ConnectionMode mode)
     {
         string error;
         if (!MultiplayerSession.Connect(address, lobbyId, relayKey, playerName, peerId, hostPeerId, maxPlayers,
-            ConnectionMode.Auto, Logger, out error)) { status = error; return; }
+            mode, Logger, out error)) { status = error; return; }
         avatarReplication.Configure(playerName);
         multiplayerHud.ResetChat();
-        status = "Connecting through UDP relay " + address + "...";
+        status = "Connecting via " + mode + " through UDP relay " + address + "...";
     }
 
     private void CreateLobbyInDirectory(string body, int respawnTime, int maxPlayers)
@@ -412,7 +417,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         catch (Exception exception) { RunOnMainThread(() => status = "Could not create lobby: " + exception.Message); }
     }
 
-    private void JoinLobbyRequest(string id)
+    private void JoinLobbyRequest(string id, ConnectionMode listedMode)
     {
         try
         {
@@ -423,9 +428,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var peerId = (ushort)Mathf.Clamp(JsonInt(response, "peerId"), 2, 16);
             var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 16);
             var maxPlayers = Mathf.Clamp(JsonInt(response, "maxPlayers"), 2, 16);
+            var modeText = JsonString(response, "connectionMode");
+            var mode = string.IsNullOrEmpty(modeText) ? listedMode : ParseConnectionMode(modeText);
             if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayAddress();
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
-            RunOnMainThread(() => ConnectRelay(relayAddress, lobbyId, relayKey, peerId, hostPeerId, maxPlayers));
+            RunOnMainThread(() => ConnectRelay(relayAddress, lobbyId, relayKey, peerId, hostPeerId, maxPlayers, mode));
         }
         catch (Exception exception) { RunOnMainThread(() => status = "Could not join lobby: " + exception.Message); }
     }
@@ -500,6 +507,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return end < 0 ? "" : json.Substring(start, end - start);
     }
 
+    private static ConnectionMode ParseConnectionMode(string value)
+    {
+        ConnectionMode mode;
+        return Enum.TryParse(value, true, out mode) ? mode : ConnectionMode.Auto;
+    }
+
     private static List<LobbyInfo> ParseLobbies(string json)
     {
         var result = new List<LobbyInfo>();
@@ -524,6 +537,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             lobby.allowRespawn = JsonBool(item, "allowRespawn");
             lobby.respawnTime = JsonInt(item, "respawnTime");
             lobby.respawnAtStart = JsonBool(item, "respawnAtStart");
+            lobby.hostP2P = JsonBool(item, "HostP2P") || JsonBool(item, "hostP2P");
+            lobby.connectionMode = ParseConnectionMode(JsonString(item, "connectionMode"));
             if (!string.IsNullOrEmpty(lobby.id)) result.Add(lobby);
             cursor = end + 1;
         }
@@ -641,8 +656,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         status = "Spawned " + weapon.name + ".";
     }
 
-    [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; }
-    [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; }
+    [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public ConnectionMode connectionMode = ConnectionMode.Auto; }
+    [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public string connectionMode = "Auto"; }
 }
 
 [HarmonyPatch(typeof(LimbScript), "OnCollisionStay2D")]
@@ -728,17 +743,12 @@ internal static class MultiplayerClientMainMenuPatch
 {
     private static void Prefix()
     {
-        // SceneLoader survives scene changes. A received custom level is kept here for
-        // LevelLoader, so clear it before returning to LevelSelect instead of opening the
-        // editor with the lobby's previous level data.
         if (SceneLoader.main != null)
         {
             SceneLoader.main.levelEditString = "";
             SceneLoader.main.hadEditorWarning = false;
         }
 
-        // A client can return to LevelSelect without closing the application. Notify the
-        // host before the scene transition so its peer slot is released immediately.
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHosting) return;
         MultiplayerSession.Shutdown();
     }
@@ -749,8 +759,6 @@ internal static class MultiplayerBackToEditorRedirectPatch
 {
     private static bool Prefix()
     {
-        // Custom multiplayer levels expose this vanilla button after leaving the lobby.
-        // Redirect it to the actual menu rather than allowing it to reopen the editor.
         if (SceneLoader.main != null)
         {
             SceneLoader.main.levelEditString = "";
@@ -805,8 +813,8 @@ internal static class MultiplayerLimbAnimationPatch
         if (body == null || NpcReplication.IsPossessionRenderGuard(body) ||
             NpcReplication.IsClientProxy(body) || NetworkAvatarReplication.IsRemoteAvatarBody(body))
             return false;
-        // Do not let Unity's camera-dependent render callback animate host NPCs. The NPC
-        // replicator evaluates that same callback once per authoritative snapshot instead.
+
+
         if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
         return true;
     }
@@ -843,6 +851,15 @@ internal static class MultiplayerScreenTimePatch
     private static void Postfix(ScreenFXManager __instance)
     {
         MultiplayerTimeControl.SuppressTimeSlowdown(__instance);
+    }
+}
+
+[HarmonyPatch(typeof(ScreenFXManager), "OnKill")]
+internal static class MultiplayerNpcKillScreenEffectPatch
+{
+    private static bool Prefix()
+    {
+        return NetworkAvatarReplication.AllowNpcKillScreenEffect();
     }
 }
 
@@ -1038,8 +1055,7 @@ internal static class ClientPalletDebrisAutoBreakPatch
     private static bool Prefix(CrateScript __instance)
     {
         if (!MultiplayerSession.IsConnected || GunsawMultiplayerPlugin.World == null) return true;
-        // Keep the normal Damage path available for a deliberate client shot. Only the
-        // crate's automatic ground-overlap check is suppressed for newly split pieces.
+
         return !GunsawMultiplayerPlugin.World.IsNetworkCrateDebris(__instance);
     }
 }
@@ -1092,12 +1108,21 @@ internal static class ClientNpcDeathPatch
         if (NetworkAvatarReplication.BlockLocalRespawnDeath(__instance)) return false;
         if (NetworkAvatarReplication.HandleHostRemoteDeath(__instance)) return false;
         NpcReplication.PrepareAuthoritativeNpcDeath(__instance);
-        return !NpcReplication.HandleClientDeath(__instance);
+        if (NpcReplication.HandleClientDeath(__instance)) return false;
+        NetworkAvatarReplication.RouteNpcKillScreenEffect(__instance);
+        return true;
     }
 
     private static void Postfix(BodyScript __instance)
     {
+        NetworkAvatarReplication.EndNpcKillScreenEffect(__instance);
         Announce(__instance);
+    }
+
+    private static Exception Finalizer(BodyScript __instance, Exception __exception)
+    {
+        NetworkAvatarReplication.EndNpcKillScreenEffect(__instance);
+        return __exception;
     }
 
     internal static void Announce(BodyScript __instance)
@@ -1357,9 +1382,11 @@ internal static class MultiplayerRocketOwnerPatch
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class MultiplayerExplosionPatch
 {
-    private static void Prefix(GameObject explosionObj, out NetworkAvatarReplication.ShotState __state)
+    private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force,
+        out NetworkAvatarReplication.ShotState __state)
     {
         __state = NetworkAvatarReplication.BeginProjectileExplosion(explosionObj);
+        NetworkAvatarReplication.ReplicateExplosionImpulse(explosionObj, pos, range, force);
     }
 
     private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)

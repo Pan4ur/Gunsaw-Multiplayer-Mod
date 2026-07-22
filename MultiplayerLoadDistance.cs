@@ -4,14 +4,19 @@ using UnityEngine;
 
 internal static class MultiplayerLoadDistance
 {
-    // Gunsaw's ObjectUnloader compares squared distance directly to this preference.
     private const float DefaultTickDistanceSqr = 1800f;
     private const float SimulationRefreshInterval = 0.2f;
     private static readonly List<Vector2> playerPositions = new List<Vector2>();
     private static readonly Dictionary<Rigidbody2D, bool> savedSimulationStates =
         new Dictionary<Rigidbody2D, bool>();
+    private static readonly Dictionary<BodyScript, bool> npcTickStates =
+        new Dictionary<BodyScript, bool>();
+    private static readonly Dictionary<Component, bool> worldTickStates =
+        new Dictionary<Component, bool>();
     private static readonly List<Rigidbody2D> staleBodies = new List<Rigidbody2D>();
     private static bool wasActive;
+    private static bool hostSimulationActive;
+    private static float activeDistanceSqr = DefaultTickDistanceSqr;
     private static float nextSimulationRefresh;
 
     internal static void Apply()
@@ -22,11 +27,12 @@ internal static class MultiplayerLoadDistance
         var active = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected;
         if (active)
         {
-            // Keep every object spawned. Simulation culling below is deliberately separate.
             ResourceManager.maxDistance = float.PositiveInfinity;
             ObjectUnloader.dist = float.PositiveInfinity;
             ObjectUnloader.distTwo = float.PositiveInfinity;
             wasActive = true;
+            hostSimulationActive = MultiplayerSession.IsConnected && MultiplayerSession.IsHost;
+            activeDistanceSqr = ReadTickDistance();
             RefreshPlayerPositions();
             RefreshSimulation();
             return;
@@ -39,6 +45,9 @@ internal static class MultiplayerLoadDistance
         ObjectUnloader.distTwo = configuredDistance - 300f;
         RestoreSimulation();
         playerPositions.Clear();
+        npcTickStates.Clear();
+        worldTickStates.Clear();
+        hostSimulationActive = false;
         nextSimulationRefresh = 0f;
         wasActive = false;
         }
@@ -50,9 +59,13 @@ internal static class MultiplayerLoadDistance
 
     internal static bool ShouldTickNpc(BodyScript body)
     {
-        if (!IsHostSimulationActive() || body == null || body.isPlayer ||
-            body.GetComponentInParent<NetworkReplica>() != null) return true;
-        return IsNearAnyPlayer(body.transform.position);
+        if (!IsHostSimulationActive() || body == null) return true;
+        bool tick;
+        if (npcTickStates.TryGetValue(body, out tick)) return tick;
+        tick = body.isPlayer || body.GetComponentInParent<NetworkReplica>() != null ||
+               IsNearAnyPlayer(body.transform.position);
+        npcTickStates[body] = tick;
+        return tick;
     }
 
     internal static bool IsNpcNearAnyPlayer(BodyScript body)
@@ -62,11 +75,15 @@ internal static class MultiplayerLoadDistance
 
     internal static bool ShouldTickWorld(Component component)
     {
-        if (!IsHostSimulationActive() || component == null ||
-            component.GetComponentInParent<BodyScript>() != null ||
-            component.GetComponentInParent<PlayerScript>() != null ||
-            component.GetComponentInParent<NetworkReplica>() != null) return true;
-        return IsNearAnyPlayer(component.transform.position);
+        if (!IsHostSimulationActive() || component == null) return true;
+        bool tick;
+        if (worldTickStates.TryGetValue(component, out tick)) return tick;
+        tick = component.GetComponentInParent<BodyScript>() != null ||
+               component.GetComponentInParent<PlayerScript>() != null ||
+               component.GetComponentInParent<NetworkReplica>() != null ||
+               IsNearAnyPlayer(component.transform.position);
+        worldTickStates[component] = tick;
+        return tick;
     }
 
     internal static void ApplyWorldBody(Rigidbody2D body)
@@ -80,6 +97,7 @@ internal static class MultiplayerLoadDistance
         if (body == null || !IsHostSimulationActive() || body.isPlayer ||
             body.GetComponentInParent<NetworkReplica>() != null) return;
         var tick = IsNearAnyPlayer(body.transform.position);
+        npcTickStates[body] = tick;
         foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
             SetSimulation(rigidbody, tick);
     }
@@ -101,7 +119,6 @@ internal static class MultiplayerLoadDistance
     {
         if (!IsHostSimulationActive() || unloader == null) return false;
         ApplyWorldBody(unloader.GetComponent<Rigidbody2D>());
-        // Do not let ObjectUnloader hide the sprite or undo our player-based simulation state.
         return true;
     }
 
@@ -114,6 +131,8 @@ internal static class MultiplayerLoadDistance
         }
         if (Time.unscaledTime < nextSimulationRefresh) return;
         nextSimulationRefresh = Time.unscaledTime + SimulationRefreshInterval;
+        npcTickStates.Clear();
+        worldTickStates.Clear();
         var world = WorldReplication.Instance;
         if (world != null) world.ApplyDistanceCulling();
         var npcs = NpcReplication.Instance;
@@ -122,7 +141,7 @@ internal static class MultiplayerLoadDistance
 
     private static bool IsHostSimulationActive()
     {
-        return MultiplayerSession.IsConnected && MultiplayerSession.IsHost;
+        return hostSimulationActive;
     }
 
     private static void RefreshPlayerPositions()
@@ -130,8 +149,6 @@ internal static class MultiplayerLoadDistance
         playerPositions.Clear();
         var localPlayer = PlayerScript.player;
         if (localPlayer != null) AddPlayerPosition(localPlayer.bodyScript);
-        // The display object can be hidden or one frame behind. Use the coordinate decoded from
-        // the remote player's latest packet so an NPC near that player is never culled by host range.
         foreach (var remote in NetworkAvatarReplication.RemotePlayers())
         {
             if (remote.HasAuthoritativePosition) playerPositions.Add(remote.AuthoritativePosition);
@@ -148,12 +165,17 @@ internal static class MultiplayerLoadDistance
     private static bool IsNearAnyPlayer(Vector2 position)
     {
         if (playerPositions.Count == 0) return true;
-        var distanceSqr = PlayerPrefs.GetFloat("loadDistance", DefaultTickDistanceSqr);
-        if (distanceSqr <= 0f || float.IsNaN(distanceSqr) || float.IsInfinity(distanceSqr))
-            distanceSqr = DefaultTickDistanceSqr;
         foreach (var playerPosition in playerPositions)
-            if ((position - playerPosition).sqrMagnitude < distanceSqr) return true;
+            if ((position - playerPosition).sqrMagnitude < activeDistanceSqr) return true;
         return false;
+    }
+
+    private static float ReadTickDistance()
+    {
+        var distanceSqr = PlayerPrefs.GetFloat("loadDistance", DefaultTickDistanceSqr);
+        return distanceSqr <= 0f || float.IsNaN(distanceSqr) || float.IsInfinity(distanceSqr)
+            ? DefaultTickDistanceSqr
+            : distanceSqr;
     }
 
     private static void SetSimulation(Rigidbody2D body, bool simulated)
