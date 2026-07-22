@@ -19,6 +19,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte DoorActivate = 4;
     internal const byte ZoneActivate = 5;
     internal const byte GlassDamage = 6;
+    internal const byte VehicleDamage = 7;
 
     private const float SnapshotInterval = 1f / 50f;
     private const float FullSnapshotInterval = 1f;
@@ -429,6 +430,7 @@ internal sealed class WorldReplication : MonoBehaviour
             body.GetComponentInParent<RbMoveToObj>() != null ||
             body.GetComponentInParent<SawScript>() != null ||
             body.GetComponentInParent<CustJoint>() != null ||
+            body.GetComponentInParent<VehiclePart>() != null ||
             IsSafetyRailingBody(body));
     }
 
@@ -495,6 +497,23 @@ internal sealed class WorldReplication : MonoBehaviour
         if (droppedWeapon != null) droppedWeapon.enabled = false;
         if (IsMechanismBody(body) && !IsInteractivePropBody(body) && body.simulated)
             body.bodyType = RigidbodyType2D.Kinematic;
+    }
+
+    internal ulong VehicleWireId(VehicleBase vehicle)
+    {
+        if (vehicle == null || vehicle.mainPart == null || vehicle.mainPart.rb == null) return 0UL;
+        return WireId(Id(vehicle.mainPart.rb));
+    }
+
+    internal VehicleBase FindVehicle(ulong wireId)
+    {
+        if (wireId == 0UL) return null;
+        foreach (var vehicle in FindObjectsOfType<VehicleBase>())
+        {
+            if (vehicle == null || vehicle.mainPart == null || vehicle.mainPart.rb == null) continue;
+            if (VehicleWireId(vehicle) == wireId) return vehicle;
+        }
+        return null;
     }
 
     private void RefreshWorldControllers()
@@ -842,6 +861,17 @@ internal sealed class WorldReplication : MonoBehaviour
             var safetyRailing = IsSafetyRailingBody(body);
             writer.Write(safetyRailing);
             writer.Write(safetyRailing && IsSafetyRailingAttached(body));
+            var vehiclePart = body.GetComponent<VehiclePart>();
+            writer.Write(vehiclePart != null);
+            if (vehiclePart != null)
+            {
+                var vehicle = vehiclePart.vehicle ?? vehiclePart.GetComponentInParent<VehicleBase>();
+                var joint = body.GetComponent<Joint2D>();
+                writer.Write(vehiclePart.health);
+                writer.Write(vehicle == null ? 0f : vehicle.health);
+                writer.Write(vehicle != null && vehicle.engineDisabled);
+                writer.Write(joint != null && joint.enabled);
+            }
             if (dropped != null)
             {
                 writer.Write(NetworkWireId.FromString(dropped.stats == null ? "" : dropped.stats.name));
@@ -975,8 +1005,16 @@ internal sealed class WorldReplication : MonoBehaviour
                         simulated = reader.ReadBoolean(),
                         awake = reader.ReadBoolean(),
                         safetyRailing = reader.ReadBoolean(),
-                        safetyRailingAttached = reader.ReadBoolean()
+                        safetyRailingAttached = reader.ReadBoolean(),
+                        vehiclePart = reader.ReadBoolean()
                     };
+                    if (state.vehiclePart)
+                    {
+                        state.vehiclePartHealth = reader.ReadSingle();
+                        state.vehicleHealth = reader.ReadSingle();
+                        state.vehicleEngineDisabled = reader.ReadBoolean();
+                        state.vehicleJointAttached = reader.ReadBoolean();
+                    }
                     // Ignore stale pre-destruction UDP states. Automatic weapons
                     // produce several in-flight snapshots around the breaking frame.
                     if (clientDestroyedBodyIds.Contains(id)) continue;
@@ -1057,6 +1095,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (state.safetyRailing && !state.safetyRailingAttached)
             DetachSafetyRailing(body);
+        ApplyVehicleState(body, state);
         var mechanism = (IsMechanismBody(body) && !IsInteractivePropBody(body)) ||
             networkCrateDebrisBodies.Contains(body);
         float controlUntil;
@@ -1128,6 +1167,22 @@ internal sealed class WorldReplication : MonoBehaviour
         if (state.awake) body.WakeUp();
         else if (state.bodyType != RigidbodyType2D.Dynamic) body.Sleep();
         TraceSnapshot(body, state, "applied");
+    }
+
+    private static void ApplyVehicleState(Rigidbody2D body, State state)
+    {
+        if (!state.vehiclePart || body == null) return;
+        var part = body.GetComponent<VehiclePart>();
+        if (part == null) return;
+        part.health = state.vehiclePartHealth;
+        var vehicle = part.vehicle ?? part.GetComponentInParent<VehicleBase>();
+        if (vehicle != null)
+        {
+            vehicle.health = state.vehicleHealth;
+            vehicle.engineDisabled = state.vehicleEngineDisabled;
+        }
+        var joint = body.GetComponent<Joint2D>();
+        if (joint != null) joint.enabled = state.vehicleJointAttached;
     }
 
     internal void QueuePush(LimbScript limb, Collision2D collision)
@@ -1289,6 +1344,20 @@ internal sealed class WorldReplication : MonoBehaviour
             writer.Write(WireId(id));
             writer.Write(damage);
             writer.Write(bulletPosition.x); writer.Write(bulletPosition.y); writer.Write(bulletPosition.z);
+            MultiplayerSession.SendWorldInteraction(stream.ToArray());
+        }
+    }
+
+    internal void QueueVehicleDamage(VehiclePart part, float amount, bool collision)
+    {
+        if (MultiplayerSession.IsHost || part == null || part.rb == null || amount <= 0f) return;
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(VehicleDamage);
+            writer.Write(WireId(Id(part.rb)));
+            writer.Write(Mathf.Min(100f, amount));
+            writer.Write(collision);
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
     }
@@ -1550,6 +1619,11 @@ internal sealed class WorldReplication : MonoBehaviour
                         new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
                     return;
                 }
+                if (operation == VehicleDamage)
+                {
+                    ApplyVehicleDamage(id, peerId, reader.ReadSingle(), reader.ReadBoolean());
+                    return;
+                }
                 var slot = reader.ReadInt32();
                 var oldWeaponId = reader.ReadUInt64();
                 var oldAmmo = reader.ReadInt32();
@@ -1606,6 +1680,20 @@ internal sealed class WorldReplication : MonoBehaviour
             }
         }
         catch (EndOfStreamException) { }
+    }
+
+    private void ApplyVehicleDamage(string id, ushort peerId, float amount, bool collision)
+    {
+        Rigidbody2D body;
+        var remoteBody = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
+        if (remoteBody == null || !remoteBody.isAlive || !bodies.TryGetValue(id, out body) || body == null)
+            return;
+        var part = body.GetComponent<VehiclePart>();
+        if (part == null || (remoteBody.transform.position - part.transform.position).sqrMagnitude > 36f)
+            return;
+        amount = Mathf.Clamp(amount, 0f, 100f);
+        if (collision) part.health -= amount;
+        part.Damage(amount);
     }
 
 
@@ -2323,6 +2411,11 @@ internal sealed class WorldReplication : MonoBehaviour
         public bool awake;
         public bool safetyRailing;
         public bool safetyRailingAttached;
+        public bool vehiclePart;
+        public float vehiclePartHealth;
+        public float vehicleHealth;
+        public bool vehicleEngineDisabled;
+        public bool vehicleJointAttached;
     }
 
     private struct LocalSettings

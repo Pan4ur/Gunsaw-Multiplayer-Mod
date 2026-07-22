@@ -93,6 +93,7 @@ internal static class MultiplayerSession
     private static readonly byte[] reliableHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x18 };
     private static readonly byte[] reliableAckHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x19 };
     private static readonly byte[] worldEnvironmentHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1A };
+    private static readonly byte[] projectileImpactHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1B };
     private static string hostScene = "";
     private static string pendingScene = "";
     private static string lastReceivedHostScene = "";
@@ -111,6 +112,7 @@ internal static class MultiplayerSession
     private static readonly Queue<PeerPayload> playerDamage = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> pvpDamage = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> shotVisuals = new Queue<PeerPayload>();
+    private static readonly Queue<PeerPayload> projectileImpacts = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> playerGrabs = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> npcGrabs = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> npcPossessions = new Queue<PeerPayload>();
@@ -265,7 +267,18 @@ internal static class MultiplayerSession
 
     internal static void SetHostScene(string scene)
     {
-        if (isHost && string.IsNullOrEmpty(hostCustomLevel)) hostScene = scene;
+        if (!isHost || string.IsNullOrEmpty(scene) || !string.IsNullOrEmpty(hostCustomLevel)) return;
+        if (hostScene == scene) return;
+        hostScene = scene;
+        SendScene(scene);
+    }
+
+    internal static void EndHostCustomLevel(string scene)
+    {
+        if (!isHost || string.IsNullOrEmpty(hostCustomLevel)) return;
+        lock (statusLock) hostCustomLevel = "";
+        hostScene = scene;
+        SendScene(scene);
     }
 
     internal static void StartHostCustomLevel(string levelJson)
@@ -316,6 +329,7 @@ internal static class MultiplayerSession
                 return worldSnapshots.Count + worldInputs.Count + worldDamage.Count +
                     npcSnapshots.Count + npcDamage.Count + worldInteractions.Count +
                     playerDamage.Count + pvpDamage.Count + shotVisuals.Count +
+                    projectileImpacts.Count +
                     playerGrabs.Count + npcGrabs.Count;
         }
     }
@@ -530,13 +544,40 @@ internal static class MultiplayerSession
     {
         SendDisconnectImmediately();
         CloseSocket(true);
+        isHost = false;
+        PvpEnabled = false;
+        CanGrabPlayers = false;
+        GrabOnlyUnconscious = false;
+        AllowRespawn = false;
+        RespawnTimeSeconds = 0;
+        RespawnAtStart = false;
         lock (statusLock)
         {
             peers.Clear();
             ClearPeerQueuesLocked();
             pendingScene = "";
             lastReceivedHostScene = "";
+            hostCustomLevel = "";
+            pendingCustomLevel = "";
+            hostDisconnectPending = false;
+            maxPlayers = 2;
         }
+    }
+
+    internal static bool UpdateHostSettings(bool pvpEnabled, bool canGrabPlayers,
+        bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
+        bool respawnAtStart, int lobbyMaxPlayers)
+    {
+        if (!IsHosting) return false;
+        PvpEnabled = pvpEnabled;
+        CanGrabPlayers = canGrabPlayers;
+        GrabOnlyUnconscious = canGrabPlayers && grabOnlyUnconscious;
+        AllowRespawn = allowRespawn;
+        RespawnTimeSeconds = Math.Max(0, Math.Min(3600, respawnTimeSeconds));
+        RespawnAtStart = allowRespawn && respawnAtStart;
+        lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
+        SendSettings();
+        return true;
     }
 
     internal static void UpdatePing()
@@ -647,7 +688,7 @@ internal static class MultiplayerSession
 
     private static void SendSettings(ushort targetId = 0)
     {
-        var packet = new byte[settingsHeader.Length + 7];
+        var packet = new byte[settingsHeader.Length + 8];
         Buffer.BlockCopy(settingsHeader, 0, packet, 0, settingsHeader.Length);
         packet[settingsHeader.Length] = PvpEnabled ? (byte)1 : (byte)0;
         packet[settingsHeader.Length + 1] = CanGrabPlayers ? (byte)1 : (byte)0;
@@ -656,6 +697,7 @@ internal static class MultiplayerSession
         packet[settingsHeader.Length + 4] = RespawnAtStart ? (byte)1 : (byte)0;
         Buffer.BlockCopy(BitConverter.GetBytes((ushort)RespawnTimeSeconds), 0,
             packet, settingsHeader.Length + 5, sizeof(ushort));
+        packet[settingsHeader.Length + 7] = (byte)MaxPlayers;
         SendPacket(packet, targetId);
     }
 
@@ -677,6 +719,11 @@ internal static class MultiplayerSession
     internal static void SendShotVisual(byte[] data)
     {
         Send(shotVisualHeader, data);
+    }
+
+    internal static void SendProjectileImpact(byte[] data)
+    {
+        Send(projectileImpactHeader, data);
     }
 
     internal static void SendPlayerGrab(ushort targetPeerId, byte[] data)
@@ -786,6 +833,11 @@ internal static class MultiplayerSession
     internal static bool TryTakeShotVisual(out ushort peerId, out byte[] data)
     {
         return TryTakePayload(shotVisuals, out peerId, out data);
+    }
+
+    internal static bool TryTakeProjectileImpact(out ushort peerId, out byte[] data)
+    {
+        return TryTakePayload(projectileImpacts, out peerId, out data);
     }
 
     internal static bool TryTakePlayerGrab(out ushort peerId, out byte[] data)
@@ -1005,6 +1057,11 @@ internal static class MultiplayerSession
                 RespawnTimeSeconds = packet.Length >= settingsHeader.Length + 7
                     ? BitConverter.ToUInt16(packet, settingsHeader.Length + 5)
                     : 0;
+                if (packet.Length > settingsHeader.Length + 7)
+                {
+                    lock (statusLock)
+                        maxPlayers = Math.Max(2, Math.Min(16, (int)packet[settingsHeader.Length + 7]));
+                }
                 SetStatus("Lobby settings received. PVP " + (PvpEnabled ? "enabled" : "disabled") +
                     "; player grab " + (CanGrabPlayers ? (GrabOnlyUnconscious ? "unconscious only" : "enabled") : "disabled") +
                     "; respawn " + (AllowRespawn ? RespawnTimeSeconds + "s." : "disabled."));
@@ -1014,6 +1071,12 @@ internal static class MultiplayerSession
                 var data = new byte[packet.Length - shotVisualHeader.Length];
                 Buffer.BlockCopy(packet, shotVisualHeader.Length, data, 0, data.Length);
                 EnqueuePayload(shotVisuals, senderId, data);
+            }
+            else if (HasHeader(packet, projectileImpactHeader))
+            {
+                var data = new byte[packet.Length - projectileImpactHeader.Length];
+                Buffer.BlockCopy(packet, projectileImpactHeader.Length, data, 0, data.Length);
+                EnqueuePayload(projectileImpacts, senderId, data);
             }
             else if (HasHeader(packet, playerGrabHeader))
             {
@@ -1228,6 +1291,7 @@ internal static class MultiplayerSession
         playerDamage.Clear();
         pvpDamage.Clear();
         shotVisuals.Clear();
+        projectileImpacts.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();
         npcPossessions.Clear();

@@ -19,7 +19,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.7";
+    public const string PluginVersion = "0.3.8";
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
@@ -230,6 +230,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             debugWeaponSequence = 0;
             SpawnRandomWeapon();
         }
+        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha1))
+        {
+            debugWeaponSequence = 0;
+            SpawnGrenadeLauncher();
+        }
+        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            debugWeaponSequence = 0;
+            SpawnRocketLauncher();
+        }
         else if (Input.anyKeyDown) debugWeaponSequence = 0;
     }
 
@@ -378,6 +388,54 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, maxPlayers));
         }
         catch (Exception e) { status = "Could not create lobby: " + e.Message; }
+    }
+
+    internal void UpdateHostedLobby()
+    {
+        if (!MultiplayerSession.IsHosting)
+        {
+            status = "Create a lobby first.";
+            return;
+        }
+        int respawnTime;
+        if (!int.TryParse(createRespawnTime, out respawnTime)) respawnTime = 5;
+        respawnTime = Mathf.Clamp(respawnTime, 0, 3600);
+        createRespawnTime = respawnTime.ToString();
+        int maxPlayers;
+        if (!int.TryParse(createMaxPlayers, out maxPlayers)) maxPlayers = MultiplayerSession.MaxPlayers;
+        maxPlayers = Mathf.Clamp(maxPlayers, 2, 16);
+        createMaxPlayers = maxPlayers.ToString();
+        if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
+            createAllowRespawn, respawnTime, createRespawnAtStart, maxPlayers))
+        {
+            status = "Could not update lobby settings.";
+            return;
+        }
+        hostedLobbyDisplayName = lobbyName;
+        status = "Lobby settings updated.";
+        if (!string.IsNullOrEmpty(hostedLobbyId) && !string.IsNullOrEmpty(hostRelayKey))
+            ThreadPool.QueueUserWorkItem(_ => UpdateHostedLobbyInDirectory());
+    }
+
+    internal void CloseHostedLobby()
+    {
+        if (!MultiplayerSession.IsHosting)
+        {
+            status = "No hosted lobby is active.";
+            return;
+        }
+        var lobbyId = hostedLobbyId;
+        var relayKey = hostRelayKey;
+        MultiplayerSession.Shutdown();
+        hostedLobbyId = "";
+        hostedLobbyDisplayName = "";
+        hostRelayKey = "";
+        requestedHostScene = "";
+        waitingForCustomLevel = false;
+        nextHeartbeat = 0f;
+        status = "Lobby closed.";
+        if (!string.IsNullOrEmpty(lobbyId) && !string.IsNullOrEmpty(relayKey))
+            DeleteHostedLobby(lobbyId, relayKey);
     }
 
     internal void JoinLobby(string id)
@@ -586,6 +644,40 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         });
     }
 
+    private void UpdateHostedLobbyInDirectory()
+    {
+        try
+        {
+            var body = JsonUtility.ToJson(new CreateLobbyRequest
+            {
+                name = lobbyName,
+                hostName = playerName,
+                map = SceneManager.GetActiveScene().name,
+                maxPlayers = MultiplayerSession.MaxPlayers,
+                hostPort = 27016,
+                pvp = createPvp,
+                canGrab = createCanGrab,
+                grabOnlyUnconscious = createCanGrab && createGrabOnlyUnconscious,
+                allowRespawn = createAllowRespawn,
+                respawnTime = MultiplayerSession.RespawnTimeSeconds,
+                respawnAtStart = createAllowRespawn && createRespawnAtStart,
+                hostP2P = createConnectionMode != ConnectionMode.Relay,
+                connectionMode = createConnectionMode.ToString()
+            });
+            Http("PUT", "/v1/lobbies/" + hostedLobbyId, body, "Bearer " + hostRelayKey);
+        }
+        catch (Exception exception) { Logger.LogWarning("Could not update hosted lobby: " + exception.Message); }
+    }
+
+    private void DeleteHostedLobby(string lobbyId, string relayKey)
+    {
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try { Http("DELETE", "/v1/lobbies/" + lobbyId, null, "Bearer " + relayKey); }
+            catch (Exception exception) { Logger.LogWarning("Could not remove hosted lobby: " + exception.Message); }
+        });
+    }
+
     private void OnApplicationQuit()
     {
         ShutdownMultiplayer(true);
@@ -604,11 +696,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (!removeHostedLobby || string.IsNullOrEmpty(hostedLobbyId) || string.IsNullOrEmpty(hostRelayKey)) return;
         var lobbyId = hostedLobbyId;
         var relayKey = hostRelayKey;
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            try { Http("DELETE", "/v1/lobbies/" + lobbyId, null, "Bearer " + relayKey); }
-            catch (Exception exception) { Logger.LogWarning("Could not remove hosted lobby: " + exception.Message); }
-        });
+        DeleteHostedLobby(lobbyId, relayKey);
     }
 
     private static string EscapeJson(string value)
@@ -660,6 +748,50 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         var pickup = Instantiate(prefab, position, Quaternion.identity).GetComponent<DroppedWeapon>();
         if (pickup == null) { status = "Pickup component not found."; return; }
         var weapon = choices[UnityEngine.Random.Range(0, choices.Count)];
+        pickup.ChangeWeapon(weapon, weapon.magSize);
+        WorldReplication.TrackDroppedWeapons();
+        status = "Spawned " + weapon.name + ".";
+    }
+
+    private void SpawnGrenadeLauncher()
+    {
+        SpawnNamedWeapon("Grenade Launcher", "Grenade launcher");
+    }
+
+    private void SpawnRocketLauncher()
+    {
+        SpawnNamedWeapon("Rocket Launcher", "Rocket", "RPG");
+    }
+
+    private void SpawnNamedWeapon(string weaponName, string fallbackName, string alternateName = "")
+    {
+        var player = PlayerScript.player;
+        if (player == null || player.bodyScript == null) return;
+        var presets = Resources.FindObjectsOfTypeAll<WeaponPreset>();
+        WeaponPreset weapon = null;
+        foreach (var preset in presets)
+            if (preset != null && preset.sprite != null &&
+                (string.Equals(preset.name, weaponName, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(preset.name, alternateName, StringComparison.OrdinalIgnoreCase)))
+            {
+                weapon = preset;
+                break;
+            }
+        if (weapon == null)
+            foreach (var preset in presets)
+                if (preset != null && preset.sprite != null && preset.shootType == 1 &&
+                    !string.IsNullOrEmpty(preset.name) &&
+                    preset.name.IndexOf(fallbackName, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    weapon = preset;
+                    break;
+                }
+        if (weapon == null) { status = weaponName + " preset not found."; return; }
+        var prefab = Resources.Load<GameObject>("Spawnables/PickupWeapon");
+        if (prefab == null) { status = "Pickup weapon prefab not found."; return; }
+        var position = player.bodyScript.transform.position + new Vector3(0f, 2f, 0f);
+        var pickup = Instantiate(prefab, position, Quaternion.identity).GetComponent<DroppedWeapon>();
+        if (pickup == null) { status = "Pickup component not found."; return; }
         pickup.ChangeWeapon(weapon, weapon.magSize);
         WorldReplication.TrackDroppedWeapons();
         status = "Spawned " + weapon.name + ".";
@@ -768,6 +900,8 @@ internal static class MultiplayerBackToEditorRedirectPatch
 {
     private static bool Prefix()
     {
+        if (MultiplayerSession.IsHosting)
+            MultiplayerSession.EndHostCustomLevel("LevelSelect");
         if (SceneLoader.main != null)
         {
             SceneLoader.main.levelEditString = "";
@@ -778,6 +912,96 @@ internal static class MultiplayerBackToEditorRedirectPatch
         if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting)
             MultiplayerSession.Shutdown();
         return false;
+    }
+}
+
+internal static class CustomLevelSpawnSelection
+{
+    private static int selectionDepth;
+    private static GameObject selectedSpawn;
+    private static readonly List<Vector3> spawnPositions = new List<Vector3>();
+    private static int spawnScene = int.MinValue;
+
+    internal static void Begin()
+    {
+        if (selectionDepth++ == 0)
+        {
+            selectedSpawn = null;
+            spawnPositions.Clear();
+            spawnScene = SceneManager.GetActiveScene().handle;
+        }
+    }
+
+    internal static void End()
+    {
+        if (selectionDepth > 0) selectionDepth--;
+        if (selectionDepth == 0) selectedSpawn = null;
+    }
+
+    internal static void ReplacePlayerSpawn(ref GameObject result)
+    {
+        if (selectionDepth == 0) return;
+        if (selectedSpawn == null)
+        {
+            var spawns = GameObject.FindGameObjectsWithTag("PlayerSpawn");
+            if (spawns == null || spawns.Length == 0) return;
+            foreach (var spawn in spawns)
+                if (spawn != null) spawnPositions.Add(spawn.transform.position);
+            selectedSpawn = spawns[UnityEngine.Random.Range(0, spawns.Length)];
+        }
+        result = selectedSpawn;
+    }
+
+    internal static void Capture(Level level)
+    {
+        if (level == null || level.parts == null) return;
+        spawnPositions.Clear();
+        foreach (var part in level.parts)
+            if (part != null && part.path == "Building/PlayerSpawn") spawnPositions.Add(part.pos);
+        spawnScene = SceneManager.GetActiveScene().handle;
+    }
+
+    internal static bool TryGetRandomSpawnPosition(out Vector3 position)
+    {
+        position = default(Vector3);
+        if (spawnScene != SceneManager.GetActiveScene().handle) return false;
+        if (spawnPositions.Count == 0)
+        {
+            foreach (var spawn in GameObject.FindGameObjectsWithTag("PlayerSpawn"))
+                if (spawn != null) spawnPositions.Add(spawn.transform.position);
+        }
+        if (spawnPositions.Count == 0) return false;
+        position = spawnPositions[UnityEngine.Random.Range(0, spawnPositions.Count)];
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(LevelLoader), "Start")]
+internal static class MultiplayerCustomLevelSpawnScopePatch
+{
+    private static void Prefix(out bool __state)
+    {
+        __state = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected;
+        if (__state) CustomLevelSpawnSelection.Begin();
+    }
+
+    private static Exception Finalizer(Level ___level, bool __state, Exception __exception)
+    {
+        if (__state)
+        {
+            CustomLevelSpawnSelection.Capture(___level);
+            CustomLevelSpawnSelection.End();
+        }
+        return __exception;
+    }
+}
+
+[HarmonyPatch(typeof(GameObject), "FindGameObjectWithTag", new[] { typeof(string) })]
+internal static class MultiplayerCustomLevelSpawnLookupPatch
+{
+    private static void Postfix(string tag, ref GameObject __result)
+    {
+        if (tag == "PlayerSpawn") CustomLevelSpawnSelection.ReplacePlayerSpawn(ref __result);
     }
 }
 
@@ -796,6 +1020,8 @@ internal static class MultiplayerVanillaBodySwitchPatch
     private static bool Prefix(LimbScript limb)
     {
         if (!MultiplayerSession.IsConnected) return true;
+        var player = PlayerScript.player;
+        if (player != null && player.bodyScript != null && !player.bodyScript.isAlive) return false;
         return !NpcReplication.TryPossessLocalPlayer(limb);
     }
 }
@@ -1135,6 +1361,9 @@ internal static class ClientNpcDeathPatch
     internal static void Announce(BodyScript __instance)
     {
         if (!MultiplayerSession.IsHosting || __instance == null ||
+            NetworkAvatarReplication.IsCreatingRemoteAvatar() ||
+            NetworkAvatarReplication.IsRemoteReplicaBody(__instance) ||
+            (!__instance.isPlayer && !NpcReplication.IsHostNpc(__instance)) ||
             !NetworkAvatarReplication.BeginDeathAnnouncement(__instance)) return;
         var victimName = DeathDisplayName(__instance);
         var killer = NetworkAvatarReplication.DamageSourceFor(__instance);
@@ -1386,14 +1615,31 @@ internal static class MultiplayerRocketOwnerPatch
     }
 }
 
+[HarmonyPatch(typeof(RocketProjectile), "Update")]
+internal static class MultiplayerRocketUpdatePatch
+{
+    private static void Prefix(RocketProjectile __instance, out RocketProjectile __state)
+    {
+        __state = NetworkAvatarReplication.BeginRocketUpdate(__instance);
+    }
+
+    private static Exception Finalizer(Exception __exception, RocketProjectile __state)
+    {
+        NetworkAvatarReplication.EndRocketUpdate(__state);
+        return __exception;
+    }
+}
+
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class MultiplayerExplosionPatch
 {
     private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force,
         out NetworkAvatarReplication.ShotState __state)
     {
-        __state = NetworkAvatarReplication.BeginProjectileExplosion(explosionObj);
-        NetworkAvatarReplication.ReplicateExplosionImpulse(explosionObj, pos, range, force);
+        var projectile = NetworkAvatarReplication.ResolveExplosionProjectile(explosionObj);
+        __state = NetworkAvatarReplication.BeginProjectileExplosion(projectile);
+        NetworkAvatarReplication.ReplicateProjectileImpact(projectile, pos);
+        NetworkAvatarReplication.ReplicateExplosionImpulse(projectile, pos, range, force);
     }
 
     private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)

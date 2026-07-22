@@ -335,8 +335,11 @@ internal sealed class NpcReplication : MonoBehaviour
     internal static bool IsHostNpc(BodyScript body)
     {
         var instance = Instance;
-        return body != null && MultiplayerSession.IsHost && instance != null &&
-            instance.hostIds.ContainsKey(body);
+        if (body == null || !MultiplayerSession.IsHost || instance == null) return false;
+        string id;
+        BodyScript registered;
+        return instance.hostIds.TryGetValue(body, out id) && instance.hostNpcs.TryGetValue(id, out registered) &&
+            registered == body;
     }
 
     internal static bool IsNpcRigBody(Rigidbody2D rigidbody)
@@ -934,6 +937,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private void ApplyState(NpcProxy proxy, NpcState state)
     {
         var body = proxy.Body;
+        var hostReportedDeath = proxy.ReceivedFirstState && proxy.LastHostAlive && !state.IsAlive;
         body.characterName = state.CharacterName;
         body.speciesName = state.SpeciesName;
         ApplyLifeTransition(body, state.IsAlive);
@@ -1006,6 +1010,8 @@ internal sealed class NpcReplication : MonoBehaviour
         ApplyVisuals(proxy, state.Visuals);
         ApplyDismembermentVisuals(proxy);
         proxy.ReceivedFirstState = true;
+        if (hostReportedDeath && MissionManager.main != null)
+            MissionManager.main.EnemyKilled();
     }
 
     private static void ApplyLifeTransition(BodyScript body, bool hostAlive)
@@ -1070,7 +1076,7 @@ internal sealed class NpcReplication : MonoBehaviour
         var oldBody = player == null ? null : player.bodyScript;
         var target = limb == null ? null : limb.body;
         if (current == null || player == null || oldBody == null || target == null ||
-            target == oldBody || !MultiplayerSession.IsConnected || target.isPlayer)
+            target == oldBody || !oldBody.isAlive || !MultiplayerSession.IsConnected || target.isPlayer)
             return false;
 
         string id = null;

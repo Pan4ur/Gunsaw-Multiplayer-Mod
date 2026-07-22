@@ -23,10 +23,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<string, WeaponPreset> weaponPresetCache =
         new Dictionary<string, WeaponPreset>();
     private static string selectedCharacterPrefab = "";
+    private static int remoteAvatarCreationDepth;
     private BodyScript remoteBody;
     private Vector2 lastAuthoritativePosition;
     private bool hasAuthoritativePosition;
     private GameObject remoteAvatar;
+    private Transform remoteAvatarParent;
     private string remotePrefabPath = "";
     private string remoteName = "Player";
     private string identitySent = "";
@@ -55,6 +57,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private int avatarEffectsBytesPerSecond;
     private int avatarVisualBytesPerSecond;
     private string localName;
+    private readonly Queue<RemoteProjectileVisual> remoteProjectiles =
+        new Queue<RemoteProjectileVisual>();
     private readonly Dictionary<Rigidbody2D, TargetState> targets = new Dictionary<Rigidbody2D, TargetState>();
     private readonly Dictionary<Transform, WorldTargetState> worldTargets = new Dictionary<Transform, WorldTargetState>();
     private readonly Dictionary<Transform, WorldTargetState> localTargets = new Dictionary<Transform, WorldTargetState>();
@@ -99,6 +103,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool remotePhysicsModeKnown;
     private bool lastRemoteSimulated;
     private bool lastPassiveGrabProxy;
+    private float remoteVehicleHeadRotation;
+    private bool hasRemoteVehicleHeadRotation;
+    private bool remoteVehicleReflected;
+    private bool hasRemoteVehicleReflection;
     private static NetworkAvatarReplication instance;
     private static readonly Dictionary<ushort, NetworkAvatarReplication> replicas =
         new Dictionary<ushort, NetworkAvatarReplication>();
@@ -112,6 +120,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool lastRemoteAlive = true;
     private static BodyScript currentShooter;
     private static ShotState activeShotState;
+    private static RocketProjectile activeRocketProjectile;
     private static int nextShotSpreadSeed;
     private static bool applyingNetworkPlayerDamage;
     private static Material fallbackTracerMaterial;
@@ -544,6 +553,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var shooter = GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteShot(shotVisual);
         }
+        byte[] projectileImpact;
+        while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
+        {
+            var shooter = GetOrCreateReplica(senderId);
+            if (shooter != null) shooter.PlayRemoteProjectileImpact(projectileImpact);
+        }
         byte[] playerGrab;
         while (MultiplayerSession.TryTakePlayerGrab(out senderId, out playerGrab))
             ReceivePlayerGrab(playerGrab);
@@ -596,7 +611,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (remoteAvatar == null) return;
         UpdateRemotePhysicsMode();
-
         foreach (var pair in targets)
         {
             var body = pair.Key;
@@ -632,11 +646,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             transform.localRotation = Quaternion.Slerp(pair.Value.fromRotation, pair.Value.rotation, progress);
         }
         foreach (var transform in staleWorldTargets) localTargets.Remove(transform);
+        MaintainRemoteVehicleAttachment();
     }
 
     private void LateUpdate()
     {
         if (!MultiplayerSession.IsConnected || remoteAvatar == null) return;
+        MaintainRemoteVehiclePose();
+        if (hasRemoteVehicleReflection) ApplyVehicleReflection();
+        if (hasRemoteVehicleHeadRotation) ApplyVehicleHeadRotation(remoteVehicleHeadRotation);
         if (remoteTailDebugFrames > 0) WriteTailDiagnostics("REMOTE FRAME PRE", remoteBody, true);
         UpdateProceduralTail();
         UpdateTailVisuals();
@@ -721,13 +739,22 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
         DestroyRemote();
         remoteName = sanitizedName;
-        var avatar = Instantiate(prefab, localBody.transform.position + new Vector3(2f, 0f, 0f), Quaternion.identity);
-
-        foreach (var remotePlayer in avatar.GetComponentsInChildren<PlayerScript>(true))
-            DestroyImmediate(remotePlayer);
-        RestoreLocalPlayerSingleton();
-        avatar.AddComponent<NetworkReplica>();
+        GameObject avatar = null;
+        remoteAvatarCreationDepth++;
+        try
+        {
+            avatar = Instantiate(prefab, localBody.transform.position + new Vector3(2f, 0f, 0f), Quaternion.identity);
+            foreach (var remotePlayer in avatar.GetComponentsInChildren<PlayerScript>(true))
+                DestroyImmediate(remotePlayer);
+            RestoreLocalPlayerSingleton();
+            avatar.AddComponent<NetworkReplica>();
+        }
+        finally
+        {
+            remoteAvatarCreationDepth--;
+        }
         remoteAvatar = avatar;
+        remoteAvatarParent = avatar.transform.parent;
         remotePrefabPath = prefabPath;
         remoteBody = avatar.GetComponentInChildren<BodyScript>();
         if (remoteBody == null) { Destroy(avatar); return; }
@@ -762,6 +789,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             RestoreLocalPlayerSingleton();
         }
         remoteAvatar = null;
+        remoteAvatarParent = null;
         remoteBody = null;
         remotePrefabPath = "";
         remoteName = "Player";
@@ -947,7 +975,17 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var breakdown = new AvatarWireBreakdown();
             var sectionStarted = writer.BaseStream.Position;
+            var vehicleId = body.inVehicle && body.curVehicle != null && GunsawMultiplayerPlugin.World != null
+                ? GunsawMultiplayerPlugin.World.VehicleWireId(body.curVehicle) : 0UL;
+            writer.Write(vehicleId != 0UL);
+            writer.Write(vehicleId);
+            writer.Write((byte)body.CurrentState);
             writer.Write(body.isRight);
+            writer.Write(body.transform.localScale.x < 0f);
+            var headReferenceRotation = vehicleId != 0UL && body.curVehicle.mainPart != null &&
+                body.curVehicle.mainPart.rb != null ? body.curVehicle.mainPart.rb.rotation : body.rb.rotation;
+            writer.Write(body.headTransform == null ? 0f :
+                Mathf.DeltaAngle(headReferenceRotation, body.headTransform.eulerAngles.z));
             WriteBody(writer, body.rb);
             breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
 
@@ -1070,7 +1108,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             using (var reader = new BinaryReader(new MemoryStream(data)))
             {
+                var remoteInVehicle = reader.ReadBoolean();
+                var remoteVehicleId = reader.ReadUInt64();
+                var remoteState = (BodyScript.EntityState)reader.ReadByte();
+                if (remoteState < BodyScript.EntityState.Idle || remoteState > BodyScript.EntityState.MoveLeft)
+                    remoteState = BodyScript.EntityState.Idle;
+                var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteState);
                 var isRight = reader.ReadBoolean();
+                var reflected = reader.ReadBoolean();
+                var remoteHeadRotation = reader.ReadSingle();
+                hasRemoteVehicleHeadRotation = remoteVehicleAttached;
+                remoteVehicleHeadRotation = remoteHeadRotation;
+                hasRemoteVehicleReflection = true;
+                remoteVehicleReflected = reflected;
                 if (remoteBody.isRight != isRight)
                 {
                     WriteTailDiagnostics("REMOTE FLIP BEFORE", remoteBody, true);
@@ -1078,9 +1128,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     WriteTailDiagnostics("REMOTE FLIP AFTER", remoteBody, true);
                     remoteTailDebugFrames = 12;
                 }
-                lastAuthoritativePosition = SetTarget(reader, remoteBody.rb);
-                hasAuthoritativePosition = true;
                 var limbs = GetList(remoteBody, "limbs");
+                var sourceVehicleRoot = Vector2.zero;
+                var sourceVehicleRotation = 0f;
+                if (remoteVehicleAttached)
+                {
+                    ReadVehicleRoot(reader, out sourceVehicleRoot, out sourceVehicleRotation);
+                    lastAuthoritativePosition = remoteBody.rb.position;
+                }
+                else
+                {
+                    lastAuthoritativePosition = SetTarget(reader, remoteBody.rb);
+                }
+                hasAuthoritativePosition = true;
                 var limbCount = reader.ReadUInt16();
                 var dismembermentHash = 17;
                 for (var index = 0; index < limbCount; index++)
@@ -1093,7 +1153,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                         continue;
                     }
                     var limb = (LimbScript)limbs[index];
-                    SetTarget(reader, limb.rb);
+                    if (remoteVehicleAttached) SkipBody(reader);
+                    else SetTarget(reader, limb.rb);
                     limb.dismembered = reader.ReadBoolean();
                     dismembermentHash = unchecked(dismembermentHash * 31 + (limb.dismembered ? 1 : 0));
                     SetRemoteFire(index, limb, reader.ReadBoolean());
@@ -1107,9 +1168,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 for (var index = 0; index < tailCount; index++) SkipBody(reader);
                 var tailRootCount = reader.ReadUInt16();
                 for (var index = 0; index < tailRootCount; index++) SkipBody(reader);
-                ReadWorldTransform(reader, remoteBody.Arms);
-                ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
-                ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
+                if (remoteVehicleAttached)
+                {
+                    ApplyVehicleWorldTransform(reader, remoteBody.Arms, sourceVehicleRoot, sourceVehicleRotation);
+                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
+                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
+                }
+                else
+                {
+                    ReadWorldTransform(reader, remoteBody.Arms);
+                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
+                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
+                }
+                if (remoteVehicleAttached) ApplyVehicleHeadRotation(remoteHeadRotation);
                 ReadWorldTarget(reader, null);
                 var remoteHealth = reader.ReadSingle();
                 if (MultiplayerSession.IsHost)
@@ -1192,6 +1263,170 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         catch (EndOfStreamException) { }
         finally { MultiplayerPerformance.AddAvatarApply(performanceStarted); }
+    }
+
+    private bool SynchronizeRemoteVehicle(bool inVehicle, ulong vehicleId, BodyScript.EntityState state)
+    {
+        if (remoteBody == null) return false;
+        remoteBody.CurrentState = state;
+        if (!inVehicle || vehicleId == 0UL)
+        {
+            if (remoteBody.inVehicle && remoteBody.curVehicle != null)
+            {
+                var previousVehicle = remoteBody.curVehicle;
+                remoteBody.ExitVehicle();
+                SetRemoteVehicleCollisions(previousVehicle, false);
+                DetachRemoteAvatar();
+            }
+            return false;
+        }
+        var world = GunsawMultiplayerPlugin.World;
+        var vehicle = world == null ? null : world.FindVehicle(vehicleId);
+        if (vehicle == null || (vehicle.occupant != null && vehicle.occupant != remoteBody)) return false;
+        if (!remoteBody.inVehicle || remoteBody.curVehicle != vehicle)
+        {
+            if (remoteBody.inVehicle && remoteBody.curVehicle != null)
+            {
+                var previousVehicle = remoteBody.curVehicle;
+                remoteBody.ExitVehicle();
+                SetRemoteVehicleCollisions(previousVehicle, false);
+                DetachRemoteAvatar();
+            }
+            AttachRemoteToVehicle(vehicle);
+        }
+        if (!remoteBody.inVehicle || remoteBody.curVehicle != vehicle) return false;
+        return true;
+    }
+
+    private void AttachRemoteToVehicle(VehicleBase vehicle)
+    {
+        if (vehicle == null || remoteBody == null || vehicle.mainPart == null ||
+            vehicle.mainPart.rb == null || vehicle.seatPos == null) return;
+        vehicle.occupant = remoteBody;
+        vehicle.occupJoint = null;
+        remoteBody.inVehicle = true;
+        remoteBody.curVehicle = vehicle;
+        remoteBody.rb.freezeRotation = false;
+        remoteBody.enabled = true;
+        foreach (var limb in remoteAvatar.GetComponentsInChildren<LimbScript>(true)) limb.enabled = true;
+        if (remoteBody.BodyAnimator != null)
+        {
+            remoteBody.BodyAnimator.enabled = true;
+            remoteBody.BodyAnimator.SetBool("inVehicle", true);
+            remoteBody.BodyAnimator.Play("PlayerSit");
+        }
+        if (remoteAvatar != null)
+        {
+            var offset = vehicle.seatPos.position - remoteBody.transform.position;
+            remoteAvatar.transform.SetParent(vehicle.mainPart.transform, true);
+            remoteAvatar.transform.position += offset;
+        }
+        targets.Clear();
+        worldTargets.Clear();
+        localTargets.Clear();
+        SetRemoteVehicleCollisions(vehicle, true);
+    }
+
+    private void MaintainRemoteVehiclePose()
+    {
+        if (remoteBody == null || !remoteBody.inVehicle || remoteBody.BodyAnimator == null) return;
+        var animator = remoteBody.BodyAnimator;
+        animator.enabled = true;
+        animator.SetBool("inVehicle", true);
+        animator.Play("PlayerSit", 0, 0f);
+        animator.Update(0f);
+
+        remoteBody.standAnimForce = 1f;
+        foreach (var limb in remoteBody.limbs)
+            if (limb != null && !limb.dismembered) limb.MoveLimb();
+    }
+
+    private void DetachRemoteAvatar()
+    {
+        if (remoteBody != null) remoteBody.enabled = false;
+        if (remoteAvatar != null)
+            foreach (var limb in remoteAvatar.GetComponentsInChildren<LimbScript>(true)) limb.enabled = false;
+        if (remoteBody != null && remoteBody.BodyAnimator != null)
+            remoteBody.BodyAnimator.enabled = false;
+        if (remoteAvatar != null) remoteAvatar.transform.SetParent(remoteAvatarParent, true);
+        targets.Clear();
+        worldTargets.Clear();
+        localTargets.Clear();
+    }
+
+    private void MaintainRemoteVehicleAttachment()
+    {
+        if (remoteBody == null || !remoteBody.inVehicle || remoteBody.curVehicle == null ||
+            remoteBody.curVehicle.seatPos == null || remoteBody.curVehicle.mainPart == null ||
+            remoteBody.curVehicle.mainPart.rb == null || remoteBody.rb == null) return;
+        if (remoteAvatar == null || remoteAvatar.transform.parent == remoteBody.curVehicle.mainPart.transform)
+            return;
+        var offset = remoteBody.curVehicle.seatPos.position - remoteBody.transform.position;
+        remoteAvatar.transform.SetParent(remoteBody.curVehicle.mainPart.transform, true);
+        remoteAvatar.transform.position += offset;
+    }
+
+    private static void ReadVehicleRoot(BinaryReader reader, out Vector2 position, out float rotation)
+    {
+        position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        rotation = reader.ReadSingle();
+    }
+
+    private void ApplyVehicleHeadRotation(float relativeRotation)
+    {
+        if (remoteBody == null || remoteBody.headTransform == null || remoteBody.curVehicle == null ||
+            remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null) return;
+        remoteBody.headTransform.rotation = Quaternion.Euler(0f, 0f,
+            remoteBody.curVehicle.mainPart.rb.rotation + relativeRotation);
+    }
+
+    private void ApplyVehicleReflection()
+    {
+        if (remoteBody == null) return;
+        var scale = remoteBody.transform.localScale;
+        var magnitude = Mathf.Abs(scale.x);
+        scale.x = (magnitude < 0.0001f ? 1f : magnitude) * (remoteVehicleReflected ? -1f : 1f);
+        remoteBody.transform.localScale = scale;
+    }
+
+    private void ApplyVehicleWorldTransform(BinaryReader reader, Transform transform, Vector2 sourceRoot,
+        float sourceRootRotation)
+    {
+        var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        var rotation = reader.ReadSingle();
+        if (transform == null || remoteBody == null || remoteBody.curVehicle == null ||
+            remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null ||
+            remoteBody.curVehicle.seatPos == null) return;
+        var vehicle = remoteBody.curVehicle;
+        var angle = vehicle.mainPart.rb.rotation - sourceRootRotation;
+        var relativePosition = (Vector2)(Quaternion.Euler(0f, 0f, angle) * (position - sourceRoot));
+        transform.position = vehicle.seatPos.position + (Vector3)relativePosition;
+        transform.rotation = Quaternion.Euler(0f, 0f,
+            vehicle.mainPart.rb.rotation + Mathf.DeltaAngle(sourceRootRotation, rotation));
+    }
+
+    private void SetRemoteVehicleCollisions(VehicleBase vehicle, bool ignored)
+    {
+        if (vehicle == null) return;
+        var vehicleColliders = vehicle.GetComponentsInChildren<Collider2D>(true);
+        foreach (var remoteCollider in remoteColliderTriggers.Keys)
+        {
+            if (remoteCollider == null) continue;
+            foreach (var vehicleCollider in vehicleColliders)
+                if (vehicleCollider != null)
+                    Physics2D.IgnoreCollision(remoteCollider, vehicleCollider, ignored);
+        }
+    }
+
+    internal static bool IsRemoteReplicaBody(BodyScript body)
+    {
+        return body != null && (ReplicaForBody(body) != null ||
+            body.GetComponentInParent<NetworkReplica>() != null);
+    }
+
+    internal static bool IsCreatingRemoteAvatar()
+    {
+        return remoteAvatarCreationDepth > 0;
     }
 
     internal static bool HandleHostRemoteDamaged(BodyScript body, bool critical)
@@ -1594,6 +1829,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private Vector3 ResolveRespawnPosition(BodyScript oldBody)
     {
+        Vector3 spawnPoint;
+        if (MultiplayerSession.RespawnAtStart &&
+            CustomLevelSpawnSelection.TryGetRandomSpawnPosition(out spawnPoint))
+        {
+            if (!IsRespawnPositionBlocked(spawnPoint, oldBody)) return spawnPoint;
+            for (var index = 0; index < 8; index++)
+            {
+                var angle = index * Mathf.PI * 0.25f;
+                var offset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * 2.5f;
+                if (!IsRespawnPositionBlocked(spawnPoint + offset, oldBody)) return spawnPoint + offset;
+            }
+        }
         var candidate = MultiplayerSession.RespawnAtStart ? localSpawnPosition : localDeathPosition;
         if (!IsRespawnPositionBlocked(candidate, oldBody)) return candidate;
         if (!IsRespawnPositionBlocked(localSpawnPosition, oldBody)) return localSpawnPosition;
@@ -2052,6 +2299,48 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return state;
     }
 
+    internal static RocketProjectile BeginRocketUpdate(RocketProjectile projectile)
+    {
+        var previous = activeRocketProjectile;
+        activeRocketProjectile = projectile;
+        return previous;
+    }
+
+    internal static void EndRocketUpdate(RocketProjectile previous)
+    {
+        activeRocketProjectile = previous;
+    }
+
+    internal static GameObject ResolveExplosionProjectile(GameObject projectile)
+    {
+        return projectile == null && activeRocketProjectile != null
+            ? activeRocketProjectile.gameObject : projectile;
+    }
+
+    internal static void ReplicateProjectileImpact(GameObject projectile, Vector2 position)
+    {
+        if (!MultiplayerSession.IsConnected || projectile == null || !IsFinite(position.x) ||
+            !IsFinite(position.y)) return;
+        var rocket = projectile.GetComponentInChildren<RocketProjectile>(true);
+        var grenade = projectile.GetComponentInChildren<GrenadeScript>(true);
+        if (rocket == null && grenade == null) return;
+        var shooter = ProjectileOwner(projectile);
+        var player = PlayerScript.player;
+        var localPlayerShot = shooter != null && player != null && shooter == player.bodyScript;
+        var hostNpcShot = MultiplayerSession.IsHost && shooter != null && !shooter.isPlayer &&
+            shooter.GetComponentInParent<NetworkReplica>() == null;
+        if (!localPlayerShot && !hostNpcShot) return;
+        var weapon = shooter == null ? null : shooter.weapon;
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(position.x);
+            writer.Write(position.y);
+            writer.Write(SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite));
+            MultiplayerSession.SendProjectileImpact(stream.ToArray());
+        }
+    }
+
     internal static void ReplicateExplosionImpulse(GameObject explosionObject, Vector2 position,
         float range, float force)
     {
@@ -2291,43 +2580,202 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void PlayRemoteProjectile(WeaponPreset preset, Vector2 origin, Vector2 direction,
         bool ignoreRemoteAvatar)
     {
-        var visual = new GameObject("MP Projectile Visual");
-        visual.transform.position = origin;
-        visual.transform.right = direction;
-        var template = preset.tracerLine == null ? null : preset.tracerLine.GetComponentInChildren<SpriteRenderer>(true);
-        if (template != null)
+        GameObject visual = null;
+        GameObject impactEffect = null;
+        AudioClip explosionSound = null;
+        var fireAmount = 0;
+        var explosionRange = 0f;
+        var speed = 22f;
+        var speedIncrease = 0f;
+        if (preset.tracerLine != null)
         {
-            var renderer = visual.AddComponent<SpriteRenderer>();
-            renderer.sprite = template.sprite;
-            renderer.sharedMaterial = template.sharedMaterial;
-            renderer.color = template.color;
-            renderer.sortingLayerID = template.sortingLayerID;
-            renderer.sortingOrder = template.sortingOrder;
-            visual.transform.localScale = template.transform.lossyScale;
+            visual = Instantiate(preset.tracerLine, origin, Quaternion.identity);
+            visual.name = "MP Projectile Visual";
+            visual.transform.right = direction;
+            var rocket = visual.GetComponentInChildren<RocketProjectile>(true);
+            if (rocket != null && rocket.moveSpeed > 0f) speed = rocket.moveSpeed;
+            if (rocket != null) speedIncrease = rocket.moveSpeedSpeedUp;
+            if (rocket != null)
+            {
+                impactEffect = rocket.objOnDestroy;
+                explosionSound = rocket.sound;
+                fireAmount = rocket.fireAmount;
+                explosionRange = rocket.range;
+            }
+            var grenade = visual.GetComponentInChildren<GrenadeScript>(true);
+            if (grenade != null && grenade.startSpeed > 0f) speed = grenade.startSpeed;
+            if (grenade != null)
+            {
+                impactEffect = grenade.objOnDestroy;
+                explosionSound = grenade.explosionSound;
+                fireAmount = grenade.fireAmount;
+                explosionRange = grenade.range;
+            }
+            foreach (var behaviour in visual.GetComponentsInChildren<MonoBehaviour>(true)) behaviour.enabled = false;
+            foreach (var collider in visual.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
+            foreach (var rigidbody in visual.GetComponentsInChildren<Rigidbody2D>(true)) rigidbody.simulated = false;
+            foreach (var source in visual.GetComponentsInChildren<AudioSource>(true)) source.enabled = false;
         }
-        else
+        if (visual == null)
         {
+            visual = new GameObject("MP Projectile Visual");
+            visual.transform.position = origin;
+            visual.transform.right = direction;
             var line = AddFallbackTracer(visual);
             line.SetPosition(0, origin - direction * 0.7f);
             line.SetPosition(1, origin);
         }
+        remoteProjectiles.Enqueue(new RemoteProjectileVisual
+        {
+            Visual = visual,
+            ImpactEffect = impactEffect,
+            ExplosionSound = explosionSound,
+            FireAmount = fireAmount,
+            Range = explosionRange,
+            ExpiresAt = Time.unscaledTime + 5f
+        });
         StartCoroutine(MoveRemoteProjectile(visual, direction,
-            FindRemoteShotEnd(origin, direction, ignoreRemoteAvatar), 22f));
+            FindRemoteShotEnd(origin, direction, ignoreRemoteAvatar), speed, speedIncrease));
     }
 
-    private static IEnumerator MoveRemoteProjectile(GameObject visual, Vector2 direction, Vector2 end, float speed)
+    private static IEnumerator MoveRemoteProjectile(GameObject visual, Vector2 direction, Vector2 end,
+        float speed, float speedIncrease)
     {
         var maximumLifetime = 2f;
         while (visual != null && maximumLifetime > 0f)
         {
             var current = (Vector2)visual.transform.position;
-            var step = speed * Time.unscaledDeltaTime;
-            if (Vector2.Distance(current, end) <= step) break;
+            var step = speed * Time.deltaTime;
+            if (Vector2.Distance(current, end) <= step)
+            {
+                visual.transform.position = end;
+                break;
+            }
             visual.transform.position = current + direction * step;
-            maximumLifetime -= Time.unscaledDeltaTime;
+            speed += speedIncrease * Time.deltaTime;
+            maximumLifetime -= Time.deltaTime;
             yield return null;
         }
         if (visual != null) Destroy(visual);
+    }
+
+    private static void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect,
+        AudioClip explosionSound, int fireAmount, float range)
+    {
+        if (impactEffect != null)
+        {
+            var effect = Instantiate(impactEffect, position, Quaternion.identity);
+            foreach (var projectile in effect.GetComponentsInChildren<RocketProjectile>(true)) projectile.enabled = false;
+            foreach (var grenade in effect.GetComponentsInChildren<GrenadeScript>(true)) grenade.enabled = false;
+            foreach (var collider in effect.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
+            foreach (var rigidbody in effect.GetComponentsInChildren<Rigidbody2D>(true)) rigidbody.simulated = false;
+            Destroy(effect, 60f);
+        }
+        if (explosionSound != null) Sound.Play(explosionSound, position);
+        CreateRemoteExplosionFires(position, fireAmount, range);
+        CreateRemoteExplosionCracks(position);
+    }
+
+    private void PlayRemoteProjectileImpact(byte[] data)
+    {
+        if (data == null) return;
+        try
+        {
+            using (var reader = new BinaryReader(new MemoryStream(data)))
+            {
+                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                var sprite = reader.ReadString();
+                if (!IsFinite(position.x) || !IsFinite(position.y)) return;
+
+                RemoteProjectileVisual projectile = null;
+                while (remoteProjectiles.Count > 0 && remoteProjectiles.Peek().ExpiresAt < Time.unscaledTime)
+                    remoteProjectiles.Dequeue();
+                if (remoteProjectiles.Count > 0) projectile = remoteProjectiles.Dequeue();
+                if (projectile == null)
+                {
+                    var preset = FindWeaponPreset(sprite);
+                    projectile = CreateRemoteProjectileVisualData(preset == null ? null : preset.tracerLine);
+                }
+                if (projectile == null) return;
+                if (projectile.Visual != null) Destroy(projectile.Visual);
+                CreateRemoteProjectileImpact(position, projectile.ImpactEffect, projectile.ExplosionSound,
+                    projectile.FireAmount, projectile.Range);
+            }
+        }
+        catch (EndOfStreamException) { }
+        catch (IOException) { }
+    }
+
+    private static RemoteProjectileVisual CreateRemoteProjectileVisualData(GameObject projectile)
+    {
+        if (projectile == null) return null;
+        var result = new RemoteProjectileVisual { ExpiresAt = Time.unscaledTime + 5f };
+        var rocket = projectile.GetComponentInChildren<RocketProjectile>(true);
+        if (rocket != null)
+        {
+            result.ImpactEffect = rocket.objOnDestroy;
+            result.ExplosionSound = rocket.sound;
+            result.FireAmount = rocket.fireAmount;
+            result.Range = rocket.range;
+        }
+        var grenade = projectile.GetComponentInChildren<GrenadeScript>(true);
+        if (grenade != null)
+        {
+            result.ImpactEffect = grenade.objOnDestroy;
+            result.ExplosionSound = grenade.explosionSound;
+            result.FireAmount = grenade.fireAmount;
+            result.Range = grenade.range;
+        }
+        return rocket == null && grenade == null ? null : result;
+    }
+
+    private static void CreateRemoteExplosionFires(Vector2 position, int fireAmount, float range)
+    {
+        if (fireAmount < 1 || range <= 0f) return;
+        var fire = Resources.Load<GameObject>("Spawnables/FireParticle");
+        if (fire == null) return;
+        for (var index = 0; index < fireAmount; index++)
+        {
+            var angle = (float)index * 360f / fireAmount + UnityEngine.Random.Range(-20f, 20f);
+            var direction = (Vector2)(Quaternion.AngleAxis(angle, Vector3.forward) * Vector2.right);
+            foreach (var hit in Physics2D.RaycastAll(position, direction, range, LayerMask.GetMask("Ground")))
+            {
+                if (hit.collider == null) continue;
+                Instantiate(fire, hit.point, Quaternion.identity).transform.SetParent(hit.transform);
+                break;
+            }
+        }
+    }
+
+    private static void CreateRemoteExplosionCracks(Vector2 position)
+    {
+        var backgroundCrack = Resources.Load<GameObject>("Spawnables/BackgroundCrack");
+        foreach (var wall in GameManager.wallColls)
+        {
+            if (wall == null || !wall.OverlapPoint(position)) continue;
+            var crack = backgroundCrack == null ? null : Instantiate(backgroundCrack, position,
+                Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(0f, 360f)));
+            SetRandomCrackFlip(crack);
+            break;
+        }
+
+        var floorCrack = Resources.Load<GameObject>("Spawnables/FloorCrack");
+        foreach (var hit in Physics2D.RaycastAll(position, Vector2.down, 10f, LayerMask.GetMask("Ground")))
+        {
+            if (hit.rigidbody != null) continue;
+            var crack = floorCrack == null ? null : Instantiate(floorCrack, hit.point, Quaternion.identity);
+            SetRandomCrackFlip(crack);
+            break;
+        }
+    }
+
+    private static void SetRandomCrackFlip(GameObject crack)
+    {
+        if (crack == null) return;
+        var renderer = crack.GetComponent<SpriteRenderer>();
+        if (renderer == null) return;
+        renderer.flipX = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+        renderer.flipY = UnityEngine.Random.Range(0f, 1f) > 0.5f;
     }
 
     private void CreateRemoteTracer(WeaponPreset preset, Vector2 origin, Vector2 end)
@@ -3789,6 +4237,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public Transform transform;
         public int index;
         public float baseAngle;
+    }
+    private sealed class RemoteProjectileVisual
+    {
+        public GameObject Visual;
+        public GameObject ImpactEffect;
+        public AudioClip ExplosionSound;
+        public int FireAmount;
+        public float Range;
+        public float ExpiresAt;
     }
 }
 

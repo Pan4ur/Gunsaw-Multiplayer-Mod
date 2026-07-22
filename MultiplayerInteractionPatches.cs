@@ -71,3 +71,39 @@ internal static class MultiplayerGlassDamagePatch
         return false;
     }
 }
+
+[HarmonyPatch(typeof(VehiclePart), "OnCollisionEnter2D")]
+internal static class ClientVehicleCollisionPatch
+{
+    private static bool Prefix(VehiclePart __instance, Collision2D col)
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+        if (__instance == null || col == null || __instance.isWheel || __instance.vehicle == null) return false;
+        var impact = Mathf.Abs(col.relativeVelocity.magnitude *
+            Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
+        if (impact > 6f && GunsawMultiplayerPlugin.World != null)
+            GunsawMultiplayerPlugin.World.QueueVehicleDamage(__instance, impact * __instance.vehicle.impactDamageMult, true);
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(VehiclePart), "Damage")]
+internal static class ClientVehicleDamagePatch
+{
+    private static bool Prefix(VehiclePart __instance, float dmg)
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+        if (__instance != null && dmg > 0f && GunsawMultiplayerPlugin.World != null)
+            GunsawMultiplayerPlugin.World.QueueVehicleDamage(__instance, dmg, false);
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(LimbScript), "OnCollisionEnter2D")]
+internal static class RemoteVehicleLimbCollisionPatch
+{
+    private static bool Prefix(LimbScript __instance)
+    {
+        return __instance == null || !NetworkAvatarReplication.IsRemoteReplicaBody(__instance.body);
+    }
+}

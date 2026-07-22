@@ -13,6 +13,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, serverInput;
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle;
     private TMP_Text statusText, customLevelText, hostingText, connectionModeText;
+    private TMP_Text lobbyActionText;
+    private Button closeLobbyButton;
     private Transform lobbyRows;
     private int renderedLobbyHash;
 
@@ -50,6 +52,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         hostingText.text = MultiplayerSession.IsHosting
             ? "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS"
             : "";
+        if (lobbyActionText != null) lobbyActionText.text = MultiplayerSession.IsHosting ? "APPLY SETTINGS" : "CREATE LOBBY";
+        if (closeLobbyButton != null) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
         RebuildLobbyRows();
         plugin.SaveLobbyPreferences();
     }
@@ -112,8 +116,15 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var auto = CreateButton(lobbyGroup.transform, "AUTO", new Vector2(210f, -57.5f), new Vector2(95f, 36f));
         auto.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.Auto);
 
-        var create = CreateButton(lobbyGroup.transform, "CREATE LOBBY", new Vector2(0f, -159.5f), new Vector2(590f, 46f));
-        create.onClick.AddListener(() => { if (!MultiplayerSession.IsHosting) plugin.CreateLobby(); });
+        var create = CreateButton(lobbyGroup.transform, "CREATE LOBBY", new Vector2(-155f, -159.5f), new Vector2(280f, 46f));
+        lobbyActionText = create.GetComponentInChildren<TMP_Text>();
+        create.onClick.AddListener(() =>
+        {
+            if (MultiplayerSession.IsHosting) plugin.UpdateHostedLobby();
+            else plugin.CreateLobby();
+        });
+        closeLobbyButton = CreateButton(lobbyGroup.transform, "CLOSE LOBBY", new Vector2(155f, -159.5f), new Vector2(280f, 46f));
+        closeLobbyButton.onClick.AddListener(plugin.CloseHostedLobby);
         hostingText = CreateText(lobbyGroup.transform, "", new Vector2(0f, -112f), new Vector2(560f, 30f), 14, TextAlignmentOptions.Center);
 
 
