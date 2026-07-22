@@ -21,6 +21,7 @@
 - [X] Improve packet serialization (implement string hashing or short id) to reduce packet size
 - [X] Optimize far objects, keep them on the map but disable ticking
 - [ ] Fix Hello handshake (it doesn't always work and crashes the lobby sometimes)
+- [ ] Fix & Test P2P
 
 ### Sync Fixes
 - [x] Far objects sync
@@ -28,7 +29,7 @@
 - [X] Fix barrel fire desync
 - [X] Fix NPC shooting tracers not being visible to other players
 - [X] Fix pallet desync when breaking into two parts
-- [X] Fix dead entity body state (e.g., closed eyes) mismatch with host
+- [ ] Fix dead entity body state (e.g., closed eyes) mismatch with host
 - [X] Fix ammo indicator desync on weapons dropped by killed entities (blinks on host, doesn't show on clients)
 - [X] Sync bullet hit effects
 - [X] Add interp
