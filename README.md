@@ -6,6 +6,8 @@
 
 ![icon](img/icon.png)
 
+https://youtu.be/aYmxX_OQOis
+
 ## Current development features
 
 - Public lobby list, lobby creation, joining, and in-game chat
