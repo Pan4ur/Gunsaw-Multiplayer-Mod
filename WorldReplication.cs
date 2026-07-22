@@ -439,7 +439,31 @@ internal sealed class WorldReplication : MonoBehaviour
             body.GetComponentInParent<MovingBelt>() != null ||
             body.GetComponentInParent<RbMoveToObj>() != null ||
             body.GetComponentInParent<SawScript>() != null ||
-            body.GetComponentInParent<CustJoint>() != null);
+            body.GetComponentInParent<CustJoint>() != null ||
+            IsSafetyRailingBody(body));
+    }
+
+    private static bool IsSafetyRailingBody(Rigidbody2D body)
+    {
+        if (body == null) return false;
+        for (var current = body.transform; current != null; current = current.parent)
+            if (current.name.StartsWith("SafetyRailing", StringComparison.Ordinal)) return true;
+        return false;
+    }
+
+    private static bool IsSafetyRailingAttached(Rigidbody2D body)
+    {
+        if (!IsSafetyRailingBody(body)) return false;
+        foreach (var joint in body.GetComponents<Joint2D>())
+            if (joint != null && joint.enabled) return true;
+        return false;
+    }
+
+    private static void DetachSafetyRailing(Rigidbody2D body)
+    {
+        if (!IsSafetyRailingBody(body)) return;
+        foreach (var joint in body.GetComponents<Joint2D>())
+            if (joint != null) Destroy(joint);
     }
 
     private static bool IsGameplayOwned(Component component)
@@ -823,6 +847,9 @@ internal sealed class WorldReplication : MonoBehaviour
             writer.Write(body.velocity.x); writer.Write(body.velocity.y); writer.Write(body.angularVelocity);
             writer.Write(body.gravityScale); writer.Write((int)body.constraints);
             writer.Write((byte)body.bodyType); writer.Write(body.simulated); writer.Write(body.IsAwake());
+            var safetyRailing = IsSafetyRailingBody(body);
+            writer.Write(safetyRailing);
+            writer.Write(safetyRailing && IsSafetyRailingAttached(body));
             if (dropped != null)
             {
                 writer.Write(NetworkWireId.FromString(dropped.stats == null ? "" : dropped.stats.name));
@@ -954,10 +981,12 @@ internal sealed class WorldReplication : MonoBehaviour
                         constraints = (RigidbodyConstraints2D)reader.ReadInt32(),
                         bodyType = (RigidbodyType2D)reader.ReadByte(),
                         simulated = reader.ReadBoolean(),
-                        awake = reader.ReadBoolean()
+                        awake = reader.ReadBoolean(),
+                        safetyRailing = reader.ReadBoolean(),
+                        safetyRailingAttached = reader.ReadBoolean()
                     };
-                    // Ignore stale pre-destruction UDP states. Automatic weapons
-                    // produce several in-flight snapshots around the breaking frame.
+
+
                     if (clientDestroyedBodyIds.Contains(id)) continue;
                     if (isDropped)
                     {
@@ -1034,6 +1063,8 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void ApplyAuthoritativeState(Rigidbody2D body, State state)
     {
+        if (state.safetyRailing && !state.safetyRailingAttached)
+            DetachSafetyRailing(body);
         var mechanism = (IsMechanismBody(body) && !IsInteractivePropBody(body)) ||
             networkCrateDebrisBodies.Contains(body);
         float controlUntil;
@@ -1633,14 +1664,38 @@ internal sealed class WorldReplication : MonoBehaviour
                 fireIds[fire] = id;
             }
             fires[id] = fire;
-            if (MultiplayerSession.IsHost || clientFireSettings.ContainsKey(fire)) continue;
-            clientFireSettings[fire] = new FireLocalSettings
+            if (MultiplayerSession.IsHost) continue;
+            if (!clientFireSettings.ContainsKey(fire)) clientFireSettings[fire] = new FireLocalSettings
             {
                 enabled = fire.enabled,
                 active = fire.gameObject.activeSelf
             };
-            fire.enabled = false;
+
+            fire.enabled = ShouldTickClientFire(fire);
         }
+    }
+
+    internal static bool ShouldTickClientFire(FireScript fire)
+    {
+        if (fire == null) return false;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+
+
+        if (fire.GetComponentInParent<BodyScript>() != null) return true;
+
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        if (body == null) return false;
+
+        const float activationDistanceSqr = 9f;
+        foreach (var limb in body.GetComponentsInChildren<LimbScript>(true))
+        {
+            if (limb != null && ((Vector2)limb.transform.position -
+                (Vector2)fire.transform.position).sqrMagnitude <= activationDistanceSqr)
+                return true;
+        }
+        return body.rb != null && (body.rb.position - (Vector2)fire.transform.position)
+            .sqrMagnitude <= activationDistanceSqr;
     }
 
     private void RefreshGlasses()
@@ -1824,7 +1879,7 @@ internal sealed class WorldReplication : MonoBehaviour
         fire.canIgnite = canIgnite;
         fire.damageMult = damageMult;
         fire.fuelConsMult = fuelConsMult;
-        fire.enabled = false;
+        fire.enabled = ShouldTickClientFire(fire);
         var particles = fire.GetComponent<ParticleSystem>();
         if (particles != null && !particles.isPlaying) particles.Play();
     }
@@ -2267,6 +2322,8 @@ internal sealed class WorldReplication : MonoBehaviour
         public RigidbodyType2D bodyType;
         public bool simulated;
         public bool awake;
+        public bool safetyRailing;
+        public bool safetyRailingAttached;
     }
 
     private struct LocalSettings

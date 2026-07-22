@@ -19,7 +19,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.5";
+    public const string PluginVersion = "0.3.6";
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
@@ -45,6 +45,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal string createRespawnTime = "5";
     internal string createMaxPlayers = "4";
     internal string customLevelJson = "";
+    internal ConnectionMode createConnectionMode = ConnectionMode.Auto;
     private string receivedCustomLevelJson = "";
     private bool waitingForCustomLevel;
     private float customLevelPhysicsRefreshUntil;
@@ -102,7 +103,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
         multiplayerLobbyUi = gameObject.AddComponent<MultiplayerLobbyUi>();
         World = worldReplication;
-        Logger.LogInfo("Gunsaw Multiplayer 0.3.5 loaded.");
+        Logger.LogInfo("Gunsaw Multiplayer 0.3.6 loaded.");
     }
 
     private void Start()
@@ -383,7 +384,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         string error;
         if (!MultiplayerSession.Connect(address, lobbyId, relayKey, playerName, peerId, hostPeerId, maxPlayers,
-            Logger, out error)) { status = error; return; }
+            ConnectionMode.Auto, Logger, out error)) { status = error; return; }
         avatarReplication.Configure(playerName);
         multiplayerHud.ResetChat();
         status = "Connecting through UDP relay " + address + "...";
@@ -404,7 +405,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
                     createGrabOnlyUnconscious, createAllowRespawn, respawnTime, createRespawnAtStart,
-                    playerName, hostPeerId, maxPlayers, Logger);
+                    playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
             });
         }
@@ -727,12 +728,17 @@ internal static class MultiplayerClientMainMenuPatch
 {
     private static void Prefix()
     {
+        // SceneLoader survives scene changes. A received custom level is kept here for
+        // LevelLoader, so clear it before returning to LevelSelect instead of opening the
+        // editor with the lobby's previous level data.
         if (SceneLoader.main != null)
         {
             SceneLoader.main.levelEditString = "";
             SceneLoader.main.hadEditorWarning = false;
         }
 
+        // A client can return to LevelSelect without closing the application. Notify the
+        // host before the scene transition so its peer slot is released immediately.
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHosting) return;
         MultiplayerSession.Shutdown();
     }
@@ -743,6 +749,8 @@ internal static class MultiplayerBackToEditorRedirectPatch
 {
     private static bool Prefix()
     {
+        // Custom multiplayer levels expose this vanilla button after leaving the lobby.
+        // Redirect it to the actual menu rather than allowing it to reopen the editor.
         if (SceneLoader.main != null)
         {
             SceneLoader.main.levelEditString = "";
@@ -797,7 +805,8 @@ internal static class MultiplayerLimbAnimationPatch
         if (body == null || NpcReplication.IsPossessionRenderGuard(body) ||
             NpcReplication.IsClientProxy(body) || NetworkAvatarReplication.IsRemoteAvatarBody(body))
             return false;
-
+        // Do not let Unity's camera-dependent render callback animate host NPCs. The NPC
+        // replicator evaluates that same callback once per authoritative snapshot instead.
         if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
         return true;
     }
@@ -1029,6 +1038,8 @@ internal static class ClientPalletDebrisAutoBreakPatch
     private static bool Prefix(CrateScript __instance)
     {
         if (!MultiplayerSession.IsConnected || GunsawMultiplayerPlugin.World == null) return true;
+        // Keep the normal Damage path available for a deliberate client shot. Only the
+        // crate's automatic ground-overlap check is suppressed for newly split pieces.
         return !GunsawMultiplayerPlugin.World.IsNetworkCrateDebris(__instance);
     }
 }

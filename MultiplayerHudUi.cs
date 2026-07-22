@@ -70,19 +70,24 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var canvas = root.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 450;
         var scaler = root.GetComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize; scaler.referenceResolution = new Vector2(1920f, 1080f); scaler.matchWidthOrHeight = 0.5f;
 
-        hostPanel = Panel(root.transform, new Vector2(680f, 455f), new Vector2(480f, 66f));
+        hostPanel = Panel(root.transform, Vector2.zero, new Vector2(480f, 66f));
+        ScreenAnchor(hostPanel.GetComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-20f, -20f));
         hostText = Text(hostPanel.transform, "", Vector2.zero, new Vector2(450f, 48f), 21, TextAlignmentOptions.Center);
 
-        playersPanel = Panel(root.transform, new Vector2(0f, 350f), new Vector2(650f, 320f));
+        playersPanel = Panel(root.transform, Vector2.zero, new Vector2(650f, 320f));
+        ScreenAnchor(playersPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -20f));
         playersText = Text(playersPanel.transform, "", Vector2.zero, new Vector2(610f, 290f), 22, TextAlignmentOptions.TopLeft);
-        
-        chatPanel = Panel(root.transform, new Vector2(-630f, -365f), new Vector2(620f, 250f));
+
+        chatPanel = Panel(root.transform, Vector2.zero, new Vector2(620f, 250f));
+        ScreenAnchor(chatPanel.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 80f));
         chatText = Text(chatPanel.transform, "", new Vector2(0f, 24f), new Vector2(580f, 185f), 19, TextAlignmentOptions.BottomLeft); chatText.enableWordWrapping = true;
-        
-        input = CreateInput(root.transform, new Vector2(-630f, -504f), new Vector2(620f, 42f));
+
+        input = CreateInput(root.transform, Vector2.zero, new Vector2(620f, 42f));
+        ScreenAnchor(input.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
         input.onValueChanged.AddListener(value => { if (MultiplayerHud.Instance != null) MultiplayerHud.Instance.ChatInput = value; });
         input.onSubmit.AddListener(_ => { if (MultiplayerHud.Instance != null) MultiplayerHud.Instance.Submit(); });
-        statsText = Text(root.transform, "", new Vector2(-480f, -350f), new Vector2(920f, 330f), 13, TextAlignmentOptions.TopLeft);
+        statsText = Text(root.transform, "", Vector2.zero, new Vector2(920f, 330f), 13, TextAlignmentOptions.TopLeft);
+        ScreenAnchor(statsText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -20f));
         statsText.enableWordWrapping = false;
         statsText.gameObject.SetActive(false);
     }
@@ -210,5 +215,18 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     }
 
     private static void Rect(RectTransform rect, Vector2 position, Vector2 size) { rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f); rect.pivot = new Vector2(0.5f, 0.5f); rect.anchoredPosition = position; rect.sizeDelta = size; }
-    private static Vector2 CanvasPosition(Vector3 screen) { return new Vector2(screen.x * 1920f / Screen.width - 960f, screen.y * 1080f / Screen.height - 540f); }
+    private static void ScreenAnchor(RectTransform rect, Vector2 anchor, Vector2 pivot, Vector2 position)
+    {
+        rect.anchorMin = rect.anchorMax = anchor;
+        rect.pivot = pivot;
+        rect.anchoredPosition = position;
+    }
+
+    private Vector2 CanvasPosition(Vector3 screen)
+    {
+        Vector2 local;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)root.transform,
+            screen, null, out local);
+        return local;
+    }
 }

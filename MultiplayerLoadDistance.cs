@@ -291,7 +291,8 @@ internal static class MultiplayerFireTickCullPatch
 {
     private static bool Prefix(FireScript __instance)
     {
-        if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHost) return false;
+        if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHost)
+            return WorldReplication.ShouldTickClientFire(__instance);
         return MultiplayerLoadDistance.ShouldTickWorld(__instance);
     }
 }

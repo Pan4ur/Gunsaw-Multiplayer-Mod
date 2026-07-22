@@ -12,7 +12,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, serverInput;
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle;
-    private TMP_Text statusText, customLevelText, hostingText;
+    private TMP_Text statusText, customLevelText, hostingText, connectionModeText;
     private Transform lobbyRows;
     private int renderedLobbyHash;
 
@@ -30,6 +30,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         root.SetActive(true);
         panel.SetActive(plugin.visible);
         if (!plugin.visible) return;
+        FitPanelToScreen();
 
         SetInput(nameInput, plugin.playerName);
         SetInput(lobbyInput, plugin.lobbyName);
@@ -43,6 +44,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         respawnAtStartToggle.isOn = plugin.createRespawnAtStart;
         respawnInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
+        connectionModeText.text = plugin.createConnectionMode.ToString();
         statusText.text = plugin.status;
         customLevelText.text = string.IsNullOrEmpty(plugin.customLevelJson) ? "CUSTOM LEVEL: NOT LOADED" : "CUSTOM LEVEL: LOADED";
         hostingText.text = MultiplayerSession.IsHosting
@@ -70,6 +72,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         scaler.matchWidthOrHeight = 0.5f;
 
         var open = CreateButton(root.transform, "MULTIPLAYER", new Vector2(-780f, -464f), new Vector2(250f, 52f));
+        ScreenAnchor(open.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 20f));
         open.onClick.AddListener(() => { plugin.visible = true; plugin.RefreshLobbies(); });
 
         panel = CreatePanel(root.transform, Vector2.zero, new Vector2(1320f, 920f));
@@ -99,6 +102,15 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         respawnInput = CreateInput(lobbyGroup.transform, new Vector2(10f, 2.5f), new Vector2(60f, 40f), 4, value => plugin.createRespawnTime = value);
         CreateText(lobbyGroup.transform, "SEC", new Vector2(80f, 2.5f), new Vector2(50f, 32f), 14);
         respawnAtStartToggle = CreateToggle(lobbyGroup.transform, "RESPAWN AT START", new Vector2(205f, 2.5f), new Vector2(190f, 40f), value => plugin.createRespawnAtStart = value);
+
+        CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -57.5f), new Vector2(125f, 32f), 14);
+        connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -57.5f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);
+        var p2p = CreateButton(lobbyGroup.transform, "P2P", new Vector2(0f, -57.5f), new Vector2(95f, 36f));
+        p2p.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.P2P);
+        var relay = CreateButton(lobbyGroup.transform, "RELAY", new Vector2(105f, -57.5f), new Vector2(95f, 36f));
+        relay.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.Relay);
+        var auto = CreateButton(lobbyGroup.transform, "AUTO", new Vector2(210f, -57.5f), new Vector2(95f, 36f));
+        auto.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.Auto);
 
         var create = CreateButton(lobbyGroup.transform, "CREATE LOBBY", new Vector2(0f, -159.5f), new Vector2(590f, 46f));
         create.onClick.AddListener(() => { if (!MultiplayerSession.IsHosting) plugin.CreateLobby(); });
@@ -209,28 +221,28 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
     private Toggle CreateToggle(Transform parent, string label, Vector2 position, Vector2 size, Action<bool> changed)
     {
-        var go = new GameObject(label, typeof(RectTransform), typeof(Toggle)); 
-        go.transform.SetParent(parent, false); 
+        var go = new GameObject(label, typeof(RectTransform), typeof(Toggle));
+        go.transform.SetParent(parent, false);
         SetRect((RectTransform)go.transform, position, size);
-        
-        var back = new GameObject("Background", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); 
-        back.transform.SetParent(go.transform, false); 
-        SetRect((RectTransform)back.transform, new Vector2(-size.x * 0.5f + 16f, 0f), new Vector2(28f, 28f)); 
+
+        var back = new GameObject("Background", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        back.transform.SetParent(go.transform, false);
+        SetRect((RectTransform)back.transform, new Vector2(-size.x * 0.5f + 16f, 0f), new Vector2(28f, 28f));
         back.GetComponent<Image>().color = new Color(0.27f, 0.27f, 0.27f, 0.415f);
-        
-        var check = new GameObject("Checkmark", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); 
-        check.transform.SetParent(back.transform, false); 
-        SetRect((RectTransform)check.transform, Vector2.zero, new Vector2(18f, 18f)); 
+
+        var check = new GameObject("Checkmark", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        check.transform.SetParent(back.transform, false);
+        SetRect((RectTransform)check.transform, Vector2.zero, new Vector2(18f, 18f));
         check.GetComponent<Image>().color = new Color(0.46f, 0.4f, 0.4f, 1f);
-        
-        var toggle = go.GetComponent<Toggle>(); 
-        toggle.targetGraphic = back.GetComponent<Image>(); 
+
+        var toggle = go.GetComponent<Toggle>();
+        toggle.targetGraphic = back.GetComponent<Image>();
         toggle.graphic = check.GetComponent<Image>();
-        
+
         var textRect = CreateText(go.transform, label, new Vector2(18f, 0f), new Vector2(size.x - 36f, size.y), 14, TextAlignmentOptions.MidlineLeft);
         textRect.raycastTarget = false;
-        
-        toggle.onValueChanged.AddListener(value => changed(value)); 
+
+        toggle.onValueChanged.AddListener(value => changed(value));
         return toggle;
     }
 
@@ -254,6 +266,22 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     }
 
     private static void SetRect(RectTransform rect, Vector2 position, Vector2 size) { rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f); rect.pivot = new Vector2(0.5f, 0.5f); rect.anchoredPosition = position; rect.sizeDelta = size; }
+    private static void ScreenAnchor(RectTransform rect, Vector2 anchor, Vector2 pivot, Vector2 position)
+    {
+        rect.anchorMin = rect.anchorMax = anchor;
+        rect.pivot = pivot;
+        rect.anchoredPosition = position;
+    }
+
+    private void FitPanelToScreen()
+    {
+        var canvasRect = root == null ? null : root.GetComponent<RectTransform>();
+        if (canvasRect == null || panel == null) return;
+        var available = canvasRect.rect.size - new Vector2(48f, 48f);
+        if (available.x <= 0f || available.y <= 0f) return;
+        var scale = Mathf.Min(1f, Mathf.Min(available.x / 1320f, available.y / 920f));
+        panel.transform.localScale = new Vector3(scale, scale, 1f);
+    }
     private static void SetInput(TMP_InputField input, string value) { if (input != null && !input.isFocused && input.text != value) input.SetTextWithoutNotify(value); }
 
     private void RebuildLobbyRows()

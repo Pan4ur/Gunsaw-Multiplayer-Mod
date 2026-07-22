@@ -126,7 +126,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             var stats = MultiplayerSession.DebugStats();
             var npc = NpcReplication.Instance;
             var world = WorldReplication.Instance;
-            networkStatsTextValue = string.Format("PING {0} ms   RX {1:0.0} KB/s   TX {2:0.0} KB/s   PLOSS {3:0.0}%\n" +
+            networkStatsTextValue = "MODE " + MultiplayerSession.ActiveTransport + "\n" + string.Format("PING {0} ms   RX {1:0.0} KB/s   TX {2:0.0} KB/s   PLOSS {3:0.0}%\n" +
                 "OUT/s  NPC P:{4} S:{5}   WORLD P:{6} S:{7}\n" +
                 "IN/s   NPC P:{8} S:{9}   WORLD P:{10} S:{11}\n" +
                 "LAST  NPC {12}/{13}   PROPS {14}/{15}   OTHER {16}/{17}\n" +
