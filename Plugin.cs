@@ -240,6 +240,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             debugWeaponSequence = 0;
             SpawnRocketLauncher();
         }
+        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha3))
+        {
+            debugWeaponSequence = 0;
+            SpawnSniperRifle();
+        }
+        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha4))
+        {
+            debugWeaponSequence = 0;
+            SpawnMarksmanRifle();
+        }
         else if (Input.anyKeyDown) debugWeaponSequence = 0;
     }
 
@@ -762,6 +772,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         SpawnNamedWeapon("Rocket Launcher", "Rocket", "RPG");
     }
+
+   private void SpawnSniperRifle()
+   {
+        SpawnNamedWeapon("Sniper Rifle", "Sniper rifle");
+   }
+
+   private void SpawnMarksmanRifle()
+   {
+       SpawnNamedWeapon("Marksman Rifle", "Marksman rifle");
+   }
 
     private void SpawnNamedWeapon(string weaponName, string fallbackName, string alternateName = "")
     {
