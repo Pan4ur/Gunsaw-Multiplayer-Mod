@@ -4,7 +4,7 @@
 > [Gunsaw](https://orsonik.itch.io/gunsaw-demo). It is actively being developed and
 > can contain desyncs, crashes, incomplete mechanics, and compatibility issues
 
-![icon](img/icon.png)
+![icon](img/preview.gif)
 
 https://youtu.be/aYmxX_OQOis
 
