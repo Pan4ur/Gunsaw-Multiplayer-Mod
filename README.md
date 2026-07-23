@@ -22,7 +22,7 @@ https://youtu.be/aYmxX_OQOis
 - [X] Reduce the packet rate (send movement and pose packets only when changed for stationary entities)
 - [X] Improve packet serialization (implement string hashing or short id) to reduce packet size
 - [X] Optimize far objects, keep them on the map but disable ticking
-- [ ] Fix Hello handshake (it doesn't always work and crashes the lobby sometimes)
+- [X] Fix Hello handshake (it doesn't always work and crashes the lobby sometimes)
 - [ ] Fix & Test P2P
 
 ### Sync Fixes
@@ -30,12 +30,13 @@ https://youtu.be/aYmxX_OQOis
 - [X] Fix shooting randomization desync
 - [X] Fix barrel fire desync
 - [X] Fix NPC shooting tracers not being visible to other players
-- [X] Fix pallet desync when breaking into two parts
+- [ ] Fix pallet desync when breaking into two parts (fuck, now the clients have six of them)
 - [ ] Fix dead entity body state (e.g., closed eyes) mismatch with host
 - [X] Fix ammo indicator desync on weapons dropped by killed entities (blinks on host, doesn't show on clients)
 - [X] Sync bullet hit effects
 - [X] Add interp
 - [ ] Make sure there are definitely no desyncs and crashes
+- [ ] Sync protogen (cheats -> robot mode)
 
 ### Gameplay
 - [X] Fix avatar
@@ -45,7 +46,9 @@ https://youtu.be/aYmxX_OQOis
 - [ ] Fix or disable the process of transferring into another body
 - [ ] Add teams
 - [ ] Add colored respawn points
-- [ ] Real gameplay test
+- [X] Real gameplay test
+- [ ] Fix missing rocket/grenade kill messages
+- [ ] Fix missing weapon pickup icons
 
 ### UI
 - [X] Improve MP Window
