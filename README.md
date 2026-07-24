@@ -4,6 +4,8 @@
 > [Gunsaw](https://orsonik.itch.io/gunsaw-demo). It is actively being developed and
 > can contain desyncs, crashes, incomplete mechanics, and compatibility issues
 
+I only recently learned that another multiplayer project for Gunsaw has been in development, and until then I had no idea it existed. I sincerely wish you the best with your project and hope it continues to grow. My goal is simply to contribute to the community by providing a multiplayer experience and a platform for creating and testing custom maps and ideas :)
+
 ![icon](img/preview.gif)
 
 https://youtu.be/aYmxX_OQOis
