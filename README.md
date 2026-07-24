@@ -83,6 +83,21 @@ The mod currently uses a default lobby server. Idk how long it will stay online,
    in the clipboard
 4. Confirm that the status says the level is loaded, then choose **Start custom level**
 
+## Binds
+
+- ENTER - Open chat
+- TAB - Open player list
+
+### Debug binds (ill remove it later)
+- END + SPACE + G - Spawn random gun
+- END + SPACE + 1 - Spawn Grenade Launcher
+- END + SPACE + 2 - Spawn Rocket Launcher
+- END + SPACE + 3 - Spawn Sniper Rifle
+- END + SPACE + 4 - Marksman Rifle
+
+- END + SPACE + S - Net/CPU profiler
+- END + SPACE + R - Sleeping objects debug
+
 ## Crashes
 
 You'll most likely encounter crashes. If you see this window, please copy the error message and open an issue describing what you were doing before the crash occurred
