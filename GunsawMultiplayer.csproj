@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <GameDirectory Condition="'$(GameDirectory)' == '' and '$(GAME_PATH)' != ''">$(GAME_PATH)</GameDirectory>
+    <GameDirectory Condition="'$(GameDirectory)' == '' and Exists('C:\Games\Gunsaw\Gunsaw_Data\Managed\Assembly-CSharp.dll')">C:\Games\Gunsaw</GameDirectory>
     <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -7,21 +9,69 @@
     <AssemblyName>GunsawMultiplayer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="BepInEx"><HintPath>lib/BepInEx.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="0Harmony"><HintPath>lib/0Harmony.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine"><HintPath>lib/UnityEngine.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.CoreModule"><HintPath>lib/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.IMGUIModule"><HintPath>lib/UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.AnimationModule"><HintPath>lib/UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.AudioModule"><HintPath>lib/UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>lib/UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.JSONSerializeModule"><HintPath>lib/UnityEngine.JSONSerializeModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.Physics2DModule"><HintPath>lib/UnityEngine.Physics2DModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>lib/UnityEngine.ParticleSystemModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>lib/UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.UI"><HintPath>C:\Games\Gunsaw\Gunsaw_Data\Managed\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="UnityEngine.UIModule"><HintPath>C:\Games\Gunsaw\Gunsaw_Data\Managed\UnityEngine.UIModule.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="Unity.TextMeshPro"><HintPath>C:\Games\Gunsaw\Gunsaw_Data\Managed\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
-    <Reference Include="Assembly-CSharp"><HintPath>lib/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx">
+      <HintPath>$(GameDirectory)/BepInEx/core/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameDirectory)/BepInEx/core/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.JSONSerializeModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 </Project>
