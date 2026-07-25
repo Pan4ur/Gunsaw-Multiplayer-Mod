@@ -51,6 +51,9 @@ https://youtu.be/aYmxX_OQOis
 - [X] Real gameplay test
 - [ ] Fix missing rocket/grenade kill messages
 - [ ] Fix missing weapon pickup icons
+- [ ] Fix teleports
+- [ ] Fix regeneration does not always occur after death
+- [ ] Add chat to all screens
 
 ### UI
 - [X] Improve MP Window
