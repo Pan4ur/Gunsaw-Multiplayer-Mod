@@ -70,6 +70,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         new List<ProceduralTailBoneState>();
     private GameObject tailVisualRoot;
     private Vector2 proceduralTailVelocity;
+    private bool tailFacingCaptured;
     private Vector2 lastProceduralTailPosition;
     private float proceduralTailTime;
     private float proceduralTailForce;
@@ -1758,6 +1759,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         EnsureRespawnWeaponSlots(newBody);
+        RestoreRespawnScarf(newBody);
         var levitator = newBody.gameObject.AddComponent<LevitatorScript>();
         levitator.levitMask = LayerMask.GetMask("Ground");
         levitator.grabMask = LayerMask.GetMask("Default", "Ground", "Entity", "EntityStand", "DropWeapon");
@@ -1812,6 +1814,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             newBody.OnAmmoChanged.AddListener(localPlayerInstance.BodyAmmoChanged);
             localPlayerInstance.BodyWeaponChanged();
             localPlayerInstance.BodyAmmoChanged();
+            RebindLimbDamageIndicators(localPlayerInstance, newBody, oldBody);
             localPlayerInstance.UnDie();
             if (CameraFollow.cam != null) CameraFollow.cam.target = newBody.transform;
             localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
@@ -1825,6 +1828,50 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 Destroy(oldBody.transform.root.gameObject);
             localRespawnPending = false;
         }
+    }
+
+    private static void RebindLimbDamageIndicators(PlayerScript player, BodyScript newBody, BodyScript oldBody)
+    {
+        if (player == null || newBody == null || player.dismemberMananagers == null) return;
+        var managers = player.dismemberMananagers;
+        var fallback = newBody.GetComponentsInChildren<DismemberManager>(true);
+        var fallbackIndex = 0;
+        for (var slot = 0; slot < managers.Length; slot++)
+        {
+            DismemberManager rebound = null;
+            var previous = managers[slot];
+            if (previous != null && oldBody != null && oldBody.limbs != null && newBody.limbs != null)
+            {
+                var limbIndex = oldBody.limbs.IndexOf(previous.GetComponent<LimbScript>());
+                if (limbIndex >= 0 && limbIndex < newBody.limbs.Count && newBody.limbs[limbIndex] != null)
+                    rebound = newBody.limbs[limbIndex].GetComponent<DismemberManager>();
+            }
+            if (rebound == null && fallbackIndex < fallback.Length) rebound = fallback[fallbackIndex++];
+            managers[slot] = rebound;
+        }
+    }
+
+    private static void RestoreRespawnScarf(BodyScript body)
+    {
+        if (body == null || body.limbs == null || body.limbs.Count < 2 || body.limbs[1] == null) return;
+        RemoveReplicaScarfArtifacts(body.transform.root.gameObject);
+        PlayerScript.AddScarfToCreature(body);
+        var neck = body.limbs[1];
+        var neckRenderer = neck.GetComponent<SpriteRenderer>();
+        var sprite = Resources.Load<Sprite>("scarfImage");
+        if (neckRenderer == null || sprite == null) return;
+        var hold = new GameObject("ScarfHold", typeof(SpriteRenderer));
+        var renderer = hold.GetComponent<SpriteRenderer>();
+        renderer.sprite = sprite;
+        renderer.material = body.limbMat;
+        renderer.color = Color.HSVToRGB(PlayerPrefs.GetFloat("scStHue"),
+            PlayerPrefs.GetFloat("scStSat"), PlayerPrefs.GetFloat("scStVal"));
+        renderer.sortingOrder = neckRenderer.sortingOrder + 1;
+        renderer.sortingLayerName = neckRenderer.sortingLayerName;
+        hold.transform.SetParent(neck.transform);
+        hold.transform.localPosition = Vector3.zero;
+        hold.transform.localRotation = Quaternion.identity;
+        hold.transform.localScale = Vector3.one;
     }
 
     private Vector3 ResolveRespawnPosition(BodyScript oldBody)
@@ -3392,12 +3439,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         tailAttachments.Clear();
         tailVisuals.Clear();
         proceduralTailBones.Clear();
+        tailFacingCaptured = false;
         if (tailVisualRoot != null) Destroy(tailVisualRoot);
         tailVisualRoot = null;
         if (remoteBody == null) return;
 
         var tails = GetTransforms(remoteBody, "tails");
         if (tails.Length == 0) return;
+
+        var validTails = new List<Transform>();
+        foreach (var tail in tails)
+            if (!IsCoreBodyTransform(tail)) validTails.Add(tail);
+        if (validTails.Count == 0) return;
+        tails = validTails.ToArray();
         var tailAnchor = remoteBody.mainTorso != null ? remoteBody.mainTorso.transform :
             remoteBody.rb == null ? null : remoteBody.rb.transform;
         foreach (var tail in tails)
@@ -3423,7 +3477,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (tail == null) continue;
             foreach (var source in tail.GetComponentsInChildren<SpriteRenderer>(true))
             {
-                if (source == null || !claimed.Add(source)) continue;
+                if (source == null || IsCoreBodyTransform(source.transform) || !claimed.Add(source)) continue;
                 if (claimedBones.Add(source.transform))
                 {
                     proceduralTailBones.Add(new ProceduralTailBoneState
@@ -3456,6 +3510,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
         }
         UpdateTailVisuals();
+    }
+
+    private bool IsCoreBodyTransform(Transform transform)
+    {
+        if (transform == null || remoteBody == null) return true;
+        if (transform == remoteBody.transform || transform == remoteBody.transform.root) return true;
+        if (remoteBody.mainTorso != null && transform == remoteBody.mainTorso.transform) return true;
+        if (remoteBody.headTransform != null && transform == remoteBody.headTransform) return true;
+        return transform.GetComponent<BodyScript>() != null || transform.GetComponent<LimbScript>() != null;
     }
 
     private void CacheProceduralTailRoot(Transform transform, Transform anchor)
@@ -3590,6 +3653,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void UpdateTailVisuals()
     {
         if (tailVisuals.Count == 0) return;
+        if (!receivedFirstSnapshot)
+        {
+            foreach (var pending in tailVisuals)
+                if (pending.Value != null && pending.Value.renderer != null)
+                    pending.Value.renderer.enabled = false;
+            return;
+        }
+        if (!tailFacingCaptured)
+        {
+            tailFacingCaptured = true;
+            foreach (var pending in tailVisuals)
+                if (pending.Value != null && remoteBody != null)
+                    pending.Value.initialFacingRight = remoteBody.isRight;
+        }
         var stale = new List<SpriteRenderer>();
         foreach (var pair in tailVisuals)
         {

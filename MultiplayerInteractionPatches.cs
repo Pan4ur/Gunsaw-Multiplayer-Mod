@@ -99,6 +99,50 @@ internal static class ClientVehicleDamagePatch
     }
 }
 
+[HarmonyPatch(typeof(DroneScript), "Damage")]
+internal static class ClientDroneDamagePatch
+{
+    private static bool Prefix(DroneScript __instance, float dmg)
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+        if (__instance != null && dmg > 0f && GunsawMultiplayerPlugin.World != null)
+            GunsawMultiplayerPlugin.World.QueueDroneDamage(__instance, dmg);
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(DroneScript), "OnCollisionEnter2D")]
+internal static class ClientDroneCollisionPatch
+{
+    private static bool Prefix(DroneScript __instance, Collision2D col)
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+        if (__instance == null || col == null || col.contactCount == 0) return false;
+        var body = __instance.GetComponent<Rigidbody2D>();
+        var impact = Mathf.Abs(col.relativeVelocity.magnitude *
+            Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
+        BodyScript hitBody;
+        if (col.gameObject.TryGetComponent(out hitBody) &&
+            hitBody.controlState == BodyScript.RagdollState.FullControl)
+        {
+            if (impact > 6f)
+            {
+                hitBody.lastMoveDir = Vector2.Lerp(hitBody.lastMoveDir,
+                    body != null ? body.velocity : Vector2.zero, 0.5f);
+                hitBody.shockTime = 1f;
+                hitBody.EnterHalfControl();
+                if (__instance.hitSound != null) Sound.Play(__instance.hitSound, __instance.transform.position);
+            }
+        }
+        else if (col.gameObject.GetComponent<LimbScript>() == null && impact > 5f &&
+            __instance.impactSound != null)
+        {
+            Sound.Play(__instance.impactSound, __instance.transform.position);
+        }
+        return false;
+    }
+}
+
 [HarmonyPatch(typeof(LimbScript), "OnCollisionEnter2D")]
 internal static class RemoteVehicleLimbCollisionPatch
 {

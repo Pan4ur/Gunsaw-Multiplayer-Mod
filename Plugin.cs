@@ -19,7 +19,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.8";
+    public const string PluginVersion = "0.3.9";
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
@@ -45,7 +45,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal string createRespawnTime = "5";
     internal string createMaxPlayers = "4";
     internal string customLevelJson = "";
-    internal ConnectionMode createConnectionMode = ConnectionMode.Auto;
+    internal ConnectionMode createConnectionMode = ConnectionMode.Relay;
     private string receivedCustomLevelJson = "";
     private bool waitingForCustomLevel;
     private string requestedHostScene = "";
@@ -104,7 +104,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
         multiplayerLobbyUi = gameObject.AddComponent<MultiplayerLobbyUi>();
         World = worldReplication;
-        Logger.LogInfo("Gunsaw Multiplayer 0.3.7 loaded.");
+        Logger.LogInfo("Gunsaw Multiplayer " + PluginVersion + " loaded.");
     }
 
     private void Start()
@@ -138,6 +138,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
         MultiplayerLoadDistance.Apply();
+        MultiplayerSession.NoteHostSceneHandle(SceneManager.GetActiveScene().handle);
         MultiplayerSession.SetHostScene(SceneManager.GetActiveScene().name);
         if (Time.unscaledTime < customLevelPhysicsRefreshUntil &&
             Time.unscaledTime >= nextCustomLevelPhysicsRefresh)
@@ -161,6 +162,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             nextHeartbeat = Time.unscaledTime + 10f;
             SendHeartbeat();
+            MultiplayerSession.ResendHostScene();
         }
 
         string connectionMessage;
@@ -188,10 +190,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
 
         string sceneToLoad;
-        if (MultiplayerSession.TryTakeScene(out sceneToLoad))
+        bool sceneReload, sceneEpochAdvanced;
+        if (MultiplayerSession.TryTakeScene(out sceneToLoad, out sceneReload, out sceneEpochAdvanced))
         {
             var activeScene = SceneManager.GetActiveScene().name;
-            if (sceneToLoad == requestedHostScene || sceneToLoad == activeScene)
+            var mustReload = sceneReload || (sceneEpochAdvanced && sceneToLoad == activeScene);
+            if (!mustReload && (sceneToLoad == requestedHostScene || sceneToLoad == activeScene))
             {
                 status = "Already in host scene " + sceneToLoad + ".";
                 return;
@@ -208,11 +212,19 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 }
                 return;
             }
-            status = "Loading host scene " + sceneToLoad + "...";
+            status = mustReload ? "Host restarted the level. Reloading..." :
+                "Loading host scene " + sceneToLoad + "...";
             SceneManager.LoadScene(sceneToLoad);
         }
 
+        CsExperienceMode.Tick();
         if (MultiplayerHud.IsTyping || (multiplayerHud != null && multiplayerHud.ChatOpen)) return;
+        if (Input.GetKey(KeyCode.End) && Input.GetKey(KeyCode.Space) &&
+            Input.GetKey(KeyCode.C) && Input.GetKeyDown(KeyCode.S))
+        {
+            CsExperienceMode.Toggle();
+            return;
+        }
         if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.R))
         {
             multiplayerHud.ToggleReplicationDebugOverlay();
@@ -1707,5 +1719,16 @@ internal static class NetworkChatterDiedPatch
     {
         return __instance != null && BodyField != null && AiField != null &&
             BodyField.GetValue(__instance) != null && AiField.GetValue(__instance) != null;
+    }
+}
+
+[HarmonyPatch(typeof(SceneLoader), "LoadScene")]
+internal static class HostSceneReloadNotifyPatch
+{
+    private static void Postfix(string scene)
+    {
+        if (!MultiplayerSession.IsHosting) return;
+        if (scene != SceneManager.GetActiveScene().name) return;
+        MultiplayerSession.NotifyHostSceneReload(scene);
     }
 }

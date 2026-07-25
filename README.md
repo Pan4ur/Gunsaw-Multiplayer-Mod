@@ -32,7 +32,7 @@ https://youtu.be/aYmxX_OQOis
 - [X] Fix shooting randomization desync
 - [X] Fix barrel fire desync
 - [X] Fix NPC shooting tracers not being visible to other players
-- [ ] Fix pallet desync when breaking into two parts (fuck, now the clients have six of them)
+- [X] Fix pallet desync when breaking into two parts (fuck, now the clients have six of them)
 - [ ] Fix dead entity body state (e.g., closed eyes) mismatch with host
 - [X] Fix ammo indicator desync on weapons dropped by killed entities (blinks on host, doesn't show on clients)
 - [X] Sync bullet hit effects
@@ -99,6 +99,7 @@ The mod currently uses a default lobby server. Idk how long it will stay online,
 
 - END + SPACE + S - Net/CPU profiler
 - END + SPACE + R - Sleeping objects debug
+- END + SPACE + C + S - CS Expierience
 
 ## Crashes
 

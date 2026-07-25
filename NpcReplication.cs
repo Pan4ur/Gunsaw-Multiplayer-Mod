@@ -11,7 +11,7 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NpcReplication : MonoBehaviour
 {
-    private const byte ProtocolVersion = 10;
+    private const byte ProtocolVersion = 11;
     private const byte CompressedSnapshotMarker = 0xFF;
     private const int CompressionThresholdBytes = 256;
     private const int MaxDecompressedSnapshotBytes = 1024 * 1024;
@@ -21,7 +21,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private const float SnapshotInterval = 1f / 50f;
     private const float DiscoveryInterval = 1f;
     private const float FullSnapshotInterval = 1f;
-    private const bool DiagnosticsEnabled = false;
+    private const bool DiagnosticsEnabled = true;
     private static readonly MethodInfo LimbRenderCallback = typeof(LimbScript).GetMethod(
         "OnWillRenderObject", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly Dictionary<string, FieldInfo> bodyFieldCache =
@@ -51,6 +51,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private bool wasConnected;
     private bool wasHost;
     private string activeScene = "";
+    private int activeSceneHandle;
     private string diagnosticPath = "";
     private float nextDiagnostics;
     private int lastPacketBytes;
@@ -83,6 +84,9 @@ internal sealed class NpcReplication : MonoBehaviour
     private int applyFailures;
     private int rigMisses;
     private string lastApplyError = "none";
+    private int weaponApplyFailures;
+    private int hostUnarmedWeaponStates;
+    private string lastWeaponApplyError = "none";
     internal static NpcReplication Instance;
     internal static bool ApplyingAuthoritativeDeath;
 
@@ -125,14 +129,15 @@ internal sealed class NpcReplication : MonoBehaviour
         {
         SampleActivity();
         if (DiagnosticsEnabled) WriteDiagnostics();
-        var scene = SceneManager.GetActiveScene().name;
+        var scene = SceneManager.GetActiveScene();
         var isHost = MultiplayerSession.IsHost;
-        var sceneChanged = activeScene != scene;
+        var sceneChanged = activeSceneHandle != scene.handle;
         var roleChanged = wasConnected && wasHost != isHost;
         if (sceneChanged || roleChanged)
         {
             ResetReplication(wasConnected && !wasHost);
-            activeScene = scene;
+            activeScene = scene.name;
+            activeSceneHandle = scene.handle;
             nextDiscovery = 0f;
         }
 
@@ -314,6 +319,7 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             if (body == null || !body.gameObject.activeInHierarchy || !MultiplayerLoadDistance.IsNpcNearAnyPlayer(body)) continue;
             var layout = HostLayout(body);
+            if (body.unarmed || body.currentWeapon < 0 || layout.Weapons.Count == 0) hostUnarmedWeaponStates++;
             IsEvaluatingAuthoritativePose = true;
             try
             {
@@ -428,6 +434,7 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             writer.Write(ProtocolVersion);
             writer.Write(++sendSequence);
+            writer.Write(MultiplayerSession.SnapshotEpoch);
             writer.Write(fullSnapshot);
             writer.Write((ushort)changed.Count);
             foreach (var state in changed)
@@ -495,6 +502,7 @@ internal sealed class NpcReplication : MonoBehaviour
         ref NpcWireBreakdown breakdown)
     {
             var layout = HostLayout(body);
+            if (body.unarmed || body.currentWeapon < 0 || layout.Weapons.Count == 0) hostUnarmedWeaponStates++;
             var sectionStarted = writer.BaseStream.Position;
             writer.Write(WireId(id));
                 writer.Write(includeIdentity);
@@ -653,6 +661,8 @@ internal sealed class NpcReplication : MonoBehaviour
             {
                 if (reader.ReadByte() != ProtocolVersion) return;
                 var sequence = reader.ReadInt32();
+                var sceneEpoch = reader.ReadInt32();
+                if (!MultiplayerSession.IsSnapshotEpochCurrent(sceneEpoch)) return;
                 if (sequence <= receivedSequence) return;
                 var fullSnapshot = reader.ReadBoolean();
                 var count = reader.ReadUInt16();
@@ -1397,17 +1407,98 @@ internal sealed class NpcReplication : MonoBehaviour
             currentWeapons[state.WeaponSlot] != null &&
             proxy.AppliedWeapon != state.WeaponSlot)
         {
-            body.ChangeWeapon(state.WeaponSlot);
-            proxy.AppliedWeapon = state.WeaponSlot;
+            try
+            {
+                ApplyProxyWeaponSlot(body, state);
+                proxy.AppliedWeapon = state.WeaponSlot;
+            }
+            catch (Exception exception)
+            {
+                proxy.AppliedWeapon = -2;
+                if (Instance != null) Instance.weaponApplyFailures++;
+                if (Instance != null) Instance.lastWeaponApplyError = exception.GetType().Name + ":" + exception.Message.Replace('\n', ' ');
+            }
             FreezeProxy(proxy);
         }
         else if (state.WeaponSlot < 0 && proxy.AppliedWeapon != -1)
         {
-            body.ChangeToUnarmed();
-            proxy.AppliedWeapon = -1;
+            try
+            {
+                ApplyProxyUnarmed(body);
+                proxy.AppliedWeapon = -1;
+            }
+            catch (Exception exception)
+            {
+                proxy.AppliedWeapon = -2;
+                if (Instance != null) Instance.weaponApplyFailures++;
+                if (Instance != null) Instance.lastWeaponApplyError = exception.GetType().Name + ":" + exception.Message.Replace('\n', ' ');
+            }
             FreezeProxy(proxy);
         }
         if (body.weapon != null) body.weapon.ammo = state.WeaponAmmo;
+    }
+
+    private static void ApplyProxyWeaponSlot(BodyScript body, NpcState state)
+    {
+        var weapon = body.weapon;
+        if (weapon == null || weapon.dismembered) return;
+        var weapons = GetList(body, "weapons");
+        var preset = state.WeaponSlot >= 0 && state.WeaponSlot < weapons.Count
+            ? weapons[state.WeaponSlot] as WeaponPreset : null;
+        if (preset == null) return;
+        body.currentWeapon = state.WeaponSlot;
+        weapon.stats = preset;
+        weapon.ammo = state.WeaponAmmo;
+        var renderer = weapon.GetComponent<SpriteRenderer>();
+        if (renderer != null) renderer.sprite = preset.sprite;
+        body.unarmed = false;
+        var laser = GetFieldValue<GameObject>(body, "wepLaser");
+        if (preset.hasLaser)
+        {
+            if (laser == null)
+            {
+                var laserPrefab = Resources.Load<GameObject>("Spawnables/WeaponLaser");
+                if (laserPrefab == null) return;
+                laser = Instantiate(laserPrefab, weapon.transform);
+                laser.transform.localScale = Vector3.one;
+                SetBodyField(body, "wepLaser", laser);
+                SetBodyField(body, "wepLaserLine", laser.GetComponent<LineRenderer>());
+            }
+            laser.transform.localPosition = preset.barrelPosition;
+        }
+        else if (laser != null)
+        {
+            Destroy(laser);
+            SetBodyField(body, "wepLaser", null);
+            SetBodyField(body, "wepLaserLine", null);
+        }
+    }
+
+    private static void ApplyProxyUnarmed(BodyScript body)
+    {
+        var weapon = body.weapon;
+        if (weapon == null) return;
+        var renderer = weapon.GetComponent<SpriteRenderer>();
+        if (renderer != null) renderer.sprite = null;
+        if (GameManager.main != null) weapon.stats = GameManager.main.unarmedWep;
+        weapon.ammo = 0;
+        body.unarmed = true;
+        var laser = GetFieldValue<GameObject>(body, "wepLaser");
+        if (laser != null)
+        {
+            Destroy(laser);
+            SetBodyField(body, "wepLaser", null);
+            SetBodyField(body, "wepLaserLine", null);
+        }
+    }
+
+    private static void SetBodyField(object instance, string name, object value)
+    {
+        if (instance == null) return;
+        var field = instance is BodyScript
+            ? GetBodyField(name)
+            : instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        if (field != null) field.SetValue(instance, value);
     }
 
     private static WeaponPreset FindWeaponPreset(string name)
@@ -1611,7 +1702,6 @@ internal sealed class NpcReplication : MonoBehaviour
         possessionRenderGuardUntil = -1f;
         prefabRetryAt.Clear();
         receivedSequence = -1;
-        sendSequence = 0;
         nextSnapshot = 0f;
         nextFullSnapshot = 0f;
         nextDiscovery = 0f;
@@ -1659,7 +1749,10 @@ internal sealed class NpcReplication : MonoBehaviour
             " missingPrefabs=" + missingPrefabs +
             " applyFailures=" + applyFailures +
             " rigMisses=" + rigMisses +
-            " lastError=" + lastApplyError + Environment.NewLine;
+            " lastError=" + lastApplyError +
+            " weaponApplyFail=" + weaponApplyFailures +
+            " lastWeaponError=" + lastWeaponApplyError +
+            " hostUnarmedStates=" + hostUnarmedWeaponStates + Environment.NewLine;
         try { File.AppendAllText(diagnosticPath, line); }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }

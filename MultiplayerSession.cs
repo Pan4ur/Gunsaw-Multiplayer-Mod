@@ -96,6 +96,11 @@ internal static class MultiplayerSession
     private static readonly byte[] projectileImpactHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1B };
     private static string hostScene = "";
     private static string pendingScene = "";
+    private static bool pendingSceneReload;
+    private static bool pendingSceneAdvanced;
+    private static int hostSceneEpoch;
+    private static int lastHostSceneHandle;
+    private static int expectedSceneEpoch = -1;
     private static string lastReceivedHostScene = "";
     private static string hostCustomLevel = "";
     private static string pendingCustomLevel = "";
@@ -175,11 +180,16 @@ internal static class MultiplayerSession
             hostCustomLevel = "";
             pendingCustomLevel = "";
             pendingScene = "";
+            pendingSceneReload = false;
+            pendingSceneAdvanced = false;
+            expectedSceneEpoch = -1;
             lastReceivedHostScene = "";
             customLevelTransfer = null;
             localPlayerName = NormalizePlayerName(playerName);
             localPeerId = assignedPeerId == 0 ? (ushort)1 : assignedPeerId;
             hostPeerId = localPeerId;
+            hostSceneEpoch = 0;
+            lastHostSceneHandle = 0;
             maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
             connectionMode = mode;
             relayFallback = mode == ConnectionMode.Relay;
@@ -219,6 +229,9 @@ internal static class MultiplayerSession
                 hostCustomLevel = "";
                 pendingCustomLevel = "";
                 pendingScene = "";
+                pendingSceneReload = false;
+                pendingSceneAdvanced = false;
+                expectedSceneEpoch = -1;
                 lastReceivedHostScene = "";
                 customLevelTransfer = null;
                 localPlayerName = NormalizePlayerName(playerName);
@@ -270,7 +283,42 @@ internal static class MultiplayerSession
         if (!isHost || string.IsNullOrEmpty(scene) || !string.IsNullOrEmpty(hostCustomLevel)) return;
         if (hostScene == scene) return;
         hostScene = scene;
-        SendScene(scene);
+        SendScene(scene + "\n" + hostSceneEpoch);
+    }
+
+    internal static void NoteHostSceneHandle(int handle)
+    {
+        if (!isHost || handle == 0) return;
+        lock (statusLock)
+        {
+            if (handle == lastHostSceneHandle) return;
+            lastHostSceneHandle = handle;
+            hostSceneEpoch++;
+        }
+    }
+
+    internal static int SnapshotEpoch { get { lock (statusLock) return hostSceneEpoch; } }
+
+    internal static bool IsSnapshotEpochCurrent(int epoch)
+    {
+        lock (statusLock) return expectedSceneEpoch < 0 || epoch == expectedSceneEpoch;
+    }
+
+    internal static void ResendHostScene()
+    {
+        if (!isHost) return;
+        string scene;
+        int epoch;
+        lock (statusLock) { scene = hostScene; epoch = hostSceneEpoch; }
+        if (string.IsNullOrEmpty(scene)) return;
+        SendScene(scene + "\n" + epoch);
+    }
+
+    internal static void NotifyHostSceneReload(string scene)
+    {
+        if (!isHost || string.IsNullOrEmpty(scene)) return;
+        hostScene = scene;
+        SendScene(scene + "\n" + (hostSceneEpoch + 1) + "\nR");
     }
 
     internal static void EndHostCustomLevel(string scene)
@@ -278,7 +326,7 @@ internal static class MultiplayerSession
         if (!isHost || string.IsNullOrEmpty(hostCustomLevel)) return;
         lock (statusLock) hostCustomLevel = "";
         hostScene = scene;
-        SendScene(scene);
+        SendScene(scene + "\n" + hostSceneEpoch);
     }
 
     internal static void StartHostCustomLevel(string levelJson)
@@ -290,15 +338,19 @@ internal static class MultiplayerSession
         hostScene = "LevelLoader";
         SendCustomLevel(levelJson);
         SendSettings();
-        SendScene(hostScene);
+        SendScene(hostScene + "\n" + hostSceneEpoch);
     }
 
-    internal static bool TryTakeScene(out string scene)
+    internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced)
     {
         lock (statusLock)
         {
             scene = pendingScene;
+            reload = pendingSceneReload;
+            epochAdvanced = pendingSceneAdvanced;
             pendingScene = "";
+            pendingSceneReload = false;
+            pendingSceneAdvanced = false;
             return !string.IsNullOrEmpty(scene);
         }
     }
@@ -556,6 +608,9 @@ internal static class MultiplayerSession
             peers.Clear();
             ClearPeerQueuesLocked();
             pendingScene = "";
+            pendingSceneReload = false;
+            pendingSceneAdvanced = false;
+            expectedSceneEpoch = -1;
             lastReceivedHostScene = "";
             hostCustomLevel = "";
             pendingCustomLevel = "";
@@ -902,7 +957,7 @@ internal static class MultiplayerSession
                 string customLevel;
                 lock (statusLock) customLevel = hostCustomLevel;
                 if (!string.IsNullOrEmpty(customLevel)) SendCustomLevel(customLevel, senderId);
-                var scene = Encoding.UTF8.GetBytes(hostScene);
+                var scene = Encoding.UTF8.GetBytes(hostScene + "\n" + hostSceneEpoch);
                 var scenePacket = new byte[sceneHeader.Length + scene.Length];
                 Buffer.BlockCopy(sceneHeader, 0, scenePacket, 0, sceneHeader.Length);
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
@@ -942,14 +997,34 @@ internal static class MultiplayerSession
             }
             else if (!isHost && HasHeader(packet, sceneHeader))
             {
-                var scene = Encoding.UTF8.GetString(packet, sceneHeader.Length, packet.Length - sceneHeader.Length);
-                if (!string.IsNullOrEmpty(scene))
+                var payload = Encoding.UTF8.GetString(packet, sceneHeader.Length, packet.Length - sceneHeader.Length);
+                if (!string.IsNullOrEmpty(payload))
                 {
                     lock (statusLock)
                     {
-                        if (scene == lastReceivedHostScene) continue;
-                        lastReceivedHostScene = scene;
+                        if (payload == lastReceivedHostScene) continue;
+                        lastReceivedHostScene = payload;
+                        var scene = payload;
+                        var reload = false;
+                        var split = payload.IndexOf('\n');
+                        if (split > 0)
+                        {
+                            scene = payload.Substring(0, split);
+                            var rest = payload.Substring(split + 1);
+                            if (rest.EndsWith("\nR", StringComparison.Ordinal))
+                            {
+                                reload = true;
+                                rest = rest.Substring(0, rest.Length - 2);
+                            }
+                            int epoch;
+                            if (int.TryParse(rest, out epoch) && epoch != expectedSceneEpoch)
+                            {
+                                pendingSceneAdvanced = expectedSceneEpoch >= 0;
+                                expectedSceneEpoch = epoch;
+                            }
+                        }
                         pendingScene = scene;
+                        pendingSceneReload = reload;
                     }
                 }
             }
