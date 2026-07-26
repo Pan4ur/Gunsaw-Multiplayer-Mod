@@ -93,7 +93,7 @@ The mod currently uses a default lobby server. Idk how long it will stay online,
    in the clipboard
 4. Confirm that the status says the level is loaded, then choose **Start custom level**
 
-## Binds
+## Default binds
 
 - ENTER - Open chat
 - TAB - Open player list
