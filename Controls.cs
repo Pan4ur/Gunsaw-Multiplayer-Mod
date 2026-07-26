@@ -1,0 +1,89 @@
+using System.Collections.Generic;
+using UnityEngine;
+using HarmonyLib;
+using TMPro;
+
+// Stores constants to use across all patches and precaches them
+public static class Controls
+{
+    public static readonly string[] newControls = new string[] { "Open chat", "Close chat", "See players" };
+    public static readonly int[] defaultValues = new int[] { (int)KeyCode.Return, (int)KeyCode.Escape, (int)KeyCode.Tab };
+
+    public static KeyCode[] keys = new KeyCode[] { KeyCode.Return, KeyCode.Escape, KeyCode.Tab };
+
+    public const int OPEN_CHAT = 0;
+    public const int CLOSE_CHAT = 1;
+    public const int SEE_PLAYER = 2;
+}
+
+// Adding GameObject of controls and their value in ControlBinder.texts, also sets default values of PlayerPrefs if it missing
+[HarmonyPatch(typeof(ControlBinder), "Start")]
+internal static class ControlsGoCreator
+{
+    private static void Postfix(ControlBinder __instance)
+    {
+        GameObject fieldOrigianl = __instance.texts["Slowmo"].gameObject;
+        GameObject labelOrigianl = GameObject.Find("Canvas/Settings/ControlSettings/MainName (13)");
+        if (null == fieldOrigianl || null == labelOrigianl)
+        {
+            UnityEngine.Debug.LogError("[GunsawMP] Unable to create controls");
+            return;
+        }
+        // Creating clone of original fields, because new fields will get set as a children of original
+        //thus if we clone original, we clone childrens too
+        GameObject fieldBase = UnityEngine.Object.Instantiate(fieldOrigianl);
+        GameObject labelBase = UnityEngine.Object.Instantiate(labelOrigianl);
+
+        for (int i = 0; i < Controls.newControls.Length; i++)
+        {
+            Transform newField = UnityEngine.Object.Instantiate(fieldBase).transform;
+            Vector3 newOffset = new Vector3(0, -50 + -50 * i);
+            newField.SetParent(fieldOrigianl.transform);
+            newField.localScale = Vector3.one;
+            newField.localPosition = newOffset;
+            newField.name = Controls.newControls[i];
+            __instance.texts.Add(Controls.newControls[i], newField.GetComponent<TextMeshProUGUI>());
+
+            Transform newLabel = UnityEngine.Object.Instantiate(labelBase).transform;
+            newLabel.SetParent(labelOrigianl.transform);
+            newLabel.localScale = Vector3.one;
+            newLabel.localPosition = newOffset;
+            newLabel.GetComponent<TextMeshProUGUI>().text = Controls.newControls[i];
+        }
+
+        UnityEngine.Object.Destroy(fieldBase);
+        UnityEngine.Object.Destroy(labelBase);
+
+        if (!PlayerPrefs.HasKey(Controls.newControls[0]))
+            ControlsResetPatch.ResetCustomKeyCodes(__instance);
+
+        __instance.UpdateBindings();
+    }
+}
+
+// Set default values
+[HarmonyPatch(typeof(ControlBinder), "ResetBinds")]
+internal static class ControlsResetPatch
+{
+    [HarmonyPrefix]
+    public static void ResetCustomKeyCodes(ControlBinder __instance)
+    {
+        for (int i = 0; i < Controls.newControls.Length; i++)
+            PlayerPrefs.SetInt(Controls.newControls[i], Controls.defaultValues[i]);
+    }
+}
+
+// Add instances of keys into PlayerScript.keys and Controls.keys
+[HarmonyPatch(typeof(PlayerScript), "Awake")]
+internal static class ControlsAdder
+{
+    private static void Postfix(PlayerScript __instance)
+    {
+        for (int i = 0; i < Controls.newControls.Length; i++)
+        {
+            KeyCode code = (KeyCode)PlayerPrefs.GetInt(Controls.newControls[i]);
+            __instance.keys.Add(Controls.newControls[i], code);
+            Controls.keys[i] = code;
+        }
+    }
+}
