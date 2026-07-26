@@ -65,9 +65,31 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     {
         var player = PlayerScript.player;
         template = player != null ? player.ammoText : null;
+        if (template == null)
+            foreach (var candidate in Resources.FindObjectsOfTypeAll<TMP_Text>())
+                if (candidate != null && candidate.font != null)
+                {
+                    template = candidate;
+                    break;
+                }
+        if (template == null && TMP_Settings.defaultFontAsset != null)
+        {
+            var fallback = new GameObject("MultiplayerChatFont", typeof(TextMeshProUGUI));
+            template = fallback.GetComponent<TextMeshProUGUI>();
+            template.font = TMP_Settings.defaultFontAsset;
+            template.color = Color.white;
+            fallback.hideFlags = HideFlags.HideAndDontSave;
+        }
         if (template == null) return;
+        if (UnityEngine.EventSystems.EventSystem.current == null)
+        {
+            var eventSystem = new GameObject("MultiplayerChatEventSystem",
+                typeof(UnityEngine.EventSystems.EventSystem),
+                typeof(UnityEngine.EventSystems.StandaloneInputModule));
+            eventSystem.hideFlags = HideFlags.HideAndDontSave;
+        }
         root = new GameObject("GunsawMultiplayerNativeHud", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        var canvas = root.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = 450;
+        var canvas = root.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = short.MaxValue;
         var scaler = root.GetComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize; scaler.referenceResolution = new Vector2(1920f, 1080f); scaler.matchWidthOrHeight = 0.5f;
 
         hostPanel = Panel(root.transform, Vector2.zero, new Vector2(480f, 66f));

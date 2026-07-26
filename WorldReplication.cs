@@ -935,6 +935,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 if (writtenDrones++ >= ushort.MaxValue) break;
                 writer.Write(WireId(id));
             }
+            var manager = GameManager.main;
+            writer.Write(manager == null ? 0f : manager.rainIntensity);
+            writer.Write(manager == null ? 0f : manager.snowIntensity);
+            writer.Write(manager == null ? 0f : manager.fogIntensity);
             return stream.ToArray();
         }
     }
@@ -1317,6 +1321,31 @@ internal sealed class WorldReplication : MonoBehaviour
             var droneCount = reader.ReadUInt16();
             for (var index = 0; index < droneCount; index++)
                 ApplyDroneState(ResolveWireId(reader.ReadUInt64()));
+            var rain = reader.ReadSingle();
+            var snow = reader.ReadSingle();
+            var fog = reader.ReadSingle();
+            ApplyWeather(rain, snow, fog);
+        }
+    }
+
+    private static void ApplyWeather(float rain, float snow, float fog)
+    {
+        var manager = GameManager.main;
+        if (manager == null) return;
+        if (!Mathf.Approximately(manager.rainIntensity, rain))
+        {
+            manager.rainIntensity = rain;
+            manager.UpdateRain();
+        }
+        if (!Mathf.Approximately(manager.snowIntensity, snow))
+        {
+            manager.snowIntensity = snow;
+            manager.UpdateSnow();
+        }
+        if (!Mathf.Approximately(manager.fogIntensity, fog))
+        {
+            manager.fogIntensity = fog;
+            manager.UpdateFog();
         }
     }
 
