@@ -238,6 +238,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         newBody.isPlayer = true;
         newBody.team = "goodguys";
         newBody.crateDamage = true;
+        newBody.healthRegen = newBody.regenOnSwap;
         newBody.isWalking = false;
         newBody.isAlive = true;
         newBody.health = Mathf.Max(1f, newBody.maxHealth);
@@ -1731,6 +1732,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         newBody.isPlayer = true;
         newBody.team = "goodguys";
         newBody.crateDamage = true;
+        newBody.healthRegen = newBody.regenOnSwap;
         newBody.isWalking = false;
         newBody.EnterFullControl();
         foreach (var chatter in avatar.GetComponentsInChildren<Chatter>(true)) DestroyImmediate(chatter);

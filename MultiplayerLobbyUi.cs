@@ -80,7 +80,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         open.onClick.AddListener(() => { plugin.visible = true; plugin.RefreshLobbies(); });
 
         panel = CreatePanel(root.transform, Vector2.zero, new Vector2(1320f, 920f));
-        CreateText(panel.transform, "GUNSAW MULTIPLAYER", new Vector2(0f, 412f), new Vector2(1160f, 48f), 28, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        CreateText(panel.transform, "GUNSAW MULTIPLAYER v" + GunsawMultiplayerPlugin.PluginVersion, new Vector2(0f, 412f), new Vector2(1160f, 48f), 28, TextAlignmentOptions.Center, FontStyles.UpperCase);
 
         var close = CreateButton(panel.transform, "CLOSE", new Vector2(575f, 412f), new Vector2(120f, 42f));
         close.onClick.AddListener(() => plugin.visible = false);

@@ -17,7 +17,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.3.9";
+    public const string PluginVersion = "0.4.0";
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
     private ConfigEntry<string> masterUrl;
