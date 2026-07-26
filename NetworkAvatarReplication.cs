@@ -950,6 +950,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 ? GunsawMultiplayerPlugin.World.VehicleWireId(body.curVehicle) : 0UL;
             writer.Write(vehicleId != 0UL);
             writer.Write(vehicleId);
+            writer.Write(vehicleId != 0UL && body.curVehicle.occupant == body);
             writer.Write((byte)body.CurrentState);
             writer.Write(body.isRight);
             writer.Write(body.transform.localScale.x < 0f);
@@ -1086,10 +1087,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             {
                 var remoteInVehicle = reader.ReadBoolean();
                 var remoteVehicleId = reader.ReadUInt64();
+                var remoteVehicleDriver = reader.ReadBoolean();
                 var remoteState = (BodyScript.EntityState)reader.ReadByte();
                 if (remoteState < BodyScript.EntityState.Idle || remoteState > BodyScript.EntityState.MoveLeft)
                     remoteState = BodyScript.EntityState.Idle;
-                var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteState);
+                var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteVehicleDriver, remoteState);
                 var isRight = reader.ReadBoolean();
                 var reflected = reader.ReadBoolean();
                 remoteAvatar.SetActive(reader.ReadBoolean());
@@ -1245,7 +1247,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         finally { MultiplayerPerformance.AddAvatarApply(performanceStarted); }
     }
 
-    private bool SynchronizeRemoteVehicle(bool inVehicle, ulong vehicleId, BodyScript.EntityState state)
+    private bool SynchronizeRemoteVehicle(bool inVehicle, ulong vehicleId, bool driver, BodyScript.EntityState state)
     {
         if (remoteBody == null) return false;
         remoteBody.CurrentState = state;
@@ -1262,7 +1264,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         var world = GunsawMultiplayerPlugin.World;
         var vehicle = world == null ? null : world.FindVehicle(vehicleId);
-        if (vehicle == null || (vehicle.occupant != null && vehicle.occupant != remoteBody)) return false;
+        if (vehicle == null || (driver && vehicle.occupant != null && vehicle.occupant != remoteBody)) return false;
         if (!remoteBody.inVehicle || remoteBody.curVehicle != vehicle)
         {
             if (remoteBody.inVehicle && remoteBody.curVehicle != null)
@@ -1272,18 +1274,23 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 SetRemoteVehicleCollisions(previousVehicle, false);
                 DetachRemoteAvatar();
             }
-            AttachRemoteToVehicle(vehicle);
+            AttachRemoteToVehicle(vehicle, driver);
         }
         if (!remoteBody.inVehicle || remoteBody.curVehicle != vehicle) return false;
         return true;
     }
 
-    private void AttachRemoteToVehicle(VehicleBase vehicle)
+    private void AttachRemoteToVehicle(VehicleBase vehicle, bool driver)
     {
         if (vehicle == null || remoteBody == null || vehicle.mainPart == null ||
             vehicle.mainPart.rb == null || vehicle.seatPos == null) return;
-        vehicle.occupant = remoteBody;
-        vehicle.occupJoint = null;
+        if (driver)
+        {
+            vehicle.occupant = remoteBody;
+            vehicle.occupJoint = null;
+            KartPassengers.RegisterDriver(vehicle, remoteBody);
+        }
+        else KartPassengers.Attach(vehicle, remoteBody, false);
         remoteBody.inVehicle = true;
         remoteBody.curVehicle = vehicle;
         remoteBody.rb.freezeRotation = false;
@@ -1297,7 +1304,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (remoteAvatar != null)
         {
-            var offset = vehicle.seatPos.position - remoteBody.transform.position;
+            var offset = (Vector3)KartPassengers.SeatPosition(vehicle, remoteBody) - remoteBody.transform.position;
             remoteAvatar.transform.SetParent(vehicle.mainPart.transform, true);
             remoteAvatar.transform.position += offset;
         }
@@ -1341,7 +1348,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             remoteBody.curVehicle.mainPart.rb == null || remoteBody.rb == null) return;
         if (remoteAvatar == null || remoteAvatar.transform.parent == remoteBody.curVehicle.mainPart.transform)
             return;
-        var offset = remoteBody.curVehicle.seatPos.position - remoteBody.transform.position;
+        var offset = (Vector3)KartPassengers.SeatPosition(remoteBody.curVehicle, remoteBody) - remoteBody.transform.position;
         remoteAvatar.transform.SetParent(remoteBody.curVehicle.mainPart.transform, true);
         remoteAvatar.transform.position += offset;
     }
@@ -1380,7 +1387,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var vehicle = remoteBody.curVehicle;
         var angle = vehicle.mainPart.rb.rotation - sourceRootRotation;
         var relativePosition = (Vector2)(Quaternion.Euler(0f, 0f, angle) * (position - sourceRoot));
-        transform.position = vehicle.seatPos.position + (Vector3)relativePosition;
+        transform.position = (Vector3)KartPassengers.SeatPosition(vehicle, remoteBody) + (Vector3)relativePosition;
         transform.rotation = Quaternion.Euler(0f, 0f,
             vehicle.mainPart.rb.rotation + Mathf.DeltaAngle(sourceRootRotation, rotation));
     }
