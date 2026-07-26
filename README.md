@@ -42,7 +42,7 @@ https://youtu.be/aYmxX_OQOis
 
 ### Gameplay
 - [X] Fix avatar
-- [ ] Fix tails
+- [X] Fix tails
 - [X] Fix destruction of lightbulbs from hits
 - [X] Fix weapon dropping at the beginning of the game
 - [ ] Fix or disable the process of transferring into another body
@@ -51,7 +51,7 @@ https://youtu.be/aYmxX_OQOis
 - [X] Real gameplay test
 - [ ] Fix missing rocket/grenade kill messages
 - [ ] Fix missing weapon pickup icons
-- [ ] Fix teleports
+- [X] Fix teleports
 - [ ] Fix regeneration does not always occur after death
 - [ ] Add chat to all screens
 
@@ -130,7 +130,7 @@ Pull requests are very welcome
 ## Credits
 
 - [Orsoniks](https://github.com/Orsoniks) for **Gunsaw**
-- [BepInEx team](https://github.com/BepInEx) for [BepInEx](https://github.com/BepInEx/BepInEx) and [HarmonyX](https://github.com/BepInEx/HarmonyX)
+- [BepInEx team](https://github.com/BepInEx) for [BepInEx](https://github.com/BepInEx/BepInEx), [HarmonyX](https://github.com/BepInEx/HarmonyX) and [AssemblyPublicizer](https://github.com/BepInEx/BepInEx.AssemblyPublicizer)
 - [OpenAI](https://github.com/OPENAI) for **GPT 5.6 Sol**
 
 ## Disclaimer

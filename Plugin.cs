@@ -5,8 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
-using System.Reflection;
-using System.Reflection.Emit;
 using System.Text;
 using System.Threading;
 using UnityEngine;
@@ -1085,25 +1083,6 @@ internal static class MultiplayerLimbAnimationPatch
         return true;
     }
 
-    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
-    {
-        var focusedGetter = AccessTools.PropertyGetter(typeof(Application), nameof(Application.isFocused));
-        var replacement = AccessTools.Method(typeof(MultiplayerLimbAnimationPatch), nameof(IsAnimationFocused));
-        foreach (var instruction in instructions)
-        {
-            if (focusedGetter != null && instruction.Calls(focusedGetter))
-            {
-                instruction.opcode = OpCodes.Call;
-                instruction.operand = replacement;
-            }
-            yield return instruction;
-        }
-    }
-
-    private static bool IsAnimationFocused()
-    {
-        return Application.isFocused || MultiplayerSession.IsHosting || MultiplayerSession.IsConnected;
-    }
 }
 
 [HarmonyPatch(typeof(ScreenFXManager), "Update")]
@@ -1176,17 +1155,6 @@ internal static class MultiplayerTargetCameraShakeUpdatePatch
 
 internal static class MultiplayerTimeControl
 {
-    private static readonly FieldInfo PlayerKeys = AccessTools.Field(typeof(PlayerScript), "keys");
-    private static readonly FieldInfo PlayerInSlowmo = AccessTools.Field(typeof(PlayerScript), "inSlowmo");
-    private static readonly FieldInfo PlayerSlowmoSource = AccessTools.Field(typeof(PlayerScript), "slowmoSource");
-    private static readonly FieldInfo PlayerSecondaryBar = AccessTools.Field(typeof(PlayerScript), "secondarySlowmoBarImage");
-    private static readonly FieldInfo SlowmoTime = AccessTools.Field(typeof(ScreenFXManager), "slowmoTime");
-    private static readonly FieldInfo FullStopTime = AccessTools.Field(typeof(ScreenFXManager), "fullStopTime");
-    private static readonly FieldInfo ScreenSlowmo = AccessTools.Field(typeof(ScreenFXManager), "slowmo");
-    private static readonly FieldInfo ContrastAmount = AccessTools.Field(typeof(ScreenFXManager), "contrastAmount");
-    private static readonly FieldInfo GamePaused = AccessTools.Field(typeof(GameManager), "paused");
-    private static readonly FieldInfo FogIntensity = AccessTools.Field(typeof(GameManager), "fogIntensity");
-
     internal sealed class SlowmoKeyState
     {
         internal Dictionary<string, KeyCode> Keys;
@@ -1198,7 +1166,7 @@ internal static class MultiplayerTimeControl
     {
         var state = new SlowmoKeyState();
         if (!MultiplayerSession.IsConnected || player == null) return state;
-        state.Keys = PlayerKeys == null ? null : PlayerKeys.GetValue(player) as Dictionary<string, KeyCode>;
+        state.Keys = player.keys;
         if (state.Keys != null && state.Keys.TryGetValue("Slowmo", out state.Key))
         {
             state.Restore = true;
@@ -1226,9 +1194,9 @@ internal static class MultiplayerTimeControl
         if (!MultiplayerSession.IsConnected) return;
         if (screen != null)
         {
-            if (SlowmoTime != null) SlowmoTime.SetValue(screen, 0f);
-            if (FullStopTime != null) FullStopTime.SetValue(screen, 0f);
-            if (ScreenSlowmo != null) ScreenSlowmo.SetValue(screen, false);
+            screen.slowmoTime = 0f;
+            screen.fullStopTime = 0f;
+            screen.slowmo = false;
         }
         if (DisablePlayerSlowmo(PlayerScript.player)) ResetSlowmoContrast(screen);
         ForceNormalTime();
@@ -1238,19 +1206,18 @@ internal static class MultiplayerTimeControl
     {
         if (!MultiplayerSession.IsConnected || Application.isFocused) return;
         var manager = GameManager.main;
-        if (manager != null && GamePaused != null)
-            GamePaused.SetValue(manager, false);
+        if (manager != null) manager.paused = false;
         Time.timeScale = 1f;
     }
 
     private static bool DisablePlayerSlowmo(PlayerScript player)
     {
         if (player == null) return false;
-        var wasInSlowmo = PlayerInSlowmo != null && (bool)PlayerInSlowmo.GetValue(player);
-        if (PlayerInSlowmo != null) PlayerInSlowmo.SetValue(player, false);
-        var source = PlayerSlowmoSource == null ? null : PlayerSlowmoSource.GetValue(player) as AudioSource;
+        var wasInSlowmo = player.inSlowmo;
+        player.inSlowmo = false;
+        var source = player.slowmoSource;
         if (source != null && source.isPlaying) source.Stop();
-        var secondaryBar = PlayerSecondaryBar == null ? null : PlayerSecondaryBar.GetValue(player) as Component;
+        var secondaryBar = player.secondarySlowmoBarImage;
         if (secondaryBar != null && secondaryBar.transform.parent != null)
             secondaryBar.transform.parent.gameObject.SetActive(false);
         return wasInSlowmo;
@@ -1259,14 +1226,14 @@ internal static class MultiplayerTimeControl
     private static void ResetSlowmoContrast(ScreenFXManager screen)
     {
         var manager = GameManager.main;
-        if (screen != null && ContrastAmount != null && manager != null && FogIntensity != null)
-            ContrastAmount.SetValue(screen, -(float)FogIntensity.GetValue(manager) * 45f);
+        if (screen != null && manager != null)
+            screen.contrastAmount = -manager.fogIntensity * 45f;
     }
 
     private static void ForceNormalTime()
     {
         var manager = GameManager.main;
-        var paused = manager != null && GamePaused != null && (bool)GamePaused.GetValue(manager);
+        var paused = manager != null && manager.paused;
         if (!paused) Time.timeScale = 1f;
     }
 }
@@ -1502,15 +1469,9 @@ internal static class ClientSawCollisionStayPatch
     }
 }
 
-[HarmonyPatch]
+[HarmonyPatch(typeof(BloodBars), "FixedUpdate")]
 internal static class MultiplayerDamageBarsPatch
 {
-    private static MethodBase TargetMethod()
-    {
-        return AccessTools.Method(typeof(BloodBars), new string(new[]
-        { 'F', 'i', 'x', 'e', 'd', 'U', 'p', 'd', 'a', 't', 'e' }));
-    }
-
     private static void Prefix(BloodBars __instance)
     {
         var player = PlayerScript.player;
@@ -1573,33 +1534,27 @@ internal static class MultiplayerWeaponShotPatch
     }
 }
 
-[HarmonyPatch(typeof(WeaponScript), "Shoot")]
-internal static class MultiplayerWeaponSpreadPatch
+[HarmonyPatch(typeof(VelvetScript), "Shoot")]
+internal static class MultiplayerVelvetWebPatch
 {
-    private static readonly MethodInfo RandomRange = AccessTools.Method(typeof(UnityEngine.Random), "Range",
-        new[] { typeof(float), typeof(float) });
-    private static readonly MethodInfo NextWeaponSpread = AccessTools.Method(
-        typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.NextWeaponSpread));
-
-    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    private static void Postfix(VelvetScript __instance)
     {
-        var code = new List<CodeInstruction>(instructions);
-        for (var index = 2; index < code.Count; index++)
-        {
-            if (!code[index].Calls(RandomRange) || !IsFloatConstant(code[index - 2], -1f) ||
-                !IsFloatConstant(code[index - 1], 1f)) continue;
-            code[index] = new CodeInstruction(OpCodes.Pop);
-            code.Insert(index + 1, new CodeInstruction(OpCodes.Pop));
-            code.Insert(index + 2, new CodeInstruction(OpCodes.Call, NextWeaponSpread));
-            break;
-        }
-        return code;
+        NetworkAvatarReplication.ReplicateVelvetWeb(__instance);
+    }
+}
+
+[HarmonyPatch(typeof(TeleportZone), "Activate")]
+internal static class MultiplayerTeleportZonePatch
+{
+    private static void Prefix(TeleportZone __instance, int idd, out List<BodyScript> __state)
+    {
+        NetworkAvatarReplication.ReplicateTeleportZone(__instance, idd);
+        __state = NetworkAvatarReplication.SuppressRemoteTeleportEffects(__instance, idd);
     }
 
-    private static bool IsFloatConstant(CodeInstruction instruction, float value)
+    private static void Postfix(List<BodyScript> __state)
     {
-        return instruction.opcode == OpCodes.Ldc_R4 && instruction.operand is float current &&
-            Mathf.Approximately(current, value);
+        NetworkAvatarReplication.RestoreRemoteTeleportEffects(__state);
     }
 }
 
@@ -1687,10 +1642,8 @@ internal static class RemotePlayerMouseOverPatch
     private static bool Prefix(PlayerScript __instance, BodyScript body)
     {
         if (body == null || body.GetComponentInParent<NetworkReplica>() == null) return true;
-        var textField = AccessTools.Field(typeof(PlayerScript), "mouseOverText");
-        var text = textField == null ? null : textField.GetValue(__instance) as Component;
-        var colorProperty = text == null ? null : text.GetType().GetProperty("color");
-        if (colorProperty != null) colorProperty.SetValue(text, Color.clear, null);
+        if (__instance != null && __instance.mouseOverText != null)
+            __instance.mouseOverText.color = Color.clear;
         return false;
     }
 }
@@ -1698,13 +1651,9 @@ internal static class RemotePlayerMouseOverPatch
 [HarmonyPatch(typeof(Chatter), "AllyDied")]
 internal static class NetworkChatterAllyDiedPatch
 {
-    private static readonly FieldInfo BodyField = AccessTools.Field(typeof(Chatter), "body");
-    private static readonly FieldInfo AiField = AccessTools.Field(typeof(Chatter), "ai");
-
     private static bool Prefix(Chatter __instance)
     {
-        return __instance != null && BodyField != null && AiField != null &&
-            BodyField.GetValue(__instance) != null && AiField.GetValue(__instance) != null &&
+        return __instance != null && __instance.body != null && __instance.ai != null &&
             __instance.GetComponentInParent<NetworkReplica>() == null;
     }
 }
@@ -1712,13 +1661,9 @@ internal static class NetworkChatterAllyDiedPatch
 [HarmonyPatch(typeof(Chatter), "Died")]
 internal static class NetworkChatterDiedPatch
 {
-    private static readonly FieldInfo BodyField = AccessTools.Field(typeof(Chatter), "body");
-    private static readonly FieldInfo AiField = AccessTools.Field(typeof(Chatter), "ai");
-
     private static bool Prefix(Chatter __instance)
     {
-        return __instance != null && BodyField != null && AiField != null &&
-            BodyField.GetValue(__instance) != null && AiField.GetValue(__instance) != null;
+        return __instance != null && __instance.body != null && __instance.ai != null;
     }
 }
 

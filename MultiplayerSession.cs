@@ -94,6 +94,8 @@ internal static class MultiplayerSession
     private static readonly byte[] reliableAckHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x19 };
     private static readonly byte[] worldEnvironmentHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1A };
     private static readonly byte[] projectileImpactHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1B };
+    private static readonly byte[] velvetWebHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1C };
+    private static readonly byte[] playerTeleportHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1D };
     private static string hostScene = "";
     private static string pendingScene = "";
     private static bool pendingSceneReload;
@@ -118,6 +120,8 @@ internal static class MultiplayerSession
     private static readonly Queue<PeerPayload> pvpDamage = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> shotVisuals = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> projectileImpacts = new Queue<PeerPayload>();
+    private static readonly Queue<PeerPayload> velvetWebs = new Queue<PeerPayload>();
+    private static readonly Queue<PeerPayload> playerTeleports = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> playerGrabs = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> npcGrabs = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> npcPossessions = new Queue<PeerPayload>();
@@ -781,6 +785,16 @@ internal static class MultiplayerSession
         Send(projectileImpactHeader, data);
     }
 
+    internal static void SendVelvetWeb(byte[] data)
+    {
+        Send(velvetWebHeader, data);
+    }
+
+    internal static void SendPlayerTeleport(ushort targetPeerId, byte[] data)
+    {
+        if (isHost) Send(playerTeleportHeader, data, targetPeerId);
+    }
+
     internal static void SendPlayerGrab(ushort targetPeerId, byte[] data)
     {
         Send(playerGrabHeader, data, targetPeerId);
@@ -893,6 +907,16 @@ internal static class MultiplayerSession
     internal static bool TryTakeProjectileImpact(out ushort peerId, out byte[] data)
     {
         return TryTakePayload(projectileImpacts, out peerId, out data);
+    }
+
+    internal static bool TryTakeVelvetWeb(out ushort peerId, out byte[] data)
+    {
+        return TryTakePayload(velvetWebs, out peerId, out data);
+    }
+
+    internal static bool TryTakePlayerTeleport(out ushort peerId, out byte[] data)
+    {
+        return TryTakePayload(playerTeleports, out peerId, out data);
     }
 
     internal static bool TryTakePlayerGrab(out ushort peerId, out byte[] data)
@@ -1153,6 +1177,18 @@ internal static class MultiplayerSession
                 Buffer.BlockCopy(packet, projectileImpactHeader.Length, data, 0, data.Length);
                 EnqueuePayload(projectileImpacts, senderId, data);
             }
+            else if (HasHeader(packet, velvetWebHeader))
+            {
+                var data = new byte[packet.Length - velvetWebHeader.Length];
+                Buffer.BlockCopy(packet, velvetWebHeader.Length, data, 0, data.Length);
+                EnqueuePayload(velvetWebs, senderId, data);
+            }
+            else if (!isHost && HasHeader(packet, playerTeleportHeader))
+            {
+                var data = new byte[packet.Length - playerTeleportHeader.Length];
+                Buffer.BlockCopy(packet, playerTeleportHeader.Length, data, 0, data.Length);
+                EnqueuePayload(playerTeleports, senderId, data);
+            }
             else if (HasHeader(packet, playerGrabHeader))
             {
                 var data = new byte[packet.Length - playerGrabHeader.Length];
@@ -1367,6 +1403,8 @@ internal static class MultiplayerSession
         pvpDamage.Clear();
         shotVisuals.Clear();
         projectileImpacts.Clear();
+        velvetWebs.Clear();
+        playerTeleports.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();
         npcPossessions.Clear();
@@ -2016,7 +2054,8 @@ internal static class MultiplayerSession
             HasHeader(packet, worldDamageHeader) || HasHeader(packet, npcDamageHeader) ||
             HasHeader(packet, worldEnvironmentHeader) ||
             HasHeader(packet, worldInteractionHeader) ||
-            HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader);
+            HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader) ||
+            HasHeader(packet, playerTeleportHeader);
     }
 
     private static bool ProcessReliablePacket(ref byte[] packet, ushort senderId)

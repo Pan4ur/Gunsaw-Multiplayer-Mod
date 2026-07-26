@@ -27,12 +27,12 @@ internal static class MultiplayerLoadDistance
         var active = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected;
         if (active)
         {
-            ResourceManager.maxDistance = float.PositiveInfinity;
-            ObjectUnloader.dist = float.PositiveInfinity;
-            ObjectUnloader.distTwo = float.PositiveInfinity;
             wasActive = true;
             hostSimulationActive = MultiplayerSession.IsConnected && MultiplayerSession.IsHost;
             activeDistanceSqr = ReadTickDistance();
+            ResourceManager.maxDistance = float.PositiveInfinity;
+            ObjectUnloader.dist = float.PositiveInfinity;
+            ObjectUnloader.distTwo = float.PositiveInfinity;
             RefreshPlayerPositions();
             RefreshSimulation();
             return;
@@ -71,6 +71,20 @@ internal static class MultiplayerLoadDistance
     internal static bool IsNpcNearAnyPlayer(BodyScript body)
     {
         return body != null && IsNearAnyPlayer(body.transform.position);
+    }
+
+    internal static bool IsWorldNearAnyPlayer(Rigidbody2D body)
+    {
+        return body != null && IsNearAnyPlayer(body.position);
+    }
+
+    internal static bool IsWorldNearLocalPlayer(Rigidbody2D body)
+    {
+        var player = PlayerScript.player;
+        var localBody = player == null ? null : player.bodyScript;
+        if (body == null || localBody == null) return true;
+        var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
+        return (body.position - localPosition).sqrMagnitude < activeDistanceSqr;
     }
 
     internal static bool ShouldTickWorld(Component component)

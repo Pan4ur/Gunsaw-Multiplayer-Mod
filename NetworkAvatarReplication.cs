@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using System.Collections;
-using System.Reflection;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using BepInEx;
 using HarmonyLib;
@@ -11,15 +11,14 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NetworkAvatarReplication : MonoBehaviour
 {
-    private const bool TailDiagnosticsEnabled = false;
     private const bool BufferedRemoteInterpolation = true;
     private const float SnapshotInterval = 1f / 50f;
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
     private static readonly List<string> knownCharacterPrefabs = new List<string>();
     private static readonly Dictionary<string, Sprite> spriteCache = new Dictionary<string, Sprite>();
     private static readonly Dictionary<Sprite, string> spriteIdCache = new Dictionary<Sprite, string>();
-    private static readonly Dictionary<string, FieldInfo> bodyFieldCache =
-        new Dictionary<string, FieldInfo>();
+    private static readonly Dictionary<Texture2D, string> textureSignatureCache =
+        new Dictionary<Texture2D, string>();
     private static readonly Dictionary<string, WeaponPreset> weaponPresetCache =
         new Dictionary<string, WeaponPreset>();
     private static string selectedCharacterPrefab = "";
@@ -62,25 +61,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private readonly Dictionary<Rigidbody2D, TargetState> targets = new Dictionary<Rigidbody2D, TargetState>();
     private readonly Dictionary<Transform, WorldTargetState> worldTargets = new Dictionary<Transform, WorldTargetState>();
     private readonly Dictionary<Transform, WorldTargetState> localTargets = new Dictionary<Transform, WorldTargetState>();
-    private readonly Dictionary<Transform, TailAttachmentState> tailAttachments =
-        new Dictionary<Transform, TailAttachmentState>();
-    private readonly Dictionary<SpriteRenderer, TailVisualState> tailVisuals =
-        new Dictionary<SpriteRenderer, TailVisualState>();
-    private readonly List<ProceduralTailBoneState> proceduralTailBones =
-        new List<ProceduralTailBoneState>();
-    private GameObject tailVisualRoot;
-    private Vector2 proceduralTailVelocity;
-    private bool tailFacingCaptured;
-    private Vector2 lastProceduralTailPosition;
-    private float proceduralTailTime;
-    private float proceduralTailForce;
-    private bool hasProceduralTailPosition;
-    private string tailDiagnosticPath = "";
-    private bool localTailFacingKnown;
-    private bool lastLocalTailFacing;
-    private int localTailDebugFrames;
-    private int remoteTailDebugFrames;
-    private int tailDebugSequence;
     private bool receivedFirstSnapshot;
     private int appliedWeapon = -1;
     private ulong appliedWeaponSprite;
@@ -101,6 +81,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private readonly List<KeyValuePair<Transform, WorldTargetState>> orderedWorldTargets =
         new List<KeyValuePair<Transform, WorldTargetState>>();
     private Rigidbody2D[] remoteRigidbodies = new Rigidbody2D[0];
+    private readonly List<Rigidbody2D> remoteTailBases = new List<Rigidbody2D>();
+    private Transform[] remoteTails = new Transform[0];
+    private readonly List<SpriteRenderer[]> remoteTailSprites = new List<SpriteRenderer[]>();
+    private readonly List<SpriteRenderer[]> remoteTailRootSprites = new List<SpriteRenderer[]>();
     private bool remotePhysicsModeKnown;
     private bool lastRemoteSimulated;
     private bool lastPassiveGrabProxy;
@@ -125,11 +109,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static int nextShotSpreadSeed;
     private static bool applyingNetworkPlayerDamage;
     private static Material fallbackTracerMaterial;
-    private static readonly MethodInfo DoWoundMethod = AccessTools.Method(typeof(WeaponScript), "DoWound");
-    private static readonly FieldInfo PlayerSingletonField = AccessTools.Field(typeof(PlayerScript), "player");
-    private static readonly FieldInfo GlobalBodyField = AccessTools.Field(typeof(PlayerScript), "globalBody");
-    private static readonly FieldInfo PlayerAmmoTextsField = AccessTools.Field(typeof(PlayerScript), "ammoTexts");
-    private static readonly FieldInfo PlayerButtonsField = AccessTools.Field(typeof(PlayerScript), "buttons");
+    private static readonly HashSet<WebScript> localVelvetWebs = new HashSet<WebScript>();
     private static int suppressedTargetScreenEffects;
     private static float suppressedCameraUntil = -1f;
     private static PlayerScript localPlayerInstance;
@@ -208,12 +188,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return false;
         if (MultiplayerSession.IsConnected) body.dropWeapon = false;
 
-        var buttons = PlayerButtonsField == null ? null : PlayerButtonsField.GetValue(player) as ButtonScript[];
+        var buttons = player.buttons;
         if (buttons != null)
             foreach (var button in buttons)
                 if (button == null)
                 {
-                    PlayerButtonsField.SetValue(player, null);
+                    player.buttons = null;
                     break;
                 }
         return true;
@@ -440,17 +420,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         instance = this;
         coordinator = true;
-        if (!TailDiagnosticsEnabled) return;
-        tailDiagnosticPath = Path.Combine(Paths.BepInExRootPath,
-            "tail-debug-" + System.Diagnostics.Process.GetCurrentProcess().Id + ".log");
-        try
-        {
-            File.WriteAllText(tailDiagnosticPath,
-                "Gunsaw Multiplayer tail diagnostics 0.1.40\n" +
-                "Process=" + System.Diagnostics.Process.GetCurrentProcess().Id + "\n");
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
     }
 
     internal void Configure(string name)
@@ -542,6 +511,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (player == null || player.bodyScript == null) return;
 
         ushort senderId;
+        byte[] playerTeleport;
+        while (MultiplayerSession.TryTakePlayerTeleport(out senderId, out playerTeleport))
+            ApplyRemoteTeleport(player.bodyScript, playerTeleport);
+
         byte[] playerDamage;
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
             ApplyPlayerDamage(player.bodyScript, playerDamage);
@@ -559,6 +532,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var shooter = GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteProjectileImpact(projectileImpact);
+        }
+        byte[] velvetWeb;
+        while (MultiplayerSession.TryTakeVelvetWeb(out senderId, out velvetWeb))
+        {
+            var shooter = GetOrCreateReplica(senderId);
+            if (shooter != null) shooter.PlayRemoteVelvetWeb(velvetWeb);
         }
         byte[] playerGrab;
         while (MultiplayerSession.TryTakePlayerGrab(out senderId, out playerGrab))
@@ -656,14 +635,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         MaintainRemoteVehiclePose();
         if (hasRemoteVehicleReflection) ApplyVehicleReflection();
         if (hasRemoteVehicleHeadRotation) ApplyVehicleHeadRotation(remoteVehicleHeadRotation);
-        if (remoteTailDebugFrames > 0) WriteTailDiagnostics("REMOTE FRAME PRE", remoteBody, true);
-        UpdateProceduralTail();
-        UpdateTailVisuals();
-        if (remoteTailDebugFrames > 0)
-        {
-            WriteTailDiagnostics("REMOTE FRAME POST", remoteBody, true);
-            remoteTailDebugFrames--;
-        }
     }
 
     private void OnGUI()
@@ -770,13 +741,23 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             remoteColliderTriggers[collider] = collider.isTrigger;
         remoteRigidbodies = avatar.GetComponentsInChildren<Rigidbody2D>(true);
         remotePhysicsModeKnown = false;
+        remoteTailBases.Clear();
+        foreach (Rigidbody2D tailBase in GetList(remoteBody, "tailBases"))
+            if (tailBase != null) remoteTailBases.Add(tailBase);
+        remoteTails = GetTransforms(remoteBody, "tails");
+        remoteTailSprites.Clear();
+        foreach (var tailBase in remoteTailBases)
+            remoteTailSprites.Add(tailBase == null ? new SpriteRenderer[0] :
+                tailBase.GetComponentsInChildren<SpriteRenderer>(true));
+        remoteTailRootSprites.Clear();
+        foreach (var tail in remoteTails)
+            remoteTailRootSprites.Add(tail == null ? new SpriteRenderer[0] :
+                tail.GetComponentsInChildren<SpriteRenderer>(true));
         foreach (var behaviour in avatar.GetComponentsInChildren<MonoBehaviour>()) behaviour.enabled = false;
         foreach (var animator in avatar.GetComponentsInChildren<Animator>()) animator.enabled = false;
         UpdateRemotePhysicsMode();
         CacheDismembermentVisuals();
-        CreateTailVisuals();
         CreateRemoteLevitLine(avatar.transform);
-        WriteTailDiagnostics("REMOTE SPAWN", remoteBody, true);
         Debug.Log("[Gunsaw MP] Spawned remote avatar for " + name + ".");
     }
 
@@ -800,21 +781,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         remoteFires.Clear();
         remoteRigidbodies = new Rigidbody2D[0];
         remotePhysicsModeKnown = false;
+        remoteTailBases.Clear();
+        remoteTails = new Transform[0];
+        remoteTailSprites.Clear();
+        remoteTailRootSprites.Clear();
         remoteColliderTriggers.Clear();
         originalDismemberSprites.Clear();
         targets.Clear();
         worldTargets.Clear();
         localTargets.Clear();
-        tailAttachments.Clear();
-        tailVisuals.Clear();
-        proceduralTailBones.Clear();
-        proceduralTailVelocity = Vector2.zero;
-        proceduralTailTime = 0f;
-        proceduralTailForce = 0f;
-        hasProceduralTailPosition = false;
-        remoteTailDebugFrames = 0;
-        if (tailVisualRoot != null) Destroy(tailVisualRoot);
-        tailVisualRoot = null;
         receivedFirstSnapshot = false;
         appliedWeapon = -1;
         appliedWeaponSprite = 0UL;
@@ -830,31 +805,27 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static void RestoreLocalPlayerSingleton()
     {
-        if (PlayerSingletonField != null) PlayerSingletonField.SetValue(null, localPlayerInstance);
-        if (GlobalBodyField != null) GlobalBodyField.SetValue(null, localGlobalBody);
+        PlayerScript.player = localPlayerInstance;
+        PlayerScript.globalBody = localGlobalBody;
     }
 
     internal static void CaptureCharacterMenu(MainMenuManager menu)
     {
         if (menu == null) return;
-        var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-        var charactersField = typeof(MainMenuManager).GetField("characters", flags);
-        var indexField = typeof(MainMenuManager).GetField("charIndex", flags);
-        var pathField = typeof(SelectableCharacter).GetField("prefabPath", flags);
-        var characters = charactersField == null ? null : charactersField.GetValue(menu) as IList;
-        if (characters == null || pathField == null) return;
+        var characters = menu.characters;
+        if (characters == null) return;
 
         for (var index = 0; index < characters.Count; index++)
         {
-            var path = pathField.GetValue(characters[index]) as string;
+            var path = characters[index] == null ? null : characters[index].prefabPath;
             if (!string.IsNullOrEmpty(path) && !knownCharacterPrefabs.Contains(path))
                 knownCharacterPrefabs.Add(path);
         }
 
-        var selectedIndex = indexField == null ? -1 : (int)indexField.GetValue(menu);
+        var selectedIndex = menu.charIndex;
         if (selectedIndex >= 0 && selectedIndex < characters.Count)
         {
-            var path = pathField.GetValue(characters[selectedIndex]) as string;
+            var path = characters[selectedIndex] == null ? null : characters[selectedIndex].prefabPath;
             if (!string.IsNullOrEmpty(path)) selectedCharacterPrefab = path;
         }
     }
@@ -958,7 +929,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private byte[] Serialize(BodyScript body)
     {
         var performanceStarted = MultiplayerPerformance.Start();
-        ObserveLocalTail(body);
         localVisualLayout = GetVisualLayout(localVisualLayout, body.transform);
         var visualState = SerializeVisualState(localVisualLayout);
         var visualChanged = !BytesEqual(lastSerializedVisualState, visualState);
@@ -983,6 +953,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             writer.Write((byte)body.CurrentState);
             writer.Write(body.isRight);
             writer.Write(body.transform.localScale.x < 0f);
+            writer.Write(body.transform.root.gameObject.activeInHierarchy);
             var headReferenceRotation = vehicleId != 0UL && body.curVehicle.mainPart != null &&
                 body.curVehicle.mainPart.rb != null ? body.curVehicle.mainPart.rb.rotation : body.rb.rotation;
             writer.Write(body.headTransform == null ? 0f :
@@ -1002,10 +973,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             breakdown.Limbs += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
-            // TAIL POS TODO
-            writer.Write((ushort)0);
-            writer.Write((ushort)0);
-            //
+            var tailBases = GetList(body, "tailBases");
+            writer.Write((ushort)tailBases.Count);
+            foreach (Rigidbody2D tailBase in tailBases) WriteTailTransform(writer, body.rb,
+                tailBase == null ? null : tailBase.transform, tailBase != null ? tailBase.rotation : 0f);
+            var tails = GetTransforms(body, "tails");
+            writer.Write((ushort)tails.Length);
+            foreach (var tail in tails) WriteTailTransform(writer, body.rb, tail,
+                tail == null ? 0f : tail.eulerAngles.z);
 
             WriteWorldTransform(writer, body.Arms);
             WriteLocalTransform(writer, GetTransform(body, "gunTransform"));
@@ -1046,7 +1021,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             breakdown.Weapons += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
-            WriteLineState(writer, GetFieldValue<LineRenderer>(body, "wepLaserLine"));
+            WriteLineState(writer, body.wepLaserLine);
             var player = PlayerScript.player;
             WriteLineState(writer, player == null ? null : player.levitLine);
             WriteScarfState(writer, body);
@@ -1117,6 +1092,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteState);
                 var isRight = reader.ReadBoolean();
                 var reflected = reader.ReadBoolean();
+                remoteAvatar.SetActive(reader.ReadBoolean());
                 var remoteHeadRotation = reader.ReadSingle();
                 hasRemoteVehicleHeadRotation = remoteVehicleAttached;
                 remoteVehicleHeadRotation = remoteHeadRotation;
@@ -1124,10 +1100,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 remoteVehicleReflected = reflected;
                 if (remoteBody.isRight != isRight)
                 {
-                    WriteTailDiagnostics("REMOTE FLIP BEFORE", remoteBody, true);
                     remoteBody.SwitchDir(true);
-                    WriteTailDiagnostics("REMOTE FLIP AFTER", remoteBody, true);
-                    remoteTailDebugFrames = 12;
                 }
                 var limbs = GetList(remoteBody, "limbs");
                 var sourceVehicleRoot = Vector2.zero;
@@ -1166,9 +1139,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     ApplyDismembermentVisuals();
                 }
                 var tailCount = reader.ReadUInt16();
-                for (var index = 0; index < tailCount; index++) SkipBody(reader);
+                for (var index = 0; index < tailCount; index++)
+                    ReadTailTarget(reader,
+                        index < remoteTailBases.Count ? remoteTailBases[index] : null,
+                        index < remoteTailSprites.Count ? remoteTailSprites[index] : null);
                 var tailRootCount = reader.ReadUInt16();
-                for (var index = 0; index < tailRootCount; index++) SkipBody(reader);
+                for (var index = 0; index < tailRootCount; index++)
+                    ReadTailTarget(reader,
+                        index < remoteTails.Length ? remoteTails[index] : null,
+                        index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null);
                 if (remoteVehicleAttached)
                 {
                     ApplyVehicleWorldTransform(reader, remoteBody.Arms, sourceVehicleRoot, sourceVehicleRotation);
@@ -1254,8 +1233,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                         appliedInventory = inventoryKey;
                     }
                 }
-                var remoteLaser = GetFieldValue<LineRenderer>(remoteBody, "wepLaserLine");
-                ReadLineState(reader, remoteLaser, GetFieldValue<GameObject>(remoteBody, "wepLaser"));
+                var remoteLaser = remoteBody.wepLaserLine;
+                ReadLineState(reader, remoteLaser, remoteBody.wepLaser);
                 ReadLineState(reader, remoteLevitLine, remoteLevitLine == null ? null : remoteLevitLine.gameObject);
                 ReadScarfState(reader);
                 if (reader.ReadBoolean()) ReadVisualState(reader, remoteBody.transform);
@@ -1580,7 +1559,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var limb = limbs[limbIndex] as LimbScript;
             var preset = FindWeaponPreset(weaponSprite);
-            if (limb != null && preset != null && DoWoundMethod != null)
+            if (limb != null && preset != null)
             {
                 GameObject sourceObject = null;
                 try
@@ -1591,10 +1570,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     sourceWeapon.stats = preset;
                     sourceWeapon.body = body;
                     var hitPoint = (Vector2)limb.transform.TransformPoint(localPoint);
-                    DoWoundMethod.Invoke(sourceWeapon, new object[]
-                    {
-                        limb, hitPoint, direction, hasSplash ? preset.bloodSplash : null
-                    });
+                    sourceWeapon.DoWound(limb, hitPoint, direction,
+                        hasSplash ? preset.bloodSplash : null);
                     if (!string.IsNullOrEmpty(woundSprite))
                     {
                         var wound = FindLatestWound(limb, hitPoint);
@@ -1602,7 +1579,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                         if (wound != null && sprite != null) wound.sprite = sprite;
                     }
                 }
-                catch (TargetInvocationException exception)
+                catch (Exception exception)
                 {
                     Debug.LogWarning("[Gunsaw MP] Could not replay player wound: " +
                         (exception.InnerException == null ? exception.Message : exception.InnerException.Message));
@@ -1942,12 +1919,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static void EnsurePlayerAmmoDisplaySlots(PlayerScript player)
     {
         if (player == null || player.bodyScript == null) return;
-        var ammoTexts = PlayerAmmoTextsField == null
-            ? null : PlayerAmmoTextsField.GetValue(player);
-        var ammoArray = ammoTexts as Array;
-        var ammoCollection = ammoTexts as ICollection;
-        var required = ammoArray != null ? ammoArray.Length
-            : ammoCollection == null ? 0 : ammoCollection.Count;
+        var ammoTexts = player.ammoTexts;
+        var required = ammoTexts == null ? 0 : ammoTexts.Count;
         if (required <= 0) return;
         if (player.bodyScript.ammoAmount == null)
             player.bodyScript.ammoAmount = new List<int>();
@@ -2388,6 +2361,265 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
+    internal static void ReplicateVelvetWeb(VelvetScript velvet)
+    {
+        if (!MultiplayerSession.IsConnected || velvet == null) return;
+        var body = velvet.GetComponent<BodyScript>();
+        var player = PlayerScript.player;
+        if (body == null || player == null || body != player.bodyScript || body.headTransform == null) return;
+        WebScript web = null;
+        var origin = (Vector2)body.headTransform.position - (Vector2)body.headTransform.up * 0.2f;
+        foreach (var candidate in FindObjectsOfType<WebScript>())
+        {
+            if (candidate == null || localVelvetWebs.Contains(candidate) ||
+                ((Vector2)candidate.transform.position - origin).sqrMagnitude > 1f) continue;
+            web = candidate;
+            break;
+        }
+        if (web == null) return;
+        localVelvetWebs.Add(web);
+        localVelvetWebs.RemoveWhere(candidate => candidate == null);
+        var direction = (Vector2)web.transform.right;
+        if (direction.sqrMagnitude < 0.01f) return;
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(web.transform.position.x);
+            writer.Write(web.transform.position.y);
+            writer.Write(direction.normalized.x);
+            writer.Write(direction.normalized.y);
+            MultiplayerSession.SendVelvetWeb(stream.ToArray());
+        }
+    }
+
+    internal static void ReplicateTeleportZone(TeleportZone zone, int activationId)
+    {
+        if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId || zone.teleportPoint == null)
+            return;
+        var collider = zone.GetComponent<BoxCollider2D>();
+        if (collider == null) return;
+        var teleported = new HashSet<BodyScript>();
+        foreach (var candidate in Physics2D.OverlapBoxAll(zone.transform.position, collider.size,
+            zone.transform.eulerAngles.z))
+        {
+            BodyScript body;
+            if (!candidate.TryGetComponent(out body))
+            {
+                LimbScript limb;
+                if (!candidate.TryGetComponent(out limb) || limb == null) continue;
+                body = limb.body;
+            }
+            if (body == null || !teleported.Add(body)) continue;
+        }
+        foreach (var replica in replicas.Values)
+        {
+            if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0) continue;
+            if (!teleported.Contains(replica.remoteBody) &&
+                !IsInsideTeleportZone(replica.remoteBody, zone.transform, collider)) continue;
+            using (var stream = new MemoryStream())
+            using (var writer = new BinaryWriter(stream))
+            {
+                writer.Write(zone.teleportPoint.position.x);
+                writer.Write(zone.teleportPoint.position.y);
+                MultiplayerSession.SendPlayerTeleport(replica.remotePeerId, stream.ToArray());
+            }
+        }
+    }
+
+    internal static List<BodyScript> SuppressRemoteTeleportEffects(TeleportZone zone, int activationId)
+    {
+        var suppressed = new List<BodyScript>();
+        if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId) return suppressed;
+        var collider = zone.GetComponent<BoxCollider2D>();
+        if (collider == null) return suppressed;
+        foreach (var replica in replicas.Values)
+        {
+            var body = replica == null ? null : replica.remoteBody;
+            if (body == null || !body.isPlayer || !IsInsideTeleportZone(body, zone.transform, collider)) continue;
+            body.isPlayer = false;
+            suppressed.Add(body);
+        }
+        return suppressed;
+    }
+
+    internal static void RestoreRemoteTeleportEffects(List<BodyScript> suppressed)
+    {
+        if (suppressed == null) return;
+        foreach (var body in suppressed)
+            if (body != null) body.isPlayer = true;
+    }
+
+    private static bool IsInsideTeleportZone(BodyScript body, Transform zone, BoxCollider2D collider)
+    {
+        if (IsInsideTeleportZone(body.transform.position, zone, collider)) return true;
+        foreach (var limb in body.GetComponentsInChildren<LimbScript>(true))
+            if (limb != null && IsInsideTeleportZone(limb.transform.position, zone, collider)) return true;
+        return false;
+    }
+
+    private static bool IsInsideTeleportZone(Vector3 point, Transform zone, BoxCollider2D collider)
+    {
+        var localPoint = (Vector2)zone.InverseTransformPoint(point) - collider.offset;
+        var halfSize = collider.size * 0.5f;
+        return Mathf.Abs(localPoint.x) <= halfSize.x && Mathf.Abs(localPoint.y) <= halfSize.y;
+    }
+
+    private static void ApplyRemoteTeleport(BodyScript body, byte[] data)
+    {
+        if (body == null || data == null || MultiplayerSession.IsHost) return;
+        try
+        {
+            using (var reader = new BinaryReader(new MemoryStream(data)))
+            {
+                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                if (!IsFinite(position.x) || !IsFinite(position.y)) return;
+                body.transform.position = position;
+                if (CameraFollow.cam != null) CameraFollow.cam.CenterToPlayer();
+                if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
+                foreach (var unloader in FindObjectsOfType<ObjectUnloader>())
+                    if (unloader != null) unloader.CheckDistance();
+                var sound = Resources.Load<AudioClip>("Sounds/Teleport");
+                if (sound != null) Sound.Play(sound, position, false, false);
+            }
+        }
+        catch (EndOfStreamException) { }
+        catch (IOException) { }
+    }
+
+    private void PlayRemoteVelvetWeb(byte[] data)
+    {
+        if (data == null || remoteBody == null) return;
+        try
+        {
+            using (var reader = new BinaryReader(new MemoryStream(data)))
+            {
+                var origin = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                var direction = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                if (!IsFinite(origin.x) || !IsFinite(origin.y) || !IsFinite(direction.x) ||
+                    !IsFinite(direction.y) || direction.sqrMagnitude < 0.01f) return;
+                var velvet = remoteBody.GetComponent<VelvetScript>();
+                var prefab = velvet == null ? null : velvet.spawnPrefab;
+                if (prefab == null) return;
+                var visual = Instantiate(prefab, origin, Quaternion.identity);
+                var web = visual.GetComponent<WebScript>();
+                if (web == null)
+                {
+                    Destroy(visual);
+                    return;
+                }
+                var speed = web.speed;
+                var groundSprite = web.groundSprite;
+                var bodySprite = web.bodySprite;
+                visual.name = "MP Velvet Web";
+                visual.transform.right = direction.normalized;
+                foreach (var behaviour in visual.GetComponentsInChildren<MonoBehaviour>(true)) behaviour.enabled = false;
+                foreach (var collider in visual.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
+                foreach (var rigidbody in visual.GetComponentsInChildren<Rigidbody2D>(true)) rigidbody.simulated = false;
+                foreach (var source in visual.GetComponentsInChildren<AudioSource>(true)) source.enabled = false;
+                var splash = Resources.Load<GameObject>("Spawnables/WebSplashSpit");
+                if (splash != null)
+                {
+                    var effect = Instantiate(splash, origin, Quaternion.identity);
+                    effect.transform.right = direction.normalized;
+                    Destroy(effect, 10f);
+                }
+                var sound = Resources.Load<AudioClip>("Sounds/spit");
+                if (sound != null) Sound.Play(sound, origin);
+                StartCoroutine(MoveRemoteVelvetWeb(visual, direction.normalized, speed,
+                    groundSprite, bodySprite, remoteBody));
+            }
+        }
+        catch (EndOfStreamException) { }
+        catch (IOException) { }
+    }
+
+    private static IEnumerator MoveRemoteVelvetWeb(GameObject visual, Vector2 direction, float speed,
+        Sprite groundSprite, Sprite bodySprite, BodyScript ignoredBody)
+    {
+        var downwardVelocity = 0f;
+        var remaining = 5f;
+        while (visual != null && remaining > 0f)
+        {
+            visual.transform.position += visual.transform.right * speed * Time.deltaTime;
+            downwardVelocity += Time.deltaTime * Physics2D.gravity.y * 0.1f;
+            visual.transform.position += Vector3.up * downwardVelocity * Time.deltaTime;
+            var velocity = ((Vector2)visual.transform.right * speed + Vector2.up * downwardVelocity).normalized;
+            visual.transform.right = velocity;
+            visual.transform.eulerAngles -= new Vector3(0f, 0f, Time.deltaTime * 10f);
+            RaycastHit2D hit = default(RaycastHit2D);
+            foreach (var candidate in Physics2D.RaycastAll(visual.transform.position, visual.transform.right, 1f))
+            {
+                if (candidate.collider == null || candidate.collider.isTrigger) continue;
+                var body = candidate.collider.GetComponentInParent<BodyScript>();
+                var limb = candidate.collider.GetComponentInParent<LimbScript>();
+                var hitBody = body ?? (limb == null ? null : limb.body);
+                if (hitBody != null && (hitBody == ignoredBody || hitBody.team == ignoredBody.team)) continue;
+                if (candidate.collider.gameObject.layer != LayerMask.NameToLayer("Ground") &&
+                    body == null && limb == null) continue;
+                hit = candidate;
+                break;
+            }
+            if (hit.collider != null)
+            {
+                CreateRemoteVelvetWebImpact(visual, hit, groundSprite, bodySprite);
+                yield break;
+            }
+            remaining -= Time.deltaTime;
+            yield return null;
+        }
+        if (visual != null) Destroy(visual);
+    }
+
+    private static void CreateRemoteVelvetWebImpact(GameObject visual, RaycastHit2D hit,
+        Sprite groundSprite, Sprite bodySprite)
+    {
+        var splash = Resources.Load<GameObject>("Spawnables/WebSplashHit");
+        if (splash != null) Destroy(Instantiate(splash, hit.point, Quaternion.identity), 10f);
+        var renderer = visual.GetComponent<SpriteRenderer>();
+        var limb = hit.collider.GetComponentInParent<LimbScript>();
+        var onGround = hit.collider.gameObject.layer == LayerMask.NameToLayer("Ground");
+        if (onGround)
+        {
+            visual.transform.position = hit.point;
+            visual.transform.up = hit.normal;
+            visual.transform.SetParent(hit.collider.transform, true);
+            if (renderer != null)
+            {
+                renderer.sprite = groundSprite;
+                renderer.flipX = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+            }
+        }
+        else if (limb != null)
+        {
+            visual.transform.SetParent(limb.transform, false);
+            visual.transform.localPosition = new Vector2(UnityEngine.Random.Range(-0.1f, 0.1f),
+                UnityEngine.Random.Range(-0.1f, 0.1f));
+            visual.transform.localScale = new Vector2(UnityEngine.Random.Range(0.7f, 1.3f),
+                UnityEngine.Random.Range(0.7f, 1.3f));
+            visual.transform.eulerAngles = new Vector3(0f, 0f, UnityEngine.Random.Range(0f, 360f));
+            if (renderer != null)
+            {
+                var limbRenderer = limb.GetComponent<SpriteRenderer>();
+                renderer.sprite = bodySprite;
+                renderer.flipX = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+                renderer.flipY = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+                if (limbRenderer != null)
+                {
+                    renderer.sortingLayerID = limbRenderer.sortingLayerID;
+                    renderer.sortingOrder = limbRenderer.sortingOrder + 1;
+                }
+            }
+        }
+        else
+        {
+            Destroy(visual);
+            return;
+        }
+        var sound = Resources.Load<AudioClip>("Sounds/webSplat");
+        if (sound != null) Sound.Play(sound, visual.transform.position);
+        Destroy(visual, 20f);
+    }
+
     internal static void ReplicateExplosionImpulse(GameObject explosionObject, Vector2 position,
         float range, float force)
     {
@@ -2450,14 +2682,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static BodyScript ProjectileOwner(GameObject projectile)
     {
         if (projectile == null) return null;
-        foreach (var component in projectile.GetComponents<Component>())
-        {
-            if (component == null) continue;
-            var field = AccessTools.Field(component.GetType(), "origBody");
-            if (field != null && typeof(BodyScript).IsAssignableFrom(field.FieldType))
-                return field.GetValue(component) as BodyScript;
-        }
-        return null;
+        var rocket = projectile.GetComponentInChildren<RocketProjectile>(true);
+        if (rocket != null) return rocket.origBody;
+        var grenade = projectile.GetComponentInChildren<GrenadeScript>(true);
+        return grenade == null ? null : grenade.origBody;
     }
 
     internal static void CompleteWeaponShot(ShotState state, bool completed)
@@ -3031,7 +3259,35 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static void WriteBody(BinaryWriter writer, Rigidbody2D body)
     {
+        if (body == null)
+        {
+            writer.Write(0f); writer.Write(0f); writer.Write(0f);
+            return;
+        }
         writer.Write(body.position.x); writer.Write(body.position.y); writer.Write(body.rotation);
+    }
+
+    private static void WriteTailTransform(BinaryWriter writer, Rigidbody2D reference,
+        Transform transform, float rotation)
+    {
+        if (reference == null || transform == null)
+        {
+            writer.Write(0f); writer.Write(0f); writer.Write(0f); writer.Write(false);
+            return;
+        }
+        var delta = (Vector2)transform.position - reference.position;
+        writer.Write(delta.x);
+        writer.Write(delta.y);
+        writer.Write(Mathf.DeltaAngle(reference.rotation, rotation));
+        var renderers = transform.GetComponentsInChildren<SpriteRenderer>(true);
+        var sprite = renderers.Length == 0 ? null : renderers[0];
+        writer.Write(sprite != null && sprite.transform.lossyScale.y < 0f);
+        writer.Write((byte)renderers.Length);
+        foreach (var renderer in renderers)
+        {
+            var color = (Color32)renderer.color;
+            writer.Write(color.r); writer.Write(color.g); writer.Write(color.b); writer.Write(color.a);
+        }
     }
 
     private Vector2 SetTarget(BinaryReader reader, Rigidbody2D body)
@@ -3039,10 +3295,22 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
         var rotation = Quaternion.Euler(0f, 0f, reader.ReadSingle());
         if (body == null) return position;
+        SetTailTarget(body, position, rotation);
+        return position;
+    }
 
+    private void SetTailTarget(Rigidbody2D body, Vector2 position, Quaternion rotation)
+    {
         var now = Time.unscaledTime;
         TargetState previous;
         var hasPrevious = targets.TryGetValue(body, out previous);
+        if (hasPrevious)
+        {
+            var previousAngle = previous.rotation.eulerAngles.z;
+            var angle = rotation.eulerAngles.z;
+            rotation = Quaternion.Euler(0f, 0f,
+                previousAngle + Mathf.DeltaAngle(previousAngle, angle));
+        }
         if (!receivedFirstSnapshot || !hasPrevious)
         {
             body.transform.position = position;
@@ -3057,7 +3325,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 receivedAt = now,
                 duration = CurrentSnapshotInterval()
             };
-            return position;
+            return;
         }
 
         var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
@@ -3072,7 +3340,53 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             receivedAt = now,
             duration = arrivalInterval
         };
-        return position;
+    }
+
+    private void ReadTailTarget(BinaryReader reader, Rigidbody2D body, SpriteRenderer[] sprites)
+    {
+        var delta = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        var deltaAngle = reader.ReadSingle();
+        ApplyTailSpriteFlip(sprites, reader.ReadBoolean());
+        ApplyTailSpriteColor(sprites, reader);
+        if (body == null) return;
+        SetTailTarget(body, lastAuthoritativePosition + delta,
+            Quaternion.Euler(0f, 0f, remoteBody.rb.rotation + deltaAngle));
+    }
+
+    private void ReadTailTarget(BinaryReader reader, Transform transform, SpriteRenderer[] sprites)
+    {
+        var delta = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        var deltaAngle = reader.ReadSingle();
+        ApplyTailSpriteFlip(sprites, reader.ReadBoolean());
+        ApplyTailSpriteColor(sprites, reader);
+        if (transform == null) return;
+        SetWorldTarget(transform, new TargetState
+        {
+            position = new Vector3(lastAuthoritativePosition.x + delta.x,
+                lastAuthoritativePosition.y + delta.y, transform.position.z),
+            rotation = Quaternion.Euler(0f, 0f, remoteBody.rb.rotation + deltaAngle)
+        });
+    }
+
+    private static void ApplyTailSpriteFlip(SpriteRenderer[] sprites, bool flipped)
+    {
+        var sprite = sprites.Length == 0 ? null : sprites[0];
+        if (sprite == null) return;
+        var scale = sprite.transform.localScale;
+        if ((scale.y < 0f) == flipped) return;
+        scale.y = -scale.y;
+        sprite.transform.localScale = scale;
+    }
+
+    private static void ApplyTailSpriteColor(SpriteRenderer[] sprites, BinaryReader reader)
+    {
+        var count = reader.ReadByte();
+        for (var index = 0; index < count; index++)
+        {
+            var color = (Color)new Color32(reader.ReadByte(), reader.ReadByte(),
+                reader.ReadByte(), reader.ReadByte());
+            if (index < sprites.Length && sprites[index] != null) sprites[index].color = color;
+        }
     }
 
     private static void SkipBody(BinaryReader reader)
@@ -3082,29 +3396,26 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static IList GetList(BodyScript body, string name)
     {
-        var field = GetBodyField(name);
-        return field == null ? new ArrayList() : (IList)field.GetValue(body);
+        if (body == null) return new ArrayList();
+        switch (name)
+        {
+            case "limbs": return body.limbs ?? new List<LimbScript>();
+            case "tailBases": return body.tailBases ?? new List<Rigidbody2D>();
+            case "weapons": return body.weapons ?? new List<WeaponPreset>();
+            default: return new ArrayList();
+        }
     }
 
     private static Transform[] GetTransforms(BodyScript body, string name)
     {
-        var field = GetBodyField(name);
-        return field == null ? new Transform[0] : (Transform[])field.GetValue(body);
+        return body != null && name == "tails" && body.tails != null ? body.tails : new Transform[0];
     }
 
     private static Transform GetTransform(BodyScript body, string name)
     {
-        var field = GetBodyField(name);
-        return field == null ? null : (Transform)field.GetValue(body);
-    }
-
-    private static FieldInfo GetBodyField(string name)
-    {
-        FieldInfo field;
-        if (bodyFieldCache.TryGetValue(name, out field)) return field;
-        field = typeof(BodyScript).GetField(name);
-        bodyFieldCache[name] = field;
-        return field;
+        if (body == null) return null;
+        return name == "gunTransform" ? body.gunTransform :
+            name == "gunAnimTransform" ? body.gunAnimTransform : null;
     }
 
     private static void WriteWorldTransforms(BinaryWriter writer, Transform[] transforms)
@@ -3175,6 +3486,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         WorldTargetState previous;
         var firstTarget = !worldTargets.TryGetValue(transform, out previous);
         target.position.z = transform.position.z;
+        if (!firstTarget)
+        {
+            var previousAngle = previous.rotation.eulerAngles.z;
+            var angle = target.rotation.eulerAngles.z;
+            target.rotation = Quaternion.Euler(0f, 0f,
+                previousAngle + Mathf.DeltaAngle(previousAngle, angle));
+        }
         var now = Time.unscaledTime;
         if (!receivedFirstSnapshot || firstTarget)
         {
@@ -3326,14 +3644,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (renderer == null)
             {
                 writer.Write(false);
-                writer.Write("");
                 WriteColor(writer, Color.white);
                 writer.Write(false);
                 writer.Write(false);
                 continue;
             }
             writer.Write(renderer.enabled && renderer.gameObject.activeInHierarchy);
-            writer.Write(SpriteId(renderer.sprite));
             WriteColor(writer, renderer.color);
             writer.Write(renderer.flipX);
             writer.Write(renderer.flipY);
@@ -3359,8 +3675,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
             var behaviour = light as Behaviour;
             writer.Write(behaviour == null || behaviour.enabled && light.gameObject.activeInHierarchy);
-            writer.Write(GetComponentProperty(light, "intensity", 0f));
-            WriteColor(writer, GetComponentProperty(light, "color", Color.white));
+            var light2D = light as UnityEngine.Experimental.Rendering.Universal.Light2D;
+            writer.Write(light2D == null ? 0f : light2D.intensity);
+            WriteColor(writer, light2D == null ? Color.white : light2D.color);
         }
     }
 
@@ -3373,27 +3690,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var path = reader.ReadString();
             var visible = reader.ReadBoolean();
-            var spriteId = reader.ReadString();
             var color = ReadColor(reader);
             var flipX = reader.ReadBoolean();
             var flipY = reader.ReadBoolean();
             SpriteRenderer renderer;
             if (!remoteVisualLayout.RenderersByPath.TryGetValue(path, out renderer) || renderer == null) continue;
-            TailVisualState tailVisual;
-            var targetRenderer = renderer;
-            if (tailVisuals.TryGetValue(renderer, out tailVisual))
-            {
-                tailVisual.visible = visible;
-                renderer.enabled = false;
-                targetRenderer = tailVisual.renderer;
-            }
-            else renderer.enabled = visible;
-            if (targetRenderer == null) continue;
-            targetRenderer.enabled = visible;
-            if (SpriteId(targetRenderer.sprite) != spriteId) targetRenderer.sprite = FindSprite(spriteId);
-            targetRenderer.color = color;
-            targetRenderer.flipX = flipX;
-            targetRenderer.flipY = flipY;
+            renderer.enabled = visible;
+            renderer.color = color;
+            renderer.flipX = flipX;
+            renderer.flipY = flipY;
         }
 
         var lightCount = reader.ReadUInt16();
@@ -3407,8 +3712,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (!remoteVisualLayout.LightsByPath.TryGetValue(path, out light) || light == null) continue;
             var behaviour = light as Behaviour;
             if (behaviour != null) behaviour.enabled = visible;
-            SetComponentProperty(light, "intensity", intensity);
-            SetComponentProperty(light, "color", color);
+            var light2D = light as UnityEngine.Experimental.Rendering.Universal.Light2D;
+            if (light2D != null)
+            {
+                light2D.intensity = intensity;
+                light2D.color = color;
+            }
         }
         HideChildrenOfDisabledHeadAccessories(root);
     }
@@ -3434,469 +3743,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private void CreateTailVisuals()
-    {
-        tailAttachments.Clear();
-        tailVisuals.Clear();
-        proceduralTailBones.Clear();
-        tailFacingCaptured = false;
-        if (tailVisualRoot != null) Destroy(tailVisualRoot);
-        tailVisualRoot = null;
-        if (remoteBody == null) return;
-
-        var tails = GetTransforms(remoteBody, "tails");
-        if (tails.Length == 0) return;
-
-        var validTails = new List<Transform>();
-        foreach (var tail in tails)
-            if (!IsCoreBodyTransform(tail)) validTails.Add(tail);
-        if (validTails.Count == 0) return;
-        tails = validTails.ToArray();
-        var tailAnchor = remoteBody.mainTorso != null ? remoteBody.mainTorso.transform :
-            remoteBody.rb == null ? null : remoteBody.rb.transform;
-        foreach (var tail in tails)
-            CacheProceduralTailRoot(tail, tailAnchor);
-
-        var tailBodies = GetList(remoteBody, "tailBases");
-        for (var index = 0; index < tailBodies.Count; index++)
-        {
-            var body = tailBodies[index] as Rigidbody2D;
-            if (body != null) CacheProceduralTailBody(body, index, tailBodies.Count);
-        }
-        proceduralTailTime = 0f;
-        proceduralTailForce = 0f;
-        proceduralTailVelocity = Vector2.zero;
-        hasProceduralTailPosition = false;
-
-        tailVisualRoot = new GameObject("MP Remote Tail Visuals");
-        var claimed = new HashSet<SpriteRenderer>();
-        var claimedBones = new HashSet<Transform>();
-        var boneIndex = 1;
-        foreach (var tail in tails)
-        {
-            if (tail == null) continue;
-            foreach (var source in tail.GetComponentsInChildren<SpriteRenderer>(true))
-            {
-                if (source == null || IsCoreBodyTransform(source.transform) || !claimed.Add(source)) continue;
-                if (claimedBones.Add(source.transform))
-                {
-                    proceduralTailBones.Add(new ProceduralTailBoneState
-                    {
-                        transform = source.transform,
-                        index = boneIndex++,
-                        baseAngle = remoteBody.isRight ? 0f : 180f
-                    });
-                }
-                var visual = new GameObject("MP Tail " + source.name);
-                visual.layer = source.gameObject.layer;
-                visual.transform.SetParent(tailVisualRoot.transform, false);
-                var renderer = visual.AddComponent<SpriteRenderer>();
-                renderer.sharedMaterial = source.sharedMaterial;
-                renderer.sprite = source.sprite;
-                renderer.color = source.color;
-                renderer.flipX = source.flipX;
-                renderer.flipY = source.flipY;
-                renderer.sortingLayerID = source.sortingLayerID;
-                renderer.sortingOrder = source.sortingOrder;
-                tailVisuals[source] = new TailVisualState
-                {
-                    renderer = renderer,
-                    visible = source.enabled && source.gameObject.activeInHierarchy,
-                    tailRoot = tail,
-                    initialFacingRight = remoteBody.isRight,
-                    initiallyReflected = TailTransformIsReflected(source.transform)
-                };
-                source.enabled = false;
-            }
-        }
-        UpdateTailVisuals();
-    }
-
-    private bool IsCoreBodyTransform(Transform transform)
-    {
-        if (transform == null || remoteBody == null) return true;
-        if (transform == remoteBody.transform || transform == remoteBody.transform.root) return true;
-        if (remoteBody.mainTorso != null && transform == remoteBody.mainTorso.transform) return true;
-        if (remoteBody.headTransform != null && transform == remoteBody.headTransform) return true;
-        return transform.GetComponent<BodyScript>() != null || transform.GetComponent<LimbScript>() != null;
-    }
-
-    private void CacheProceduralTailRoot(Transform transform, Transform anchor)
-    {
-        if (transform == null) return;
-        TailAttachmentState attachment;
-        if (!tailAttachments.TryGetValue(transform, out attachment))
-        {
-            attachment = new TailAttachmentState
-            {
-                body = transform.GetComponent<Rigidbody2D>(),
-                localPosition = transform.localPosition,
-                segmentIndex = -1,
-                segmentCount = 1
-            };
-            tailAttachments[transform] = attachment;
-        }
-        if (anchor == null) return;
-        attachment.anchor = anchor;
-        attachment.anchorLocalPosition = anchor.InverseTransformPoint(transform.position);
-        attachment.anchorLocalRotation = Quaternion.Inverse(anchor.rotation) * transform.rotation;
-    }
-
-    private void CacheProceduralTailBody(Rigidbody2D body, int index, int count)
-    {
-        TailAttachmentState attachment;
-        if (!tailAttachments.TryGetValue(body.transform, out attachment))
-        {
-            attachment = new TailAttachmentState
-            {
-                localPosition = body.transform.localPosition
-            };
-            tailAttachments[body.transform] = attachment;
-        }
-        attachment.body = body;
-        attachment.segmentIndex = index;
-        attachment.segmentCount = Mathf.Max(1, count);
-    }
-
-    private void UpdateProceduralTail()
-    {
-        if (remoteBody == null || remoteBody.rb == null || tailAttachments.Count == 0) return;
-        var deltaTime = Mathf.Clamp(Time.unscaledDeltaTime, 0.0001f, 0.05f);
-        var currentPosition = remoteBody.rb.position;
-        if (hasProceduralTailPosition)
-        {
-            var measuredVelocity = (currentPosition - lastProceduralTailPosition) / deltaTime;
-            if (measuredVelocity.sqrMagnitude < 2500f)
-            {
-                var velocityAlpha = 1f - Mathf.Exp(-deltaTime * 8f);
-                proceduralTailVelocity = Vector2.Lerp(proceduralTailVelocity, measuredVelocity, velocityAlpha);
-            }
-        }
-        else hasProceduralTailPosition = true;
-        lastProceduralTailPosition = currentPosition;
-
-        var bobSpeed = remoteBody.tailBobSpeed;
-        proceduralTailTime += deltaTime * bobSpeed * (remoteBody.isCrouching ? 0.5f : 1f);
-        if (Mathf.Abs(proceduralTailVelocity.y) < 0.75f)
-            proceduralTailForce += deltaTime;
-        proceduralTailForce = Mathf.Clamp01(proceduralTailForce);
-
-        var torsoAngle = remoteBody.mainTorso != null
-            ? remoteBody.mainTorso.rotation
-            : remoteBody.rb.rotation;
-        var inverseTorso = Quaternion.Euler(0f, 0f, -torsoAngle);
-        var localVelocity3 = inverseTorso * new Vector3(proceduralTailVelocity.x, proceduralTailVelocity.y, 0f);
-        var localVelocity = new Vector2(localVelocity3.x, localVelocity3.y);
-        var stale = new List<Transform>();
-        var ordered = new List<KeyValuePair<Transform, TailAttachmentState>>(tailAttachments);
-        ordered.Sort((left, right) => TransformDepth(left.Key).CompareTo(TransformDepth(right.Key)));
-        foreach (var pair in ordered)
-        {
-            var transform = pair.Key;
-            var attachment = pair.Value;
-            if (transform == null || attachment == null)
-            {
-                stale.Add(transform);
-                continue;
-            }
-
-            if (attachment.anchor != null)
-                transform.position = attachment.anchor.TransformPoint(attachment.anchorLocalPosition);
-            else transform.localPosition = attachment.localPosition;
-
-            var anchoredRotation = attachment.anchor != null
-                ? attachment.anchor.rotation * attachment.anchorLocalRotation
-                : Quaternion.Euler(0f, 0f, torsoAngle);
-            transform.rotation = anchoredRotation;
-            if (attachment.body != null)
-            {
-                attachment.body.position = transform.position;
-                attachment.body.rotation = transform.eulerAngles.z;
-            }
-        }
-        foreach (var transform in stale) tailAttachments.Remove(transform);
-
-        UpdateOriginalTailBob(deltaTime, localVelocity);
-    }
-
-    // FIX TAIL TODO
-    private void UpdateOriginalTailBob(float deltaTime, Vector2 localVelocity)
-    {
-        if (proceduralTailBones.Count == 0 || proceduralTailForce <= 0.5f) return;
-
-        var bobForce = Mathf.Max(0f, Mathf.Abs(remoteBody.tailBobForce));
-        var rotationAlpha = Mathf.Clamp01(4f * deltaTime * bobForce * proceduralTailForce);
-        var walkLag = Mathf.Clamp(-localVelocity.y * 2.5f, -12f, 12f);
-
-        for (var position = 0; position < proceduralTailBones.Count; position++)
-        {
-            var bone = proceduralTailBones[position];
-            if (bone == null || bone.transform == null) continue;
-
-            var delay = bone.index > 3 ? 2f : 0f;
-            float phase;
-            if (bone.index % 3 == 0) phase = proceduralTailTime - 1.35f + delay;
-            else if (bone.index == 0) phase = proceduralTailTime - 0.5f + delay;
-            else phase = proceduralTailTime + delay;
-
-            var wave = (Mathf.PingPong(phase, 2f) - 1f) * 50f;
-            var lagRatio = proceduralTailBones.Count <= 1
-                ? 0f
-                : position / (float)(proceduralTailBones.Count - 1);
-            var targetAngle = bone.baseAngle + wave + walkLag * lagRatio;
-            var currentAngle = bone.transform.eulerAngles.z;
-            var smoothedAngle = Mathf.LerpAngle(currentAngle, targetAngle, rotationAlpha);
-            bone.transform.rotation = Quaternion.Euler(0f, 0f, smoothedAngle);
-        }
-    }
-
-    private void UpdateTailVisuals()
-    {
-        if (tailVisuals.Count == 0) return;
-        if (!receivedFirstSnapshot)
-        {
-            foreach (var pending in tailVisuals)
-                if (pending.Value != null && pending.Value.renderer != null)
-                    pending.Value.renderer.enabled = false;
-            return;
-        }
-        if (!tailFacingCaptured)
-        {
-            tailFacingCaptured = true;
-            foreach (var pending in tailVisuals)
-                if (pending.Value != null && remoteBody != null)
-                    pending.Value.initialFacingRight = remoteBody.isRight;
-        }
-        var stale = new List<SpriteRenderer>();
-        foreach (var pair in tailVisuals)
-        {
-            var source = pair.Key;
-            var visual = pair.Value;
-            if (source == null || visual == null || visual.renderer == null)
-            {
-                stale.Add(source);
-                continue;
-            }
-            source.enabled = false;
-            visual.renderer.enabled = visual.visible;
-            var mirrorHorizontally = remoteBody != null &&
-                remoteBody.isRight != visual.initialFacingRight;
-            visual.lastReflected = TailTransformIsReflected(source.transform) ^ mirrorHorizontally;
-            ApplyTailVisualTransform2D(
-                source.transform,
-                visual.renderer.transform,
-                visual.tailRoot,
-                mirrorHorizontally);
-            visual.renderer.sortingLayerID = source.sortingLayerID;
-            visual.renderer.sortingOrder = source.sortingOrder;
-        }
-        foreach (var source in stale) tailVisuals.Remove(source);
-    }
-
-    private static bool TailTransformIsReflected(Transform transform)
-    {
-        var right = transform.TransformVector(Vector3.right);
-        var up = transform.TransformVector(Vector3.up);
-        return right.x * up.y - right.y * up.x < 0f;
-    }
-
-    private static void ApplyTailVisualTransform2D(
-        Transform source,
-        Transform visual,
-        Transform tailRoot,
-        bool mirrorHorizontally)
-    {
-        var right = source.TransformVector(Vector3.right);
-        var up = source.TransformVector(Vector3.up);
-        var position = source.position;
-
-        if (mirrorHorizontally)
-        {
-            var pivotX = tailRoot != null ? tailRoot.position.x : position.x;
-            position.x = pivotX - (position.x - pivotX);
-            right.x = -right.x;
-            up.x = -up.x;
-        }
-
-        var scaleX = new Vector2(right.x, right.y).magnitude;
-        var scaleY = new Vector2(up.x, up.y).magnitude;
-        var determinant = right.x * up.y - right.y * up.x;
-        var angle = scaleX > 0.0001f
-            ? Mathf.Atan2(right.y, right.x) * Mathf.Rad2Deg
-            : Mathf.Atan2(-up.x, up.y) * Mathf.Rad2Deg;
-        if (determinant < 0f) scaleY = -scaleY;
-
-        visual.position = position;
-        visual.rotation = Quaternion.Euler(0f, 0f, angle);
-        visual.localScale = new Vector3(scaleX, scaleY, 1f);
-    }
-
-    private void ObserveLocalTail(BodyScript body)
-    {
-        if (body == null) return;
-        if (!localTailFacingKnown)
-        {
-            localTailFacingKnown = true;
-            lastLocalTailFacing = body.isRight;
-            localTailDebugFrames = 4;
-            WriteTailDiagnostics("LOCAL INITIAL", body, false);
-        }
-        else if (lastLocalTailFacing != body.isRight)
-        {
-            WriteTailDiagnostics("LOCAL FLIP", body, false);
-            lastLocalTailFacing = body.isRight;
-            localTailDebugFrames = 12;
-        }
-        if (localTailDebugFrames <= 0) return;
-        WriteTailDiagnostics("LOCAL FRAME", body, false);
-        localTailDebugFrames--;
-    }
-
-    private void WriteTailDiagnostics(string label, BodyScript body, bool includeReplicaVisuals)
-    {
-        if (string.IsNullOrEmpty(tailDiagnosticPath) || body == null) return;
-        var builder = new StringBuilder(4096);
-        builder.Append("\n--- #").Append(++tailDebugSequence)
-            .Append(' ').Append(label)
-            .Append(" frame=").Append(Time.frameCount)
-            .Append(" time=").Append(Time.unscaledTime.ToString("F3"))
-            .Append(" host=").Append(MultiplayerSession.IsHost)
-            .Append(" isRight=").Append(body.isRight)
-            .Append(" prefab=").Append(body.transform.root.name)
-            .AppendLine(" ---");
-        builder.Append("procedural velocity=").Append(FormatVector2(proceduralTailVelocity))
-            .Append(" phase=").Append(proceduralTailTime.ToString("F3"))
-            .Append(" attachments=").Append(tailAttachments.Count)
-            .Append(" visuals=").Append(tailVisuals.Count)
-            .AppendLine();
-        AppendTailTransform(builder, "body", body.transform);
-        if (body.rb != null)
-            builder.Append("body.rb pos=").Append(FormatVector2(body.rb.position))
-                .Append(" rot=").Append(body.rb.rotation.ToString("F3"))
-                .Append(" vel=").Append(FormatVector2(body.rb.velocity))
-                .AppendLine();
-        if (body.mainTorso != null)
-        {
-            AppendTailTransform(builder, "torso", body.mainTorso.transform);
-            builder.Append("torso.rb pos=").Append(FormatVector2(body.mainTorso.position))
-                .Append(" rot=").Append(body.mainTorso.rotation.ToString("F3"))
-                .AppendLine();
-        }
-
-        var root = body.transform.root;
-        var tails = GetTransforms(body, "tails");
-        builder.Append("tailRoots=").Append(tails.Length).AppendLine();
-        for (var index = 0; index < tails.Length; index++)
-        {
-            var transform = tails[index];
-            if (transform == null)
-            {
-                builder.Append(" root[").Append(index).AppendLine("]=null");
-                continue;
-            }
-            builder.Append(" root[").Append(index).Append("] path=")
-                .Append(HierarchyPath(root, transform)).AppendLine();
-            AppendTailTransform(builder, "  transform", transform);
-        }
-
-        var bases = GetList(body, "tailBases");
-        builder.Append("tailBases=").Append(bases.Count).AppendLine();
-        for (var index = 0; index < bases.Count; index++)
-        {
-            var rigidbody = bases[index] as Rigidbody2D;
-            if (rigidbody == null)
-            {
-                builder.Append(" bone[").Append(index).AppendLine("]=null");
-                continue;
-            }
-            builder.Append(" bone[").Append(index).Append("] name=").Append(rigidbody.name)
-                .Append(" path=").Append(HierarchyPath(root, rigidbody.transform))
-                .Append(" rbPos=").Append(FormatVector2(rigidbody.position))
-                .Append(" rbRot=").Append(rigidbody.rotation.ToString("F3"))
-                .Append(" rbType=").Append(rigidbody.bodyType)
-                .Append(" simulated=").Append(rigidbody.simulated);
-            TailAttachmentState attachment;
-            if (tailAttachments.TryGetValue(rigidbody.transform, out attachment) && attachment != null)
-                builder.Append(" target=").Append(attachment.lastTargetAngle.ToString("F3"))
-                    .Append(" wave=").Append(attachment.lastWave.ToString("F3"))
-                    .Append(" inertia=").Append(attachment.lastInertia.ToString("F3"))
-                    .Append(" alpha=").Append(attachment.lastRotationAlpha.ToString("F3"));
-            builder.AppendLine();
-            AppendTailTransform(builder, "  transform", rigidbody.transform);
-        }
-
-        if (includeReplicaVisuals)
-        {
-            var visualIndex = 0;
-            foreach (var pair in tailVisuals)
-            {
-                var source = pair.Key;
-                var visual = pair.Value;
-                builder.Append(" visual[").Append(visualIndex++).Append("] source=")
-                    .Append(source == null ? "null" : source.name);
-                if (source != null)
-                    builder.Append(" sourceDet=").Append(TailTransformDeterminant(source.transform).ToString("F4"));
-                if (visual != null)
-                    builder.Append(" initialFacing=").Append(visual.initialFacingRight)
-                        .Append(" initialReflected=").Append(visual.initiallyReflected)
-                        .Append(" desiredReflected=").Append(visual.lastReflected);
-                builder.AppendLine();
-                if (source != null) AppendTailTransform(builder, "  source", source.transform);
-                if (visual != null && visual.renderer != null)
-                    AppendTailTransform(builder, "  output", visual.renderer.transform);
-            }
-        }
-
-        try { File.AppendAllText(tailDiagnosticPath, builder.ToString()); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
-
-    private static void AppendTailTransform(StringBuilder builder, string label, Transform transform)
-    {
-        if (transform == null)
-        {
-            builder.Append(label).AppendLine("=null");
-            return;
-        }
-        builder.Append(label)
-            .Append(" name=").Append(transform.name)
-            .Append(" parent=").Append(transform.parent == null ? "null" : transform.parent.name)
-            .Append(" pos=").Append(FormatVector3(transform.position))
-            .Append(" localPos=").Append(FormatVector3(transform.localPosition))
-            .Append(" euler=").Append(FormatVector3(transform.eulerAngles))
-            .Append(" localEuler=").Append(FormatVector3(transform.localEulerAngles))
-            .Append(" rot=").Append(FormatQuaternion(transform.rotation))
-            .Append(" localRot=").Append(FormatQuaternion(transform.localRotation))
-            .Append(" scale=").Append(FormatVector3(transform.localScale))
-            .Append(" lossy=").Append(FormatVector3(transform.lossyScale))
-            .Append(" det2D=").Append(TailTransformDeterminant(transform).ToString("F4"))
-            .AppendLine();
-    }
-
-    private static float TailTransformDeterminant(Transform transform)
-    {
-        var right = transform.TransformVector(Vector3.right);
-        var up = transform.TransformVector(Vector3.up);
-        return right.x * up.y - right.y * up.x;
-    }
-
-    private static string FormatVector2(Vector2 value)
-    {
-        return "(" + value.x.ToString("F3") + "," + value.y.ToString("F3") + ")";
-    }
-
-    private static string FormatVector3(Vector3 value)
-    {
-        return "(" + value.x.ToString("F3") + "," + value.y.ToString("F3") + "," +
-            value.z.ToString("F3") + ")";
-    }
-
-    private static string FormatQuaternion(Quaternion value)
-    {
-        return "(" + value.x.ToString("F4") + "," + value.y.ToString("F4") + "," +
-            value.z.ToString("F4") + "," + value.w.ToString("F4") + ")";
-    }
 
     private static List<Component> FindCharacterLights(Transform root)
     {
@@ -3991,20 +3837,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             transform = transform.parent;
         }
         return depth;
-    }
-
-    private static T GetComponentProperty<T>(Component component, string name, T fallback)
-    {
-        var property = component.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
-        if (property == null || !property.CanRead) return fallback;
-        var value = property.GetValue(component, null);
-        return value is T typed ? typed : fallback;
-    }
-
-    private static void SetComponentProperty<T>(Component component, string name, T value)
-    {
-        var property = component.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
-        if (property != null && property.CanWrite) property.SetValue(component, value, null);
     }
 
     private static void WriteScarfState(BinaryWriter writer, BodyScript body)
@@ -4171,13 +4003,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private static T GetFieldValue<T>(object instance, string name) where T : class
-    {
-        if (instance == null) return null;
-        var field = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        return field == null ? null : field.GetValue(instance) as T;
-    }
-
     private static void ApplyWeaponVisual(BodyScript body, ulong spriteName, int activeSlot, ulong[] inventorySprites)
     {
         var active = FindSprite(spriteName);
@@ -4201,9 +4026,44 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (sprite == null) return "";
         string cached;
         if (spriteIdCache.TryGetValue(sprite, out cached)) return cached;
-        var textureName = sprite.texture == null ? "" : sprite.texture.name;
-        cached = sprite.name + "\n" + textureName + "\n" + sprite.rect.x + "," + sprite.rect.y + "," + sprite.rect.width + "," + sprite.rect.height;
+        cached = BaseSpriteId(sprite) + "\n" + TextureSignature(sprite.texture);
         spriteIdCache[sprite] = cached;
+        return cached;
+    }
+
+    private static string BaseSpriteId(Sprite sprite)
+    {
+        if (sprite == null) return "";
+        var textureName = sprite.texture == null ? "" : sprite.texture.name;
+        return sprite.name + "\n" + textureName + "\n" +
+            sprite.rect.x.ToString(CultureInfo.InvariantCulture) + "," +
+            sprite.rect.y.ToString(CultureInfo.InvariantCulture) + "," +
+            sprite.rect.width.ToString(CultureInfo.InvariantCulture) + "," +
+            sprite.rect.height.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string TextureSignature(Texture2D texture)
+    {
+        if (texture == null) return "";
+        string cached;
+        if (textureSignatureCache.TryGetValue(texture, out cached)) return cached;
+        try
+        {
+            var hash = 2166136261u;
+            foreach (var pixel in texture.GetPixels32())
+            {
+                hash = unchecked((hash ^ pixel.r) * 16777619u);
+                hash = unchecked((hash ^ pixel.g) * 16777619u);
+                hash = unchecked((hash ^ pixel.b) * 16777619u);
+                hash = unchecked((hash ^ pixel.a) * 16777619u);
+            }
+            cached = texture.width + "x" + texture.height + ":" + hash.ToString("X8");
+        }
+        catch (UnityException)
+        {
+            cached = "";
+        }
+        textureSignatureCache[texture] = cached;
         return cached;
     }
 
@@ -4212,16 +4072,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (string.IsNullOrEmpty(id)) return null;
         Sprite cached;
         if (spriteCache.TryGetValue(id, out cached) && cached != null) return cached;
-        var parts = id.Split('\n');
+        var separator = id.LastIndexOf('\n');
+        if (separator < 1 || separator == id.Length - 1) return null;
+        var baseId = id.Substring(0, separator);
+        var textureSignature = id.Substring(separator + 1);
         foreach (var sprite in Resources.FindObjectsOfTypeAll<Sprite>())
         {
-            if (SpriteId(sprite) != id) continue;
-            spriteCache[id] = sprite;
-            return sprite;
-        }
-        foreach (var sprite in Resources.FindObjectsOfTypeAll<Sprite>())
-        {
-            if (sprite.name != parts[0]) continue;
+            if (BaseSpriteId(sprite) != baseId || TextureSignature(sprite.texture) != textureSignature) continue;
             spriteCache[id] = sprite;
             return sprite;
         }
@@ -4285,35 +4142,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public float startedAt;
         public float receivedAt;
         public float duration;
-    }
-    private sealed class TailVisualState
-    {
-        public SpriteRenderer renderer;
-        public bool visible;
-        public Transform tailRoot;
-        public bool initialFacingRight;
-        public bool initiallyReflected;
-        public bool lastReflected;
-    }
-    private sealed class TailAttachmentState
-    {
-        public Rigidbody2D body;
-        public Vector3 localPosition;
-        public Transform anchor;
-        public Vector3 anchorLocalPosition;
-        public Quaternion anchorLocalRotation;
-        public int segmentIndex;
-        public int segmentCount;
-        public float lastWave;
-        public float lastInertia;
-        public float lastTargetAngle;
-        public float lastRotationAlpha;
-    }
-    private sealed class ProceduralTailBoneState
-    {
-        public Transform transform;
-        public int index;
-        public float baseAngle;
     }
     private sealed class RemoteProjectileVisual
     {

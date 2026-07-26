@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using HarmonyLib;
+using TMPro;
 using UnityEngine;
 
 internal sealed class MultiplayerHud : MonoBehaviour
@@ -20,13 +20,10 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private bool replicationDebugOverlayEnabled;
     private bool networkStatsVisible;
     private GameObject networkStatsObject;
-    private Component networkStatsText;
-    private Component networkStatsTemplate;
-    private PropertyInfo networkStatsTextProperty;
+    private TextMeshProUGUI networkStatsText;
+    private TextMeshProUGUI networkStatsTemplate;
     private string networkStatsTextValue = "";
     private float nextNetworkStatsUpdate;
-    private static readonly FieldInfo FpsTextField = AccessTools.Field(typeof(GameManager), "fpsText");
-    private static readonly FieldInfo PerformanceTextField = AccessTools.Field(typeof(GameManager), "performanceText");
     private MultiplayerHudUi nativeUi;
 
     internal static MultiplayerHud Instance { get; private set; }
@@ -63,12 +60,18 @@ internal sealed class MultiplayerHud : MonoBehaviour
     internal void ToggleNetworkStats()
     {
         networkStatsVisible = !networkStatsVisible;
+        if (networkStatsVisible) MultiplayerPerformance.Reset();
         if (!networkStatsVisible) DestroyNetworkStatsWidget();
         AddSystemMessage("Network debug: " + (networkStatsVisible ? "ON" : "OFF"));
     }
 
     private void Update()
     {
+        MultiplayerPerformance.AdvancedEnabled = networkStatsVisible;
+        MultiplayerPerformance.Sample();
+        if (networkStatsVisible && Input.GetKeyDown(KeyCode.C) &&
+            (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)))
+            GUIUtility.systemCopyBuffer = networkStatsTextValue;
         string sender;
         string message;
         ushort senderId;
@@ -122,7 +125,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (Time.unscaledTime >= nextNetworkStatsUpdate)
         {
             nextNetworkStatsUpdate = Time.unscaledTime + 0.25f;
-            MultiplayerPerformance.Sample();
             var stats = MultiplayerSession.DebugStats();
             var npc = NpcReplication.Instance;
             var world = WorldReplication.Instance;
@@ -186,24 +188,49 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 NetworkAvatarReplication.AvatarWeaponBytesPerSecond / 1024f,
                 NetworkAvatarReplication.AvatarEffectsBytesPerSecond / 1024f,
                 NetworkAvatarReplication.AvatarVisualBytesPerSecond / 1024f);
+            networkStatsTextValue += string.Format("\nWORLD CPU  disc {0:0.0}  ser {1:0.0}  read {2:0.0}  apply {3:0.0}\n" +
+                "           input {4:0.0}  contacts {5:0.0} ms/s\n" +
+                "NPC CPU    disc {6:0.0}  anim {7:0.0}  ser {8:0.0}  read {9:0.0}\n" +
+                "           apply {10:0.0}  interp {11:0.0} ms/s\n" +
+                "WORLD DETAIL bodies {12:0.0}  env {13:0.0}  spawn {14:0.0}  parse {22:0.0}  wire {24:0.0}  decode {25:0.0}  dispatch {26:0.0}  env-ap {23:0.0}\n" +
+                "NPC DETAIL   state {15:0.0}  zip {16:0.0}  unzip {17:0.0}  parse {18:0.0}\n" +
+                "NPC APPLY    proxy {19:0.0}  pose {20:0.0}  visual {21:0.0} ms/s",
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldDiscovery),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSerialize),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotRead),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldStateApply),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldInput),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldContacts),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcDiscovery),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcAnimation),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcSerialize),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcSnapshotRead),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcStateApply),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcInterpolate),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSerializeBodies),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSerializeEnvironment),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotObjects),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcSerializeStates),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcCompress),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcDecompress),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcSnapshotParse),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcProxyLookup),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcStatePose),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcVisuals),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotParse),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldEnvironmentApply),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotWireResolve),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotDecode),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotDispatch));
         }
         var manager = GameManager.main;
         if (manager == null) return;
-        var template = GetTextComponent(manager, FpsTextField);
-        if (template == null) template = GetTextComponent(manager, PerformanceTextField);
+        var template = manager.pauseMenuText;
         if (template == null) return;
         if (networkStatsObject == null || networkStatsTemplate != template)
             CreateNetworkStatsWidget(template);
-        if (networkStatsText == null || networkStatsTextProperty == null) return;
-        try { networkStatsTextProperty.SetValue(networkStatsText, networkStatsTextValue, null); }
-        catch (Exception) { DestroyNetworkStatsWidget(); }
-    }
-
-    private static Component GetTextComponent(GameManager manager, FieldInfo field)
-    {
-        if (field == null) return null;
-        var value = field.GetValue(manager) as Component;
-        return value != null && value.GetType().GetProperty("text") != null ? value : null;
+        if (networkStatsText == null) return;
+        networkStatsText.text = networkStatsTextValue;
     }
 
     private static float TrafficPercent(int bytes, int total)
@@ -211,7 +238,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         return total <= 0 ? 0f : bytes * 100f / total;
     }
 
-    private void CreateNetworkStatsWidget(Component template)
+    private void CreateNetworkStatsWidget(TextMeshProUGUI template)
     {
         DestroyNetworkStatsWidget();
         var clone = Instantiate(template.gameObject, template.transform.parent, false);
@@ -219,15 +246,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         clone.transform.SetAsLastSibling();
         networkStatsObject = clone;
         networkStatsTemplate = template;
-        foreach (var component in clone.GetComponents<Component>())
-        {
-            if (component != null && component.GetType().GetProperty("text") != null)
-            {
-                networkStatsText = component;
-                networkStatsTextProperty = component.GetType().GetProperty("text");
-                break;
-            }
-        }
+        networkStatsText = clone.GetComponent<TextMeshProUGUI>();
         var sourceRect = template.transform as RectTransform;
         var cloneRect = clone.transform as RectTransform;
         if (sourceRect != null && cloneRect != null)
@@ -237,7 +256,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             cloneRect.pivot = Vector2.zero;
             cloneRect.anchoredPosition = new Vector2(18f, 18f);
             cloneRect.sizeDelta = new Vector2(Mathf.Max(sourceRect.sizeDelta.x, 920f),
-                Mathf.Max(sourceRect.sizeDelta.y, 330f));
+                Mathf.Max(sourceRect.sizeDelta.y, 550f));
         }
         ConfigureNetworkStatsTextOverflow();
         clone.SetActive(true);
@@ -246,15 +265,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void ConfigureNetworkStatsTextOverflow()
     {
         if (networkStatsText == null) return;
-        var type = networkStatsText.GetType();
-        var wrapping = type.GetProperty("enableWordWrapping");
-        if (wrapping != null && wrapping.CanWrite) wrapping.SetValue(networkStatsText, false, null);
-        var overflow = type.GetProperty("overflowMode");
-        if (overflow != null && overflow.CanWrite && overflow.PropertyType.IsEnum)
-        {
-            try { overflow.SetValue(networkStatsText, Enum.Parse(overflow.PropertyType, "Overflow"), null); }
-            catch (ArgumentException) { }
-        }
+        networkStatsText.enableWordWrapping = false;
+        networkStatsText.overflowMode = TextOverflowModes.Overflow;
     }
 
     private void DestroyNetworkStatsWidget()
@@ -263,7 +275,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
         networkStatsObject = null;
         networkStatsText = null;
         networkStatsTemplate = null;
-        networkStatsTextProperty = null;
         networkStatsTextValue = "";
         nextNetworkStatsUpdate = 0f;
     }

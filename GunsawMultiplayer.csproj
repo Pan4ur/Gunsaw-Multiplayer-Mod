@@ -66,6 +66,10 @@
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Unity.TextMeshPro">
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/Unity.TextMeshPro.dll</HintPath>
       <Private>false</Private>
