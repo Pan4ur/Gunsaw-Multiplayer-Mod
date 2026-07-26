@@ -83,8 +83,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
         }
         if (networkStatsVisible) UpdateNetworkStatsWidget();
         else if (networkStatsObject != null) DestroyNetworkStatsWidget();
-        var enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
-        if (!chatOpen && enter)
+        bool chatOpenKeyDown = Input.GetKeyDown(Controls.keys[Controls.OPEN_CHAT]);
+        if (!chatOpen && chatOpenKeyDown)
         {
             chatOpen = true;
             IsTyping = true;
@@ -94,14 +94,14 @@ internal sealed class MultiplayerHud : MonoBehaviour
             return;
         }
         if (!chatOpen) return;
-        if (waitForChatOpenKeyRelease && !Input.GetKey(KeyCode.Return) && !Input.GetKey(KeyCode.KeypadEnter))
+        if (waitForChatOpenKeyRelease && !Input.GetKey(Controls.keys[Controls.OPEN_CHAT]))
             waitForChatOpenKeyRelease = false;
-        if (Input.GetKeyDown(KeyCode.Escape))
+        if (Input.GetKeyDown(Controls.keys[Controls.CLOSE_CHAT]))
         {
             CloseChat();
             return;
         }
-        if (!waitForChatOpenKeyRelease && enter)
+        if (!waitForChatOpenKeyRelease && chatOpenKeyDown)
             Submit();
     }
 
