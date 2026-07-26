@@ -45,15 +45,15 @@ https://youtu.be/aYmxX_OQOis
 - [X] Fix tails
 - [X] Fix destruction of lightbulbs from hits
 - [X] Fix weapon dropping at the beginning of the game
-- [ ] Fix or disable the process of transferring into another body
+- [X] Fix or disable the process of transferring into another body (currently disabled)
 - [ ] Add teams
 - [ ] Add colored respawn points
 - [X] Real gameplay test
 - [ ] Fix missing rocket/grenade kill messages
 - [ ] Fix missing weapon pickup icons
 - [X] Fix teleports
-- [ ] Fix regeneration does not always occur after death
-- [ ] Add chat to all screens
+- [X] Fix regeneration does not always occur after death
+- [X] Add chat to all screens
 
 ### UI
 - [X] Improve MP Window
