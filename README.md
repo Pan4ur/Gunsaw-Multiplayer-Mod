@@ -25,7 +25,11 @@ https://youtu.be/aYmxX_OQOis
 - [X] Improve packet serialization (implement string hashing or short id) to reduce packet size
 - [X] Optimize far objects, keep them on the map but disable ticking
 - [X] Fix Hello handshake (it doesn't always work and crashes the lobby sometimes)
-- [ ] Fix & Test P2P
+- [ ] Fix & Test P2P (
+      It's probably working, but I can't physically check it. If it works for anyone, please let me know.
+      Known issue: When using a P2P + RELAY connection (host-client via P2P and a third client connected to the host via RELAY),
+      the clients will not be able to see each other
+      )
 
 ### Sync Fixes
 - [x] Far objects sync
@@ -52,6 +56,7 @@ https://youtu.be/aYmxX_OQOis
 - [ ] Fix missing rocket/grenade kill messages
 - [ ] Fix missing weapon pickup icons
 - [X] Fix teleports
+- [ ] Fix delayed trigger teleports
 - [X] Fix regeneration does not always occur after death
 - [X] Add chat to all screens
 
