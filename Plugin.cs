@@ -462,7 +462,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         try
         {
-            var mode = ConnectionMode.Auto;
+            var mode = ConnectionMode.Relay;
             foreach (var lobby in lobbies)
                 if (lobby.id == id) { mode = lobby.connectionMode; break; }
             ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(id, mode));
@@ -597,7 +597,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private static ConnectionMode ParseConnectionMode(string value)
     {
         ConnectionMode mode;
-        return Enum.TryParse(value, true, out mode) ? mode : ConnectionMode.Auto;
+        return Enum.TryParse(value, true, out mode) ? mode : ConnectionMode.Relay;
     }
 
     private static List<LobbyInfo> ParseLobbies(string json)
@@ -827,8 +827,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         status = "Spawned " + weapon.name + ".";
     }
 
-    [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public ConnectionMode connectionMode = ConnectionMode.Auto; }
-    [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public string connectionMode = "Auto"; }
+    [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public ConnectionMode connectionMode = ConnectionMode.Relay; }
+    [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public string connectionMode = "Relay"; }
 }
 
 [HarmonyPatch(typeof(LimbScript), "OnCollisionStay2D")]
