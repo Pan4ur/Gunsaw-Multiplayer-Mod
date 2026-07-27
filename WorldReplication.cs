@@ -21,7 +21,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte VehicleDamage = 7;
     internal const byte DroneDamage = 8;
 
-    private const float SnapshotInterval = 1f / 50f;
+    private const float SnapshotInterval = 1f / 5f;
     private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
     private const bool DiagnosticsEnabled = false;
