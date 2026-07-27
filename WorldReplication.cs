@@ -138,6 +138,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private string lastMissingInputId = "";
     private string lastRejectedInputId = "";
     private string lastMissingSnapshotId = "";
+    private float clientFastSerializeState = 0f;
 
     internal int TotalPropCount
     {
@@ -368,8 +369,9 @@ internal sealed class WorldReplication : MonoBehaviour
             received.Clear();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldStateApply, applyStarted);
         }
-        if (Time.unscaledTime >= nextSnapshot)
+        if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
         {
+            clientFastSerializeState -= Time.fixedDeltaTime;
             nextSnapshot = Time.unscaledTime + SnapshotInterval;
             MultiplayerSession.SendWorldInput(SerializePushes());
             MultiplayerSession.SendWorldDamage(SerializeDamage());
@@ -1474,6 +1476,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private void QueueBodyState(Rigidbody2D body)
     {
         locallyControlledUntil[body] = Time.unscaledTime + 0.35f;
+        clientFastSerializeState = 0.35f; // isnt that suppsoed to be ClientAuthorityGrace?
         body.simulated = true;
         body.bodyType = RigidbodyType2D.Dynamic;
         body.WakeUp();
@@ -1500,6 +1503,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         foreach (var body in renew)
             locallyControlledUntil[body] = now + ClientAuthorityGrace;
+        clientFastSerializeState = ClientAuthorityGrace;
     }
 
     private static ClientBodyState CaptureBodyState(Rigidbody2D body)
@@ -1523,6 +1527,7 @@ internal sealed class WorldReplication : MonoBehaviour
         if (nextDamage.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt) return;
         nextDamage[id] = Time.unscaledTime + 0.10f;
         damage[id] = Mathf.Min(100f, amount);
+        clientFastSerializeState = Mathf.Max(clientFastSerializeState, 0.01f);
     }
 
     internal void QueueLevitated(Rigidbody2D body)
