@@ -2431,6 +2431,7 @@ internal sealed class WorldReplication : MonoBehaviour
             (nextButtonActivation.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt)) return;
         nextButtonActivation[id] = Time.unscaledTime + 0.15f;
         button.Activated();
+        nextSnapshot = 0f; // Sending new world state
     }
 
     private void ApplyButtonState(string id, bool exists, uint activations)
