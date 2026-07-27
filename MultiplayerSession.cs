@@ -67,35 +67,35 @@ internal static class MultiplayerSession
     private static long nextP2PKeepAliveTicks;
     private static byte[] p2pKey;
     private static readonly Dictionary<ushort, P2PPeer> p2pPeers = new Dictionary<ushort, P2PPeer>();
-    private static readonly byte[] hello = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x01 };
-    private static readonly byte[] accepted = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x02 };
-    private static readonly byte[] sceneHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x03 };
-    private static readonly byte[] identityHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x04 };
-    private static readonly byte[] snapshotHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x05 };
-    private static readonly byte[] worldHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x06 };
-    private static readonly byte[] worldInputHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x07 };
-    private static readonly byte[] worldDamageHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x08 };
-    private static readonly byte[] npcHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x09 };
-    private static readonly byte[] npcDamageHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x0A };
-    private static readonly byte[] worldInteractionHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x0B };
-    private static readonly byte[] playerDamageHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x0C };
-    private static readonly byte[] pvpDamageHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x0D };
-    private static readonly byte[] settingsHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x0E };
-    private static readonly byte[] shotVisualHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x0F };
-    private static readonly byte[] playerGrabHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x10 };
-    private static readonly byte[] pingHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x11 };
-    private static readonly byte[] pongHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x12 };
-    private static readonly byte[] npcGrabHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x13 };
-    private static readonly byte[] disconnectHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x14 };
-    private static readonly byte[] chatHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x15 };
-    private static readonly byte[] customLevelHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x16 };
-    private static readonly byte[] npcPossessHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x17 };
-    private static readonly byte[] reliableHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x18 };
-    private static readonly byte[] reliableAckHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x19 };
-    private static readonly byte[] worldEnvironmentHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1A };
-    private static readonly byte[] projectileImpactHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1B };
-    private static readonly byte[] velvetWebHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1C };
-    private static readonly byte[] playerTeleportHeader = new byte[] { 0x47, 0x4D, 0x50, 0x31, 0x1D };
+    private static readonly byte[] hello = PacketHeader.Create(PacketType.Hello);
+    private static readonly byte[] accepted = PacketHeader.Create(PacketType.Accepted);
+    private static readonly byte[] sceneHeader = PacketHeader.Create(PacketType.Scene);
+    private static readonly byte[] identityHeader = PacketHeader.Create(PacketType.Identity);
+    private static readonly byte[] snapshotHeader = PacketHeader.Create(PacketType.PlayerSnapshot);
+    private static readonly byte[] worldHeader = PacketHeader.Create(PacketType.WorldSnapshot);
+    private static readonly byte[] worldInputHeader = PacketHeader.Create(PacketType.WorldInput);
+    private static readonly byte[] worldDamageHeader = PacketHeader.Create(PacketType.WorldDamage);
+    private static readonly byte[] npcHeader = PacketHeader.Create(PacketType.NpcSnapshot);
+    private static readonly byte[] npcDamageHeader = PacketHeader.Create(PacketType.NpcDamage);
+    private static readonly byte[] worldInteractionHeader = PacketHeader.Create(PacketType.WorldInteraction);
+    private static readonly byte[] playerDamageHeader = PacketHeader.Create(PacketType.PlayerDamage);
+    private static readonly byte[] pvpDamageHeader = PacketHeader.Create(PacketType.PvpDamage);
+    private static readonly byte[] settingsHeader = PacketHeader.Create(PacketType.Settings);
+    private static readonly byte[] shotVisualHeader = PacketHeader.Create(PacketType.ShotVisual);
+    private static readonly byte[] playerGrabHeader = PacketHeader.Create(PacketType.PlayerGrab);
+    private static readonly byte[] pingHeader = PacketHeader.Create(PacketType.Ping);
+    private static readonly byte[] pongHeader = PacketHeader.Create(PacketType.Pong);
+    private static readonly byte[] npcGrabHeader = PacketHeader.Create(PacketType.NpcGrab);
+    private static readonly byte[] disconnectHeader = PacketHeader.Create(PacketType.Disconnect);
+    private static readonly byte[] chatHeader = PacketHeader.Create(PacketType.Chat);
+    private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
+    private static readonly byte[] npcPossessHeader = PacketHeader.Create(PacketType.NpcPossession);
+    private static readonly byte[] reliableHeader = PacketHeader.Create(PacketType.Reliable);
+    private static readonly byte[] reliableAckHeader = PacketHeader.Create(PacketType.ReliableAck);
+    private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
+    private static readonly byte[] projectileImpactHeader = PacketHeader.Create(PacketType.ProjectileImpact);
+    private static readonly byte[] velvetWebHeader = PacketHeader.Create(PacketType.VelvetWeb);
+    private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
     private static string hostScene = "";
     private static string pendingScene = "";
     private static bool pendingSceneReload;
@@ -582,7 +582,7 @@ internal static class MultiplayerSession
     {
         if (p2pHelloSent) return;
         p2pHelloSent = true;
-        var helloPacket = PacketWithPayload(hello, Encoding.UTF8.GetBytes(localPlayerName));
+        var helloPacket = PacketCodec.Encode(new HelloPacket(localPlayerName));
         SendPacket(helloPacket, hostPeerId, true, true, true);
     }
 
@@ -660,11 +660,8 @@ internal static class MultiplayerSession
     internal static void SendSnapshot(byte[] data)
     {
         if (data == null) return;
-        var payload = new byte[sizeof(int) + data.Length];
-        Buffer.BlockCopy(BitConverter.GetBytes(Interlocked.Increment(ref playerSnapshotSequence)), 0,
-            payload, 0, sizeof(int));
-        Buffer.BlockCopy(data, 0, payload, sizeof(int), data.Length);
-        Send(snapshotHeader, payload);
+        SendPacket(PacketCodec.Encode(new PlayerSnapshotPacket(
+            Interlocked.Increment(ref playerSnapshotSequence), data)));
     }
 
     internal static void SendWorldSnapshot(byte[] data)
@@ -976,7 +973,7 @@ internal static class MultiplayerSession
                     connectedName = ReadPlayerName(packet, hello.Length);
                     TouchPeerLocked(senderId, connectedName);
                 }
-                var acceptedPacket = PacketWithPayload(accepted, Encoding.UTF8.GetBytes(localPlayerName));
+                var acceptedPacket = PacketCodec.Encode(new AcceptedPacket(localPlayerName));
                 SendPacket(acceptedPacket, senderId);
                 string customLevel;
                 lock (statusLock) customLevel = hostCustomLevel;

@@ -6,14 +6,15 @@ using TMPro;
 // Stores constants to use across all patches and precaches them
 public static class Controls
 {
-    public static readonly string[] newControls = new string[] { "Open chat", "Close chat", "See players" };
-    public static readonly int[] defaultValues = new int[] { (int)KeyCode.Return, (int)KeyCode.Escape, (int)KeyCode.Tab };
+    public static readonly string[] newControls = new string[] { "Open chat", "Close chat", "See players", "Markers" };
+    public static readonly int[] defaultValues = new int[] { (int)KeyCode.Return, (int)KeyCode.Escape, (int)KeyCode.Tab, (int)KeyCode.M };
 
-    public static KeyCode[] keys = new KeyCode[] { KeyCode.Return, KeyCode.Escape, KeyCode.Tab };
+    public static KeyCode[] keys = new KeyCode[] { KeyCode.Return, KeyCode.Escape, KeyCode.Tab, KeyCode.M };
 
     public const int OPEN_CHAT = 0;
     public const int CLOSE_CHAT = 1;
     public const int SEE_PLAYER = 2;
+    public const int TOGGLE_PLAYER_MARKERS = 3;
 }
 
 // Adding GameObject of controls and their value in ControlBinder.texts, also sets default values of PlayerPrefs if it missing
@@ -54,8 +55,9 @@ internal static class ControlsGoCreator
         UnityEngine.Object.Destroy(fieldBase);
         UnityEngine.Object.Destroy(labelBase);
 
-        if (!PlayerPrefs.HasKey(Controls.newControls[0]))
-            ControlsResetPatch.ResetCustomKeyCodes(__instance);
+        for (int i = 0; i < Controls.newControls.Length; i++)
+            if (!PlayerPrefs.HasKey(Controls.newControls[i]))
+                PlayerPrefs.SetInt(Controls.newControls[i], Controls.defaultValues[i]);
 
         __instance.UpdateBindings();
     }

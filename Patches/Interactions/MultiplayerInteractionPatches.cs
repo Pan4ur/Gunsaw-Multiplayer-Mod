@@ -35,6 +35,20 @@ internal static class ClientActivationZonePatch
     }
 }
 
+[HarmonyPatch(typeof(ActivateZoneScript), "OnTriggerEnter2D")]
+internal static class HostActivationZonePatch
+{
+    private static bool Prefix(ActivateZoneScript __instance, Collider2D collision)
+    {
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost) return true;
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        if (__instance == null || collision == null || body == null || collision.transform.root != body.transform.root) return false;
+        if (GunsawMultiplayerPlugin.World != null) GunsawMultiplayerPlugin.World.ActivateLocalZone(__instance, false);
+        return false;
+    }
+}
+
 [HarmonyPatch(typeof(WeaponScript), "DoWound")]
 internal static class MultiplayerPlayerWoundPatch
 {

@@ -63,6 +63,9 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, ActivateZoneScript> activationZones = new Dictionary<string, ActivateZoneScript>();
     private readonly Dictionary<ActivateZoneScript, string> activationZoneIds = new Dictionary<ActivateZoneScript, string>();
     private readonly Dictionary<string, float> nextZoneActivation = new Dictionary<string, float>();
+    private readonly HashSet<string> activatedZoneIds = new HashSet<string>();
+    private readonly HashSet<string> localZonePrompts = new HashSet<string>();
+    private ActivateZoneScript promptZone;
     private readonly Dictionary<string, GlassScript> glasses = new Dictionary<string, GlassScript>();
     private readonly Dictionary<GlassScript, string> glassIds = new Dictionary<GlassScript, string>();
     private readonly HashSet<string> destroyedGlass = new HashSet<string>();
@@ -277,6 +280,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         if (isHost)
         {
+            UpdateZonePrompt();
             var inputStarted = MultiplayerPerformance.StartPhase();
             byte[] interaction;
             ushort interactionPeer;
@@ -285,6 +289,8 @@ internal sealed class WorldReplication : MonoBehaviour
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
             return;
         }
+
+        UpdateZonePrompt();
 
         byte[] snapshot;
         byte[] latestSnapshot = null;
@@ -772,6 +778,9 @@ internal sealed class WorldReplication : MonoBehaviour
         activationZones.Clear();
         activationZoneIds.Clear();
         nextZoneActivation.Clear();
+        activatedZoneIds.Clear();
+        localZonePrompts.Clear();
+        promptZone = null;
         glasses.Clear();
         glassIds.Clear();
         destroyedGlass.Clear();
@@ -1577,14 +1586,17 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    internal void QueueZoneActivation(ActivateZoneScript zone)
+    internal void QueueZoneActivation(ActivateZoneScript zone, bool manual = false)
     {
         if (MultiplayerSession.IsHost || zone == null) return;
+        var id = ActivationZoneId(zone);
+        if (!manual) localZonePrompts.Add(id);
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write(ZoneActivate);
-            writer.Write(WireId(ActivationZoneId(zone)));
+            writer.Write(WireId(id));
+            writer.Write(manual);
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
     }
@@ -1875,7 +1887,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 }
                 if (operation == ZoneActivate)
                 {
-                    ApplyZoneActivation(id, peerId);
+                    ApplyZoneActivation(id, peerId, reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean());
                     return;
                 }
                 if (operation == GlassDamage)
@@ -2352,13 +2364,24 @@ internal sealed class WorldReplication : MonoBehaviour
         return id;
     }
 
-    private void ApplyZoneActivation(string id, ushort peerId)
+    internal void ActivateLocalZone(ActivateZoneScript zone, bool manual)
+    {
+        if (zone == null || !MultiplayerSession.IsHost) return;
+        var id = ActivationZoneId(zone);
+        if (!manual && activatedZoneIds.Contains(id)) localZonePrompts.Add(id);
+        ApplyZoneActivation(id, MultiplayerSession.LocalPeerId, manual);
+    }
+
+    private void ApplyZoneActivation(string id, ushort peerId, bool manual)
     {
         ActivateZoneScript zone;
-        var remotePlayer = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
+        var localPlayer = PlayerScript.player;
+        var remotePlayer = peerId == MultiplayerSession.LocalPeerId
+            ? (localPlayer == null ? null : localPlayer.bodyScript)
+            : NetworkAvatarReplication.RemoteBodyForPeer(peerId);
         float allowedAt;
         if (!activationZones.TryGetValue(id, out zone) || zone == null || remotePlayer == null ||
-            !remotePlayer.isAlive ||
+            !remotePlayer.isAlive || (!manual && activatedZoneIds.Contains(id)) ||
             (nextZoneActivation.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt)) return;
         var zoneCollider = zone.GetComponent<Collider2D>();
         if (zoneCollider == null || zoneCollider.bounds.SqrDistance(remotePlayer.transform.position) > 4f) return;
@@ -2366,10 +2389,36 @@ internal sealed class WorldReplication : MonoBehaviour
         var hostBody = hostPlayer == null ? null : hostPlayer.bodyScript;
         if (!string.IsNullOrEmpty(zone.team) && (hostBody == null || zone.team != hostBody.team)) return;
         nextZoneActivation[id] = Time.unscaledTime + 0.2f;
+        activatedZoneIds.Add(id);
         foreach (var target in GameObject.FindGameObjectsWithTag("Activateable"))
             target.SendMessage("Activate", zone.id, SendMessageOptions.DontRequireReceiver);
-        if (!zone.activateOnce) return;
-        Destroy(zone);
+    }
+
+    // hacky fix but i hope it doesnt fuckup the level logic
+    private void UpdateZonePrompt()
+    {
+        promptZone = null;
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        if (body == null || !body.isAlive) return;
+        foreach (var pair in activationZones)
+        {
+            var zone = pair.Value;
+            var collider = zone == null ? null : zone.GetComponent<Collider2D>();
+            if (collider == null || !localZonePrompts.Contains(pair.Key) || collider.bounds.SqrDistance(body.transform.position) > 4f) continue;
+            promptZone = zone;
+            break;
+        }
+        if (promptZone == null || !Input.GetKeyDown(player.keys["Use"])) return;
+        if (MultiplayerSession.IsHost) ActivateLocalZone(promptZone, true);
+        else QueueZoneActivation(promptZone, true);
+    }
+
+    private void OnGUI()
+    {
+        if (promptZone == null || !MultiplayerSession.IsConnected) return;
+
+        GUI.Label(new Rect(Screen.width * 0.5f - 100f, Screen.height * 0.72f, 200f, 28f), "PRESS [USE] TO ACTIVATE ZONE");
     }
 
     private void ApplyButtonActivation(string id, ushort peerId)

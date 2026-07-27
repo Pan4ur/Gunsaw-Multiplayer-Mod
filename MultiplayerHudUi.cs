@@ -12,6 +12,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private readonly List<TMP_Text> debugMarkers = new List<TMP_Text>();
     private readonly Dictionary<BodyScript, TMP_Text> nameTags = new Dictionary<BodyScript, TMP_Text>();
     private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new Dictionary<BodyScript, TMP_Text>();
+    private readonly Dictionary<BodyScript, CoopMarker> coopMarkers = new Dictionary<BodyScript, CoopMarker>();
+    private bool coopMarkersVisible = true;
 
     internal void Configure(MultiplayerHud hud)
     {
@@ -29,6 +31,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
         if (playersPanel.activeSelf) UpdatePlayers();
         UpdateNameTags();
+        UpdateCoopMarkers();
         UpdateChatBubbles(hud);
         statsText.gameObject.SetActive(hud.NetworkStatsVisible && !string.IsNullOrEmpty(hud.NetworkStatsText));
         if (statsText.gameObject.activeSelf) statsText.text = hud.NetworkStatsText;
@@ -203,6 +206,96 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
     }
 
+
+    private void UpdateCoopMarkers()
+    {
+        var active = new HashSet<BodyScript>();
+        var camera = Camera.main;
+        if (Input.GetKeyDown(Controls.keys[Controls.TOGGLE_PLAYER_MARKERS])) coopMarkersVisible = !coopMarkersVisible;
+        if (camera == null || MultiplayerSession.PvpEnabled || !coopMarkersVisible) { HideCoopMarkers(active); return; }
+        const float size = 0.75f;
+        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        {
+            var body = remote.Body;
+            if (body == null || body.rb == null) continue;
+            var screen = camera.WorldToScreenPoint(body.rb.position);
+            if (screen.z > 0f && screen.x >= 0f && screen.x <= Screen.width && screen.y >= 0f && screen.y <= Screen.height) continue;
+            active.Add(body);
+            CoopMarker marker;
+            if (!coopMarkers.TryGetValue(body, out marker)) { marker = CreateCoopMarker(); coopMarkers[body] = marker; }
+            if (marker == null) continue;
+            if (screen.z <= 0f) { screen.x = Screen.width - screen.x; screen.y = Screen.height - screen.y; }
+            var center = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            var direction = new Vector2(screen.x, screen.y) - center;
+            if (direction.sqrMagnitude < 0.01f) direction = Vector2.up;
+            direction.Normalize();
+            var margin = 72f * size;
+            var edgePosition = center + new Vector2(direction.x * Mathf.Max(0f, center.x - margin), direction.y * Mathf.Max(0f, center.y - margin));
+            marker.Rect.anchoredPosition = CanvasPosition(new Vector3(edgePosition.x, edgePosition.y, 0f));
+            marker.Rect.sizeDelta = new Vector2(82f, 96f) * size;
+            var player = PlayerScript.player;
+            var localBody = player == null ? null : player.bodyScript;
+            var distance = localBody == null || localBody.rb == null ? 0f : Vector2.Distance(localBody.rb.position, body.rb.position);
+            marker.Name.text = remote.Name + " (" + Mathf.RoundToInt(distance) + " m)";
+            marker.Name.fontSize = 16f * size;
+            UpdateHeadVisual(marker, body);
+            marker.Visual.localScale = new Vector3(body.isRight ? 1f : -1f, 1f, 1f);
+            marker.Root.SetActive(true);
+        }
+        HideCoopMarkers(active);
+    }
+
+    private void HideCoopMarkers(HashSet<BodyScript> active)
+    {
+        foreach (var pair in coopMarkers)
+            if (!active.Contains(pair.Key) && pair.Value != null && pair.Value.Root != null) pair.Value.Root.SetActive(false);
+    }
+
+    private CoopMarker CreateCoopMarker()
+    {
+        var go = new GameObject("CoopPlayerMarker", typeof(RectTransform)); go.transform.SetParent(root.transform, false);
+        var rect = go.GetComponent<RectTransform>(); Rect(rect, Vector2.zero, new Vector2(82f, 96f));
+        var visualGo = new GameObject("HeadVisual", typeof(RectTransform)); visualGo.transform.SetParent(go.transform, false);
+        Rect(visualGo.GetComponent<RectTransform>(), new Vector2(0f, -13f), new Vector2(60f, 60f));
+        var name = Text(go.transform, "", new Vector2(0f, 34f), new Vector2(190f, 30f), 16f, TextAlignmentOptions.Center); name.fontStyle = FontStyles.Bold; name.outlineWidth = 0.22f;
+        return new CoopMarker { Root = go, Rect = rect, Visual = visualGo.transform, Name = name };
+    }
+
+    private static void UpdateHeadVisual(CoopMarker marker, BodyScript body)
+    {
+        var head = body.headTransform;
+        if (head == null) return;
+        var renderers = head.GetComponentsInChildren<SpriteRenderer>(true);
+        var main = head.GetComponent<SpriteRenderer>();
+        if (main == null || main.sprite == null)
+        {
+            foreach (var renderer in renderers)
+                if (renderer != null && renderer.sprite != null) { main = renderer; break; }
+        }
+        if (main == null || main.sprite == null) return;
+        var pixelsPerUnit = 60f / Mathf.Max(0.01f, main.sprite.bounds.size.x);
+        var count = 0;
+        foreach (var renderer in renderers)
+        {
+            if (renderer == null || renderer.sprite == null || !renderer.enabled) continue;
+            Image image;
+            if (count < marker.HeadParts.Count) image = marker.HeadParts[count];
+            else
+            {
+                var part = new GameObject("HeadPart", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); part.transform.SetParent(marker.Visual, false);
+                image = part.GetComponent<Image>(); image.preserveAspect = true; marker.HeadParts.Add(image);
+            }
+            image.sprite = renderer.sprite;
+            image.color = renderer.color;
+            var offset = (Vector2)head.InverseTransformPoint(renderer.transform.position) * pixelsPerUnit;
+            var size = renderer.sprite.bounds.size * pixelsPerUnit;
+            Rect(image.rectTransform, offset, size);
+            image.gameObject.SetActive(true);
+            count++;
+        }
+        for (var index = count; index < marker.HeadParts.Count; index++) marker.HeadParts[index].gameObject.SetActive(false);
+    }
+
     private void UpdateChat(MultiplayerHud hud)
     {
         var entries = hud.ChatHistory;
@@ -268,4 +361,5 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             screen, null, out local);
         return local;
     }
+    private sealed class CoopMarker { internal GameObject Root; internal RectTransform Rect; internal Transform Visual; internal readonly List<Image> HeadParts = new List<Image>(); internal TMP_Text Name; }
 }
