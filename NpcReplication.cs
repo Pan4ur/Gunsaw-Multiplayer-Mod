@@ -2212,7 +2212,8 @@ internal sealed class NpcReplication : MonoBehaviour
     private static bool IsCoreNpcRenderer(SpriteRenderer renderer)
     {
         return renderer.GetComponentInParent<LimbScript>() != null ||
-               renderer.GetComponentInParent<WeaponScript>() != null;
+               renderer.GetComponentInParent<WeaponScript>() != null ||
+               renderer.GetComponentInParent<AnimatedBodyScript>() != null;
     }
 
     private static void WriteColor32(BinaryWriter writer, Color color)
