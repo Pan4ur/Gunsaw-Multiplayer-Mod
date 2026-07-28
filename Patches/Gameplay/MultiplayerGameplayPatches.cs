@@ -551,7 +551,8 @@ internal static class ClientNpcDeathPatch
             ? victimName + " died."
             : DeathDisplayName(killer) + " killed " + victimName + ".";
         MultiplayerHud.AddSystemMessage(message);
-        MultiplayerSession.SendChat(message, true);
+        ChatPacket packet;
+        if (ChatService.TryCreate(message, true, out packet)) MultiplayerSession.Send(packet);
     }
 
     private static string DeathDisplayName(BodyScript body)

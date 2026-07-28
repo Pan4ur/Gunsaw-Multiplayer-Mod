@@ -1,0 +1,158 @@
+internal readonly struct EnvironmentButtonState
+{
+    internal readonly ulong Id;
+    internal readonly bool Active;
+    internal readonly uint Activations;
+    internal EnvironmentButtonState(ulong id, bool active, uint activations) { Id = id; Active = active; Activations = activations; }
+}
+
+internal readonly struct EnvironmentFireState
+{
+    internal readonly ulong Id;
+    internal readonly float PositionX;
+    internal readonly float PositionY;
+    internal readonly float Rotation;
+    internal readonly float Fuel;
+    internal readonly bool CanIgnite;
+    internal readonly float DamageMultiplier;
+    internal readonly float FuelConsumptionMultiplier;
+    internal EnvironmentFireState(ulong id, float positionX, float positionY, float rotation, float fuel,
+        bool canIgnite, float damageMultiplier, float fuelConsumptionMultiplier)
+    {
+        Id = id; PositionX = positionX; PositionY = positionY; Rotation = rotation; Fuel = fuel;
+        CanIgnite = canIgnite; DamageMultiplier = damageMultiplier;
+        FuelConsumptionMultiplier = fuelConsumptionMultiplier;
+    }
+}
+
+internal readonly struct EnvironmentAudioState
+{
+    internal readonly ulong Id;
+    internal readonly bool IsPlaying;
+    internal readonly bool Loop;
+    internal readonly float Volume;
+    internal readonly float Pitch;
+    internal EnvironmentAudioState(ulong id, bool isPlaying, bool loop, float volume, float pitch)
+    {
+        Id = id; IsPlaying = isPlaying; Loop = loop; Volume = volume; Pitch = pitch;
+    }
+}
+
+internal readonly struct WorldEnvironmentPacket : INetworkPacket
+{
+    internal readonly int SceneEpoch;
+    internal readonly float GravityX;
+    internal readonly float GravityY;
+    internal readonly EnvironmentButtonState[] Buttons;
+    internal readonly ulong[] DestroyedGlassIds;
+    internal readonly ulong[] DestroyedLampIds;
+    internal readonly EnvironmentFireState[] Fires;
+    internal readonly EnvironmentAudioState[] Audio;
+    internal readonly ulong[] DestroyedDroneIds;
+    internal readonly float RainIntensity;
+    internal readonly float SnowIntensity;
+    internal readonly float FogIntensity;
+
+    internal WorldEnvironmentPacket(int sceneEpoch, float gravityX, float gravityY, EnvironmentButtonState[] buttons,
+        ulong[] destroyedGlassIds, ulong[] destroyedLampIds, EnvironmentFireState[] fires,
+        EnvironmentAudioState[] audio, ulong[] destroyedDroneIds, float rainIntensity, float snowIntensity,
+        float fogIntensity)
+    {
+        SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
+        Buttons = buttons ?? new EnvironmentButtonState[0];
+        DestroyedGlassIds = destroyedGlassIds ?? new ulong[0];
+        DestroyedLampIds = destroyedLampIds ?? new ulong[0];
+        Fires = fires ?? new EnvironmentFireState[0];
+        Audio = audio ?? new EnvironmentAudioState[0];
+        DestroyedDroneIds = destroyedDroneIds ?? new ulong[0];
+        RainIntensity = rainIntensity; SnowIntensity = snowIntensity; FogIntensity = fogIntensity;
+    }
+
+    internal WorldEnvironmentPacket(byte[] payload)
+    {
+        var reader = new PacketReader(payload);
+        this = Read(ref reader);
+    }
+    public PacketType Type => PacketType.WorldEnvironment;
+
+    public void Write(ref PacketWriter writer)
+    {
+        writer.WriteInt32(SceneEpoch); writer.WriteSingle(GravityX); writer.WriteSingle(GravityY);
+        WriteButtons(ref writer, Buttons); WriteIds(ref writer, DestroyedGlassIds); WriteIds(ref writer, DestroyedLampIds);
+        WriteFires(ref writer, Fires); WriteAudio(ref writer, Audio); WriteIds(ref writer, DestroyedDroneIds);
+        writer.WriteSingle(RainIntensity); writer.WriteSingle(SnowIntensity); writer.WriteSingle(FogIntensity);
+    }
+
+    internal static WorldEnvironmentPacket Read(ref PacketReader reader)
+    {
+        var sceneEpoch = reader.ReadInt32();
+        var gravityX = reader.ReadSingle(); var gravityY = reader.ReadSingle();
+        var buttons = ReadButtons(ref reader); var glass = ReadIds(ref reader); var lamps = ReadIds(ref reader);
+        var fires = ReadFires(ref reader); var audio = ReadAudio(ref reader); var drones = ReadIds(ref reader);
+        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, lamps, fires, audio, drones,
+            reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    }
+
+    private static void WriteButtons(ref PacketWriter writer, EnvironmentButtonState[] values)
+    {
+        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
+        { writer.WriteUInt64(values[index].Id); writer.WriteBoolean(values[index].Active); writer.WriteUInt32(values[index].Activations); }
+    }
+
+    private static EnvironmentButtonState[] ReadButtons(ref PacketReader reader)
+    {
+        var values = new EnvironmentButtonState[reader.ReadUInt16()];
+        for (var index = 0; index < values.Length; index++)
+            values[index] = new EnvironmentButtonState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadUInt32());
+        return values;
+    }
+
+    private static void WriteIds(ref PacketWriter writer, ulong[] values)
+    {
+        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++) writer.WriteUInt64(values[index]);
+    }
+
+    private static ulong[] ReadIds(ref PacketReader reader)
+    {
+        var values = new ulong[reader.ReadUInt16()];
+        for (var index = 0; index < values.Length; index++) values[index] = reader.ReadUInt64();
+        return values;
+    }
+
+    private static void WriteFires(ref PacketWriter writer, EnvironmentFireState[] values)
+    {
+        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
+        {
+            var value = values[index]; writer.WriteUInt64(value.Id); writer.WriteSingle(value.PositionX); writer.WriteSingle(value.PositionY);
+            writer.WriteSingle(value.Rotation); writer.WriteSingle(value.Fuel); writer.WriteBoolean(value.CanIgnite);
+            writer.WriteSingle(value.DamageMultiplier); writer.WriteSingle(value.FuelConsumptionMultiplier);
+        }
+    }
+
+    private static EnvironmentFireState[] ReadFires(ref PacketReader reader)
+    {
+        var values = new EnvironmentFireState[reader.ReadUInt16()];
+        for (var index = 0; index < values.Length; index++) values[index] = new EnvironmentFireState(reader.ReadUInt64(),
+            reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadBoolean(),
+            reader.ReadSingle(), reader.ReadSingle());
+        return values;
+    }
+
+    private static void WriteAudio(ref PacketWriter writer, EnvironmentAudioState[] values)
+    {
+        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
+        { var value = values[index]; writer.WriteUInt64(value.Id); writer.WriteBoolean(value.IsPlaying); writer.WriteBoolean(value.Loop); writer.WriteSingle(value.Volume); writer.WriteSingle(value.Pitch); }
+    }
+
+    private static EnvironmentAudioState[] ReadAudio(ref PacketReader reader)
+    {
+        var values = new EnvironmentAudioState[reader.ReadUInt16()];
+        for (var index = 0; index < values.Length; index++) values[index] = new EnvironmentAudioState(reader.ReadUInt64(),
+            reader.ReadBoolean(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
+        return values;
+    }
+}

@@ -30,9 +30,4 @@ internal readonly struct PacketHeader
         return new[] { Magic0, Magic1, Magic2, Magic3, (byte)type };
     }
 
-    internal static bool HasType(byte[] data, PacketType type)
-    {
-        PacketHeader header;
-        return TryRead(data, out header) && header.Type == type;
-    }
 }

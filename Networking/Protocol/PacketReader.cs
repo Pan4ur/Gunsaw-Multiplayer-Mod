@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text;
 
 internal struct PacketReader
@@ -14,9 +14,35 @@ internal struct PacketReader
 
     internal int ReadInt32() { var value = BitConverter.ToInt32(data, offset); offset += 4; return value; }
 
+    internal short ReadInt16() { var value = BitConverter.ToInt16(data, offset); offset += 2; return value; }
+
     internal long ReadInt64() { var value = BitConverter.ToInt64(data, offset); offset += 8; return value; }
 
+    internal ulong ReadUInt64() { var value = BitConverter.ToUInt64(data, offset); offset += 8; return value; }
+
     internal ushort ReadUInt16() { var value = BitConverter.ToUInt16(data, offset); offset += 2; return value; }
+
+    internal uint ReadUInt32() { var value = BitConverter.ToUInt32(data, offset); offset += 4; return value; }
+
+    internal float ReadSingle() { var value = BitConverter.ToSingle(data, offset); offset += 4; return value; }
+
+    internal bool ReadBoolean() => ReadByte() != 0;
+
+    internal string ReadBinaryString()
+    {
+        var length = 0;
+        var shift = 0;
+        byte next;
+        do
+        {
+            next = ReadByte();
+            length |= (next & 0x7f) << shift;
+            shift += 7;
+        } while ((next & 0x80) != 0 && shift < 35);
+        var value = Encoding.UTF8.GetString(data, offset, length);
+        offset += length;
+        return value;
+    }
 
     internal byte[] ReadRemainingBytes() { var value = new byte[Remaining]; Buffer.BlockCopy(data, offset, value, 0, value.Length); offset = data.Length; return value; }
 

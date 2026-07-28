@@ -39,7 +39,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private string identityFallback = "";
     private string resolvedIdentityPrefab = "";
     private float nextSnapshot;
-    private byte[] lastSerializedVisualState;
+    private PlayerVisualState lastSerializedVisualState;
     private float visualResendUntil;
     private float nextFullVisualSnapshot;
     private float nextAvatarTrafficSample;
@@ -512,35 +512,35 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (player == null || player.bodyScript == null) return;
 
         ushort senderId;
-        byte[] playerTeleport;
+        PlayerTeleportPacket playerTeleport;
         while (MultiplayerSession.TryTakePlayerTeleport(out senderId, out playerTeleport))
             ApplyRemoteTeleport(player.bodyScript, playerTeleport);
 
-        byte[] playerDamage;
+        PlayerDamagePacket playerDamage;
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
-            ApplyPlayerDamage(player.bodyScript, playerDamage);
-        byte[] pvpDamage;
+            ApplyPlayerDamage(player.bodyScript, PacketPayload(playerDamage));
+        PvpDamagePacket pvpDamage;
         while (MultiplayerSession.TryTakePvpDamage(out senderId, out pvpDamage))
             ApplyPvpDamage(player.bodyScript, senderId, pvpDamage);
-        byte[] shotVisual;
+        ShotVisualPacket shotVisual;
         while (MultiplayerSession.TryTakeShotVisual(out senderId, out shotVisual))
         {
             var shooter = GetOrCreateReplica(senderId);
-            if (shooter != null) shooter.PlayRemoteShot(shotVisual);
+            if (shooter != null) shooter.PlayRemoteShot(PacketPayload(shotVisual));
         }
-        byte[] projectileImpact;
+        ProjectileImpactPacket projectileImpact;
         while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
         {
             var shooter = GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteProjectileImpact(projectileImpact);
         }
-        byte[] velvetWeb;
+        VelvetWebPacket velvetWeb;
         while (MultiplayerSession.TryTakeVelvetWeb(out senderId, out velvetWeb))
         {
             var shooter = GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteVelvetWeb(velvetWeb);
         }
-        byte[] playerGrab;
+        PlayerGrabPacket playerGrab;
         while (MultiplayerSession.TryTakePlayerGrab(out senderId, out playerGrab))
             ReceivePlayerGrab(playerGrab);
         UpdateLocalRespawn(player);
@@ -554,7 +554,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             identitySent = currentIdentity;
             nextIdentity = Time.unscaledTime + 2f;
-            MultiplayerSession.SendIdentity(localName, prefab);
+            MultiplayerSession.Send(new IdentityPacket(localName, prefab));
         }
 
         string identity;
@@ -567,10 +567,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (Time.unscaledTime >= nextSnapshot)
         {
             nextSnapshot = Time.unscaledTime + CurrentSnapshotInterval();
-            MultiplayerSession.SendSnapshot(Serialize(player.bodyScript));
+            MultiplayerSession.Send(Serialize(PacketSequences.NextPlayerSnapshot(), player.bodyScript));
         }
 
-        byte[] snapshot;
+        PlayerSnapshotPacket snapshot;
         while (MultiplayerSession.TryTakeSnapshot(out senderId, out snapshot))
         {
             NetworkAvatarReplication replica;
@@ -927,12 +927,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         beam.SetActive(false);
     }
 
-    private byte[] Serialize(BodyScript body)
+    private PlayerSnapshotPacket Serialize(int sequence, BodyScript body)
     {
         var performanceStarted = MultiplayerPerformance.Start();
         localVisualLayout = GetVisualLayout(localVisualLayout, body.transform);
         var visualState = SerializeVisualState(localVisualLayout);
-        var visualChanged = !BytesEqual(lastSerializedVisualState, visualState);
+        var visualChanged = !PlayerVisualState.Equals(lastSerializedVisualState, visualState);
         if (visualChanged)
         {
             lastSerializedVisualState = visualState;
@@ -949,61 +949,114 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var sectionStarted = writer.BaseStream.Position;
             var vehicleId = body.inVehicle && body.curVehicle != null && GunsawMultiplayerPlugin.World != null
                 ? GunsawMultiplayerPlugin.World.VehicleWireId(body.curVehicle) : 0UL;
-            writer.Write(vehicleId != 0UL);
+            var inVehicle = vehicleId != 0UL;
+            var isVehicleDriver = inVehicle && body.curVehicle.occupant == body;
+            var isReflected = body.transform.localScale.x < 0f;
+            var isActive = body.transform.root.gameObject.activeInHierarchy;
+            writer.Write(inVehicle);
             writer.Write(vehicleId);
-            writer.Write(vehicleId != 0UL && body.curVehicle.occupant == body);
+            writer.Write(isVehicleDriver);
             writer.Write((byte)body.CurrentState);
             writer.Write(body.isRight);
-            writer.Write(body.transform.localScale.x < 0f);
-            writer.Write(body.transform.root.gameObject.activeInHierarchy);
+            writer.Write(isReflected);
+            writer.Write(isActive);
             var headReferenceRotation = vehicleId != 0UL && body.curVehicle.mainPart != null &&
                 body.curVehicle.mainPart.rb != null ? body.curVehicle.mainPart.rb.rotation : body.rb.rotation;
-            writer.Write(body.headTransform == null ? 0f :
-                Mathf.DeltaAngle(headReferenceRotation, body.headTransform.eulerAngles.z));
+            var headRotation = body.headTransform == null ? 0f :
+                Mathf.DeltaAngle(headReferenceRotation, body.headTransform.eulerAngles.z);
+            writer.Write(headRotation);
             WriteBody(writer, body.rb);
             breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
             var limbs = GetList(body, "limbs");
+            var limbStates = new PlayerSnapshotLimbState[limbs.Count];
             writer.Write((ushort)limbs.Count);
+            var limbIndex = 0;
             foreach (LimbScript limb in limbs)
             {
-                WriteBody(writer, limb.rb);
-                writer.Write(limb.dismembered);
-                writer.Write(IsBurning(limb));
+                var limbBody = limb.rb == null ? new PlayerSnapshotBodyState(0f, 0f, 0f) :
+                    new PlayerSnapshotBodyState(limb.rb.position.x, limb.rb.position.y, limb.rb.rotation);
+                var dismembered = limb.dismembered;
+                var burning = IsBurning(limb);
+                writer.Write(limbBody.X);
+                writer.Write(limbBody.Y);
+                writer.Write(limbBody.Rotation);
+                writer.Write(dismembered);
+                writer.Write(burning);
+                limbStates[limbIndex++] = new PlayerSnapshotLimbState(limbBody, dismembered, burning);
             }
             breakdown.Limbs += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
             var tailBases = GetList(body, "tailBases");
+            var tailBaseStates = new PlayerSnapshotTailState[tailBases.Count];
             writer.Write((ushort)tailBases.Count);
-            foreach (Rigidbody2D tailBase in tailBases) WriteTailTransform(writer, body.rb,
-                tailBase == null ? null : tailBase.transform, tailBase != null ? tailBase.rotation : 0f);
+            var tailBaseIndex = 0;
+            foreach (Rigidbody2D tailBase in tailBases)
+            {
+                var tailBaseTransform = tailBase == null ? null : tailBase.transform;
+                var tailBaseRotation = tailBase != null ? tailBase.rotation : 0f;
+                WriteTailTransform(writer, body.rb, tailBaseTransform, tailBaseRotation);
+                tailBaseStates[tailBaseIndex++] = CreateTailBaseState(body.rb, tailBaseTransform, tailBaseRotation);
+            }
             var tails = GetTransforms(body, "tails");
+            var tailStates = new PlayerSnapshotTailState[tails.Length];
             writer.Write((ushort)tails.Length);
-            foreach (var tail in tails) WriteTailTransform(writer, body.rb, tail,
-                tail == null ? 0f : tail.eulerAngles.z);
+            for (var tailIndex = 0; tailIndex < tails.Length; tailIndex++)
+            {
+                var tail = tails[tailIndex];
+                var tailRotation = tail == null ? 0f : tail.eulerAngles.z;
+                WriteTailTransform(writer, body.rb, tail, tailRotation);
+                tailStates[tailIndex] = CreateTailBaseState(body.rb, tail, tailRotation);
+            }
 
-            WriteWorldTransform(writer, body.Arms);
-            WriteLocalTransform(writer, GetTransform(body, "gunTransform"));
-            WriteLocalTransform(writer, GetTransform(body, "gunAnimTransform"));
-            WriteWorldTransform(writer, body.weapon == null ? null : body.weapon.transform);
+            var arms = body.Arms;
+            var gunTransform = GetTransform(body, "gunTransform");
+            var gunAnimationTransform = GetTransform(body, "gunAnimTransform");
+            var weaponTransform = body.weapon == null ? null : body.weapon.transform;
+            WriteWorldTransform(writer, arms);
+            WriteLocalTransform(writer, gunTransform);
+            WriteLocalTransform(writer, gunAnimationTransform);
+            WriteWorldTransform(writer, weaponTransform);
+            var armsTransform = arms == null ? new PlayerSnapshotTransform(0f, 0f, 0f) :
+                new PlayerSnapshotTransform(arms.position.x, arms.position.y, arms.eulerAngles.z);
+            var gunTransformState = gunTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) :
+                new PlayerSnapshotTransform(gunTransform.localPosition.x, gunTransform.localPosition.y,
+                    gunTransform.localEulerAngles.z);
+            var gunAnimationTransformState = gunAnimationTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) :
+                new PlayerSnapshotTransform(gunAnimationTransform.localPosition.x, gunAnimationTransform.localPosition.y,
+                    gunAnimationTransform.localEulerAngles.z);
+            var weaponTransformState = weaponTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) :
+                new PlayerSnapshotTransform(weaponTransform.position.x, weaponTransform.position.y,
+                    weaponTransform.eulerAngles.z);
             breakdown.Rig += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
-            writer.Write(body.health);
-            writer.Write(body.isAlive);
-            writer.Write(body.stamina);
-            writer.Write((byte)body.controlState);
-            writer.Write(CanGrabOnlyState(body));
-            writer.Write(body.burnIntensity);
-            writer.Write(body.noLegs);
-            writer.Write(body.deHeaded);
-            writer.Write(body.unarmed ? -1 : body.currentWeapon);
-            writer.Write(body.weapon == null ? 0 : body.weapon.ammo);
+            var health = body.health;
+            var isAlive = body.isAlive;
+            var stamina = body.stamina;
+            var controlState = (byte)body.controlState;
+            var canBeGrabbed = CanGrabOnlyState(body);
+            var burnIntensity = body.burnIntensity;
+            var hasNoLegs = body.noLegs;
+            var isDecapitated = body.deHeaded;
+            writer.Write(health);
+            writer.Write(isAlive);
+            writer.Write(stamina);
+            writer.Write(controlState);
+            writer.Write(canBeGrabbed);
+            writer.Write(burnIntensity);
+            writer.Write(hasNoLegs);
+            writer.Write(isDecapitated);
+            var weaponSlot = body.unarmed ? -1 : body.currentWeapon;
+            var weaponAmmo = body.weapon == null ? 0 : body.weapon.ammo;
             var weapons = GetList(body, "weapons");
             var activeRenderer = localVisualLayout.WeaponRenderer;
-            writer.Write(NetworkWireId.FromString(SpriteId(activeRenderer == null ? null : activeRenderer.sprite)));
+            var weaponSpriteId = NetworkWireId.FromString(SpriteId(activeRenderer == null ? null : activeRenderer.sprite));
+            writer.Write(weaponSlot);
+            writer.Write(weaponAmmo);
+            writer.Write(weaponSpriteId);
             writer.Write((ushort)weapons.Count);
             var inventoryIds = new ulong[weapons.Count];
             for (var index = 0; index < weapons.Count; index++)
@@ -1023,20 +1076,33 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             breakdown.Weapons += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
-            WriteLineState(writer, body.wepLaserLine);
+            var weaponLaserState = CreateWeaponLaserState(body.wepLaserLine);
+            WriteLineState(writer, weaponLaserState);
             var player = PlayerScript.player;
-            WriteLineState(writer, player == null ? null : player.levitLine);
-            WriteScarfState(writer, body);
+            var levitatorLaser = player == null ? null : player.levitLine;
+            var levitatorLaserState = CreateWeaponLaserState(levitatorLaser);
+            WriteLineState(writer, levitatorLaserState);
+            var scarfState = CreateScarfState(body);
+            WriteScarfState(writer, scarfState);
             breakdown.Effects += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
             writer.Write(includeVisualState);
-            if (includeVisualState) writer.Write(visualState);
+            if (includeVisualState) WriteVisualState(writer, visualState);
             breakdown.Visual += (int)(writer.BaseStream.Position - sectionStarted);
             var packet = stream.ToArray();
             AddAvatarWireBreakdown(breakdown);
             MultiplayerPerformance.AddAvatarSerialize(performanceStarted);
-            return packet;
+            var coreBody = body.rb == null ? new PlayerSnapshotBodyState(0f, 0f, 0f) :
+                new PlayerSnapshotBodyState(body.rb.position.x, body.rb.position.y, body.rb.rotation);
+            var packetVisualState = includeVisualState ? CreatePacketVisualState(visualState) :
+                (PlayerSnapshotVisualState?)null;
+            return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
+                (byte)body.CurrentState, body.isRight, isReflected, isActive, headRotation, coreBody, health,
+                isAlive, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
+                armsTransform, gunTransformState, gunAnimationTransformState, weaponTransformState, limbStates,
+                tailBaseStates, tailStates, weaponSlot, weaponAmmo, weaponSpriteId, inventoryIds, inventoryChanged,
+                scarfState, weaponLaserState, levitatorLaserState, includeVisualState, packetVisualState);
         }
     }
 
@@ -1060,32 +1126,81 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             avatarEffectsBytesWindow = avatarVisualBytesWindow = 0;
     }
 
-    private static byte[] SerializeVisualState(VisualLayout layout)
+    private static PlayerVisualState SerializeVisualState(VisualLayout layout)
     {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
+        var renderers = layout == null || layout.Renderers == null
+            ? new SpriteRenderer[0]
+            : layout.Renderers;
+        var rendererStates = new RendererVisualState[renderers.Length];
+        for (var index = 0; index < renderers.Length; index++)
         {
-            WriteVisualState(writer, layout);
-            return stream.ToArray();
+            var renderer = renderers[index];
+            var path = layout.RendererPaths != null && index < layout.RendererPaths.Length
+                ? layout.RendererPaths[index] ?? ""
+                : "";
+            rendererStates[index] = renderer == null
+                ? new RendererVisualState(path, false, Color.white, false, false)
+                : new RendererVisualState(path, renderer.enabled && renderer.gameObject.activeInHierarchy,
+                    renderer.color, renderer.flipX, renderer.flipY);
         }
+
+        var lights = layout == null || layout.Lights == null ? new Component[0] : layout.Lights;
+        var lightStates = new LightVisualState[lights.Length];
+        for (var index = 0; index < lights.Length; index++)
+        {
+            var light = lights[index];
+            var path = layout.LightPaths != null && index < layout.LightPaths.Length
+                ? layout.LightPaths[index] ?? ""
+                : "";
+            if (light == null)
+            {
+                lightStates[index] = new LightVisualState(path, false, 0f, Color.white);
+                continue;
+            }
+            var behaviour = light as Behaviour;
+            var light2D = light as UnityEngine.Experimental.Rendering.Universal.Light2D;
+            lightStates[index] = new LightVisualState(path,
+                behaviour == null || behaviour.enabled && light.gameObject.activeInHierarchy,
+                light2D == null ? 0f : light2D.intensity, light2D == null ? Color.white : light2D.color);
+        }
+        return new PlayerVisualState(rendererStates, lightStates);
     }
 
-    private static bool BytesEqual(byte[] left, byte[] right)
+    private static PlayerSnapshotVisualState CreatePacketVisualState(PlayerVisualState state)
     {
-        if (left == right) return true;
-        if (left == null || right == null || left.Length != right.Length) return false;
-        for (var index = 0; index < left.Length; index++) if (left[index] != right[index]) return false;
-        return true;
+        var sourceRenderers = state == null || state.Renderers == null
+            ? new RendererVisualState[0]
+            : state.Renderers;
+        var renderers = new PlayerSnapshotRendererState[sourceRenderers.Length];
+        for (var index = 0; index < sourceRenderers.Length; index++)
+        {
+            var renderer = sourceRenderers[index];
+            renderers[index] = new PlayerSnapshotRendererState(renderer.Path, renderer.Visible,
+                new PlayerSnapshotColor(renderer.Color.r, renderer.Color.g, renderer.Color.b, renderer.Color.a),
+                renderer.FlipX, renderer.FlipY);
+        }
+        var sourceLights = state == null || state.Lights == null ? new LightVisualState[0] : state.Lights;
+        var lights = new PlayerSnapshotLightState[sourceLights.Length];
+        for (var index = 0; index < sourceLights.Length; index++)
+        {
+            var light = sourceLights[index];
+            lights[index] = new PlayerSnapshotLightState(light.Path, light.Visible, light.Intensity,
+                new PlayerSnapshotColor(light.Color.r, light.Color.g, light.Color.b, light.Color.a));
+        }
+        return new PlayerSnapshotVisualState(renderers, lights);
     }
 
-    private void Apply(byte[] data)
+    private void Apply(PlayerSnapshotPacket snapshot)
     {
         if (remoteBody == null || remoteBody.rb == null) return;
         var performanceStarted = MultiplayerPerformance.Start();
         try
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
+            var packetWriter = new PacketWriter(512);
+            snapshot.Write(ref packetWriter);
+            using (var reader = new BinaryReader(new MemoryStream(packetWriter.ToArray(), false)))
             {
+                reader.ReadInt32();
                 var remoteInVehicle = reader.ReadBoolean();
                 var remoteVehicleId = reader.ReadUInt64();
                 var remoteVehicleDriver = reader.ReadBoolean();
@@ -1240,7 +1355,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 ReadLineState(reader, remoteLaser, remoteBody.wepLaser);
                 ReadLineState(reader, remoteLevitLine, remoteLevitLine == null ? null : remoteLevitLine.gameObject);
                 ReadScarfState(reader);
-                if (reader.ReadBoolean()) ReadVisualState(reader, remoteBody.transform);
+                if (reader.ReadBoolean()) ApplyVisualState(ReadVisualState(reader), remoteBody.transform);
                 receivedFirstSnapshot = true;
             }
         }
@@ -1453,24 +1568,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var localPlayer = PlayerScript.player;
 
         if (localPlayer == null || currentShooter != localPlayer.bodyScript) return;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(amount);
-            writer.Write(critical);
-            MultiplayerSession.SendPvpDamage(replica.remotePeerId, stream.ToArray());
-        }
+        MultiplayerSession.Send(new PvpDamagePacket(amount, critical), replica.remotePeerId);
     }
 
     private static void SendRemotePlayerDamage(ushort targetPeerId, float amount, bool critical)
     {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(amount);
-            writer.Write(critical);
-            MultiplayerSession.SendPlayerDamage(targetPeerId, stream.ToArray());
-        }
+        if (MultiplayerSession.IsHost) MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical), targetPeerId);
+    }
+
+    private static byte[] PacketPayload(INetworkPacket packet)
+    {
+        var writer = new PacketWriter(64);
+        packet.Write(ref writer);
+        return writer.ToArray();
     }
 
     private static void ApplyPlayerDamage(BodyScript body, byte[] data)
@@ -1992,13 +2102,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private static void ApplyPvpDamage(BodyScript body, ushort senderId, byte[] data)
+    private static void ApplyPvpDamage(BodyScript body, ushort senderId, PvpDamagePacket packet)
     {
-        if (!MultiplayerSession.PvpEnabled) return;
+        if (!MultiplayerSession.PvpEnabled || body == null) return;
         var source = senderId == MultiplayerSession.LocalPeerId
             ? body : RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
-        ApplyPlayerDamage(body, data);
+        if (Time.unscaledTime < localRespawnProtectionUntil) return;
+        var amount = Mathf.Clamp(packet.Amount, 0f, 1000f);
+        if (amount <= 0f || !body.isAlive) return;
+        body.health -= amount;
+        applyingNetworkPlayerDamage = true;
+        try { body.Damaged(packet.Critical); }
+        finally { applyingNetworkPlayerDamage = false; }
     }
 
     private void UpdateRemotePhysicsMode()
@@ -2103,53 +2219,35 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             replica.TryRemotePart(target, out kind, out index))
         {
             if (instance.outgoingGrabPeerId != 0 && instance.outgoingGrabPeerId != replica.remotePeerId)
-                MultiplayerSession.SendPlayerGrab(instance.outgoingGrabPeerId, new byte[] { 0 });
-            using (var stream = new MemoryStream())
-            using (var writer = new BinaryWriter(stream))
-            {
-                writer.Write(true);
-                writer.Write(kind);
-                writer.Write(index);
-                writer.Write(levitator.point.x);
-                writer.Write(levitator.point.y);
-                writer.Write(levitator.localGrabPoint.x);
-                writer.Write(levitator.localGrabPoint.y);
-                MultiplayerSession.SendPlayerGrab(replica.remotePeerId, stream.ToArray());
-            }
+                MultiplayerSession.Send(new PlayerGrabPacket(false), instance.outgoingGrabPeerId);
+            MultiplayerSession.Send(new PlayerGrabPacket(true, kind, index, levitator.point.x,
+                levitator.point.y, levitator.localGrabPoint.x, levitator.localGrabPoint.y), replica.remotePeerId);
             instance.outgoingGrabPeerId = replica.remotePeerId;
             return;
         }
         if (instance.outgoingGrabPeerId == 0) return;
-        MultiplayerSession.SendPlayerGrab(instance.outgoingGrabPeerId, new byte[] { 0 });
+        MultiplayerSession.Send(new PlayerGrabPacket(false), instance.outgoingGrabPeerId);
         instance.outgoingGrabPeerId = 0;
     }
 
-    private void ReceivePlayerGrab(byte[] data)
+    private void ReceivePlayerGrab(PlayerGrabPacket packet)
     {
-        if (data == null || data.Length < 1 || !MultiplayerSession.CanGrabPlayers)
+        if (!MultiplayerSession.CanGrabPlayers || !packet.IsGrabbing)
         {
             incomingGrabUntil = 0f;
             return;
         }
-        try
+        var command = new GrabCommand
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                if (!reader.ReadBoolean()) { incomingGrabUntil = 0f; return; }
-                var command = new GrabCommand
-                {
-                    Kind = reader.ReadByte(),
-                    Index = reader.ReadInt16(),
-                    Point = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-                    LocalPoint = new Vector2(reader.ReadSingle(), reader.ReadSingle())
-                };
-                if (!IsFinite(command.Point.x) || !IsFinite(command.Point.y) ||
-                    !IsFinite(command.LocalPoint.x) || !IsFinite(command.LocalPoint.y)) return;
-                incomingGrab = command;
-                incomingGrabUntil = Time.unscaledTime + 0.15f;
-            }
-        }
-        catch (EndOfStreamException) { }
+            Kind = packet.PartKind,
+            Index = packet.PartIndex,
+            Point = new Vector2(packet.PointX, packet.PointY),
+            LocalPoint = new Vector2(packet.LocalPointX, packet.LocalPointY)
+        };
+        if (!IsFinite(command.Point.x) || !IsFinite(command.Point.y) ||
+            !IsFinite(command.LocalPoint.x) || !IsFinite(command.LocalPoint.y)) return;
+        incomingGrab = command;
+        incomingGrabUntil = Time.unscaledTime + 0.15f;
     }
 
     private void ApplyIncomingGrab()
@@ -2360,14 +2458,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             shooter.GetComponentInParent<NetworkReplica>() == null;
         if (!localPlayerShot && !hostNpcShot) return;
         var weapon = shooter == null ? null : shooter.weapon;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(position.x);
-            writer.Write(position.y);
-            writer.Write(SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite));
-            MultiplayerSession.SendProjectileImpact(stream.ToArray());
-        }
+        MultiplayerSession.Send(new ProjectileImpactPacket(position.x, position.y,
+            SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite)));
     }
 
     internal static void ReplicateVelvetWeb(VelvetScript velvet)
@@ -2390,15 +2482,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         localVelvetWebs.RemoveWhere(candidate => candidate == null);
         var direction = (Vector2)web.transform.right;
         if (direction.sqrMagnitude < 0.01f) return;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(web.transform.position.x);
-            writer.Write(web.transform.position.y);
-            writer.Write(direction.normalized.x);
-            writer.Write(direction.normalized.y);
-            MultiplayerSession.SendVelvetWeb(stream.ToArray());
-        }
+        var normalizedDirection = direction.normalized;
+        MultiplayerSession.Send(new VelvetWebPacket(web.transform.position.x, web.transform.position.y,
+            normalizedDirection.x, normalizedDirection.y));
     }
 
     internal static void ReplicateTeleportZone(TeleportZone zone, int activationId)
@@ -2425,13 +2511,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0) continue;
             if (!teleported.Contains(replica.remoteBody) &&
                 !IsInsideTeleportZone(replica.remoteBody, zone.transform, collider)) continue;
-            using (var stream = new MemoryStream())
-            using (var writer = new BinaryWriter(stream))
-            {
-                writer.Write(zone.teleportPoint.position.x);
-                writer.Write(zone.teleportPoint.position.y);
-                MultiplayerSession.SendPlayerTeleport(replica.remotePeerId, stream.ToArray());
-            }
+            if (MultiplayerSession.IsHost)
+                MultiplayerSession.Send(new PlayerTeleportPacket(zone.teleportPoint.position.x,
+                    zone.teleportPoint.position.y), replica.remotePeerId);
         }
     }
 
@@ -2473,73 +2555,57 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return Mathf.Abs(localPoint.x) <= halfSize.x && Mathf.Abs(localPoint.y) <= halfSize.y;
     }
 
-    private static void ApplyRemoteTeleport(BodyScript body, byte[] data)
+    private static void ApplyRemoteTeleport(BodyScript body, PlayerTeleportPacket packet)
     {
-        if (body == null || data == null || MultiplayerSession.IsHost) return;
-        try
-        {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                if (!IsFinite(position.x) || !IsFinite(position.y)) return;
-                body.transform.position = position;
-                if (CameraFollow.cam != null) CameraFollow.cam.CenterToPlayer();
-                if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
-                foreach (var unloader in FindObjectsOfType<ObjectUnloader>())
-                    if (unloader != null) unloader.CheckDistance();
-                var sound = Resources.Load<AudioClip>("Sounds/Teleport");
-                if (sound != null) Sound.Play(sound, position, false, false);
-            }
-        }
-        catch (EndOfStreamException) { }
-        catch (IOException) { }
+        if (body == null || MultiplayerSession.IsHost) return;
+        var position = new Vector2(packet.PositionX, packet.PositionY);
+        if (!IsFinite(position.x) || !IsFinite(position.y)) return;
+        body.transform.position = position;
+        if (CameraFollow.cam != null) CameraFollow.cam.CenterToPlayer();
+        if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
+        foreach (var unloader in FindObjectsOfType<ObjectUnloader>())
+            if (unloader != null) unloader.CheckDistance();
+        var sound = Resources.Load<AudioClip>("Sounds/Teleport");
+        if (sound != null) Sound.Play(sound, position, false, false);
     }
 
-    private void PlayRemoteVelvetWeb(byte[] data)
+    private void PlayRemoteVelvetWeb(VelvetWebPacket packet)
     {
-        if (data == null || remoteBody == null) return;
-        try
+        if (remoteBody == null) return;
+        var origin = new Vector2(packet.PositionX, packet.PositionY);
+        var direction = new Vector2(packet.DirectionX, packet.DirectionY);
+        if (!IsFinite(origin.x) || !IsFinite(origin.y) || !IsFinite(direction.x) ||
+            !IsFinite(direction.y) || direction.sqrMagnitude < 0.01f) return;
+        var velvet = remoteBody.GetComponent<VelvetScript>();
+        var prefab = velvet == null ? null : velvet.spawnPrefab;
+        if (prefab == null) return;
+        var visual = Instantiate(prefab, origin, Quaternion.identity);
+        var web = visual.GetComponent<WebScript>();
+        if (web == null)
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                var origin = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var direction = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                if (!IsFinite(origin.x) || !IsFinite(origin.y) || !IsFinite(direction.x) ||
-                    !IsFinite(direction.y) || direction.sqrMagnitude < 0.01f) return;
-                var velvet = remoteBody.GetComponent<VelvetScript>();
-                var prefab = velvet == null ? null : velvet.spawnPrefab;
-                if (prefab == null) return;
-                var visual = Instantiate(prefab, origin, Quaternion.identity);
-                var web = visual.GetComponent<WebScript>();
-                if (web == null)
-                {
-                    Destroy(visual);
-                    return;
-                }
-                var speed = web.speed;
-                var groundSprite = web.groundSprite;
-                var bodySprite = web.bodySprite;
-                visual.name = "MP Velvet Web";
-                visual.transform.right = direction.normalized;
-                foreach (var behaviour in visual.GetComponentsInChildren<MonoBehaviour>(true)) behaviour.enabled = false;
-                foreach (var collider in visual.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
-                foreach (var rigidbody in visual.GetComponentsInChildren<Rigidbody2D>(true)) rigidbody.simulated = false;
-                foreach (var source in visual.GetComponentsInChildren<AudioSource>(true)) source.enabled = false;
-                var splash = Resources.Load<GameObject>("Spawnables/WebSplashSpit");
-                if (splash != null)
-                {
-                    var effect = Instantiate(splash, origin, Quaternion.identity);
-                    effect.transform.right = direction.normalized;
-                    Destroy(effect, 10f);
-                }
-                var sound = Resources.Load<AudioClip>("Sounds/spit");
-                if (sound != null) Sound.Play(sound, origin);
-                StartCoroutine(MoveRemoteVelvetWeb(visual, direction.normalized, speed,
-                    groundSprite, bodySprite, remoteBody));
-            }
+            Destroy(visual);
+            return;
         }
-        catch (EndOfStreamException) { }
-        catch (IOException) { }
+        var speed = web.speed;
+        var groundSprite = web.groundSprite;
+        var bodySprite = web.bodySprite;
+        visual.name = "MP Velvet Web";
+        visual.transform.right = direction.normalized;
+        foreach (var behaviour in visual.GetComponentsInChildren<MonoBehaviour>(true)) behaviour.enabled = false;
+        foreach (var collider in visual.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
+        foreach (var rigidbody in visual.GetComponentsInChildren<Rigidbody2D>(true)) rigidbody.simulated = false;
+        foreach (var source in visual.GetComponentsInChildren<AudioSource>(true)) source.enabled = false;
+        var splash = Resources.Load<GameObject>("Spawnables/WebSplashSpit");
+        if (splash != null)
+        {
+            var effect = Instantiate(splash, origin, Quaternion.identity);
+            effect.transform.right = direction.normalized;
+            Destroy(effect, 10f);
+        }
+        var sound = Resources.Load<AudioClip>("Sounds/spit");
+        if (sound != null) Sound.Play(sound, origin);
+        StartCoroutine(MoveRemoteVelvetWeb(visual, direction.normalized, speed,
+            groundSprite, bodySprite, remoteBody));
     }
 
     private static IEnumerator MoveRemoteVelvetWeb(GameObject visual, Vector2 direction, float speed,
@@ -2639,18 +2705,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0 ||
                 !BodyMayBeAffectedByExplosion(replica.remoteBody, explosionObject, position, range)) continue;
-            using (var stream = new MemoryStream())
-            using (var writer = new BinaryWriter(stream))
-            {
-                writer.Write(0f);
-                writer.Write(false);
-                writer.Write((byte)2);
-                writer.Write(position.x);
-                writer.Write(position.y);
-                writer.Write(range);
-                writer.Write(force);
-                MultiplayerSession.SendPlayerDamage(replica.remotePeerId, stream.ToArray());
-            }
+            MultiplayerSession.Send(PlayerDamagePacket.Explosion(position.x, position.y, range, force),
+                replica.remotePeerId);
         }
     }
 
@@ -2709,33 +2765,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (!completed || state == null || state.Weapon == null || shooter == null ||
                 (!localPlayerShot && !hostNpcShot) || state.Weapon.ammo >= state.AmmoBefore ||
                 !MultiplayerSession.IsConnected) return;
-            using (var stream = new MemoryStream())
-            using (var writer = new BinaryWriter(stream))
+            var targetPeers = new List<ushort>();
+            foreach (var wound in state.Wounds)
+                if (wound.TargetPeerId != 0 && !targetPeers.Contains(wound.TargetPeerId))
+                    targetPeers.Add(wound.TargetPeerId);
+            var directionCount = Math.Min(byte.MaxValue, state.ShotDirections.Count);
+            var exactDirections = new ShotVisualDirection[directionCount];
+            for (var index = 0; index < directionCount; index++)
             {
-                writer.Write(state.Origin.x);
-                writer.Write(state.Origin.y);
-                writer.Write(state.Direction.x);
-                writer.Write(state.Direction.y);
-                writer.Write(state.Up.x);
-                writer.Write(state.Up.y);
-                writer.Write(state.WeaponSprite ?? "");
-                writer.Write(hostNpcShot);
-
-                var targetPeers = new List<ushort>();
-                foreach (var wound in state.Wounds)
-                    if (wound.TargetPeerId != 0 && !targetPeers.Contains(wound.TargetPeerId))
-                        targetPeers.Add(wound.TargetPeerId);
-                writer.Write((ushort)targetPeers.Count);
-                foreach (var targetPeer in targetPeers) writer.Write(targetPeer);
-                writer.Write(state.SpreadSeed);
-                writer.Write((byte)Math.Min(byte.MaxValue, state.ShotDirections.Count));
-                foreach (var shotDirection in state.ShotDirections)
-                {
-                    writer.Write(shotDirection.x);
-                    writer.Write(shotDirection.y);
-                }
-                MultiplayerSession.SendShotVisual(stream.ToArray());
+                var direction = state.ShotDirections[index];
+                exactDirections[index] = new ShotVisualDirection(direction.x, direction.y);
             }
+            MultiplayerSession.Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x,
+                state.Direction.y, state.Up.x, state.Up.y, state.WeaponSprite, hostNpcShot,
+                targetPeers.ToArray(), state.SpreadSeed, exactDirections));
             foreach (var wound in state.Wounds)
                 SendRemotePlayerWound(wound, wound.Critical);
         }
@@ -2767,25 +2810,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static void SendRemotePlayerWound(PlayerWound wound, bool createScreenCrack)
     {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(0f);
-            writer.Write(false);
-            writer.Write((byte)1);
-            writer.Write(wound.LimbIndex);
-            writer.Write(wound.LocalPoint.x);
-            writer.Write(wound.LocalPoint.y);
-            writer.Write(wound.Direction.x);
-            writer.Write(wound.Direction.y);
-            writer.Write(wound.WeaponSprite ?? "");
-            writer.Write(wound.WoundSprite ?? "");
-            writer.Write(wound.HasSplash);
-            writer.Write(createScreenCrack);
-            if (MultiplayerSession.IsHost)
-                MultiplayerSession.SendPlayerDamage(wound.TargetPeerId, stream.ToArray());
-            else MultiplayerSession.SendPvpDamage(wound.TargetPeerId, stream.ToArray());
-        }
+        var type = MultiplayerSession.IsHost ? PacketType.PlayerDamage : PacketType.PvpDamage;
+        MultiplayerSession.Send(new PlayerWoundPacket(type, wound.LimbIndex,
+            wound.LocalPoint.x, wound.LocalPoint.y, wound.Direction.x, wound.Direction.y,
+            wound.WeaponSprite, wound.WoundSprite, wound.HasSplash, createScreenCrack), wound.TargetPeerId);
     }
 
     private void PlayRemoteShot(byte[] data)
@@ -2960,34 +2988,25 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         CreateRemoteExplosionCracks(position);
     }
 
-    private void PlayRemoteProjectileImpact(byte[] data)
+    private void PlayRemoteProjectileImpact(ProjectileImpactPacket packet)
     {
-        if (data == null) return;
-        try
-        {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var sprite = reader.ReadString();
-                if (!IsFinite(position.x) || !IsFinite(position.y)) return;
+        var position = new Vector2(packet.PositionX, packet.PositionY);
+        var sprite = packet.WeaponSpriteId;
+        if (!IsFinite(position.x) || !IsFinite(position.y)) return;
 
-                RemoteProjectileVisual projectile = null;
-                while (remoteProjectiles.Count > 0 && remoteProjectiles.Peek().ExpiresAt < Time.unscaledTime)
-                    remoteProjectiles.Dequeue();
-                if (remoteProjectiles.Count > 0) projectile = remoteProjectiles.Dequeue();
-                if (projectile == null)
-                {
-                    var preset = FindWeaponPreset(sprite);
-                    projectile = CreateRemoteProjectileVisualData(preset == null ? null : preset.tracerLine);
-                }
-                if (projectile == null) return;
-                if (projectile.Visual != null) Destroy(projectile.Visual);
-                CreateRemoteProjectileImpact(position, projectile.ImpactEffect, projectile.ExplosionSound,
-                    projectile.FireAmount, projectile.Range);
-            }
+        RemoteProjectileVisual projectile = null;
+        while (remoteProjectiles.Count > 0 && remoteProjectiles.Peek().ExpiresAt < Time.unscaledTime)
+            remoteProjectiles.Dequeue();
+        if (remoteProjectiles.Count > 0) projectile = remoteProjectiles.Dequeue();
+        if (projectile == null)
+        {
+            var preset = FindWeaponPreset(sprite);
+            projectile = CreateRemoteProjectileVisualData(preset == null ? null : preset.tracerLine);
         }
-        catch (EndOfStreamException) { }
-        catch (IOException) { }
+        if (projectile == null) return;
+        if (projectile.Visual != null) Destroy(projectile.Visual);
+        CreateRemoteProjectileImpact(position, projectile.ImpactEffect, projectile.ExplosionSound,
+            projectile.FireAmount, projectile.Range);
     }
 
     private static RemoteProjectileVisual CreateRemoteProjectileVisualData(GameObject projectile)
@@ -3299,6 +3318,25 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
+    private static PlayerSnapshotTailState CreateTailBaseState(Rigidbody2D reference, Transform transform,
+        float rotation)
+    {
+        if (reference == null || transform == null)
+            return new PlayerSnapshotTailState(0f, 0f, 0f, false, null);
+
+        var delta = (Vector2)transform.position - reference.position;
+        var renderers = transform.GetComponentsInChildren<SpriteRenderer>(true);
+        var colors = new PlayerSnapshotByteColor[renderers.Length];
+        for (var index = 0; index < renderers.Length; index++)
+        {
+            var color = (Color32)renderers[index].color;
+            colors[index] = new PlayerSnapshotByteColor(color.r, color.g, color.b, color.a);
+        }
+        var sprite = renderers.Length == 0 ? null : renderers[0];
+        return new PlayerSnapshotTailState(delta.x, delta.y, Mathf.DeltaAngle(reference.rotation, rotation),
+            sprite != null && sprite.transform.lossyScale.y < 0f, colors);
+    }
+
     private Vector2 SetTarget(BinaryReader reader, Rigidbody2D body)
     {
         var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
@@ -3591,6 +3629,46 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
+    private static PlayerSnapshotLineState CreateWeaponLaserState(LineRenderer line)
+    {
+        var visible = line != null && line.enabled && line.gameObject.activeInHierarchy && line.positionCount > 0;
+        if (!visible) return new PlayerSnapshotLineState(false, false, default(PlayerSnapshotColor),
+            default(PlayerSnapshotColor), 0f, 0f, new PlayerSnapshotVector3[0]);
+
+        var count = Mathf.Min(line.positionCount, 16);
+        var points = new PlayerSnapshotVector3[count];
+        for (var index = 0; index < count; index++)
+        {
+            var point = line.GetPosition(index);
+            points[index] = new PlayerSnapshotVector3(point.x, point.y, point.z);
+        }
+        var startColor = line.startColor;
+        var endColor = line.endColor;
+        return new PlayerSnapshotLineState(true, line.useWorldSpace,
+            new PlayerSnapshotColor(startColor.r, startColor.g, startColor.b, startColor.a),
+            new PlayerSnapshotColor(endColor.r, endColor.g, endColor.b, endColor.a), line.startWidth,
+            line.endWidth, points);
+    }
+
+    private static void WriteLineState(BinaryWriter writer, PlayerSnapshotLineState state)
+    {
+        writer.Write(state.Visible);
+        if (!state.Visible) return;
+        writer.Write((byte)state.Points.Length);
+        writer.Write(state.UsesWorldSpace);
+        writer.Write(state.StartColor.Red); writer.Write(state.StartColor.Green);
+        writer.Write(state.StartColor.Blue); writer.Write(state.StartColor.Alpha);
+        writer.Write(state.EndColor.Red); writer.Write(state.EndColor.Green);
+        writer.Write(state.EndColor.Blue); writer.Write(state.EndColor.Alpha);
+        writer.Write(state.StartWidth); writer.Write(state.EndWidth);
+        foreach (var point in state.Points)
+        {
+            writer.Write(point.X);
+            writer.Write(point.Y);
+            writer.Write(point.Z);
+        }
+    }
+
     private static void ReadLineState(BinaryReader reader, LineRenderer line, GameObject container)
     {
         var visible = reader.ReadBoolean();
@@ -3637,95 +3715,72 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
     }
 
-    private static void WriteVisualState(BinaryWriter writer, VisualLayout layout)
+    private static void WriteVisualState(BinaryWriter writer, PlayerVisualState state)
     {
-        var renderers = layout == null || layout.Renderers == null
-            ? new SpriteRenderer[0]
-            : layout.Renderers;
+        var renderers = state == null ? new RendererVisualState[0] : state.Renderers;
         writer.Write((ushort)renderers.Length);
         for (var index = 0; index < renderers.Length; index++)
         {
             var renderer = renderers[index];
-            var path = layout.RendererPaths != null && index < layout.RendererPaths.Length
-                ? layout.RendererPaths[index] ?? ""
-                : "";
-            writer.Write(path);
-            if (renderer == null)
-            {
-                writer.Write(false);
-                WriteColor(writer, Color.white);
-                writer.Write(false);
-                writer.Write(false);
-                continue;
-            }
-            writer.Write(renderer.enabled && renderer.gameObject.activeInHierarchy);
-            WriteColor(writer, renderer.color);
-            writer.Write(renderer.flipX);
-            writer.Write(renderer.flipY);
+            writer.Write(renderer.Path);
+            writer.Write(renderer.Visible);
+            WriteColor(writer, renderer.Color);
+            writer.Write(renderer.FlipX);
+            writer.Write(renderer.FlipY);
         }
 
-        var lights = layout == null || layout.Lights == null
-            ? new Component[0]
-            : layout.Lights;
+        var lights = state == null ? new LightVisualState[0] : state.Lights;
         writer.Write((ushort)lights.Length);
         for (var index = 0; index < lights.Length; index++)
         {
             var light = lights[index];
-            var path = layout.LightPaths != null && index < layout.LightPaths.Length
-                ? layout.LightPaths[index] ?? ""
-                : "";
-            writer.Write(path);
-            if (light == null)
-            {
-                writer.Write(false);
-                writer.Write(0f);
-                WriteColor(writer, Color.white);
-                continue;
-            }
-            var behaviour = light as Behaviour;
-            writer.Write(behaviour == null || behaviour.enabled && light.gameObject.activeInHierarchy);
-            var light2D = light as UnityEngine.Experimental.Rendering.Universal.Light2D;
-            writer.Write(light2D == null ? 0f : light2D.intensity);
-            WriteColor(writer, light2D == null ? Color.white : light2D.color);
+            writer.Write(light.Path);
+            writer.Write(light.Visible);
+            writer.Write(light.Intensity);
+            WriteColor(writer, light.Color);
         }
     }
 
-    private void ReadVisualState(BinaryReader reader, Transform root)
+    private static PlayerVisualState ReadVisualState(BinaryReader reader)
     {
-        remoteVisualLayout = GetVisualLayout(remoteVisualLayout, root);
-
         var rendererCount = reader.ReadUInt16();
+        var renderers = new RendererVisualState[rendererCount];
         for (var index = 0; index < rendererCount; index++)
-        {
-            var path = reader.ReadString();
-            var visible = reader.ReadBoolean();
-            var color = ReadColor(reader);
-            var flipX = reader.ReadBoolean();
-            var flipY = reader.ReadBoolean();
-            SpriteRenderer renderer;
-            if (!remoteVisualLayout.RenderersByPath.TryGetValue(path, out renderer) || renderer == null) continue;
-            renderer.enabled = visible;
-            renderer.color = color;
-            renderer.flipX = flipX;
-            renderer.flipY = flipY;
-        }
+            renderers[index] = new RendererVisualState(reader.ReadString(), reader.ReadBoolean(), ReadColor(reader),
+                reader.ReadBoolean(), reader.ReadBoolean());
 
         var lightCount = reader.ReadUInt16();
+        var lights = new LightVisualState[lightCount];
         for (var index = 0; index < lightCount; index++)
+            lights[index] = new LightVisualState(reader.ReadString(), reader.ReadBoolean(), reader.ReadSingle(),
+                ReadColor(reader));
+        return new PlayerVisualState(renderers, lights);
+    }
+
+    private void ApplyVisualState(PlayerVisualState state, Transform root)
+    {
+        remoteVisualLayout = GetVisualLayout(remoteVisualLayout, root);
+        foreach (var rendererState in state.Renderers)
         {
-            var path = reader.ReadString();
-            var visible = reader.ReadBoolean();
-            var intensity = reader.ReadSingle();
-            var color = ReadColor(reader);
+            SpriteRenderer renderer;
+            if (!remoteVisualLayout.RenderersByPath.TryGetValue(rendererState.Path, out renderer) || renderer == null)
+                continue;
+            renderer.enabled = rendererState.Visible;
+            renderer.color = rendererState.Color;
+            renderer.flipX = rendererState.FlipX;
+            renderer.flipY = rendererState.FlipY;
+        }
+        foreach (var lightState in state.Lights)
+        {
             Component light;
-            if (!remoteVisualLayout.LightsByPath.TryGetValue(path, out light) || light == null) continue;
+            if (!remoteVisualLayout.LightsByPath.TryGetValue(lightState.Path, out light) || light == null) continue;
             var behaviour = light as Behaviour;
-            if (behaviour != null) behaviour.enabled = visible;
+            if (behaviour != null) behaviour.enabled = lightState.Visible;
             var light2D = light as UnityEngine.Experimental.Rendering.Universal.Light2D;
             if (light2D != null)
             {
-                light2D.intensity = intensity;
-                light2D.color = color;
+                light2D.intensity = lightState.Intensity;
+                light2D.color = lightState.Color;
             }
         }
         HideChildrenOfDisabledHeadAccessories(root);
@@ -3827,6 +3882,74 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         internal float NextValidation;
     }
 
+    private readonly struct RendererVisualState
+    {
+        internal readonly string Path;
+        internal readonly bool Visible;
+        internal readonly Color Color;
+        internal readonly bool FlipX;
+        internal readonly bool FlipY;
+
+        internal RendererVisualState(string path, bool visible, Color color, bool flipX, bool flipY)
+        {
+            Path = path ?? "";
+            Visible = visible;
+            Color = color;
+            FlipX = flipX;
+            FlipY = flipY;
+        }
+    }
+
+    private readonly struct LightVisualState
+    {
+        internal readonly string Path;
+        internal readonly bool Visible;
+        internal readonly float Intensity;
+        internal readonly Color Color;
+
+        internal LightVisualState(string path, bool visible, float intensity, Color color)
+        {
+            Path = path ?? "";
+            Visible = visible;
+            Intensity = intensity;
+            Color = color;
+        }
+    }
+
+    private sealed class PlayerVisualState
+    {
+        internal readonly RendererVisualState[] Renderers;
+        internal readonly LightVisualState[] Lights;
+
+        internal PlayerVisualState(RendererVisualState[] renderers, LightVisualState[] lights)
+        {
+            Renderers = renderers ?? new RendererVisualState[0];
+            Lights = lights ?? new LightVisualState[0];
+        }
+
+        internal static bool Equals(PlayerVisualState left, PlayerVisualState right)
+        {
+            if (ReferenceEquals(left, right)) return true;
+            if (left == null || right == null || left.Renderers.Length != right.Renderers.Length ||
+                left.Lights.Length != right.Lights.Length)
+                return false;
+            for (var index = 0; index < left.Renderers.Length; index++)
+            {
+                var a = left.Renderers[index]; var b = right.Renderers[index];
+                if (a.Path != b.Path || a.Visible != b.Visible || a.Color != b.Color || a.FlipX != b.FlipX ||
+                    a.FlipY != b.FlipY)
+                    return false;
+            }
+            for (var index = 0; index < left.Lights.Length; index++)
+            {
+                var a = left.Lights[index]; var b = right.Lights[index];
+                if (a.Path != b.Path || a.Visible != b.Visible || a.Intensity != b.Intensity || a.Color != b.Color)
+                    return false;
+            }
+            return true;
+        }
+    }
+
     private struct AvatarWireBreakdown
     {
         internal int Core;
@@ -3848,14 +3971,26 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return depth;
     }
 
-    private static void WriteScarfState(BinaryWriter writer, BodyScript body)
+    private static PlayerSnapshotScarfState CreateScarfState(BodyScript body)
     {
         var scarf = body.GetComponentInChildren<ScarfPhysics>(true);
         var visible = scarf != null && scarf.gameObject.activeInHierarchy && scarf.pointRenderer != null;
-        writer.Write(visible);
-        if (!visible) return;
-        WriteColor(writer, scarf.pointRenderer.startColor);
-        WriteColor(writer, scarf.pointRenderer.endColor);
+        if (!visible) return new PlayerSnapshotScarfState(false, default(PlayerSnapshotColor),
+            default(PlayerSnapshotColor));
+        var startColor = scarf.pointRenderer.startColor;
+        var endColor = scarf.pointRenderer.endColor;
+        return new PlayerSnapshotScarfState(true, new PlayerSnapshotColor(startColor.r, startColor.g, startColor.b,
+            startColor.a), new PlayerSnapshotColor(endColor.r, endColor.g, endColor.b, endColor.a));
+    }
+
+    private static void WriteScarfState(BinaryWriter writer, PlayerSnapshotScarfState state)
+    {
+        writer.Write(state.Visible);
+        if (!state.Visible) return;
+        writer.Write(state.StartColor.Red); writer.Write(state.StartColor.Green);
+        writer.Write(state.StartColor.Blue); writer.Write(state.StartColor.Alpha);
+        writer.Write(state.EndColor.Red); writer.Write(state.EndColor.Green);
+        writer.Write(state.EndColor.Blue); writer.Write(state.EndColor.Alpha);
     }
 
     private void ReadScarfState(BinaryReader reader)

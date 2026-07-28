@@ -160,15 +160,15 @@ internal sealed class NpcReplication : MonoBehaviour
                 RefreshHostNpcs(player.bodyScript);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDiscovery, discoveryStarted);
             }
-            byte[] possessionPacket;
+            NpcPossessionPacket possessionPacket;
             ushort possessionPeer;
             while (MultiplayerSession.TryTakeNpcPossession(out possessionPeer, out possessionPacket))
                 ApplyRemotePossession(possessionPeer, possessionPacket);
-            byte[] damagePacket;
+            NpcDamagePacket damagePacket;
             ushort damagePeer;
             while (MultiplayerSession.TryTakeNpcDamage(out damagePeer, out damagePacket))
                 ApplyClientDamage(damagePeer, damagePacket);
-            byte[] grabPacket;
+            NpcGrabPacket grabPacket;
             ushort grabPeer;
             while (MultiplayerSession.TryTakeNpcGrab(out grabPeer, out grabPacket))
                 ApplyClientGrab(grabPeer, grabPacket);
@@ -181,7 +181,21 @@ internal sealed class NpcReplication : MonoBehaviour
                 var serializeStarted = MultiplayerPerformance.StartPhase();
                 var snapshot = SerializeSnapshot();
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSerialize, serializeStarted);
-                if (snapshot != null) MultiplayerSession.SendNpcSnapshot(snapshot);
+                if (snapshot != null)
+                {
+                    const int chunkSize = 60 * 1024;
+                    var transferId = PacketSequences.NextNpcTransfer();
+                    var chunkCount = System.Math.Max(1, (snapshot.Length + chunkSize - 1) / chunkSize);
+                    for (var index = 0; index < chunkCount; index++)
+                    {
+                        var offset = index * chunkSize;
+                        var length = System.Math.Min(chunkSize, snapshot.Length - offset);
+                        var chunk = new byte[length];
+                        if (length > 0) System.Buffer.BlockCopy(snapshot, offset, chunk, 0, length);
+                        MultiplayerSession.Send(new NpcSnapshotPacket(transferId, (ushort)index,
+                            (ushort)chunkCount, snapshot.Length, chunk));
+                    }
+                }
             }
             return;
         }
@@ -299,11 +313,9 @@ internal sealed class NpcReplication : MonoBehaviour
         return true;
     }
 
-    private void ApplyRemotePossession(ushort peerId, byte[] packet)
+    private void ApplyRemotePossession(ushort peerId, NpcPossessionPacket packet)
     {
-        if (packet == null || packet.Length == 0) return;
-        if (packet.Length != sizeof(ulong)) return;
-        var id = ResolveWireId(BitConverter.ToUInt64(packet, 0));
+        var id = ResolveWireId(packet.NpcId);
         if (string.IsNullOrEmpty(id)) return;
         remotelyPossessedNpcIds.Add(id);
         BodyScript body;
@@ -1197,7 +1209,8 @@ internal sealed class NpcReplication : MonoBehaviour
             return false;
         }
 
-        if (!MultiplayerSession.IsHost) MultiplayerSession.SendNpcPossession(current.WireId(id));
+        if (!MultiplayerSession.IsHost)
+            MultiplayerSession.Send(new NpcPossessionPacket(current.WireId(id)), 1);
         current.locallyPossessedNpcIds.Add(id);
         current.possessionRenderGuardUntil = Time.unscaledTime + 0.5f;
         if (proxy != null)
@@ -1288,17 +1301,10 @@ internal sealed class NpcReplication : MonoBehaviour
 
         EnableLocalCorpsePhysics(proxy);
         proxy.LocalPhysicsUntil = Time.unscaledTime + 0.15f;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(Instance.WireId(proxy.NetworkId));
-            writer.Write(rigId);
-            writer.Write(levitator.point.x);
-            writer.Write(levitator.point.y);
-            writer.Write(levitator.localGrabPoint.x);
-            writer.Write(levitator.localGrabPoint.y);
-            MultiplayerSession.SendNpcGrab(stream.ToArray());
-        }
+        MultiplayerSession.Send(new NpcGrabPacket(
+            Instance.WireId(proxy.NetworkId), rigId,
+            levitator.point.x, levitator.point.y,
+            levitator.localGrabPoint.x, levitator.localGrabPoint.y), 1);
     }
 
     private static void EnableLocalCorpsePhysics(NpcProxy proxy)
@@ -1348,14 +1354,8 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void SendClientDamage(string id, float amount, bool critical)
     {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(WireId(id));
-            writer.Write(amount);
-            writer.Write(critical);
-            MultiplayerSession.SendNpcDamage(stream.ToArray());
-        }
+        if (MultiplayerSession.IsHost) return;
+        MultiplayerSession.Send(new NpcDamagePacket(WireId(id), amount, critical), 1);
     }
 
     internal static bool BlockClientWeaponDrop(BodyScript body)
@@ -1363,58 +1363,43 @@ internal sealed class NpcReplication : MonoBehaviour
         return IsClientProxy(body);
     }
 
-    private void ApplyClientDamage(ushort peerId, byte[] packet)
+    private void ApplyClientDamage(ushort peerId, NpcDamagePacket packet)
     {
-        try
-        {
-            using (var reader = new BinaryReader(new MemoryStream(packet)))
-            {
-                var id = ResolveWireId(reader.ReadUInt64());
-                var amount = Mathf.Clamp(reader.ReadSingle(), 0f, 1000f);
-                var critical = reader.ReadBoolean();
-                BodyScript body;
-                if (amount <= 0f || !hostNpcs.TryGetValue(id, out body) || body == null || !body.isAlive) return;
-                body.health -= amount;
-                var source = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
-                if (source != null) NetworkAvatarReplication.RecordDamageSource(body, source);
-                body.Damaged(critical);
-            }
-        }
-        catch (EndOfStreamException) { }
+        var id = ResolveWireId(packet.NpcId);
+        var amount = Mathf.Clamp(packet.Amount, 0f, 1000f);
+        BodyScript body;
+        if (amount <= 0f || !hostNpcs.TryGetValue(id, out body) || body == null || !body.isAlive) return;
+        body.health -= amount;
+        var source = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
+        if (source != null) NetworkAvatarReplication.RecordDamageSource(body, source);
+        body.Damaged(packet.Critical);
     }
 
-    private void ApplyClientGrab(ushort peerId, byte[] packet)
+    private void ApplyClientGrab(ushort peerId, NpcGrabPacket packet)
     {
-        try
-        {
-            using (var reader = new BinaryReader(new MemoryStream(packet)))
-            {
-                var id = ResolveWireId(reader.ReadUInt64());
-                var rigId = reader.ReadUInt64();
-                var point = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var localPoint = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                if (float.IsNaN(point.x) || float.IsNaN(point.y) || float.IsInfinity(point.x) ||
-                    float.IsInfinity(point.y) || float.IsNaN(localPoint.x) || float.IsNaN(localPoint.y) ||
-                    float.IsInfinity(localPoint.x) || float.IsInfinity(localPoint.y)) return;
-                BodyScript body;
-                var remotePlayer = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
-                if (!hostNpcs.TryGetValue(id, out body) || body == null || body.isAlive ||
-                    remotePlayer == null || !remotePlayer.isAlive)
-                    return;
-                Rigidbody2D target = null;
-                foreach (var candidate in NpcRoot(body).GetComponentsInChildren<Rigidbody2D>(true))
-                    if (RigId(NpcRoot(body).transform, candidate) == rigId) { target = candidate; break; }
-                if (target == null)
-                    return;
-                target.simulated = true;
-                target.bodyType = RigidbodyType2D.Dynamic;
-                var force = point - target.position;
-                if (force.magnitude > 5f) force = force.normalized * 5f;
-                target.AddForceAtPosition(force * 100f, target.transform.TransformPoint(localPoint));
-                target.angularVelocity *= 0.96f;
-            }
-        }
-        catch (EndOfStreamException) { }
+        var id = ResolveWireId(packet.NpcId);
+        var rigId = packet.RigidBodyId;
+        var point = new Vector2(packet.PointX, packet.PointY);
+        var localPoint = new Vector2(packet.LocalPointX, packet.LocalPointY);
+        if (float.IsNaN(point.x) || float.IsNaN(point.y) || float.IsInfinity(point.x) ||
+            float.IsInfinity(point.y) || float.IsNaN(localPoint.x) || float.IsNaN(localPoint.y) ||
+            float.IsInfinity(localPoint.x) || float.IsInfinity(localPoint.y)) return;
+        BodyScript body;
+        var remotePlayer = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
+        if (!hostNpcs.TryGetValue(id, out body) || body == null || body.isAlive ||
+            remotePlayer == null || !remotePlayer.isAlive)
+            return;
+        Rigidbody2D target = null;
+        foreach (var candidate in NpcRoot(body).GetComponentsInChildren<Rigidbody2D>(true))
+            if (RigId(NpcRoot(body).transform, candidate) == rigId) { target = candidate; break; }
+        if (target == null)
+            return;
+        target.simulated = true;
+        target.bodyType = RigidbodyType2D.Dynamic;
+        var force = point - target.position;
+        if (force.magnitude > 5f) force = force.normalized * 5f;
+        target.AddForceAtPosition(force * 100f, target.transform.TransformPoint(localPoint));
+        target.angularVelocity *= 0.96f;
     }
 
     private static void ApplyWeapon(NpcProxy proxy, NpcState state)

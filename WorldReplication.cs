@@ -330,10 +330,10 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             var inputStarted = MultiplayerPerformance.StartPhase();
             ushort inputPeer;
-            byte[] input;
+            WorldInputPacket input;
             while (MultiplayerSession.TryTakeWorldInput(out inputPeer, out input)) ApplyPushes(inputPeer, input);
-            byte[] damageInput;
-            while (MultiplayerSession.TryTakeWorldDamage(out damageInput)) ApplyDamage(damageInput);
+            WorldDamagePacket damagePacket;
+            while (MultiplayerSession.TryTakeWorldDamage(out damagePacket)) ApplyDamage(damagePacket);
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
             if (Time.unscaledTime >= nextSnapshot)
             {
@@ -341,13 +341,14 @@ internal sealed class WorldReplication : MonoBehaviour
                 var serializeStarted = MultiplayerPerformance.StartPhase();
                 var snapshot = SerializeWorld();
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerialize, serializeStarted);
-                if (snapshot != null) MultiplayerSession.SendWorldSnapshot(snapshot);
+                if (snapshot != null)
+                { var snapshotReader = new PacketReader(snapshot); MultiplayerSession.Send(WorldSnapshotPacket.Read(ref snapshotReader)); }
                 if (lastSerializedEnvironment != null &&
                     Time.unscaledTime >= nextReliableEnvironment &&
                     !BytesEqual(lastReliableEnvironment, lastSerializedEnvironment))
                 {
                     nextReliableEnvironment = Time.unscaledTime + 0.1f;
-                    MultiplayerSession.SendWorldEnvironment(lastSerializedEnvironment);
+                    MultiplayerSession.Send(new WorldEnvironmentPacket(lastSerializedEnvironment));
                     lastReliableEnvironment = lastSerializedEnvironment;
                 }
             }
@@ -373,8 +374,8 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             clientFastSerializeState -= Time.fixedDeltaTime;
             nextSnapshot = Time.unscaledTime + SnapshotInterval;
-            MultiplayerSession.SendWorldInput(SerializePushes());
-            MultiplayerSession.SendWorldDamage(SerializeDamage());
+            MultiplayerSession.Send(SerializePushes(), 1);
+            MultiplayerSession.Send(SerializeDamage(), 1);
         }
         }
         finally
@@ -609,7 +610,6 @@ internal sealed class WorldReplication : MonoBehaviour
         if (MultiplayerSession.IsHost) return;
         RestoreGameplayControllers();
         DisableControllers(FindObjectsOfType<DoorScript>());
-        DisableControllers(FindObjectsOfType<MovingBelt>());
         DisableControllers(FindObjectsOfType<RbMoveToObj>());
         foreach (var joint in FindObjectsOfType<CustJoint>())
             if (joint != null && !IsGameplayOwned(joint) &&
@@ -1475,8 +1475,8 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void QueueBodyState(Rigidbody2D body)
     {
-        locallyControlledUntil[body] = Time.unscaledTime + 0.35f;
-        clientFastSerializeState = 0.35f; // isnt that suppsoed to be ClientAuthorityGrace?
+        locallyControlledUntil[body] = Time.unscaledTime + ClientAuthorityGrace;
+        clientFastSerializeState = ClientAuthorityGrace;
         body.simulated = true;
         body.bodyType = RigidbodyType2D.Dynamic;
         body.WakeUp();
@@ -1591,6 +1591,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
+    //TODO
     internal void QueueZoneActivation(ActivateZoneScript zone, bool manual = false)
     {
         if (MultiplayerSession.IsHost || zone == null) return;
@@ -1644,7 +1645,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private byte[] SerializePushes()
+    private WorldInputPacket SerializePushes()
     {
         var now = Time.unscaledTime;
         foreach (var pair in locallyControlledUntil)
@@ -1654,34 +1655,36 @@ internal sealed class WorldReplication : MonoBehaviour
             pushes[Id(body)] = CaptureBodyState(body);
         }
 
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
+        var states = new WorldInputState[pushes.Count];
+        var index = 0;
+        foreach (var pair in pushes)
         {
-            writer.Write((ushort)pushes.Count);
-            sentStates += pushes.Count;
-            foreach (var pair in pushes)
-            {
-                writer.Write(WireId(pair.Key));
-                writer.Write(pair.Value.position.x); writer.Write(pair.Value.position.y);
-                writer.Write(pair.Value.rotation);
-                writer.Write(pair.Value.velocity.x); writer.Write(pair.Value.velocity.y);
-                writer.Write(pair.Value.angularVelocity);
-            }
-            pushes.Clear();
-            return stream.ToArray();
+            var state = pair.Value;
+            states[index++] = new WorldInputState(WireId(pair.Key), state.position.x, state.position.y,
+                state.rotation, state.velocity.x, state.velocity.y, state.angularVelocity);
         }
+        sentStates += pushes.Count;
+        pushes.Clear();
+        return new WorldInputPacket(states);
     }
 
-    private byte[] SerializeDamage()
+    private void ApplyPushes(ushort peerId, WorldInputPacket packet)
     {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
+        var writer = new PacketWriter(2 + packet.States.Length * 36);
+        packet.Write(ref writer);
+        ApplyPushes(peerId, writer.ToArray());
+    }
+
+    private WorldDamagePacket SerializeDamage()
+    {
+        var entries = new WorldDamageEntry[damage.Count];
+        var index = 0;
+        foreach (var pair in damage)
         {
-            writer.Write((ushort)damage.Count);
-            foreach (var pair in damage) { writer.Write(WireId(pair.Key)); writer.Write(pair.Value); }
-            damage.Clear();
-            return stream.ToArray();
+            entries[index++] = new WorldDamageEntry(WireId(pair.Key), pair.Value);
         }
+        damage.Clear();
+        return new WorldDamagePacket(entries);
     }
 
     private void ApplyPushes(ushort peerId, byte[] data)
@@ -1851,25 +1854,17 @@ internal sealed class WorldReplication : MonoBehaviour
         return id.Length <= 72 ? id : id.Substring(id.Length - 72);
     }
 
-    private void ApplyDamage(byte[] data)
+    private void ApplyDamage(WorldDamagePacket packet)
     {
-        try
+        foreach (var entry in packet.Entries)
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                var count = reader.ReadUInt16();
-                for (var index = 0; index < count; index++)
-                {
-                    var id = ResolveWireId(reader.ReadUInt64());
-                    var amount = Mathf.Clamp(reader.ReadSingle(), 0f, 100f);
-                    Rigidbody2D body;
-                    if (!bodies.TryGetValue(id, out body) || body == null) continue;
-                    var crate = body.GetComponentInParent<CrateScript>();
-                    if (crate != null && crate.enabled) crate.Damage(amount);
-                }
-            }
+            var id = ResolveWireId(entry.TargetId);
+            var amount = Mathf.Clamp(entry.Amount, 0f, 100f);
+            Rigidbody2D body;
+            if (!bodies.TryGetValue(id, out body) || body == null) continue;
+            var crate = body.GetComponentInParent<CrateScript>();
+            if (crate != null && crate.enabled) crate.Damage(amount);
         }
-        catch (EndOfStreamException) { }
     }
 
     private void ApplyWeaponInteraction(ushort peerId, byte[] data)
@@ -2423,7 +2418,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (promptZone == null || !MultiplayerSession.IsConnected) return;
 
-        GUI.Label(new Rect(Screen.width * 0.5f - 100f, Screen.height * 0.72f, 200f, 28f), "PRESS [USE] TO ACTIVATE ZONE");
+        GUI.Label(new Rect(Screen.width * 0.5f - 100f, Screen.height * 0.72f, 200f, 28f), "PRESS [USE] TO ACTIVATE");
     }
 
     private void ApplyButtonActivation(string id, ushort peerId)
