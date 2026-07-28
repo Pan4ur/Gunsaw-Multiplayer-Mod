@@ -25,7 +25,7 @@ internal static class KartPassengers
 
     internal static bool TryEnter(VehicleBase vehicle, BodyScript body)
     {
-        if (vehicle == null || body == null || vehicle.occupant == null || vehicle.occupant == body || !body.IsConsc() || vehicle.mainPart == null || vehicle.mainPart.rb == null || vehicle.seatPos == null || vehicle.mainPart.rb.velocity.magnitude >= 8f || Vector2.Distance(vehicle.mainPart.transform.position, body.transform.position) >= 2.2f || body.isClimbing) return false;
+        if (vehicle == null || body == null || vehicle.occupant == null || vehicle.occupant == body || !body.IsConsc() || (!body.isPlayer && HasPassengers(vehicle)) || vehicle.mainPart == null || vehicle.mainPart.rb == null || vehicle.seatPos == null || vehicle.mainPart.rb.velocity.magnitude >= 8f || Vector2.Distance(vehicle.mainPart.transform.position, body.transform.position) >= 2.2f || body.isClimbing) return false;
         Attach(vehicle, body, true);
         return true;
     }
