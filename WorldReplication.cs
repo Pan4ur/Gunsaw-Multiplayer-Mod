@@ -1393,18 +1393,16 @@ internal sealed class WorldReplication : MonoBehaviour
 
         if (mechanism)
         {
+            // TODO This is more of a temporary fix
+            // it would be better to simply signal to clients when the door is about to open or close,
+            // but I'm not sure if that would break some of the custom level features
+            body.position = state.position;
+            body.rotation = state.rotation;
             if (!initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
             {
-                body.position = state.position;
-                body.rotation = state.rotation;
                 initializedBodies.Add(body);
             }
-            else
-            {
-                var tickAlpha = Mathf.Clamp01(Time.fixedDeltaTime / SnapshotInterval);
-                body.position = Vector2.Lerp(body.position, state.position, tickAlpha);
-                body.rotation = Mathf.LerpAngle(body.rotation, state.rotation, tickAlpha);
-            }
+
             body.velocity = state.velocity;
             body.angularVelocity = state.angularVelocity;
             return;
