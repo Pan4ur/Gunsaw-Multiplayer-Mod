@@ -32,6 +32,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal readonly bool InventoryChanged;
     internal readonly PlayerSnapshotLineState WeaponLaser;
     internal readonly PlayerSnapshotLineState LevitatorLaser;
+    internal readonly PlayerSnapshotLineState CrystalTongue;
     internal readonly PlayerSnapshotScarfState Scarf;
     internal readonly bool IncludesVisualState;
     internal readonly PlayerSnapshotVisualState? VisualState;
@@ -45,6 +46,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         PlayerSnapshotLimbState[] limbs, PlayerSnapshotTailState[] tailBases, PlayerSnapshotTailState[] tails,
         int weaponSlot, int weaponAmmo, ulong weaponSpriteId, ulong[] inventorySpriteIds, bool inventoryChanged,
         PlayerSnapshotScarfState scarf, PlayerSnapshotLineState weaponLaser, PlayerSnapshotLineState levitatorLaser,
+        PlayerSnapshotLineState crystalTongue,
         bool includesVisualState, PlayerSnapshotVisualState? visualState)
     {
         Sequence = sequence;
@@ -80,6 +82,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         Scarf = scarf;
         WeaponLaser = weaponLaser;
         LevitatorLaser = levitatorLaser;
+        CrystalTongue = crystalTongue;
         IncludesVisualState = includesVisualState;
         VisualState = visualState;
     }
@@ -109,6 +112,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         writer.WriteBoolean(InventoryChanged);
         if (InventoryChanged) foreach (var id in InventorySpriteIds) writer.WriteUInt64(id);
         WriteLine(ref writer, WeaponLaser); WriteLine(ref writer, LevitatorLaser); WriteScarf(ref writer, Scarf);
+        WriteLine(ref writer, CrystalTongue);
         writer.WriteBoolean(IncludesVisualState);
         if (IncludesVisualState) WriteVisualState(ref writer, VisualState.Value);
     }
@@ -157,11 +161,12 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var inventory = new ulong[reader.ReadUInt16()]; var inventoryChanged = reader.ReadBoolean();
         if (inventoryChanged) for (var i = 0; i < inventory.Length; i++) inventory[i] = reader.ReadUInt64();
         var weaponLaser = ReadLine(ref reader); var levitatorLaser = ReadLine(ref reader); var scarf = ReadScarf(ref reader);
+        var crystalTongue = ReadLine(ref reader);
         var includesVisualState = reader.ReadBoolean(); var visualState = includesVisualState ? (PlayerSnapshotVisualState?)ReadVisualState(ref reader) : null;
         return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight, isReflected, isActive,
             headRotation, body, health, isAlive, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
             arms, gun, gunAnimation, weaponTransform, limbs, tailBases, tails, weaponSlot, weaponAmmo, weaponSpriteId,
-            inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, includesVisualState, visualState);
+            inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, crystalTongue, includesVisualState, visualState);
     }
 
     private static PlayerSnapshotBodyState ReadBody(ref PacketReader reader) => new PlayerSnapshotBodyState(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());

@@ -70,6 +70,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private VisualLayout localVisualLayout;
     private VisualLayout remoteVisualLayout;
     private LineRenderer remoteLevitLine;
+    private LineRenderer remoteCrystalTongueLine;
     private GameObject remoteScarf;
     private GameObject remoteScarfHold;
     private GUIStyle remoteNameTagStyle;
@@ -756,6 +757,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 tail.GetComponentsInChildren<SpriteRenderer>(true));
         foreach (var behaviour in avatar.GetComponentsInChildren<MonoBehaviour>()) behaviour.enabled = false;
         foreach (var animator in avatar.GetComponentsInChildren<Animator>()) animator.enabled = false;
+        var remoteCrystalTongue = avatar.GetComponentInChildren<CrystalTongue>(true);
+        remoteCrystalTongueLine = remoteCrystalTongue == null ? null : remoteCrystalTongue.line;
+        if (remoteCrystalTongueLine != null) remoteCrystalTongueLine.enabled = false;
         UpdateRemotePhysicsMode();
         CacheDismembermentVisuals();
         CreateRemoteLevitLine(avatar.transform);
@@ -777,6 +781,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         remotePrefabPath = "";
         remoteName = "Player";
         remoteLevitLine = null;
+        remoteCrystalTongueLine = null;
         remoteScarf = null;
         remoteScarfHold = null;
         remoteFires.Clear();
@@ -1084,6 +1089,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             WriteLineState(writer, levitatorLaserState);
             var scarfState = CreateScarfState(body);
             WriteScarfState(writer, scarfState);
+            var crystalTongue = body.GetComponent<CrystalTongue>();
+            var crystalTongueState = CreateWeaponLaserState(crystalTongue == null ? null : crystalTongue.line);
+            WriteLineState(writer, crystalTongueState);
             breakdown.Effects += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
@@ -1102,7 +1110,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 isAlive, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
                 armsTransform, gunTransformState, gunAnimationTransformState, weaponTransformState, limbStates,
                 tailBaseStates, tailStates, weaponSlot, weaponAmmo, weaponSpriteId, inventoryIds, inventoryChanged,
-                scarfState, weaponLaserState, levitatorLaserState, includeVisualState, packetVisualState);
+                scarfState, weaponLaserState, levitatorLaserState, crystalTongueState, includeVisualState,
+                packetVisualState);
         }
     }
 
@@ -1355,6 +1364,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 ReadLineState(reader, remoteLaser, remoteBody.wepLaser);
                 ReadLineState(reader, remoteLevitLine, remoteLevitLine == null ? null : remoteLevitLine.gameObject);
                 ReadScarfState(reader);
+                ReadLineState(reader, remoteCrystalTongueLine, null);
                 if (reader.ReadBoolean()) ApplyVisualState(ReadVisualState(reader), remoteBody.transform);
                 receivedFirstSnapshot = true;
             }

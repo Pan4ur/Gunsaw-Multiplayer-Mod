@@ -39,6 +39,85 @@ internal static class ClientLevitatorPropPatch
     }
 }
 
+[HarmonyPatch(typeof(CrystalTongue), "FixedUpdate")]
+internal static class ClientCrystalTonguePropPatch
+{
+    private static void Postfix(CrystalTongue __instance)
+    {
+        if (__instance == null || __instance.tongueProgress >= 1f || __instance.pullTrans == null ||
+            GunsawMultiplayerPlugin.World == null) return;
+        GunsawMultiplayerPlugin.World.QueueLevitated(__instance.pullTrans.GetComponent<Rigidbody2D>());
+    }
+}
+
+[HarmonyPatch(typeof(CrystalTongue), "Tongue")]
+internal static class ClientCrystalTongueRemotePlayerPatch
+{
+    private static void Postfix(CrystalTongue __instance)
+    {
+        if (!MultiplayerSession.IsConnected || __instance == null || __instance.tongueProgress >= 1f ||
+            __instance.pullTrans != null) return;
+        var body = __instance.GetComponent<BodyScript>();
+        var player = PlayerScript.player;
+        if (body == null || player == null || body != player.bodyScript || body.headTransform == null) return;
+        var origin = (Vector2)body.headTransform.position;
+        var direction = body.targetLookPos - origin;
+        var distance = direction.magnitude;
+        if (distance < 0.0001f) return;
+        direction /= distance;
+        var closestDistance = 13f;
+        Collider2D closestCollider = null;
+        Vector2 closestPoint = Vector2.zero;
+        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        {
+            if (remote.Body == null) continue;
+            foreach (var collider in remote.Body.GetComponentsInChildren<Collider2D>(true))
+            {
+                if (collider == null) continue;
+                if (!TryHitBounds(origin, direction, collider.bounds, out var hitDistance) ||
+                    hitDistance >= closestDistance) continue;
+                closestDistance = hitDistance;
+                closestCollider = collider;
+                closestPoint = origin + direction * hitDistance;
+            }
+        }
+        if (closestCollider == null) return;
+        __instance.pullTrans = closestCollider.transform;
+        __instance.pullPos = closestCollider.transform.InverseTransformPoint(closestPoint);
+    }
+
+    private static bool TryHitBounds(Vector2 origin, Vector2 direction, Bounds bounds, out float hitDistance)
+    {
+        var enter = 0f;
+        var exit = 13f;
+        if (!ClipAxis(origin.x, direction.x, bounds.min.x, bounds.max.x, ref enter, ref exit) ||
+            !ClipAxis(origin.y, direction.y, bounds.min.y, bounds.max.y, ref enter, ref exit))
+        {
+            hitDistance = 0f;
+            return false;
+        }
+        hitDistance = enter;
+        return true;
+    }
+
+    private static bool ClipAxis(float origin, float direction, float minimum, float maximum, ref float enter,
+        ref float exit)
+    {
+        if (Mathf.Abs(direction) < 0.00001f) return origin >= minimum && origin <= maximum;
+        var first = (minimum - origin) / direction;
+        var second = (maximum - origin) / direction;
+        if (first > second)
+        {
+            var swap = first;
+            first = second;
+            second = swap;
+        }
+        enter = Mathf.Max(enter, first);
+        exit = Mathf.Min(exit, second);
+        return enter <= exit && exit >= 0f;
+    }
+}
+
 [HarmonyPatch(typeof(LevitatorScript), "TryGrab")]
 internal static class MultiplayerPlayerGrabPatch
 {
