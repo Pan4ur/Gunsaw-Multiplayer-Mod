@@ -845,6 +845,25 @@ internal static class MultiplayerNpcTargetPatch
     }
 }
 
+[HarmonyPatch(typeof(AIScript), "Update")]
+internal static class MultiplayerAllyPvpTargetPatch
+{
+    private static void Prefix(AIScript __instance)
+    {
+        if (__instance == null) return;
+        var body = __instance.body;
+        var target = __instance.targetBody;
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.PvpEnabled || body == null ||
+            (!body.wasAlly && body.team != "goodguys") || target == null || !target.isPlayer) return;
+        __instance.targetBody = null;
+        __instance.alerted = false;
+        __instance.seesPlayer = false;
+        __instance.susness = 0f;
+        __instance.timeSinceLastSeen = 50f;
+        __instance.timeSinceFirstSaw = 0f;
+    }
+}
+
 [HarmonyPatch(typeof(GrenadeScript), "SetBody")]
 internal static class MultiplayerGrenadeOwnerPatch
 {
