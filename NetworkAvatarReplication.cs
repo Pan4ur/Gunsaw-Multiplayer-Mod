@@ -1996,6 +1996,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         var candidate = MultiplayerSession.RespawnAtStart ? localSpawnPosition : localDeathPosition;
         if (!IsRespawnPositionBlocked(candidate, oldBody)) return candidate;
+        if (!MultiplayerSession.RespawnAtStart &&
+            TryFindRespawnPositionNearPlayer(oldBody, out candidate)) return candidate;
         if (!IsRespawnPositionBlocked(localSpawnPosition, oldBody)) return localSpawnPosition;
         for (var index = 0; index < 8; index++)
         {
@@ -2005,6 +2007,28 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 return localSpawnPosition + offset;
         }
         return localSpawnPosition;
+    }
+
+    private static bool TryFindRespawnPositionNearPlayer(BodyScript oldBody, out Vector3 position)
+    {
+        foreach (var player in FindObjectsOfType<BodyScript>())
+        {
+            if (player == null || player == oldBody || !player.isPlayer || !player.isAlive ||
+                !player.gameObject.activeInHierarchy) continue;
+            for (var index = 0; index < 8; index++)
+            {
+                var angle = index * Mathf.PI * 0.25f;
+                var offset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * 2.5f;
+                var candidate = player.transform.position + offset;
+                if (!IsRespawnPositionBlocked(candidate, oldBody))
+                {
+                    position = candidate;
+                    return true;
+                }
+            }
+        }
+        position = default(Vector3);
+        return false;
     }
 
     private static bool IsRespawnPositionBlocked(Vector3 position, BodyScript oldBody)
