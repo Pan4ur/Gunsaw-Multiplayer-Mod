@@ -62,6 +62,12 @@ internal sealed class NpcReplication : MonoBehaviour
     private int sentStatesPerSecond;
     private int receivedPacketsPerSecond;
     private int receivedStatesPerSecond;
+    private int clientFullPoseWindow;
+    private int clientPoseCulledWindow;
+    private int clientSkippedPoseWindow;
+    private int clientFullPoseCount;
+    private int clientPoseCulledCount;
+    private int clientSkippedPoseCount;
     private int coreBytesWindow;
     private int rigBytesWindow;
     private int limbBytesWindow;
@@ -100,6 +106,9 @@ internal sealed class NpcReplication : MonoBehaviour
     internal int SentStatesPerSecond { get { return sentStatesPerSecond; } }
     internal int ReceivedPacketsPerSecond { get { return receivedPacketsPerSecond; } }
     internal int ReceivedStatesPerSecond { get { return receivedStatesPerSecond; } }
+    internal int ClientFullPoseCount { get { return clientFullPoseCount; } }
+    internal int ClientPoseCulledCount { get { return clientPoseCulledCount; } }
+    internal int ClientSkippedPoseCount { get { return clientSkippedPoseCount; } }
     internal int CoreBytesPerSecond { get { return coreBytesPerSecond; } }
     internal int RigBytesPerSecond { get { return rigBytesPerSecond; } }
     internal int LimbBytesPerSecond { get { return limbBytesPerSecond; } }
@@ -597,11 +606,12 @@ internal sealed class NpcReplication : MonoBehaviour
                 sectionStarted = writer.BaseStream.Position;
                 WriteTransform(writer, layout.GunTransform);
                 WriteTransform(writer, layout.GunAnimationTransform);
-                WriteTransform(writer, body.weapon == null ? null : body.weapon.transform);
-
-                writer.Write(body.currentWeapon);
-                writer.Write(body.weapon == null ? 0 : body.weapon.ammo);
                 var weapons = layout.Weapons;
+                var armed = !body.unarmed && body.weapon != null && body.currentWeapon >= 0 &&
+                    body.currentWeapon < weapons.Count && weapons[body.currentWeapon] != null;
+                WriteTransform(writer, armed ? body.weapon.transform : null);
+                writer.Write(armed ? body.currentWeapon : -1);
+                writer.Write(armed ? body.weapon.ammo : 0);
                 writer.Write((ushort)weapons.Count);
                 foreach (WeaponPreset preset in weapons)
                     writer.Write(NetworkWireId.FromString(preset == null ? "" : preset.name));
@@ -801,9 +811,20 @@ internal sealed class NpcReplication : MonoBehaviour
             claimed.Add(proxy);
             proxy.NetworkVisible = state.Active;
             proxy.Root.SetActive(state.Active);
-            if (!state.Active) continue;
+            if (!state.Active)
+            {
+                clientSkippedPoseWindow++;
+                continue;
+            }
+            if (!MultiplayerLoadDistance.IsNpcNearLocalPlayer(state.Body.Position))
+            {
+                clientPoseCulledWindow++;
+                ApplyDistantState(proxy, state);
+                continue;
+            }
             try
             {
+                clientFullPoseWindow++;
                 var poseStarted = MultiplayerPerformance.StartPhase();
                 ApplyState(proxy, state);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStatePose, poseStarted);
@@ -928,6 +949,8 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private NpcProxy CreateProxy(string id, BodyScript body, GameObject root, bool networkCreated)
     {
+        InitializeSeasonalHats(root);
+        ClearWeaponBackShows(body);
         var proxy = new NpcProxy
         {
             NetworkId = id,
@@ -942,11 +965,11 @@ internal sealed class NpcReplication : MonoBehaviour
         CacheDismembermentVisuals(proxy);
         CacheFireVisuals(proxy);
         CacheRigBodies(proxy);
-        proxy.SpriteRenderers = root.GetComponentsInChildren<SpriteRenderer>(true);
+        proxy.SpriteRenderers = GetSpriteRenderers(root);
         proxy.ReplicatedSpriteRenderers = new bool[proxy.SpriteRenderers.Length];
         for (var index = 0; index < proxy.SpriteRenderers.Length; index++)
             proxy.ReplicatedSpriteRenderers[index] = !IsCoreNpcRenderer(proxy.SpriteRenderers[index]);
-        proxy.Particles = root.GetComponentsInChildren<ParticleSystem>(true);
+        proxy.Particles = GetParticles(root);
         proxy.Lights = GetLights(root);
         FreezeProxy(proxy);
         return proxy;
@@ -992,6 +1015,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void ApplyState(NpcProxy proxy, NpcState state)
     {
+        var coreStarted = MultiplayerPerformance.StartPhase();
         var body = proxy.Body;
         var hostReportedDeath = proxy.ReceivedFirstState && proxy.LastHostAlive && !state.IsAlive;
         body.characterName = state.CharacterName;
@@ -1019,6 +1043,8 @@ internal sealed class NpcReplication : MonoBehaviour
         }
         SetTarget(proxy, body.rb, state.Body);
         SetTransformTarget(proxy, body.Arms, state.Arms);
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateCore, coreStarted);
+        var rigStarted = MultiplayerPerformance.StartPhase();
         foreach (var rigState in state.RigBodies)
         {
             Rigidbody2D rigBody;
@@ -1030,7 +1056,9 @@ internal sealed class NpcReplication : MonoBehaviour
             else
                 rigMisses++;
         }
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateRig, rigStarted);
 
+        var limbsStarted = MultiplayerPerformance.StartPhase();
         var limbs = body.limbs;
         for (var index = 0; index < state.Limbs.Length; index++)
         {
@@ -1045,7 +1073,9 @@ internal sealed class NpcReplication : MonoBehaviour
             limb.dismembered = state.Limbs[index].Dismembered;
             SetRemoteFire(proxy, index, limb, state.Limbs[index].Burning);
         }
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateLimbs, limbsStarted);
 
+        var tailsStarted = MultiplayerPerformance.StartPhase();
         var tailBases = body.tailBases;
         for (var index = 0; index < state.TailBases.Length && index < tailBases.Count; index++)
         {
@@ -1056,12 +1086,16 @@ internal sealed class NpcReplication : MonoBehaviour
                 SetTransformTarget(proxy, tailBase.transform, TransformPose.From(state.TailBases[index]));
             }
         }
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateTails, tailsStarted);
+        var transformsStarted = MultiplayerPerformance.StartPhase();
         SetTransformTargets(proxy, body.tails, state.Tails);
         SetTransformTarget(proxy, body.gunTransform, state.Gun);
         SetTransformTarget(proxy, body.gunAnimTransform, state.GunAnimation);
         ApplyWeapon(proxy, state);
-        SetTransformTarget(proxy, body.weapon == null ? null : body.weapon.transform, state.Weapon);
+        if (state.WeaponSlot >= 0)
+            SetTransformTarget(proxy, body.weapon == null ? null : body.weapon.transform, state.Weapon);
         ApplyLine(state.Laser, body.wepLaserLine, body.wepLaser);
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateTransforms, transformsStarted);
         var visualsStarted = MultiplayerPerformance.StartPhase();
         ApplyVisuals(proxy, state.Visuals);
         ApplyDismembermentVisuals(proxy);
@@ -1456,6 +1490,7 @@ internal sealed class NpcReplication : MonoBehaviour
             FreezeProxy(proxy);
         }
         if (body.weapon != null) body.weapon.ammo = state.WeaponAmmo;
+        ApplyWeaponBackShows(body);
     }
 
     private static void ApplyProxyWeaponSlot(BodyScript body, NpcState state)
@@ -1497,10 +1532,17 @@ internal sealed class NpcReplication : MonoBehaviour
     private static void ApplyProxyUnarmed(BodyScript body)
     {
         var weapon = body.weapon;
-        if (weapon == null) return;
-        var renderer = weapon.GetComponent<SpriteRenderer>();
-        if (renderer != null) renderer.sprite = null;
-        if (GameManager.main != null) weapon.stats = GameManager.main.unarmedWep;
+        if (weapon != null)
+        {
+            var renderer = weapon.GetComponent<SpriteRenderer>();
+            if (renderer != null) renderer.sprite = null;
+            if (GameManager.main != null) weapon.stats = GameManager.main.unarmedWep;
+        }
+        body.currentWeapon = -1;
+        body.unarmed = true;
+        if (body.wepLaser != null) Destroy(body.wepLaser);
+        body.wepLaser = null;
+        body.wepLaserLine = null;
         weapon.ammo = 0;
         body.unarmed = true;
         var laser = body.wepLaser;
@@ -1548,6 +1590,16 @@ internal sealed class NpcReplication : MonoBehaviour
         };
     }
 
+    private static void ApplyDistantState(NpcProxy proxy, NpcState state)
+    {
+        var body = proxy.Body;
+        if (body == null || body.rb == null) return;
+        body.rb.position = state.Body.Position;
+        body.rb.rotation = state.Body.Rotation;
+        proxy.BodyTargets.Clear();
+        proxy.TransformTargets.Clear();
+    }
+
     private static void SetTransformTargets(NpcProxy proxy, Transform[] transforms, TransformPose[] states)
     {
         for (var index = 0; index < states.Length && index < transforms.Length; index++)
@@ -1593,12 +1645,14 @@ internal sealed class NpcReplication : MonoBehaviour
         foreach (var proxy in clientProxies)
         {
             if (proxy == null || proxy.Root == null || !proxy.Root.activeInHierarchy) continue;
+            if (!MultiplayerLoadDistance.IsNpcNearLocalPlayer(proxy.Body.transform.position)) continue;
             if (proxy.LocalPhysics)
             {
                 if (Time.unscaledTime <= proxy.LocalPhysicsUntil) continue;
                 proxy.LocalPhysics = false;
                 FreezeProxy(proxy);
             }
+            var bodiesStarted = MultiplayerPerformance.StartPhase();
             foreach (var pair in proxy.BodyTargets)
             {
                 var body = pair.Key;
@@ -1619,6 +1673,8 @@ internal sealed class NpcReplication : MonoBehaviour
                 proxy.BodyTargets[body] = target;
             }
             proxy.CompletedBodyTargets.Clear();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateBodies, bodiesStarted);
+            var transformsStarted = MultiplayerPerformance.StartPhase();
             foreach (var pair in proxy.TransformTargets)
             {
                 var transform = pair.Key;
@@ -1640,6 +1696,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 proxy.TransformTargets[transform] = target;
             }
             proxy.CompletedTransformTargets.Clear();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
         }
     }
 
@@ -1693,7 +1750,8 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static void CacheDismembermentVisuals(NpcProxy proxy)
     {
-        foreach (var manager in proxy.Body.GetComponentsInChildren<DismemberManager>(true))
+        proxy.DismemberManagers = proxy.Body.GetComponentsInChildren<DismemberManager>(true);
+        foreach (var manager in proxy.DismemberManagers)
         {
             if (manager.dismemberJoint != null)
                 foreach (var joint in manager.dismemberJoint)
@@ -1712,7 +1770,7 @@ internal sealed class NpcReplication : MonoBehaviour
             if (pair.Key != null) pair.Key.sprite = pair.Value;
         foreach (var pair in proxy.OriginalJointStates)
             if (pair.Key != null) pair.Key.enabled = pair.Value;
-        foreach (var manager in proxy.Body.GetComponentsInChildren<DismemberManager>(true))
+        foreach (var manager in proxy.DismemberManagers)
         {
             var triggered = false;
             if (manager.dismemberLimbs != null)
@@ -1754,6 +1812,8 @@ internal sealed class NpcReplication : MonoBehaviour
         nextActivitySample = 0f;
         sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
         sentPacketsPerSecond = sentStatesPerSecond = receivedPacketsPerSecond = receivedStatesPerSecond = 0;
+        clientFullPoseWindow = clientPoseCulledWindow = clientSkippedPoseWindow = 0;
+        clientFullPoseCount = clientPoseCulledCount = clientSkippedPoseCount = 0;
         coreBytesWindow = rigBytesWindow = limbBytesWindow = tailBytesWindow = weaponBytesWindow = effectsBytesWindow = 0;
         coreBytesPerSecond = rigBytesPerSecond = limbBytesPerSecond = tailBytesPerSecond = weaponBytesPerSecond = effectsBytesPerSecond = 0;
     }
@@ -1766,6 +1826,9 @@ internal sealed class NpcReplication : MonoBehaviour
         sentStatesPerSecond = sentStatesWindow;
         receivedPacketsPerSecond = receivedPacketsWindow;
         receivedStatesPerSecond = receivedStatesWindow;
+        clientFullPoseCount = clientFullPoseWindow;
+        clientPoseCulledCount = clientPoseCulledWindow;
+        clientSkippedPoseCount = clientSkippedPoseWindow;
         coreBytesPerSecond = coreBytesWindow;
         rigBytesPerSecond = rigBytesWindow;
         limbBytesPerSecond = limbBytesWindow;
@@ -1773,6 +1836,7 @@ internal sealed class NpcReplication : MonoBehaviour
         weaponBytesPerSecond = weaponBytesWindow;
         effectsBytesPerSecond = effectsBytesWindow;
         sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
+        clientFullPoseWindow = clientPoseCulledWindow = clientSkippedPoseWindow = 0;
         coreBytesWindow = rigBytesWindow = limbBytesWindow = tailBytesWindow = weaponBytesWindow = effectsBytesWindow = 0;
     }
 
@@ -1894,8 +1958,8 @@ internal sealed class NpcReplication : MonoBehaviour
             GunAnimationTransform = body.gunAnimTransform,
             Weapons = body.weapons ?? new List<WeaponPreset>(),
             WeaponLaserLine = body.wepLaserLine,
-            SpriteRenderers = root == null ? new SpriteRenderer[0] : root.GetComponentsInChildren<SpriteRenderer>(true),
-            Particles = root == null ? new ParticleSystem[0] : root.GetComponentsInChildren<ParticleSystem>(true),
+            SpriteRenderers = GetSpriteRenderers(root),
+            Particles = GetParticles(root),
             Lights = GetLights(root)
         };
         hostLayouts[body] = layout;
@@ -2190,8 +2254,100 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static UnityEngine.Experimental.Rendering.Universal.Light2D[] GetLights(GameObject root)
     {
-        return root == null ? new UnityEngine.Experimental.Rendering.Universal.Light2D[0] :
+        var lights = root == null ? new UnityEngine.Experimental.Rendering.Universal.Light2D[0] :
             root.GetComponentsInChildren<UnityEngine.Experimental.Rendering.Universal.Light2D>(true);
+        Array.Sort(lights, CompareByHierarchyPath);
+        return lights;
+    }
+
+    private static SpriteRenderer[] GetSpriteRenderers(GameObject root)
+    {
+        var renderers = root == null ? new SpriteRenderer[0] : root.GetComponentsInChildren<SpriteRenderer>(true);
+        Array.Sort(renderers, CompareByHierarchyPath);
+        return renderers;
+    }
+
+    private static void InitializeSeasonalHats(GameObject root)
+    {
+        if (root == null) return;
+        foreach (var hat in root.GetComponentsInChildren<SantaHatScript>(true))
+        {
+            if (DateTime.Now.Month != hat.month || PlayerPrefs.GetInt("seasonalHats") != 1)
+            {
+                DestroyImmediate(hat.gameObject);
+                continue;
+            }
+            var renderer = hat.GetComponent<SpriteRenderer>();
+            if (renderer != null) renderer.enabled = true;
+            if (hat.transform.childCount == 0) continue;
+            var pompom = hat.transform.GetChild(0).GetComponent<SpriteRenderer>();
+            if (pompom != null) pompom.enabled = true;
+        }
+    }
+
+    private static void ClearWeaponBackShows(BodyScript body)
+    {
+        if (body == null) return;
+        foreach (var weaponBack in body.GetComponentsInChildren<WeaponBackShow>(true))
+        {
+            if (weaponBack.sprite1 != null) weaponBack.sprite1.sprite = null;
+            if (weaponBack.sprite2 != null) weaponBack.sprite2.sprite = null;
+        }
+    }
+
+    private static void ApplyWeaponBackShows(BodyScript body)
+    {
+        if (body == null || body.weapons == null || body.weapons.Count < 3)
+        {
+            ClearWeaponBackShows(body);
+            return;
+        }
+        foreach (var weaponBack in body.GetComponentsInChildren<WeaponBackShow>(true))
+        {
+            WeaponPreset first = null;
+            WeaponPreset second = null;
+            if (weaponBack.active)
+            {
+                if (body.currentWeapon == 0)
+                {
+                    first = body.weapons[1]; second = body.weapons[2];
+                }
+                else if (body.currentWeapon == 1)
+                {
+                    first = body.weapons[0]; second = body.weapons[2];
+                }
+                else if (body.currentWeapon == 2)
+                {
+                    first = body.weapons[0]; second = body.weapons[1];
+                }
+            }
+            if (weaponBack.sprite1 != null) weaponBack.sprite1.sprite = first == null ? null : first.sprite;
+            if (weaponBack.sprite2 != null) weaponBack.sprite2.sprite = second == null ? null : second.sprite;
+        }
+    }
+
+    private static ParticleSystem[] GetParticles(GameObject root)
+    {
+        var particles = root == null ? new ParticleSystem[0] : root.GetComponentsInChildren<ParticleSystem>(true);
+        Array.Sort(particles, CompareByHierarchyPath);
+        return particles;
+    }
+
+    private static int CompareByHierarchyPath(Component left, Component right)
+    {
+        return string.CompareOrdinal(HierarchyPath(left == null ? null : left.transform),
+            HierarchyPath(right == null ? null : right.transform));
+    }
+
+    private static string HierarchyPath(Transform transform)
+    {
+        var path = "";
+        while (transform != null)
+        {
+            path = transform.GetSiblingIndex().ToString("D4") + "/" + path;
+            transform = transform.parent;
+        }
+        return path;
     }
 
     private static bool IsCoreNpcRenderer(SpriteRenderer renderer)
@@ -2370,6 +2526,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly HashSet<GameObject> OwnedFireVisuals = new HashSet<GameObject>();
         public readonly Dictionary<SpriteRenderer, Sprite> OriginalDismemberSprites = new Dictionary<SpriteRenderer, Sprite>();
         public readonly Dictionary<Joint2D, bool> OriginalJointStates = new Dictionary<Joint2D, bool>();
+        public DismemberManager[] DismemberManagers = new DismemberManager[0];
         public SpriteRenderer[] SpriteRenderers = new SpriteRenderer[0];
         public bool[] ReplicatedSpriteRenderers = new bool[0];
         public ParticleSystem[] Particles = new ParticleSystem[0];

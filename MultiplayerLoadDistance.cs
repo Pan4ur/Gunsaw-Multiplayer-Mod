@@ -5,6 +5,8 @@ using UnityEngine;
 internal static class MultiplayerLoadDistance
 {
     private const float DefaultTickDistanceSqr = 1800f;
+    private const float ClientNpcPoseDistanceSqr = 900f;
+
     private const float SimulationRefreshInterval = 0.2f;
     private static readonly List<Vector2> playerPositions = new List<Vector2>();
     private static readonly Dictionary<Rigidbody2D, bool> savedSimulationStates =
@@ -71,6 +73,15 @@ internal static class MultiplayerLoadDistance
     internal static bool IsNpcNearAnyPlayer(BodyScript body)
     {
         return body != null && IsNearAnyPlayer(body.transform.position);
+    }
+
+    internal static bool IsNpcNearLocalPlayer(Vector2 position)
+    {
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        if (body == null || !body.gameObject.activeInHierarchy) return true;
+        var playerPosition = body.rb == null ? (Vector2)body.transform.position : body.rb.position;
+        return (position - playerPosition).sqrMagnitude < ClientNpcPoseDistanceSqr;
     }
 
     internal static bool IsWorldNearAnyPlayer(Rigidbody2D body)

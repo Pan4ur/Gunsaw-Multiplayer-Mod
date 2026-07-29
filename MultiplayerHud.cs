@@ -222,6 +222,31 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotWireResolve),
                 MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotDecode),
                 MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotDispatch));
+            networkStatsTextValue += string.Format("\nWORLD FLOW  fire {0:0.0}  zone {1:0.0}  queue {2:0.0}  saws {3:0.0}  weapons {4:0.0}\n" +
+                "            authority {5:0.0}  send {6:0.0}  rest {7:0.0} ms/s",
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldFireRefresh),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldZonePrompt),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotQueue),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientSaws),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldAuthorityMaintenance),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientSend),
+                MultiplayerPerformance.WorldUnaccountedMillisecondsPerSecond);
+            networkStatsTextValue += string.Format("\nNPC POSE     core {0:0.0}  rig {1:0.0}  limbs {2:0.0}  tails {3:0.0}\n" +
+                "             xform {4:0.0} ms/s\n" +
+                "NPC INTERP   bodies {5:0.0}  xform {6:0.0} ms/s\n" +
+                "NPC LOD      in {7}  full {8}  root {9}  skip {10}",
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcStateCore),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcStateRig),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcStateLimbs),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcStateTails),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcStateTransforms),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcInterpolateBodies),
+                MultiplayerPerformance.PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.NpcInterpolateTransforms),
+                npc == null ? 0 : npc.ReceivedStatesPerSecond,
+                npc == null ? 0 : npc.ClientFullPoseCount,
+                npc == null ? 0 : npc.ClientPoseCulledCount,
+                npc == null ? 0 : npc.ClientSkippedPoseCount);
         }
         var manager = GameManager.main;
         if (manager == null) return;

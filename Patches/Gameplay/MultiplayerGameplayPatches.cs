@@ -962,3 +962,14 @@ internal static class HostSceneReloadNotifyPatch
         MultiplayerSession.NotifyHostSceneReload(scene);
     }
 }
+
+[HarmonyPatch(typeof(AnimatedBodyScript), "DoStepSound")]
+internal static class AnimatedBodyStepSoundSafetyPatch
+{
+    private static bool Prefix(AnimatedBodyScript __instance, ref BodyScript ___body)
+    {
+        if (___body == null && __instance != null)
+            ___body = __instance.GetComponentInParent<BodyScript>();
+        return ___body != null;
+    }
+}

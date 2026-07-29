@@ -29,7 +29,22 @@ internal enum MultiplayerPerformancePhase
     WorldEnvironmentApply,
     WorldSnapshotWireResolve,
     WorldSnapshotDecode,
-    WorldSnapshotDispatch
+    WorldSnapshotDispatch,
+    WorldFireRefresh,
+    WorldZonePrompt,
+    WorldSnapshotQueue,
+    WorldClientSaws,
+    WorldDroppedWeaponIndicators,
+    WorldAuthorityMaintenance,
+    WorldClientSend,
+    NpcStateCore,
+    NpcStateRig,
+    NpcStateLimbs,
+    NpcStateTails,
+    NpcStateTransforms,
+    NpcInterpolateBodies,
+    NpcInterpolateTransforms,
+    Count
 }
 
 internal static class MultiplayerPerformance
@@ -40,8 +55,8 @@ internal static class MultiplayerPerformance
     private static double pendingAvatarSerializeMs;
     private static double pendingAvatarApplyMs;
     private static double pendingDistanceMs;
-    private static readonly double[] pendingPhaseMs = new double[28];
-    private static readonly float[] phaseMillisecondsPerSecond = new float[28];
+    private static readonly double[] pendingPhaseMs = new double[(int)MultiplayerPerformancePhase.Count];
+    private static readonly float[] phaseMillisecondsPerSecond = new float[(int)MultiplayerPerformancePhase.Count];
     private static float nextSample;
 
     internal static float NpcMillisecondsPerSecond { get; private set; }
@@ -77,6 +92,28 @@ internal static class MultiplayerPerformance
     internal static float PhaseMillisecondsPerSecond(MultiplayerPerformancePhase phase)
     {
         return phaseMillisecondsPerSecond[(int)phase];
+    }
+
+    internal static float WorldUnaccountedMillisecondsPerSecond
+    {
+        get
+        {
+            var accounted =
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldDiscovery) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSerialize) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotRead) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldStateApply) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldInput) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldContacts) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldFireRefresh) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldZonePrompt) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldSnapshotQueue) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientSaws) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldAuthorityMaintenance) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientSend);
+            return Mathf.Max(0f, WorldMillisecondsPerSecond - accounted);
+        }
     }
 
     internal static void Reset()

@@ -24,6 +24,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private const float SnapshotInterval = 1f / 5f;
     private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
+    private const float ContactStateInterval = 0.1f;
     private const bool DiagnosticsEnabled = false;
     private readonly Dictionary<string, Rigidbody2D> bodies = new Dictionary<string, Rigidbody2D>();
     private readonly Dictionary<Rigidbody2D, string> ids = new Dictionary<Rigidbody2D, string>();
@@ -42,6 +43,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, PropAuthority> propAuthorities = new Dictionary<string, PropAuthority>();
     private readonly Dictionary<string, PropTrace> propTraces = new Dictionary<string, PropTrace>();
     private readonly ContactPoint2D[] contactBuffer = new ContactPoint2D[32];
+    private readonly Dictionary<Rigidbody2D, float> nextContactStateAt = new Dictionary<Rigidbody2D, float>();
     private readonly Dictionary<string, float> damage = new Dictionary<string, float>();
     private readonly Dictionary<string, float> nextDamage = new Dictionary<string, float>();
     private int nextRuntimeId;
@@ -87,6 +89,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new Dictionary<AudioSource, bool>();
     private readonly HashSet<string> seenSnapshotFires = new HashSet<string>();
     private readonly HashSet<string> seenSnapshotAudio = new HashSet<string>();
+    private readonly HashSet<SawScript> clientSaws = new HashSet<SawScript>();
     private byte[] lastSerializedWorld;
     private byte[] lastSerializedEnvironment;
     private byte[] lastReliableEnvironment;
@@ -96,6 +99,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private float nextSnapshot;
     private float nextReliableEnvironment;
     private float nextFireRefresh;
+    private float nextFireDiscovery;
     private float nextDroppedWeaponIndicatorUpdate;
     private float nextFullWorldSnapshot;
     private float nextDiagnostics;
@@ -141,6 +145,8 @@ internal sealed class WorldReplication : MonoBehaviour
     private string lastRejectedInputId = "";
     private string lastMissingSnapshotId = "";
     private float clientFastSerializeState = 0f;
+    private Transform localContactRoot;
+    private Rigidbody2D[] localContactBodies = new Rigidbody2D[0];
 
     internal int TotalPropCount
     {
@@ -271,7 +277,9 @@ internal sealed class WorldReplication : MonoBehaviour
             RefreshActivationZones();
             RefreshGlasses();
             RefreshDrones();
-            RefreshWorldFires();
+            DiscoverWorldFires();
+            nextFireDiscovery = Time.unscaledTime + 1f;
+            RefreshClientSaws();
             RefreshWorldControllers();
             RefreshMechanismAudio();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDiscovery, discoveryStarted);
@@ -279,11 +287,20 @@ internal sealed class WorldReplication : MonoBehaviour
         if (Time.unscaledTime >= nextFireRefresh)
         {
             nextFireRefresh = Time.unscaledTime + 0.1f;
-            RefreshWorldFires();
+            var fireRefreshStarted = MultiplayerPerformance.StartPhase();
+            if (Time.unscaledTime >= nextFireDiscovery)
+            {
+                nextFireDiscovery = Time.unscaledTime + 1f;
+                DiscoverWorldFires();
+            }
+            RefreshKnownWorldFires();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldFireRefresh, fireRefreshStarted);
         }
         if (isHost)
         {
+            var zonePromptStarted = MultiplayerPerformance.StartPhase();
             UpdateZonePrompt();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, zonePromptStarted);
             var inputStarted = MultiplayerPerformance.StartPhase();
             byte[] interaction;
             ushort interactionPeer;
@@ -293,11 +310,15 @@ internal sealed class WorldReplication : MonoBehaviour
             return;
         }
 
+        var clientZonePromptStarted = MultiplayerPerformance.StartPhase();
         UpdateZonePrompt();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, clientZonePromptStarted);
 
         byte[] snapshot;
         byte[] latestSnapshot = null;
+        var queueStarted = MultiplayerPerformance.StartPhase();
         while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot)) latestSnapshot = snapshot;
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
         if (latestSnapshot != null)
         {
             var readStarted = MultiplayerPerformance.StartPhase();
@@ -306,15 +327,21 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         byte[] environment;
         byte[] latestEnvironment = null;
+        queueStarted = MultiplayerPerformance.StartPhase();
         while (MultiplayerSession.TryTakeWorldEnvironment(out environment)) latestEnvironment = environment;
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
         if (latestEnvironment != null)
         {
             var readStarted = MultiplayerPerformance.StartPhase();
             ApplyEnvironment(latestEnvironment);
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
         }
+        var sawsStarted = MultiplayerPerformance.StartPhase();
         AnimateClientSaws();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSaws, sawsStarted);
+        var weaponIndicatorsStarted = MultiplayerPerformance.StartPhase();
         AnimateClientDroppedWeaponIndicators();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators, weaponIndicatorsStarted);
         }
         finally
         {
@@ -359,7 +386,9 @@ internal sealed class WorldReplication : MonoBehaviour
         var contactsStarted = MultiplayerPerformance.StartPhase();
         CaptureLocalContacts();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldContacts, contactsStarted);
+        var authorityStarted = MultiplayerPerformance.StartPhase();
         MaintainMovingLocalAuthorities();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldAuthorityMaintenance, authorityStarted);
         if (received.Count > 0)
         {
             var applyStarted = MultiplayerPerformance.StartPhase();
@@ -374,10 +403,12 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
         {
+            var clientSendStarted = MultiplayerPerformance.StartPhase();
             clientFastSerializeState -= Time.fixedDeltaTime;
             nextSnapshot = Time.unscaledTime + SnapshotInterval;
             MultiplayerSession.Send(SerializePushes(), 1);
             MultiplayerSession.Send(SerializeDamage(), 1);
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSend, clientSendStarted);
         }
         }
         finally
@@ -391,21 +422,29 @@ internal sealed class WorldReplication : MonoBehaviour
         var player = PlayerScript.player;
         if (player == null || player.bodyScript == null) return;
         var localBody = player.bodyScript;
-        var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
-        foreach (var pair in bodies)
+        var root = localBody.transform.root;
+        if (root != localContactRoot)
         {
-            var body = pair.Value;
-            if (body == null || body.bodyType != RigidbodyType2D.Dynamic || !body.simulated) continue;
-            if ((body.worldCenterOfMass - localPosition).sqrMagnitude > 256f) continue;
-            var count = body.GetContacts(contactBuffer);
+            localContactRoot = root;
+            localContactBodies = root.GetComponentsInChildren<Rigidbody2D>();
+            nextContactStateAt.Clear();
+        }
+        var now = Time.unscaledTime;
+        foreach (var localRigidbody in localContactBodies)
+        {
+            if (localRigidbody == null || !localRigidbody.simulated) continue;
+            var count = localRigidbody.GetContacts(contactBuffer);
             for (var index = 0; index < count; index++)
             {
                 var contact = contactBuffer[index];
-                if (!IsLocalPlayerCollider(contact.collider, localBody) &&
-                    !IsLocalPlayerCollider(contact.otherCollider, localBody)) continue;
+                var other = IsLocalPlayerCollider(contact.collider, localBody)
+                    ? contact.otherCollider : contact.collider;
+                if (other == null || IsLocalPlayerCollider(other, localBody)) continue;
+                var body = other.attachedRigidbody;
+                if (body == null || body.bodyType != RigidbodyType2D.Dynamic || !body.simulated ||
+                    !ids.ContainsKey(body)) continue;
                 scannedContacts++;
-                QueueBodyState(body);
-                break;
+                QueueContactBodyState(body, now);
             }
         }
     }
@@ -451,6 +490,7 @@ internal sealed class WorldReplication : MonoBehaviour
         bodyLayouts.Remove(body);
         received.Remove(body);
         locallyControlledUntil.Remove(body);
+        nextContactStateAt.Remove(body);
         localSettings.Remove(body);
         initializedBodies.Remove(body);
     }
@@ -623,9 +663,16 @@ internal sealed class WorldReplication : MonoBehaviour
         DisableControllers(FindObjectsOfType<DroneScript>());
     }
 
-    private static void AnimateClientSaws()
+    private void RefreshClientSaws()
     {
+        clientSaws.Clear();
         foreach (var saw in FindObjectsOfType<SawScript>())
+            if (saw != null && !IsGameplayOwned(saw)) clientSaws.Add(saw);
+    }
+
+    private void AnimateClientSaws()
+    {
+        foreach (var saw in clientSaws)
         {
             if (saw == null || saw.enabled || IsGameplayOwned(saw)) continue;
             var angles = saw.transform.eulerAngles;
@@ -766,6 +813,9 @@ internal sealed class WorldReplication : MonoBehaviour
         received.Clear();
         pushes.Clear();
         locallyControlledUntil.Clear();
+        nextContactStateAt.Clear();
+        localContactRoot = null;
+        localContactBodies = new Rigidbody2D[0];
         propAuthorities.Clear();
         propTraces.Clear();
         damage.Clear();
@@ -824,6 +874,7 @@ internal sealed class WorldReplication : MonoBehaviour
         clientAudioWasPlaying.Clear();
         mechanismAudioIds.Clear();
         mechanismAudio.Clear();
+        clientSaws.Clear();
         wireIds.Clear();
         idsByWire.Clear();
         lastSerializedWorld = null;
@@ -835,6 +886,7 @@ internal sealed class WorldReplication : MonoBehaviour
         nextFullWorldSnapshot = 0f;
         nextReliableEnvironment = 0f;
         nextFireRefresh = 0f;
+        nextFireDiscovery = 0f;
         nextDroppedWeaponIndicatorUpdate = 0f;
         nextActivitySample = 0f;
         sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
@@ -1467,7 +1519,7 @@ internal sealed class WorldReplication : MonoBehaviour
         if (localPlayer == null || limb.body != localPlayer.bodyScript) return;
         var body = collision.rigidbody ?? collision.gameObject.GetComponentInParent<Rigidbody2D>();
         if (!(IsInteractivePropBody(body) || droneBodies.Contains(body)) || limb.rb == null) return;
-        QueueBodyState(body);
+        QueueContactBodyState(body, Time.unscaledTime);
         var crate = body.GetComponentInParent<CrateScript>();
         if (crate != null && collision.relativeVelocity.magnitude >= crate.minDamageSpeed)
             QueueDamage(crate, collision.relativeVelocity.magnitude * crate.impactDamageMult);
@@ -1485,6 +1537,14 @@ internal sealed class WorldReplication : MonoBehaviour
         lastQueuedId = id;
         TraceLocal(body);
         queuedStates++;
+    }
+
+    private void QueueContactBodyState(Rigidbody2D body, float now)
+    {
+        float nextAt;
+        if (nextContactStateAt.TryGetValue(body, out nextAt) && now < nextAt) return;
+        nextContactStateAt[body] = now + ContactStateInterval;
+        QueueBodyState(body);
     }
 
 
@@ -2009,7 +2069,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private void RefreshWorldFires()
+    private void DiscoverWorldFires()
     {
         if (MultiplayerSession.IsHost) fires.Clear();
         foreach (var fire in FindObjectsOfType<FireScript>())
@@ -2022,7 +2082,16 @@ internal sealed class WorldReplication : MonoBehaviour
                 fireIds[fire] = id;
             }
             fires[id] = fire;
-            if (MultiplayerSession.IsHost) continue;
+        }
+    }
+
+    private void RefreshKnownWorldFires()
+    {
+        if (MultiplayerSession.IsHost) return;
+        foreach (var pair in fires)
+        {
+            var fire = pair.Value;
+            if (fire == null) continue;
             if (!clientFireSettings.ContainsKey(fire)) clientFireSettings[fire] = new FireLocalSettings
             {
                 enabled = fire.enabled,

@@ -44,7 +44,8 @@ internal static class WeaponBackShowSlotGuardPatch
 {
     private static void Prefix(BodyScript ___body)
     {
-        NetworkAvatarReplication.EnsureRespawnWeaponSlots(___body);
+        if (___body != null && ___body.isPlayer)
+            NetworkAvatarReplication.EnsureRespawnWeaponSlots(___body);
     }
 }
 
