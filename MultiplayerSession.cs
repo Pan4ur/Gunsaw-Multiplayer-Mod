@@ -362,8 +362,11 @@ internal static partial class MultiplayerSession
 
     internal static bool IsConnected { get { lock (statusLock) return socket != null &&
         relayConnected && peers.Count > 0; } }
+
+    internal static bool IsActive { get { return socket != null; } }
     internal static bool IsHosting { get { return socket != null && relayConnected && isHost; } }
     internal static bool IsHost { get { return isHost; } }
+
     internal static int SendQueueDepth
     {
         get { lock (sendQueueLock) return sendQueue.Count + prioritySendQueue.Count; }

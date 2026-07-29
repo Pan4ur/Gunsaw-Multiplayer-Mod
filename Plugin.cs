@@ -63,6 +63,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private string hostRelayKey = "";
     private float nextHeartbeat;
     private bool shuttingDown;
+    private bool joinInProgress;
+    private readonly object joinLock = new object();
     private readonly Queue<Action> mainThreadActions = new Queue<Action>();
     private readonly object mainThreadActionsLock = new object();
 
@@ -463,14 +465,33 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void JoinLobby(string id)
     {
+        lock (joinLock)
+        {
+            if (joinInProgress || MultiplayerSession.IsHosting || MultiplayerSession.IsActive) return;
+            joinInProgress = true;
+        }
         try
         {
             var mode = ConnectionMode.Relay;
             foreach (var lobby in lobbies)
                 if (lobby.id == id) { mode = lobby.connectionMode; break; }
+            status = "Joining lobby...";
             ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(id, mode));
         }
-        catch (Exception e) { status = "Could not join lobby: " + e.Message; }
+        catch (Exception e)
+        {
+            SetJoinInProgress(false);
+            status = "Could not join lobby: " + e.Message;
+        }
+    }
+
+    internal bool CanJoinLobby
+    {
+        get
+        {
+            lock (joinLock)
+                return !joinInProgress && !MultiplayerSession.IsHosting && !MultiplayerSession.IsActive;
+        }
     }
 
     private void ConnectRelay(string address, string lobbyId, string relayKey, ushort peerId, ushort hostPeerId,
@@ -478,7 +499,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         string error;
         if (!MultiplayerSession.Connect(address, lobbyId, relayKey, playerName, peerId, hostPeerId, maxPlayers,
-            mode, Logger, out error)) { status = error; return; }
+            mode, Logger, out error))
+        {
+            SetJoinInProgress(false);
+            status = error;
+            return;
+        }
+        SetJoinInProgress(false);
         requestedHostScene = "";
         avatarReplication.Configure(playerName);
         multiplayerHud.ResetChat();
@@ -524,7 +551,19 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
             RunOnMainThread(() => ConnectRelay(relayAddress, lobbyId, relayKey, peerId, hostPeerId, maxPlayers, mode));
         }
-        catch (Exception exception) { RunOnMainThread(() => status = "Could not join lobby: " + exception.Message); }
+        catch (Exception exception)
+        {
+            RunOnMainThread(() =>
+            {
+                SetJoinInProgress(false);
+                status = "Could not join lobby: " + exception.Message;
+            });
+        }
+    }
+
+    private void SetJoinInProgress(bool value)
+    {
+        lock (joinLock) joinInProgress = value;
     }
 
     private void RunOnMainThread(Action action) { lock (mainThreadActionsLock) mainThreadActions.Enqueue(action); }
