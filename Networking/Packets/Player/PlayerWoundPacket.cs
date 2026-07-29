@@ -1,7 +1,7 @@
 internal readonly struct PlayerWoundPacket : INetworkPacket
 {
     private readonly PacketType packetType;
-    internal readonly int LimbIndex;
+    internal readonly short LimbIndex;
     internal readonly float LocalPointX;
     internal readonly float LocalPointY;
     internal readonly float DirectionX;
@@ -11,7 +11,7 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
     internal readonly bool HasSplash;
     internal readonly bool CreateScreenCrack;
 
-    internal PlayerWoundPacket(PacketType packetType, int limbIndex, float localPointX, float localPointY,
+    internal PlayerWoundPacket(PacketType packetType, short limbIndex, float localPointX, float localPointY,
         float directionX, float directionY, string weaponSprite, string woundSprite, bool hasSplash,
         bool createScreenCrack)
     {
@@ -34,7 +34,7 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
         writer.WriteSingle(0f);
         writer.WriteBoolean(false);
         writer.WriteByte(1);
-        writer.WriteInt32(LimbIndex);
+        writer.WriteInt16(LimbIndex);
         writer.WriteSingle(LocalPointX);
         writer.WriteSingle(LocalPointY);
         writer.WriteSingle(DirectionX);

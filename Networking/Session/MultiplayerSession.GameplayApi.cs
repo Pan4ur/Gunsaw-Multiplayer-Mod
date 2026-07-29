@@ -139,13 +139,13 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static bool TryTakePvpDamage(out ushort peerId, out PvpDamagePacket packet)
+    internal static bool TryTakePvpDamage(out ushort peerId, out PlayerDamagePacket packet)
     {
         lock (statusLock)
         {
             var item = pvpDamage.Count == 0 ? null : pvpDamage.Dequeue();
             peerId = item == null ? (ushort)0 : item.PeerId;
-            packet = item == null ? default(PvpDamagePacket) : item.Packet;
+            packet = item == null ? default(PlayerDamagePacket) : item.Packet;
             return item != null;
         }
     }

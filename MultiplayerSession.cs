@@ -111,7 +111,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<NpcDamagePacket>> npcDamage = new Queue<PeerPacket<NpcDamagePacket>>();
     private static readonly Queue<PeerPacket<WorldInteractionPacket>> worldInteractions = new Queue<PeerPacket<WorldInteractionPacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> playerDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
-    private static readonly Queue<PeerPacket<PvpDamagePacket>> pvpDamage = new Queue<PeerPacket<PvpDamagePacket>>();
+    private static readonly Queue<PeerPacket<PlayerDamagePacket>> pvpDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
     private static readonly Queue<PeerPacket<ShotVisualPacket>> shotVisuals = new Queue<PeerPacket<ShotVisualPacket>>();
     private static readonly Queue<PeerPacket<ProjectileImpactPacket>> projectileImpacts = new Queue<PeerPacket<ProjectileImpactPacket>>();
     private static readonly Queue<PeerPacket<VelvetWebPacket>> velvetWebs = new Queue<PeerPacket<VelvetWebPacket>>();

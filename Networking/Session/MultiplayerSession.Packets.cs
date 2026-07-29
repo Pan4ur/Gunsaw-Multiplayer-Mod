@@ -224,7 +224,7 @@ internal static partial class MultiplayerSession
                 try
                 {
                     var reader = new PacketReader(decodedPacket.Payload);
-                    EnqueuePvpDamage(senderId, PvpDamagePacket.Read(ref reader));
+                    EnqueuePvpDamage(senderId, PlayerDamagePacket.Read(ref reader));
                 }
                 catch (System.Exception) { }
             }
@@ -527,13 +527,13 @@ internal static partial class MultiplayerSession
         }
     }
 
-    private static void EnqueuePvpDamage(ushort peerId, PvpDamagePacket packet)
+    private static void EnqueuePvpDamage(ushort peerId, PlayerDamagePacket packet)
     {
         lock (statusLock)
         {
             TouchPeerLocked(peerId, null);
             while (pvpDamage.Count >= MaxPendingEventPackets) pvpDamage.Dequeue();
-            pvpDamage.Enqueue(new PeerPacket<PvpDamagePacket> { PeerId = peerId, Packet = packet });
+            pvpDamage.Enqueue(new PeerPacket<PlayerDamagePacket> { PeerId = peerId, Packet = packet });
         }
     }
 

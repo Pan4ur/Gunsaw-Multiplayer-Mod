@@ -536,7 +536,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         PlayerDamagePacket playerDamage;
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
             ApplyPlayerDamage(player.bodyScript, PacketPayload(playerDamage));
-        PvpDamagePacket pvpDamage;
+        PlayerDamagePacket pvpDamage;
         while (MultiplayerSession.TryTakePvpDamage(out senderId, out pvpDamage))
             ApplyPvpDamage(player.bodyScript, senderId, pvpDamage);
         ShotVisualPacket shotVisual;
@@ -2192,19 +2192,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private static void ApplyPvpDamage(BodyScript body, ushort senderId, PvpDamagePacket packet)
+    private static void ApplyPvpDamage(BodyScript body, ushort senderId, PlayerDamagePacket packet)
     {
         if (!MultiplayerSession.PvpEnabled || body == null) return;
         var source = senderId == MultiplayerSession.LocalPeerId
             ? body : RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
-        if (Time.unscaledTime < localRespawnProtectionUntil) return;
-        var amount = Mathf.Clamp(packet.Amount, 0f, 1000f);
-        if (amount <= 0f || !body.isAlive) return;
-        body.health -= amount;
-        applyingNetworkPlayerDamage = true;
-        try { body.Damaged(packet.Critical); }
-        finally { applyingNetworkPlayerDamage = false; }
+        ApplyPlayerDamage(body, PacketPayload(packet));
     }
 
     private void UpdateRemotePhysicsMode()
