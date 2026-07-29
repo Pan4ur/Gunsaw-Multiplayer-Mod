@@ -115,7 +115,13 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
                 if (response != null && response.Length >= 7 && HasUdpMagic(response))
                 {
                     if (response[4] == UdpAuthFailed)
-                        throw new InvalidOperationException("UDP relay rejected the lobby key.");
+                    {
+                        var reason = response.Length > 7
+                            ? Encoding.UTF8.GetString(response, 7, response.Length - 7).Trim()
+                            : "";
+                        throw new InvalidOperationException(string.IsNullOrEmpty(reason)
+                            ? "UDP relay rejected the lobby key." : reason);
+                    }
                     authenticated = response[4] == UdpAuthOk;
                     if (authenticated)
                     {

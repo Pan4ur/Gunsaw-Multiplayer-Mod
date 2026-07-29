@@ -17,6 +17,8 @@ internal static partial class MultiplayerSession
             ushort senderId;
             var packet = ReadPacket(receiveBuffer, out senderId);
             if (packet == null) return;
+            lock (statusLock)
+                if (isHost && blockedPeers.Contains(senderId)) continue;
             if (!ProcessReliablePacket(ref packet, senderId)) continue;
             PayloadPacket decodedPacket;
             if (!PacketCodec.TryDecode(packet, out decodedPacket)) continue;
@@ -479,6 +481,7 @@ internal static partial class MultiplayerSession
 
     private static void ClearPeerQueuesLocked()
     {
+        blockedPeers.Clear();
         identities.Clear();
         snapshots.Clear();
         receivedSnapshotSequences.Clear();

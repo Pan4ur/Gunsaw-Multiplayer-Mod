@@ -494,6 +494,39 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
     }
 
+    internal bool TryHandleHostCommand(string message)
+    {
+        if (!message.StartsWith("/ban", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!MultiplayerSession.IsHosting || string.IsNullOrEmpty(hostedLobbyId) || string.IsNullOrEmpty(hostRelayKey))
+        {
+            status = "Only the lobby host can use /ban.";
+            return true;
+        }
+        var playerName = message.Length > 4 ? message.Substring(4).Trim() : "";
+        if (string.IsNullOrEmpty(playerName))
+        {
+            status = "Usage: /ban <player name>";
+            return true;
+        }
+        ushort peerId = 0;
+        foreach (var id in MultiplayerSession.PeerIds())
+            if (string.Equals(MultiplayerSession.PlayerName(id), playerName, StringComparison.OrdinalIgnoreCase))
+            {
+                peerId = id;
+                break;
+            }
+        if (peerId == 0)
+        {
+            status = "Player " + playerName + " is not in the lobby.";
+            return true;
+        }
+        var lobbyId = hostedLobbyId;
+        var relayKey = hostRelayKey;
+        status = "Banning " + playerName + "...";
+        ThreadPool.QueueUserWorkItem(_ => BanPlayerInDirectory(lobbyId, relayKey, playerName, peerId));
+        return true;
+    }
+
     private void ConnectRelay(string address, string lobbyId, string relayKey, ushort peerId, ushort hostPeerId,
         int maxPlayers, ConnectionMode mode)
     {
@@ -538,7 +571,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         try
         {
-            var response = Http("POST", "/v1/lobbies/" + id + "/join", "{}", null);
+            var response = Http("POST", "/v1/lobbies/" + id + "/join",
+                JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName }), null);
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "relayKey");
             var relayAddress = JsonString(response, "relayAddress");
@@ -567,6 +601,27 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     }
 
     private void RunOnMainThread(Action action) { lock (mainThreadActionsLock) mainThreadActions.Enqueue(action); }
+
+    private void BanPlayerInDirectory(string lobbyId, string relayKey, string playerName, ushort expectedPeerId)
+    {
+        try
+        {
+            var body = JsonUtility.ToJson(new BanPlayerRequest { playerName = playerName, durationMinutes = 60 });
+            var response = Http("POST", "/v1/lobbies/" + lobbyId + "/ban", body, "Bearer " + relayKey);
+            var peerId = (ushort)Mathf.Clamp(JsonInt(response, "peerId"), 1, 65534);
+            if (peerId == 0) peerId = expectedPeerId;
+            var bannedPeerId = peerId;
+            RunOnMainThread(() =>
+            {
+                MultiplayerSession.KickPeer(bannedPeerId, playerName + " was banned for 60 minutes.");
+                status = playerName + " was banned for 60 minutes.";
+            });
+        }
+        catch (Exception exception)
+        {
+            RunOnMainThread(() => status = "Could not ban " + playerName + ": " + exception.Message);
+        }
+    }
 
     private string Http(string method, string path, string body, string authorization)
     {
@@ -870,5 +925,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     }
 
     [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public ConnectionMode connectionMode = ConnectionMode.Relay; }
+    [Serializable] private sealed class JoinLobbyPayload { public string playerName = ""; }
+    [Serializable] private sealed class BanPlayerRequest { public string playerName = ""; public int durationMinutes; }
     [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public string connectionMode = "Relay"; }
 }

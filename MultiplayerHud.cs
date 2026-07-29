@@ -285,6 +285,11 @@ internal sealed class MultiplayerHud : MonoBehaviour
         input = "";
         if (!string.IsNullOrEmpty(message))
         {
+            if (GunsawMultiplayerPlugin.Instance.TryHandleHostCommand(message))
+            {
+                CloseChat();
+                return;
+            }
             AddMessage(localName, message, true, MultiplayerSession.LocalPeerId);
             ChatPacket packet;
             if (ChatService.TryCreate(message, false, out packet)) MultiplayerSession.Send(packet);

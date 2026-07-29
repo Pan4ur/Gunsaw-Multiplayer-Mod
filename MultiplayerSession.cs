@@ -100,6 +100,7 @@ internal static partial class MultiplayerSession
     private static string hostCustomLevel = "";
     private static string pendingCustomLevel = "";
     private static readonly PeerRegistry peers = new PeerRegistry();
+    private static readonly HashSet<ushort> blockedPeers = new HashSet<ushort>();
     private static readonly Queue<PeerIdentity> identities = new Queue<PeerIdentity>();
     private static readonly Dictionary<ushort, PlayerSnapshotPacket> snapshots = new Dictionary<ushort, PlayerSnapshotPacket>();
     private static readonly Queue<PeerPayload> worldSnapshots = new Queue<PeerPayload>();
@@ -506,6 +507,15 @@ internal static partial class MultiplayerSession
         {
             return peers.Ids();
         }
+    }
+
+    internal static void KickPeer(ushort peerId, string message)
+    {
+        if (!isHost || peerId == 0 || peerId == localPeerId) return;
+        lock (statusLock) blockedPeers.Add(peerId);
+        Send(DisconnectPacket.ClientClosed(), peerId);
+        Send(DisconnectPacket.PeerLeft(peerId));
+        DropPeer(peerId, false, message);
     }
 
     internal static void UpdateConnection()
