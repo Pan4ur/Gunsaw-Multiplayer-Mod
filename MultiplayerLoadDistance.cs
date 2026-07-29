@@ -4,8 +4,8 @@ using UnityEngine;
 
 internal static class MultiplayerLoadDistance
 {
-    private const float DefaultTickDistanceSqr = 1800f;
-    private const float ClientNpcPoseDistanceSqr = 900f;
+    private const float DefaultTickDistanceSqr = 1000f;
+    internal const float NpcPoseDistanceSqr = 600f;
 
     private const float SimulationRefreshInterval = 0.2f;
     private static readonly List<Vector2> playerPositions = new List<Vector2>();
@@ -21,6 +21,15 @@ internal static class MultiplayerLoadDistance
     private static float activeDistanceSqr = DefaultTickDistanceSqr;
     private static float nextSimulationRefresh;
 
+    internal static float WorldDistanceSqr => activeDistanceSqr;
+
+    internal static void CopyPlayerPositions(List<Vector2> target)
+    {
+        if (target == null) return;
+        target.Clear();
+        target.AddRange(playerPositions);
+    }
+
     internal static void Apply()
     {
         var performanceStarted = MultiplayerPerformance.Start();
@@ -31,7 +40,7 @@ internal static class MultiplayerLoadDistance
         {
             wasActive = true;
             hostSimulationActive = MultiplayerSession.IsConnected && MultiplayerSession.IsHost;
-            activeDistanceSqr = ReadTickDistance();
+            activeDistanceSqr = DefaultTickDistanceSqr;
             ResourceManager.maxDistance = float.PositiveInfinity;
             ObjectUnloader.dist = float.PositiveInfinity;
             ObjectUnloader.distTwo = float.PositiveInfinity;
@@ -75,13 +84,23 @@ internal static class MultiplayerLoadDistance
         return body != null && IsNearAnyPlayer(body.transform.position);
     }
 
+    internal static bool ShouldSendNpcLimbPose(BodyScript body)
+    {
+        return body != null && IsNearAnyPlayer(body.transform.position, NpcPoseDistanceSqr);
+    }
+
+    internal static bool ShouldTickNpcTails(BodyScript body)
+    {
+        return body != null && IsNearAnyPlayer(body.transform.position, NpcPoseDistanceSqr);
+    }
+
     internal static bool IsNpcNearLocalPlayer(Vector2 position)
     {
         var player = PlayerScript.player;
         var body = player == null ? null : player.bodyScript;
         if (body == null || !body.gameObject.activeInHierarchy) return true;
         var playerPosition = body.rb == null ? (Vector2)body.transform.position : body.rb.position;
-        return (position - playerPosition).sqrMagnitude < ClientNpcPoseDistanceSqr;
+        return (position - playerPosition).sqrMagnitude < NpcPoseDistanceSqr;
     }
 
     internal static bool IsWorldNearAnyPlayer(Rigidbody2D body)
@@ -122,9 +141,13 @@ internal static class MultiplayerLoadDistance
         if (body == null || !IsHostSimulationActive() || body.isPlayer ||
             body.GetComponentInParent<NetworkReplica>() != null) return;
         var tick = IsNearAnyPlayer(body.transform.position);
+        var tickTails = tick && ShouldTickNpcTails(body);
         npcTickStates[body] = tick;
-        foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
-            SetSimulation(rigidbody, tick);
+        var root = NpcRoot(body);
+        foreach (var ai in root.GetComponentsInChildren<AIScript>(true))
+            if (ai != null && ai.body == body) ai.enabled = tick;
+        foreach (var rigidbody in root.GetComponentsInChildren<Rigidbody2D>(true))
+            SetSimulation(rigidbody, tick && (tickTails || !IsNpcTailBody(body, rigidbody)));
     }
 
     internal static bool IsSimulationCulled(Rigidbody2D body)
@@ -135,7 +158,7 @@ internal static class MultiplayerLoadDistance
     internal static bool IsNpcSimulationCulled(BodyScript body)
     {
         if (body == null) return false;
-        foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
+        foreach (var rigidbody in NpcRoot(body).GetComponentsInChildren<Rigidbody2D>(true))
             if (IsSimulationCulled(rigidbody)) return true;
         return false;
     }
@@ -189,18 +212,40 @@ internal static class MultiplayerLoadDistance
 
     private static bool IsNearAnyPlayer(Vector2 position)
     {
+        return IsNearAnyPlayer(position, activeDistanceSqr);
+    }
+
+    private static bool IsNearAnyPlayer(Vector2 position, float distanceSqr)
+    {
         if (playerPositions.Count == 0) return true;
         foreach (var playerPosition in playerPositions)
-            if ((position - playerPosition).sqrMagnitude < activeDistanceSqr) return true;
+            if ((position - playerPosition).sqrMagnitude < distanceSqr) return true;
         return false;
     }
 
-    private static float ReadTickDistance()
+    private static bool IsNpcTailBody(BodyScript body, Rigidbody2D rigidbody)
     {
-        var distanceSqr = PlayerPrefs.GetFloat("loadDistance", DefaultTickDistanceSqr);
-        return distanceSqr <= 0f || float.IsNaN(distanceSqr) || float.IsInfinity(distanceSqr)
-            ? DefaultTickDistanceSqr
-            : distanceSqr;
+        if (body == null || rigidbody == null) return false;
+        if (body.tailBases != null)
+            foreach (Rigidbody2D tailBase in body.tailBases)
+                if (tailBase == rigidbody) return true;
+        if (body.tails != null)
+            foreach (var tail in body.tails)
+                if (tail != null && (rigidbody.transform == tail || rigidbody.transform.IsChildOf(tail))) return true;
+        return false;
+    }
+
+    private static GameObject NpcRoot(BodyScript body)
+    {
+        var current = body.transform;
+        while (current.parent != null)
+        {
+            var parent = current.parent;
+            var bodies = parent.GetComponentsInChildren<BodyScript>(true);
+            if (bodies.Length != 1 || bodies[0] != body) break;
+            current = parent;
+        }
+        return current.gameObject;
     }
 
     private static void SetSimulation(Rigidbody2D body, bool simulated)

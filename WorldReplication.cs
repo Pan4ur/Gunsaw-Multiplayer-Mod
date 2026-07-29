@@ -21,7 +21,10 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte VehicleDamage = 7;
     internal const byte DroneDamage = 8;
 
-    private const float SnapshotInterval = 1f / 5f;
+    // I'll leave it like this for now
+    // I need to test it more thoroughly with the new system
+    private const float SnapshotInterval = 1f / 50f;
+
     private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
     private const float ContactStateInterval = 0.1f;
@@ -49,6 +52,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private int nextRuntimeId;
     private readonly Dictionary<Rigidbody2D, LocalSettings> localSettings = new Dictionary<Rigidbody2D, LocalSettings>();
     private readonly HashSet<Rigidbody2D> clientCreatedBodies = new HashSet<Rigidbody2D>();
+    private readonly HashSet<Rigidbody2D> clientBoundDroppedWeapons = new HashSet<Rigidbody2D>();
     private readonly HashSet<Rigidbody2D> networkCrateDebrisBodies = new HashSet<Rigidbody2D>();
     private readonly Dictionary<CrateScript, float> networkCrateDebrisDamageUntil = new Dictionary<CrateScript, float>();
     private readonly Dictionary<GameObject, bool> clientHiddenObjects = new Dictionary<GameObject, bool>();
@@ -859,6 +863,7 @@ internal sealed class WorldReplication : MonoBehaviour
         foreach (var body in clientCreatedBodies)
             if (body != null) Destroy(body.gameObject);
         clientCreatedBodies.Clear();
+        clientBoundDroppedWeapons.Clear();
         networkCrateDebrisBodies.Clear();
         networkCrateDebrisDamageUntil.Clear();
         clientFireSettings.Clear();
@@ -1303,9 +1308,13 @@ internal sealed class WorldReplication : MonoBehaviour
                         }
                         if (!bodies.TryGetValue(id, out body) || body == null)
                         {
-                            var objectStarted = MultiplayerPerformance.StartPhase();
-                            body = CreateDroppedWeapon(id, weaponId, ammo, state.position, state.rotation);
-                            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects, objectStarted);
+                            body = FindExistingDroppedWeapon(id, weaponId, state.position);
+                            if (body == null)
+                            {
+                                var objectStarted = MultiplayerPerformance.StartPhase();
+                                body = CreateDroppedWeapon(id, weaponId, ammo, state.position, state.rotation);
+                                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects, objectStarted);
+                            }
                         }
                         else
                         {
@@ -2673,9 +2682,38 @@ internal sealed class WorldReplication : MonoBehaviour
         bodies[id] = body;
         ids[body] = id;
         clientCreatedBodies.Add(body);
+        clientBoundDroppedWeapons.Add(body);
         droppedWeapons[body] = dropped;
         MakeClientControlled(body);
         return body;
+    }
+
+    private Rigidbody2D FindExistingDroppedWeapon(string id, ulong weaponId, Vector2 position)
+    {
+        Rigidbody2D best = null;
+        var bestDistance = 4f;
+        foreach (var pair in droppedWeapons)
+        {
+            var body = pair.Key;
+            var dropped = pair.Value;
+            if (body == null || dropped == null || clientCreatedBodies.Contains(body) ||
+                clientBoundDroppedWeapons.Contains(body) || dropped.stats == null ||
+                NetworkWireId.FromString(dropped.stats.name) != weaponId) continue;
+            var distance = (body.position - position).sqrMagnitude;
+            if (distance > bestDistance) continue;
+            bestDistance = distance;
+            best = body;
+        }
+        if (best == null) return null;
+        string previousId;
+        if (ids.TryGetValue(best, out previousId)) bodies.Remove(previousId);
+        bodies[id] = best;
+        ids[best] = id;
+        var wire = NetworkWireId.FromString(id);
+        wireIds[id] = wire;
+        idsByWire[wire] = id;
+        clientBoundDroppedWeapons.Add(best);
+        return best;
     }
 
     private Rigidbody2D CreateRuntimeCrate(string id, string prefabName, Vector2 position, float rotation)

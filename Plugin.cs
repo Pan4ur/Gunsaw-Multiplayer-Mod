@@ -56,6 +56,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private NpcReplication npcReplication;
     private MultiplayerHud multiplayerHud;
     private MultiplayerLobbyUi multiplayerLobbyUi;
+    private MultiplayerReplicationDebugMode replicationDebugMode;
     private int debugWeaponSequence;
     private bool gameplayTypesLogged;
     private string hostedLobbyId = "";
@@ -104,6 +105,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         worldReplication = gameObject.AddComponent<WorldReplication>();
         npcReplication = gameObject.AddComponent<NpcReplication>();
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
+        replicationDebugMode = gameObject.AddComponent<MultiplayerReplicationDebugMode>();
         multiplayerLobbyUi = gameObject.AddComponent<MultiplayerLobbyUi>();
         World = worldReplication;
         Logger.LogInfo("Gunsaw Multiplayer " + PluginVersion + " loaded.");
@@ -230,6 +232,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.R))
         {
             multiplayerHud.ToggleReplicationDebugOverlay();
+            return;
+        }
+        if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.L))
+        {
+            replicationDebugMode.Toggle();
             return;
         }
         if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.S))

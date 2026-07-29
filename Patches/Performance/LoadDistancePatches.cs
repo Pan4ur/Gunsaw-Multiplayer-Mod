@@ -38,6 +38,19 @@ internal static class MultiplayerNpcLimbFixedUpdateCullPatch
     }
 }
 
+[HarmonyPatch(typeof(DroppedWeapon), "Awake")]
+internal static class MultiplayerDroppedWeaponAmmoIconPatch
+{
+    private static void Postfix(DroppedWeapon __instance)
+    {
+        if (__instance == null) return;
+        var icon = __instance.transform.Find("myAmmo");
+        if (icon == null) return;
+        icon.localPosition = Vector3.up * 0.6f;
+        icon.localRotation = Quaternion.identity;
+    }
+}
+
 [HarmonyPatch(typeof(CrateScript), "FixedUpdate")]
 internal static class MultiplayerCrateTickCullPatch
 {

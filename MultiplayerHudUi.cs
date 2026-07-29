@@ -52,6 +52,11 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     internal void BeginDebugFrame()
     {
+        ClearDebugMarkers();
+    }
+
+    internal void ClearDebugMarkers()
+    {
         foreach (var marker in debugMarkers) if (marker != null) marker.gameObject.SetActive(false);
     }
 

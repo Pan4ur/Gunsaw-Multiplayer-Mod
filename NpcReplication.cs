@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
 using System.Text;
 using BepInEx;
@@ -18,11 +17,14 @@ internal sealed class NpcReplication : MonoBehaviour
     private const float RotationFromWire = 360f / ushort.MaxValue;
 
     private const float SnapshotInterval = 1f / 50f;
-    private const float DiscoveryInterval = 1f;
+    private const float DiscoveryInterval = 60f;
+    private const float NewBodyRegistrationDelay = 1f;
     private const float FullSnapshotInterval = 1f;
     private const float VisualStateInterval = 0.1f;
-    private const bool DiagnosticsEnabled = false;
+    private static readonly Transform[] emptyTransforms = new Transform[0];
     private readonly Dictionary<BodyScript, string> hostIds = new Dictionary<BodyScript, string>();
+    private readonly HashSet<BodyScript> registeredBodies = new HashSet<BodyScript>();
+    private readonly Dictionary<BodyScript, float> pendingBodies = new Dictionary<BodyScript, float>();
     private readonly Dictionary<string, BodyScript> hostNpcs = new Dictionary<string, BodyScript>();
     private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
     private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
@@ -46,10 +48,9 @@ internal sealed class NpcReplication : MonoBehaviour
     private int receivedSequence = -1;
     private bool wasConnected;
     private bool wasHost;
+    private bool bodyRegistryReady;
     private string activeScene = "";
     private int activeSceneHandle;
-    private string diagnosticPath = "";
-    private float nextDiagnostics;
     private int lastPacketBytes;
     private int lastStateCount;
     private int culledNpcCount;
@@ -119,12 +120,6 @@ internal sealed class NpcReplication : MonoBehaviour
     private void Awake()
     {
         Instance = this;
-        if (!DiagnosticsEnabled) return;
-        diagnosticPath = Path.Combine(Paths.BepInExRootPath,
-            "npc-sync-" + System.Diagnostics.Process.GetCurrentProcess().Id + ".log");
-        try { File.WriteAllText(diagnosticPath, "Gunsaw Multiplayer NPC sync diagnostics\n"); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
     }
 
     private void Update()
@@ -133,7 +128,6 @@ internal sealed class NpcReplication : MonoBehaviour
         try
         {
         SampleActivity();
-        if (DiagnosticsEnabled) WriteDiagnostics();
         var scene = SceneManager.GetActiveScene();
         var isHost = MultiplayerSession.IsHost;
         var sceneChanged = activeSceneHandle != scene.handle;
@@ -166,9 +160,13 @@ internal sealed class NpcReplication : MonoBehaviour
             if (refreshDiscovery)
             {
                 var discoveryStarted = MultiplayerPerformance.StartPhase();
+                DiscoverBodies();
                 RefreshHostNpcs(player.bodyScript);
+                bodyRegistryReady = true;
+                pendingBodies.Clear();
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDiscovery, discoveryStarted);
             }
+            ProcessPendingBodies(player.bodyScript);
             NpcPossessionPacket possessionPacket;
             ushort possessionPeer;
             while (MultiplayerSession.TryTakeNpcPossession(out possessionPeer, out possessionPacket))
@@ -212,9 +210,13 @@ internal sealed class NpcReplication : MonoBehaviour
         if (refreshDiscovery)
         {
             var discoveryStarted = MultiplayerPerformance.StartPhase();
+            DiscoverBodies();
             RefreshClientNpcs(player.bodyScript);
+            bodyRegistryReady = true;
+            pendingBodies.Clear();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDiscovery, discoveryStarted);
         }
+        ProcessPendingBodies(player.bodyScript);
         byte[] packet;
         byte[] latestPacket = null;
         while (MultiplayerSession.TryTakeNpcSnapshot(out packet)) latestPacket = packet;
@@ -256,33 +258,11 @@ internal sealed class NpcReplication : MonoBehaviour
     private void RefreshHostNpcs(BodyScript localBody)
     {
         var seen = new HashSet<string>();
-        foreach (var body in Resources.FindObjectsOfTypeAll<BodyScript>())
+        var bodies = new List<BodyScript>(registeredBodies);
+        foreach (var body in bodies)
         {
-            if (!IsNpc(body, localBody)) continue;
-            var id = StableId(body);
-            if (remotelyPossessedNpcIds.Contains(id)) continue;
-            var root = NpcRoot(body);
-            if (!root.activeSelf) root.SetActive(true);
-            foreach (var ai in root.GetComponentsInChildren<AIScript>(true))
-            {
-                if (ai == null || ai.body != body) continue;
-                if (!ai.gameObject.activeSelf) ai.gameObject.SetActive(true);
-                ai.enabled = true;
-                body.onScreen = true;
-            }
-            foreach (var animator in root.GetComponentsInChildren<Animator>(true))
-            {
-                if (animator == null) continue;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-                animator.enabled = true;
-            }
-            if (!hostIds.TryGetValue(body, out id))
-            {
-                id = StableId(body);
-                hostIds[body] = id;
-            }
-            hostNpcs[id] = body;
-            seen.Add(id);
+            string id;
+            if (RegisterHostNpc(body, localBody, out id)) seen.Add(id);
         }
         var stale = new List<string>();
         foreach (var pair in hostNpcs)
@@ -297,20 +277,83 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void RefreshClientNpcs(BodyScript localBody)
     {
-        foreach (var body in Resources.FindObjectsOfTypeAll<BodyScript>())
+        var bodies = new List<BodyScript>(registeredBodies);
+        foreach (var body in bodies) RegisterClientNpc(body, localBody);
+    }
+
+    internal void RegisterBody(BodyScript body)
+    {
+        if (body == null || !registeredBodies.Add(body)) return;
+        pendingBodies[body] = Time.unscaledTime + NewBodyRegistrationDelay;
+    }
+
+    private void DiscoverBodies()
+    {
+        var scene = SceneManager.GetActiveScene();
+        if (!scene.isLoaded) return;
+        foreach (var root in scene.GetRootGameObjects())
+            foreach (var body in root.GetComponentsInChildren<BodyScript>(true))
+                if (body != null) registeredBodies.Add(body);
+    }
+
+    private void ProcessPendingBodies(BodyScript localBody)
+    {
+        if (!bodyRegistryReady || pendingBodies.Count == 0) return;
+        var ready = new List<BodyScript>();
+        foreach (var pair in pendingBodies)
+            if (pair.Key == null || Time.unscaledTime >= pair.Value) ready.Add(pair.Key);
+        foreach (var body in ready)
         {
-            if (!IsNpc(body, localBody) || clientBodies.ContainsKey(body)) continue;
-            var root = NpcRoot(body);
-            var duplicateRoot = false;
-            foreach (var proxy in clientBodies.Values)
-                if (proxy.Root == root) { duplicateRoot = true; break; }
-            if (duplicateRoot) continue;
-            var id = StableId(body);
-            if (clientNpcs.ContainsKey(id)) id += ":local#" + clientBodies.Count;
-            var created = CreateProxy(id, body, root, false);
-            clientNpcs[id] = created;
-            clientBodies[body] = created;
+            pendingBodies.Remove(body);
+            if (body == null) continue;
+            if (MultiplayerSession.IsHost) RegisterHostNpc(body, localBody);
+            else RegisterClientNpc(body, localBody);
         }
+    }
+
+    private bool RegisterHostNpc(BodyScript body, BodyScript localBody)
+    {
+        string ignored;
+        return RegisterHostNpc(body, localBody, out ignored);
+    }
+
+    private bool RegisterHostNpc(BodyScript body, BodyScript localBody, out string id)
+    {
+        id = "";
+        if (!IsNpc(body, localBody)) return false;
+        id = StableId(body);
+        if (remotelyPossessedNpcIds.Contains(id)) return false;
+        var root = NpcRoot(body);
+        if (!root.activeSelf) root.SetActive(true);
+        foreach (var ai in root.GetComponentsInChildren<AIScript>(true))
+        {
+            if (ai == null || ai.body != body) continue;
+            if (!ai.gameObject.activeSelf) ai.gameObject.SetActive(true);
+            ai.enabled = true;
+            body.onScreen = true;
+        }
+        foreach (var animator in root.GetComponentsInChildren<Animator>(true))
+        {
+            if (animator == null) continue;
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            animator.enabled = true;
+        }
+        hostIds[body] = id;
+        hostNpcs[id] = body;
+        return true;
+    }
+
+    private void RegisterClientNpc(BodyScript body, BodyScript localBody)
+    {
+        if (!IsNpc(body, localBody) || clientBodies.ContainsKey(body)) return;
+        var root = NpcRoot(body);
+        foreach (var proxy in clientBodies.Values)
+            if (proxy.Root == root) return;
+        var id = StableId(body);
+        if (clientNpcs.ContainsKey(id)) id += ":local#" + clientBodies.Count;
+        var created = CreateProxy(id, body, root, false);
+        clientNpcs[id] = created;
+        clientBodies[body] = created;
     }
 
     private static bool IsNpc(BodyScript body, BodyScript localBody)
@@ -319,7 +362,16 @@ internal sealed class NpcReplication : MonoBehaviour
         if (body.transform.root == localBody.transform.root) return false;
         if (body.isPlayer || body.GetComponentInParent<PlayerScript>() != null) return false;
         if (body.GetComponentInParent<NetworkReplica>() != null) return false;
+        if (IsTailHelper(body)) return false;
         return true;
+    }
+
+    private static bool IsTailHelper(BodyScript body)
+    {
+        if (body == null || body.limbs == null || body.limbs.Count != 0 ||
+            !string.IsNullOrEmpty(body.characterName) || body.tails == null || body.tails.Length == 0 ||
+            body.rb == null || body.rb.position.sqrMagnitude > 0.0001f) return false;
+        return body.GetComponentsInChildren<LimbScript>(true).Length == 0;
     }
 
     private void ApplyRemotePossession(ushort peerId, NpcPossessionPacket packet)
@@ -425,7 +477,7 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             if (pair.Value == null) continue;
             liveIds.Add(pair.Key);
-            if (!fullSnapshot && !MultiplayerLoadDistance.IsNpcNearAnyPlayer(pair.Value)) continue;
+            if (!MultiplayerLoadDistance.IsNpcNearAnyPlayer(pair.Value)) continue;
             MemoryStream scratch;
             if (!stateScratch.TryGetValue(pair.Key, out scratch))
             {
@@ -585,8 +637,9 @@ internal sealed class NpcReplication : MonoBehaviour
 
                 sectionStarted = writer.BaseStream.Position;
                 var limbs = layout.Limbs;
-                writer.Write((ushort)limbs.Count);
-                for (var limbIndex = 0; limbIndex < limbs.Count; limbIndex++)
+                var sendLimbPose = includeIdentity || MultiplayerLoadDistance.ShouldSendNpcLimbPose(body);
+                writer.Write((ushort)(sendLimbPose ? limbs.Count : 0));
+                for (var limbIndex = 0; sendLimbPose && limbIndex < limbs.Count; limbIndex++)
                 {
                     var limb = limbs[limbIndex] as LimbScript;
                     WritePose(writer, limb.rb);
@@ -598,9 +651,11 @@ internal sealed class NpcReplication : MonoBehaviour
 
                 sectionStarted = writer.BaseStream.Position;
                 var tailBases = layout.TailBases;
-                writer.Write((ushort)tailBases.Count);
-                foreach (Rigidbody2D tailBase in tailBases) WritePose(writer, tailBase);
-                WriteTransforms(writer, layout.Tails);
+                var sendTailPose = includeIdentity || MultiplayerLoadDistance.ShouldTickNpcTails(body);
+                writer.Write((ushort)(sendTailPose ? tailBases.Count : 0));
+                if (sendTailPose)
+                    foreach (Rigidbody2D tailBase in tailBases) WritePose(writer, tailBase);
+                WriteTransforms(writer, sendTailPose ? layout.Tails : emptyTransforms);
                 breakdown.Tails += (int)(writer.BaseStream.Position - sectionStarted);
 
                 sectionStarted = writer.BaseStream.Position;
@@ -852,11 +907,15 @@ internal sealed class NpcReplication : MonoBehaviour
         }
         if (clientNpcs.TryGetValue(state.Id, out exact) && exact != null && !claimed.Contains(exact))
         {
-            if (DescriptorScore(exact, state) >= 0f) return exact;
+            if (!HasIdentity(state)) return exact;
+            if (DescriptorScore(exact, state) >= 0f)
+                return exact;
             clientNpcs.Remove(state.Id);
             exact.NetworkId = state.Id + ":unmatched#" + exact.Body.GetInstanceID();
             clientNpcs[exact.NetworkId] = exact;
         }
+
+        if (!HasIdentity(state)) return null;
 
         NpcProxy best = null;
         var bestScore = float.MinValue;
@@ -919,6 +978,12 @@ internal sealed class NpcReplication : MonoBehaviour
             score += 500f;
         }
         return score > 0f ? score : -1f;
+    }
+
+    private static bool HasIdentity(NpcState state)
+    {
+        return !string.IsNullOrEmpty(state.RootName) || !string.IsNullOrEmpty(state.SpeciesName) ||
+            !string.IsNullOrEmpty(state.CharacterName);
     }
 
     private static GameObject FindNpcPrefab(NpcState state)
@@ -1793,6 +1858,9 @@ internal sealed class NpcReplication : MonoBehaviour
         if (restoreClient)
             foreach (var proxy in clientProxies) RestoreProxy(proxy);
         hostIds.Clear();
+        registeredBodies.Clear();
+        pendingBodies.Clear();
+        bodyRegistryReady = false;
         hostNpcs.Clear();
         hostLayouts.Clear();
         clientNpcs.Clear();
@@ -1838,31 +1906,6 @@ internal sealed class NpcReplication : MonoBehaviour
         sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
         clientFullPoseWindow = clientPoseCulledWindow = clientSkippedPoseWindow = 0;
         coreBytesWindow = rigBytesWindow = limbBytesWindow = tailBytesWindow = weaponBytesWindow = effectsBytesWindow = 0;
-    }
-
-    private void WriteDiagnostics()
-    {
-        if (Time.unscaledTime < nextDiagnostics || string.IsNullOrEmpty(diagnosticPath)) return;
-        nextDiagnostics = Time.unscaledTime + 1f;
-        var line = DateTime.Now.ToString("HH:mm:ss.fff") +
-            " role=" + (MultiplayerSession.IsHost ? "host" : "client") +
-            " connected=" + MultiplayerSession.IsConnected +
-            " hostNpcs=" + hostNpcs.Count +
-            " clientNpcs=" + clientProxies.Count +
-            " states=" + lastStateCount +
-            " packetBytes=" + lastPacketBytes +
-            " rebound=" + reboundExisting +
-            " created=" + createdFromNetwork +
-            " missingPrefabs=" + missingPrefabs +
-            " applyFailures=" + applyFailures +
-            " rigMisses=" + rigMisses +
-            " lastError=" + lastApplyError +
-            " weaponApplyFail=" + weaponApplyFailures +
-            " lastWeaponError=" + lastWeaponApplyError +
-            " hostUnarmedStates=" + hostUnarmedWeaponStates + Environment.NewLine;
-        try { File.AppendAllText(diagnosticPath, line); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
     }
 
     private void RestoreProxy(NpcProxy proxy)

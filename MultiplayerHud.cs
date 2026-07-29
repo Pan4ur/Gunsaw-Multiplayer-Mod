@@ -53,7 +53,14 @@ internal sealed class MultiplayerHud : MonoBehaviour
 
     internal void ToggleReplicationDebugOverlay()
     {
-        replicationDebugOverlayEnabled = !replicationDebugOverlayEnabled;
+        SetReplicationDebugOverlay(!replicationDebugOverlayEnabled);
+    }
+
+    internal void SetReplicationDebugOverlay(bool enabled)
+    {
+        if (replicationDebugOverlayEnabled == enabled) return;
+        replicationDebugOverlayEnabled = enabled;
+        if (!enabled && nativeUi != null) nativeUi.ClearDebugMarkers();
         AddSystemMessage("Replication markers: " + (replicationDebugOverlayEnabled ? "ON" : "OFF"));
     }
 
