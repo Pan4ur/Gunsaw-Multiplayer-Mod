@@ -973,3 +973,12 @@ internal static class AnimatedBodyStepSoundSafetyPatch
         return ___body != null;
     }
 }
+
+[HarmonyPatch(typeof(MissionManager), "EnemyKilled")]
+internal static class ClientMissionEnemyCountPatch
+{
+    private static bool Prefix()
+    {
+        return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost;
+    }
+}

@@ -1068,6 +1068,9 @@ internal sealed class WorldReplication : MonoBehaviour
             writer.Write(manager == null ? 0f : manager.rainIntensity);
             writer.Write(manager == null ? 0f : manager.snowIntensity);
             writer.Write(manager == null ? 0f : manager.fogIntensity);
+            var mission = MissionManager.main;
+            writer.Write(mission == null ? -1 : mission.killAmount);
+            writer.Write(mission == null ? -1 : mission.totalEnemyCount);
             return stream.ToArray();
         }
     }
@@ -1458,7 +1461,20 @@ internal sealed class WorldReplication : MonoBehaviour
             var snow = reader.ReadSingle();
             var fog = reader.ReadSingle();
             ApplyWeather(rain, snow, fog);
+            if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(int) * 2)
+                ApplyMissionEnemyCount(reader.ReadInt32(), reader.ReadInt32());
         }
+    }
+
+    private static void ApplyMissionEnemyCount(int killed, int total)
+    {
+        if (killed < 0 || total < 0) return;
+        var mission = MissionManager.main;
+        if (mission == null) return;
+        mission.killAmount = killed;
+        mission.totalEnemyCount = total;
+        if (mission.killsText != null)
+            mission.killsText.text = "Enemies: " + Mathf.Max(0, total - killed) + "/" + total;
     }
 
     private static void ApplyWeather(float rain, float snow, float fog)
