@@ -21,7 +21,8 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte VehicleDamage = 7;
     internal const byte DroneDamage = 8;
 
-    private const float SnapshotInterval = 1f / 5f;
+    // Ill just leave it like this for now (It's becoming painful to drive the karts)
+    private const float SnapshotInterval = 1f / 50f;
 
     private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
@@ -35,6 +36,7 @@ internal sealed class WorldReplication : MonoBehaviour
         new Dictionary<Rigidbody2D, DroppedWeapon>();
     private readonly Dictionary<Rigidbody2D, BodyLayout> bodyLayouts =
         new Dictionary<Rigidbody2D, BodyLayout>();
+    private readonly HashSet<Rigidbody2D> interactivePropBodies = new HashSet<Rigidbody2D>();
     private readonly Dictionary<string, float> pendingDestroyedWeaponPickups =
         new Dictionary<string, float>();
     private readonly HashSet<string> clientDestroyedBodyIds = new HashSet<string>();
@@ -89,6 +91,8 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, AudioSource> mechanismAudio = new Dictionary<string, AudioSource>();
     private readonly Dictionary<AudioSource, string> mechanismAudioIds = new Dictionary<AudioSource, string>();
     private readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new Dictionary<AudioSource, bool>();
+    private readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new Dictionary<AudioSource, DoorScript>();
+    private readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new Dictionary<AudioSource, float>();
     private readonly HashSet<string> seenSnapshotFires = new HashSet<string>();
     private readonly HashSet<string> seenSnapshotAudio = new HashSet<string>();
     private readonly HashSet<SawScript> clientSaws = new HashSet<SawScript>();
@@ -338,13 +342,16 @@ internal sealed class WorldReplication : MonoBehaviour
             ApplyEnvironment(latestEnvironment);
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
         }
+        var lodFreezeStarted = MultiplayerPerformance.StartPhase();
         FreezeFarClientProps();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientLodFreeze, lodFreezeStarted);
         var sawsStarted = MultiplayerPerformance.StartPhase();
         AnimateClientSaws();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSaws, sawsStarted);
         var weaponIndicatorsStarted = MultiplayerPerformance.StartPhase();
         AnimateClientDroppedWeaponIndicators();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators, weaponIndicatorsStarted);
+        StopSettledClientDoorAudio();
         }
         finally
         {
@@ -460,10 +467,14 @@ internal sealed class WorldReplication : MonoBehaviour
     private void FreezeFarClientProps()
     {
         if (MultiplayerSession.IsHost) return;
-        foreach (var pair in bodies)
+        var player = PlayerScript.player;
+        var localBody = player == null ? null : player.bodyScript;
+        if (localBody == null) return;
+        var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
+        foreach (var body in interactivePropBodies)
         {
-            var body = pair.Value;
-            if (!IsInteractivePropBody(body) || MultiplayerLoadDistance.IsWorldNearLocalPlayer(body)) continue;
+            if (body == null || (body.position - localPosition).sqrMagnitude < MultiplayerLoadDistance.WorldDistanceSqr)
+                continue;
             body.velocity = Vector2.zero;
             body.angularVelocity = 0f;
             body.simulated = false;
@@ -485,6 +496,7 @@ internal sealed class WorldReplication : MonoBehaviour
             if (!droppedWeapons.ContainsKey(body))
                 droppedWeapons[body] = body.GetComponentInParent<DroppedWeapon>();
             if (!bodyLayouts.ContainsKey(body)) bodyLayouts[body] = CreateBodyLayout(body);
+            if (IsInteractivePropBody(body)) interactivePropBodies.Add(body);
             if (MultiplayerSession.IsHost && IsInteractivePropBody(body))
                 NetworkAvatarReplication.IgnoreRemotePlayerPropCollisions(body);
             if (!MultiplayerSession.IsHost) MakeClientControlled(body);
@@ -504,6 +516,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         droppedWeapons.Remove(body);
         bodyLayouts.Remove(body);
+        interactivePropBodies.Remove(body);
         received.Remove(body);
         locallyControlledUntil.Remove(body);
         nextContactStateAt.Remove(body);
@@ -758,18 +771,19 @@ internal sealed class WorldReplication : MonoBehaviour
         foreach (var controller in controllers)
         {
             if (controller == null || IsGameplayOwned(controller)) continue;
+            var door = controller as DoorScript;
             foreach (var source in controller.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source);
+                RegisterMechanismAudio(source, door);
             var parentSource = controller.GetComponentInParent<AudioSource>();
-            RegisterMechanismAudio(parentSource);
+            RegisterMechanismAudio(parentSource, door);
             var body = controller.GetComponentInParent<Rigidbody2D>();
             if (body == null) continue;
             foreach (var source in body.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source);
+                RegisterMechanismAudio(source, door);
         }
     }
 
-    private void RegisterMechanismAudio(AudioSource source)
+    private void RegisterMechanismAudio(AudioSource source, DoorScript door = null)
     {
         if (source == null || IsGameplayOwned(source)) return;
         string id;
@@ -779,6 +793,7 @@ internal sealed class WorldReplication : MonoBehaviour
             mechanismAudioIds[source] = id;
         }
         mechanismAudio[id] = source;
+        if (door != null) doorAudioSources[source] = door;
         if (MultiplayerSession.IsHost || clientAudioWasPlaying.ContainsKey(source)) return;
         clientAudioWasPlaying[source] = source.isPlaying;
         source.Stop();
@@ -793,9 +808,38 @@ internal sealed class WorldReplication : MonoBehaviour
         source.pitch = Mathf.Clamp(pitch, -3f, 3f);
         if (playing)
         {
-            if (!source.isPlaying && source.clip != null) source.Play();
+            if (!source.isPlaying && source.clip != null)
+            {
+                source.Play();
+                if (doorAudioSources.ContainsKey(source)) clientDoorAudioStartedAt[source] = Time.unscaledTime;
+            }
         }
-        else if (source.isPlaying) source.Stop();
+        else if (source.isPlaying)
+        {
+            source.Stop();
+            clientDoorAudioStartedAt.Remove(source);
+        }
+    }
+
+    private void StopSettledClientDoorAudio()
+    {
+        if (MultiplayerSession.IsHost) return;
+        foreach (var pair in doorAudioSources)
+        {
+            var source = pair.Key;
+            var door = pair.Value;
+            if (source == null || door == null || !source.isPlaying) continue;
+            float startedAt;
+            if (!clientDoorAudioStartedAt.TryGetValue(source, out startedAt) ||
+                Time.unscaledTime - startedAt < 0.2f) continue;
+            var body = door.GetComponent<Rigidbody2D>();
+            if (body == null || body.velocity.sqrMagnitude > 0.0001f || door.point1 == null || door.point2 == null) continue;
+            var closeEnough = Mathf.Min(Vector2.Distance(door.transform.position, door.point1.position),
+                Vector2.Distance(door.transform.position, door.point2.position)) < door.speed * 0.05f;
+            if (!closeEnough) continue;
+            source.Stop();
+            clientDoorAudioStartedAt.Remove(source);
+        }
     }
 
     private void StopMissingMechanismAudio(HashSet<string> seen)
@@ -824,6 +868,7 @@ internal sealed class WorldReplication : MonoBehaviour
         bodies.Clear();
         droppedWeapons.Clear();
         bodyLayouts.Clear();
+        interactivePropBodies.Clear();
         pendingDestroyedWeaponPickups.Clear();
         clientDestroyedBodyIds.Clear();
         received.Clear();
@@ -889,6 +934,8 @@ internal sealed class WorldReplication : MonoBehaviour
             else pair.Key.Stop();
         }
         clientAudioWasPlaying.Clear();
+        doorAudioSources.Clear();
+        clientDoorAudioStartedAt.Clear();
         mechanismAudioIds.Clear();
         mechanismAudio.Clear();
         clientSaws.Clear();
@@ -2567,6 +2614,7 @@ internal sealed class WorldReplication : MonoBehaviour
             wireIds[id] = wire;
             idsByWire[wire] = id;
             droppedWeapons[body] = null;
+            if (IsInteractivePropBody(body)) interactivePropBodies.Add(body);
             networkCrateDebrisBodies.Add(body);
             var debrisCrate = body.GetComponentInParent<CrateScript>();
             if (debrisCrate != null)
@@ -2683,6 +2731,7 @@ internal sealed class WorldReplication : MonoBehaviour
         clientCreatedBodies.Add(body);
         clientBoundDroppedWeapons.Add(body);
         droppedWeapons[body] = dropped;
+        interactivePropBodies.Add(body);
         MakeClientControlled(body);
         return body;
     }
@@ -2712,6 +2761,7 @@ internal sealed class WorldReplication : MonoBehaviour
         wireIds[id] = wire;
         idsByWire[wire] = id;
         clientBoundDroppedWeapons.Add(best);
+        interactivePropBodies.Add(best);
         return best;
     }
 
@@ -2744,6 +2794,7 @@ internal sealed class WorldReplication : MonoBehaviour
         ids[body] = id;
         clientCreatedBodies.Add(body);
         droppedWeapons[body] = null;
+        interactivePropBodies.Add(body);
         MakeClientControlled(body);
         return body;
     }

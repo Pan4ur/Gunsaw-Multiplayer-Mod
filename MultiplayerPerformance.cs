@@ -37,6 +37,7 @@ internal enum MultiplayerPerformancePhase
     WorldDroppedWeaponIndicators,
     WorldAuthorityMaintenance,
     WorldClientSend,
+    WorldClientLodFreeze,
     NpcStateCore,
     NpcStateRig,
     NpcStateLimbs,
@@ -111,7 +112,8 @@ internal static class MultiplayerPerformance
                 PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientSaws) +
                 PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators) +
                 PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldAuthorityMaintenance) +
-                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientSend);
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientSend) +
+                PhaseMillisecondsPerSecond(MultiplayerPerformancePhase.WorldClientLodFreeze);
             return Mathf.Max(0f, WorldMillisecondsPerSecond - accounted);
         }
     }

@@ -18,6 +18,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
     public const string PluginVersion = "0.4.0";
+    private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
@@ -33,6 +34,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<string> savedCreateMaxPlayers;
     internal bool visible;
     internal string status = "Select an option.";
+    internal string updateStatus = "Checking for updates...";
+    internal bool IsCheckingForUpdates { get { return Volatile.Read(ref updateCheckInProgress) != 0; } }
     internal string lobbyServerAddress = "gunsawudp.e621.su";
     internal string lobbyName = "Lobby";
     internal string playerName = "Player";
@@ -65,6 +68,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private float nextHeartbeat;
     private bool shuttingDown;
     private bool joinInProgress;
+    private int updateCheckInProgress;
     private readonly object joinLock = new object();
     private readonly Queue<Action> mainThreadActions = new Queue<Action>();
     private readonly object mainThreadActionsLock = new object();
@@ -109,6 +113,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         multiplayerLobbyUi = gameObject.AddComponent<MultiplayerLobbyUi>();
         World = worldReplication;
         Logger.LogInfo("Gunsaw Multiplayer " + PluginVersion + " loaded.");
+        CheckForUpdates(false);
     }
 
     private void Start()
@@ -492,6 +497,38 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
     }
 
+    internal void CheckForUpdates(bool manual)
+    {
+        if (Interlocked.CompareExchange(ref updateCheckInProgress, 1, 0) != 0) return;
+        if (manual) updateStatus = "Checking GitHub releases...";
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            string result;
+            try
+            {
+                var release = ReleaseRequest(ReleasesApiUrl);
+                var tag = JsonString(release, "tag_name").Trim();
+                if (string.IsNullOrEmpty(tag)) throw new InvalidDataException("Latest release has no tag.");
+                var comparison = CompareVersions(PluginVersion, tag);
+                result = comparison < 0
+                    ? "UPDATE AVAILABLE: " + tag
+                    : comparison > 0
+                        ? "INSTALLED BUILD IS NEWER THAN " + tag
+                        : "YOU ARE UP TO DATE (" + PluginVersion + ")";
+            }
+            catch (Exception exception)
+            {
+                result = "UPDATE CHECK FAILED: " + exception.Message;
+                Logger.LogWarning(result);
+            }
+            RunOnMainThread(() =>
+            {
+                updateStatus = result;
+                Interlocked.Exchange(ref updateCheckInProgress, 0);
+            });
+        });
+    }
+
     internal bool CanJoinLobby
     {
         get
@@ -655,6 +692,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         request.Method = method;
         request.Accept = "application/json";
         request.ContentType = "application/json; charset=utf-8";
+        request.UserAgent = "GunsawMultiplayer/" + PluginVersion;
         request.Timeout = 10000;
         request.ReadWriteTimeout = 10000;
         if (!string.IsNullOrEmpty(authorization)) request.Headers[HttpRequestHeader.Authorization] = authorization;
@@ -687,6 +725,48 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     }
 
 
+
+    private static string ReleaseRequest(string address)
+    {
+        Uri uri;
+        if (!Uri.TryCreate(address, UriKind.Absolute, out uri) || uri.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("Invalid GitHub releases URL.");
+        return DirectoryRequest(uri, "GET", null, null);
+    }
+
+    private static int CompareVersions(string local, string remote)
+    {
+        var localParts = ParseVersion(local, out var localSuffix);
+        var remoteParts = ParseVersion(remote, out var remoteSuffix);
+        var count = Math.Max(localParts.Length, remoteParts.Length);
+        for (var index = 0; index < count; index++)
+        {
+            var left = index < localParts.Length ? localParts[index] : 0;
+            var right = index < remoteParts.Length ? remoteParts[index] : 0;
+            if (left != right) return left.CompareTo(right);
+        }
+        if (string.Equals(localSuffix, remoteSuffix, StringComparison.OrdinalIgnoreCase)) return 0;
+        if (string.IsNullOrEmpty(localSuffix)) return -1;
+        if (string.IsNullOrEmpty(remoteSuffix)) return 1;
+        return string.Compare(localSuffix, remoteSuffix, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int[] ParseVersion(string value, out string suffix)
+    {
+        value = (value ?? "").Trim();
+        if (value.StartsWith("v", StringComparison.OrdinalIgnoreCase)) value = value.Substring(1).TrimStart();
+        var end = 0;
+        while (end < value.Length && (char.IsDigit(value[end]) || value[end] == '.')) end++;
+        suffix = value.Substring(end).Trim();
+        var numeric = value.Substring(0, end).Split('.');
+        var parts = new List<int>();
+        foreach (var item in numeric)
+        {
+            int part;
+            if (int.TryParse(item, out part)) parts.Add(part);
+        }
+        return parts.ToArray();
+    }
 
     private static string JsonString(string json, string name)
     {

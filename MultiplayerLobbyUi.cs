@@ -12,7 +12,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, serverInput;
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle;
-    private TMP_Text statusText, customLevelText, hostingText, connectionModeText;
+    private TMP_Text statusText, customLevelText, hostingText, connectionModeText, updateText;
     private TMP_Text lobbyActionText;
     private Button closeLobbyButton;
     private Transform lobbyRows;
@@ -48,6 +48,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
         connectionModeText.text = plugin.createConnectionMode.ToString();
         statusText.text = plugin.status;
+        if (updateText != null) updateText.text = plugin.updateStatus;
         customLevelText.text = string.IsNullOrEmpty(plugin.customLevelJson) ? "CUSTOM LEVEL: NOT LOADED" : "CUSTOM LEVEL: LOADED";
         hostingText.text = MultiplayerSession.IsHosting
             ? "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS"
@@ -81,6 +82,10 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
         panel = CreatePanel(root.transform, Vector2.zero, new Vector2(1320f, 920f));
         CreateText(panel.transform, "GUNSAW MULTIPLAYER v" + GunsawMultiplayerPlugin.PluginVersion, new Vector2(0f, 412f), new Vector2(1160f, 48f), 28, TextAlignmentOptions.Center, FontStyles.UpperCase);
+
+        var checkUpdates = CreateButton(panel.transform, "CHECK UPDATES", new Vector2(-515f, 412f), new Vector2(240f, 42f));
+        checkUpdates.onClick.AddListener(() => plugin.CheckForUpdates(true));
+        updateText = CreateText(panel.transform, "", new Vector2(0f, 376f), new Vector2(1000f, 26f), 14, TextAlignmentOptions.Center);
 
         var close = CreateButton(panel.transform, "CLOSE", new Vector2(575f, 412f), new Vector2(120f, 42f));
         close.onClick.AddListener(() => plugin.visible = false);
