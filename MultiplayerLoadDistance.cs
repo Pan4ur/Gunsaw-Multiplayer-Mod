@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
+// https://youtu.be/-jC1soxzOYg
 internal static class MultiplayerLoadDistance
 {
     private const float DefaultTickDistanceSqr = 1000f;

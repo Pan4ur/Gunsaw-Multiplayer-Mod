@@ -416,7 +416,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowRespawn = createAllowRespawn, respawnTime = respawnTime,
                 respawnAtStart = createRespawnAtStart,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
-                connectionMode = createConnectionMode.ToString() });
+                connectionMode = createConnectionMode.ToString(), modVersion = PluginVersion });
             ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, maxPlayers));
         }
         catch (Exception e) { status = "Could not create lobby: " + e.Message; }
@@ -579,7 +579,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         try
         {
             var response = Http("POST", "/v1/lobbies/" + id + "/join",
-                JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName }), null);
+                JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName, modVersion = PluginVersion }), null);
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "relayKey");
             var relayAddress = JsonString(response, "relayAddress");
@@ -786,7 +786,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 respawnTime = MultiplayerSession.RespawnTimeSeconds,
                 respawnAtStart = createAllowRespawn && createRespawnAtStart,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
-                connectionMode = createConnectionMode.ToString()
+                connectionMode = createConnectionMode.ToString(),
+                modVersion = PluginVersion
             });
             Http("PUT", "/v1/lobbies/" + hostedLobbyId, body, "Bearer " + hostRelayKey);
         }
@@ -932,7 +933,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     }
 
     [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public ConnectionMode connectionMode = ConnectionMode.Relay; }
-    [Serializable] private sealed class JoinLobbyPayload { public string playerName = ""; }
+    [Serializable] private sealed class JoinLobbyPayload { public string playerName = ""; public string modVersion = ""; }
     [Serializable] private sealed class BanPlayerRequest { public string playerName = ""; public int durationMinutes; }
-    [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public string connectionMode = "Relay"; }
+    [Serializable] private sealed class CreateLobbyRequest { public string name = ""; public string hostName = ""; public string map = ""; public int maxPlayers; public int hostPort; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public string connectionMode = "Relay"; public string modVersion = ""; }
 }

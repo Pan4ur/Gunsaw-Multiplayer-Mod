@@ -21,9 +21,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte VehicleDamage = 7;
     internal const byte DroneDamage = 8;
 
-    // I'll leave it like this for now
-    // I need to test it more thoroughly with the new system
-    private const float SnapshotInterval = 1f / 50f;
+    private const float SnapshotInterval = 1f / 5f;
 
     private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
@@ -340,6 +338,7 @@ internal sealed class WorldReplication : MonoBehaviour
             ApplyEnvironment(latestEnvironment);
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
         }
+        FreezeFarClientProps();
         var sawsStarted = MultiplayerPerformance.StartPhase();
         AnimateClientSaws();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSaws, sawsStarted);
@@ -456,6 +455,19 @@ internal sealed class WorldReplication : MonoBehaviour
     private static bool IsLocalPlayerCollider(Collider2D collider, BodyScript localBody)
     {
         return collider != null && collider.transform.root == localBody.transform.root;
+    }
+
+    private void FreezeFarClientProps()
+    {
+        if (MultiplayerSession.IsHost) return;
+        foreach (var pair in bodies)
+        {
+            var body = pair.Value;
+            if (!IsInteractivePropBody(body) || MultiplayerLoadDistance.IsWorldNearLocalPlayer(body)) continue;
+            body.velocity = Vector2.zero;
+            body.angularVelocity = 0f;
+            body.simulated = false;
+        }
     }
 
     private void RefreshWorldBodies()
@@ -1481,23 +1493,10 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         else
         {
-            var positionError = state.position - body.position;
-            var rotationError = Mathf.DeltaAngle(body.rotation, state.rotation);
-            if (positionError.sqrMagnitude > 256f || Mathf.Abs(rotationError) > 135f)
-            {
-                body.position = state.position;
-                body.rotation = state.rotation;
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
-            }
-            else
-            {
-                const float correction = 0.35f;
-                if (positionError.sqrMagnitude > 0.0001f) body.position += positionError * correction;
-                if (Mathf.Abs(rotationError) > 0.1f) body.rotation += rotationError * correction;
-                body.velocity = Vector2.Lerp(body.velocity, state.velocity, correction);
-                body.angularVelocity = Mathf.Lerp(body.angularVelocity, state.angularVelocity, correction);
-            }
+            body.position = state.position;
+            body.rotation = state.rotation;
+            body.velocity = state.velocity;
+            body.angularVelocity = state.angularVelocity;
         }
         if (state.awake) body.WakeUp();
         else if (state.bodyType != RigidbodyType2D.Dynamic) body.Sleep();
