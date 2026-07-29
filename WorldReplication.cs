@@ -66,6 +66,8 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly HashSet<string> activatedZoneIds = new HashSet<string>();
     private readonly HashSet<string> localZonePrompts = new HashSet<string>();
     private ActivateZoneScript promptZone;
+
+    internal bool HasActivationPrompt { get { return promptZone != null && MultiplayerSession.IsConnected; } }
     private readonly Dictionary<string, GlassScript> glasses = new Dictionary<string, GlassScript>();
     private readonly Dictionary<GlassScript, string> glassIds = new Dictionary<GlassScript, string>();
     private readonly HashSet<string> destroyedGlass = new HashSet<string>();
@@ -954,16 +956,16 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    internal void DrawReplicationDebugOverlay(Camera camera, GUIStyle style, GUIStyle shadowStyle)
+    internal void DrawReplicationDebugOverlay()
     {
         foreach (var pair in bodies)
         {
             var body = pair.Value;
             if (body == null) continue;
             float changedAt;
-            MultiplayerHud.DrawReplicationMarker(camera, body.worldCenterOfMass,
+            MultiplayerHud.DrawReplicationMarker(body.worldCenterOfMass,
                 lastChangedBodyAt.TryGetValue(pair.Key, out changedAt) &&
-                Time.unscaledTime - changedAt <= 1f, style, shadowStyle);
+                Time.unscaledTime - changedAt <= 1f);
         }
     }
 
@@ -2410,13 +2412,6 @@ internal sealed class WorldReplication : MonoBehaviour
         if (promptZone == null || !Input.GetKeyDown(player.keys["Use"])) return;
         if (MultiplayerSession.IsHost) ActivateLocalZone(promptZone, true);
         else QueueZoneActivation(promptZone, true);
-    }
-
-    private void OnGUI()
-    {
-        if (promptZone == null || !MultiplayerSession.IsConnected) return;
-
-        GUI.Label(new Rect(Screen.width * 0.5f - 100f, Screen.height * 0.72f, 200f, 28f), "PRESS [USE] TO ACTIVATE");
     }
 
     private void ApplyButtonActivation(string id, ushort peerId)

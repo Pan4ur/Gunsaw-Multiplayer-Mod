@@ -73,8 +73,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private LineRenderer remoteCrystalTongueLine;
     private GameObject remoteScarf;
     private GameObject remoteScarfHold;
-    private GUIStyle remoteNameTagStyle;
-    private GUIStyle remoteNameTagShadowStyle;
     private readonly Dictionary<int, GameObject> remoteFires = new Dictionary<int, GameObject>();
     private readonly Dictionary<Collider2D, bool> remoteColliderTriggers = new Dictionary<Collider2D, bool>();
     private readonly Dictionary<SpriteRenderer, Sprite> originalDismemberSprites = new Dictionary<SpriteRenderer, Sprite>();
@@ -131,7 +129,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private int localRespawnGeneration;
     private static float localRespawnProtectionUntil = -1f;
     private const float RespawnProtectionSeconds = 3f;
-    private GUIStyle respawnStyle;
+    private ushort spectatorPeerId;
+    private bool spectating;
 
     internal static BodyScript RemoteBody
     {
@@ -149,6 +148,23 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static int AvatarWeaponBytesPerSecond { get { return instance == null ? 0 : instance.avatarWeaponBytesPerSecond; } }
     internal static int AvatarEffectsBytesPerSecond { get { return instance == null ? 0 : instance.avatarEffectsBytesPerSecond; } }
     internal static int AvatarVisualBytesPerSecond { get { return instance == null ? 0 : instance.avatarVisualBytesPerSecond; } }
+    internal static bool IsSpectating { get { return instance != null && instance.spectating && !MultiplayerSession.AllowRespawn; } }
+
+    internal static string SpectatorTargetName()
+    {
+        if (instance == null || instance.spectatorPeerId == 0) return "NO ALIVE PLAYERS";
+        NetworkAvatarReplication replica;
+        return replicas.TryGetValue(instance.spectatorPeerId, out replica) && replica != null
+            ? "SPECTATING " + replica.remoteName : "NO ALIVE PLAYERS";
+    }
+
+    internal static string RespawnCountdownText()
+    {
+        var player = PlayerScript.player;
+        if (instance == null || !MultiplayerSession.AllowRespawn || instance.respawnAt < 0f ||
+            player == null || player.bodyScript == null || player.bodyScript.isAlive) return "";
+        return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(instance.respawnAt - Time.unscaledTime));
+    }
 
     internal static BodyScript RemoteBodyForPeer(ushort peerId)
     {
@@ -548,6 +564,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         player = PlayerScript.player;
         if (player == null) return;
         if (player.bodyScript == null) return;
+        UpdateSpectator(player);
 
         var prefab = ResolveLocalCharacterPrefab(player.bodyScript);
         var currentIdentity = localName + "\n" + prefab;
@@ -637,46 +654,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         MaintainRemoteVehiclePose();
         if (hasRemoteVehicleReflection) ApplyVehicleReflection();
         if (hasRemoteVehicleHeadRotation) ApplyVehicleHeadRotation(remoteVehicleHeadRotation);
-    }
-
-    private void OnGUI()
-    {
-        if (coordinator && (MultiplayerSession.IsHosting || MultiplayerSession.IsConnected)) DrawRespawnCountdown();
-    }
-
-    private void EnsureNameTagStyles()
-    {
-        if (remoteNameTagStyle != null) return;
-        remoteNameTagStyle = new GUIStyle(GUI.skin.label)
-        {
-            alignment = TextAnchor.MiddleCenter,
-            fontSize = 15,
-            fontStyle = FontStyle.Bold,
-            wordWrap = false,
-            clipping = TextClipping.Overflow
-        };
-        remoteNameTagShadowStyle = new GUIStyle(remoteNameTagStyle);
-        remoteNameTagShadowStyle.normal.textColor = new Color(0f, 0f, 0f, 0.95f);
-    }
-
-    private void DrawRespawnCountdown()
-    {
-        var player = PlayerScript.player;
-        if (!MultiplayerSession.AllowRespawn || respawnAt < 0f || player == null ||
-            player.bodyScript == null || player.bodyScript.isAlive) return;
-        if (respawnStyle == null)
-        {
-            respawnStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = 22,
-                fontStyle = FontStyle.Bold
-            };
-            respawnStyle.normal.textColor = Color.white;
-        }
-        var seconds = Mathf.Max(0, Mathf.CeilToInt(respawnAt - Time.unscaledTime));
-        GUI.Label(new Rect(Screen.width * 0.5f - 140f, Screen.height * 0.35f, 280f, 36f),
-            "RESPAWN IN " + seconds, respawnStyle);
     }
 
     private void FixedUpdate()
@@ -1815,6 +1792,85 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (MultiplayerSession.AllowRespawn && respawnAt >= 0f && Time.unscaledTime >= respawnAt)
             RespawnLocalPlayer(player, body);
+    }
+
+    private void UpdateSpectator(PlayerScript player)
+    {
+        var body = player == null ? null : player.bodyScript;
+        if (body == null) return;
+        if (MultiplayerSession.AllowRespawn || body.isAlive)
+        {
+            if (spectating && CameraFollow.cam != null) CameraFollow.cam.target = body.transform;
+            RestoreSpectatorVisuals(player);
+            spectating = false;
+            spectatorPeerId = 0;
+            return;
+        }
+
+        var candidates = new List<NetworkAvatarReplication>();
+        foreach (var pair in replicas)
+        {
+            var replica = pair.Value;
+            if (replica != null && replica.remoteBody != null && replica.remoteBody.isAlive)
+                candidates.Add(replica);
+        }
+        candidates.Sort((left, right) => left.remotePeerId.CompareTo(right.remotePeerId));
+
+        if (candidates.Count == 0)
+        {
+            spectating = true;
+            spectatorPeerId = 0;
+            if (CameraFollow.cam != null) CameraFollow.cam.target = body.transform;
+            SuppressSpectatorDeathEffects(player);
+            return;
+        }
+
+        var requestedChange = Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) ||
+            Input.GetKeyDown(KeyCode.Q) || Input.mouseScrollDelta.y < 0f;
+        var requestedNext = Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) ||
+            Input.GetKeyDown(KeyCode.E) || Input.mouseScrollDelta.y > 0f;
+        var selectedIndex = -1;
+        for (var index = 0; index < candidates.Count; index++)
+            if (candidates[index].remotePeerId == spectatorPeerId)
+            {
+                selectedIndex = index;
+                break;
+            }
+        if (selectedIndex < 0) selectedIndex = 0;
+        if (requestedChange) selectedIndex = (selectedIndex + candidates.Count - 1) % candidates.Count;
+        if (requestedNext) selectedIndex = (selectedIndex + 1) % candidates.Count;
+
+        var target = candidates[selectedIndex];
+        spectating = true;
+        spectatorPeerId = target.remotePeerId;
+        SuppressSpectatorDeathEffects(player);
+        if (CameraFollow.cam != null && CameraFollow.cam.target != target.remoteBody.transform)
+            CameraFollow.cam.target = target.remoteBody.transform;
+    }
+
+    internal static void SuppressSpectatorDeathEffects(PlayerScript player)
+    {
+        if (instance == null || !instance.spectating || MultiplayerSession.AllowRespawn ||
+            player == null || player.bodyScript == null || player.bodyScript.isAlive) return;
+        if (player.deathNoise != null) player.deathNoise.color = Color.clear;
+        if (player.deathText != null) player.deathText.SetActive(false);
+        if (player.crosshair != null) player.crosshair.gameObject.SetActive(false);
+        if (player.crossDot != null) player.crossDot.gameObject.SetActive(false);
+        if (player.crossLine != null) player.crossLine.gameObject.SetActive(false);
+        var screen = ScreenFXManager.main;
+        if (screen == null) return;
+        screen.targetVign = 0f;
+        if (screen.vign != null) screen.vign.intensity.value = 0f;
+    }
+
+    private static void RestoreSpectatorVisuals(PlayerScript player)
+    {
+        var screen = ScreenFXManager.main;
+        if (screen != null) screen.targetVign = 0.45f;
+        if (player == null) return;
+        if (player.crosshair != null) player.crosshair.gameObject.SetActive(true);
+        if (player.crossDot != null) player.crossDot.gameObject.SetActive(true);
+        if (player.crossLine != null) player.crossLine.gameObject.SetActive(true);
     }
 
     private void RespawnLocalPlayer(PlayerScript player, BodyScript oldBody)

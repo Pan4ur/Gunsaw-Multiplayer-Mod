@@ -6,7 +6,7 @@ using UnityEngine.UI;
 internal sealed class MultiplayerHudUi : MonoBehaviour
 {
     private GameObject root, hostPanel, playersPanel, chatPanel;
-    private TMP_Text template, hostText, playersText, chatText, statsText;
+    private TMP_Text template, hostText, playersText, chatText, statsText, spectatorText, spectatorHint, respawnText, activationText;
     private TMP_InputField input;
     private float nextChatRefresh;
     private readonly List<TMP_Text> debugMarkers = new List<TMP_Text>();
@@ -33,6 +33,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateNameTags();
         UpdateCoopMarkers();
         UpdateChatBubbles(hud);
+        UpdateSpectator();
+        UpdateStatusPrompts();
         statsText.gameObject.SetActive(hud.NetworkStatsVisible && !string.IsNullOrEmpty(hud.NetworkStatsText));
         if (statsText.gameObject.activeSelf) statsText.text = hud.NetworkStatsText;
         if (Time.unscaledTime >= nextChatRefresh || hud.ChatOpen)
@@ -115,6 +117,38 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         ScreenAnchor(statsText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -20f));
         statsText.enableWordWrapping = false;
         statsText.gameObject.SetActive(false);
+
+        spectatorText = Text(root.transform, "", Vector2.zero, new Vector2(560f, 38f), 24, TextAlignmentOptions.Center);
+        ScreenAnchor(spectatorText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -125f));
+        spectatorText.fontStyle = FontStyles.Bold;
+        spectatorText.gameObject.SetActive(false);
+        spectatorHint = Text(root.transform, "A/D or mouse wheel to switch player", Vector2.zero, new Vector2(620f, 30f), 16, TextAlignmentOptions.Center);
+        ScreenAnchor(spectatorHint.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -158f));
+        spectatorHint.gameObject.SetActive(false);
+        respawnText = Text(root.transform, "", Vector2.zero, new Vector2(360f, 40f), 24, TextAlignmentOptions.Center);
+        ScreenAnchor(respawnText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -378f));
+        respawnText.fontStyle = FontStyles.Bold;
+        respawnText.gameObject.SetActive(false);
+        activationText = Text(root.transform, "PRESS [USE] TO ACTIVATE", Vector2.zero, new Vector2(360f, 32f), 18, TextAlignmentOptions.Center);
+        ScreenAnchor(activationText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -778f));
+        activationText.fontStyle = FontStyles.Bold;
+        activationText.gameObject.SetActive(false);
+    }
+
+    private void UpdateSpectator()
+    {
+        var active = NetworkAvatarReplication.IsSpectating;
+        spectatorText.gameObject.SetActive(active);
+        spectatorHint.gameObject.SetActive(active && NetworkAvatarReplication.SpectatorTargetName() != "NO ALIVE PLAYERS");
+        if (active) spectatorText.text = NetworkAvatarReplication.SpectatorTargetName();
+    }
+
+    private void UpdateStatusPrompts()
+    {
+        var countdown = NetworkAvatarReplication.RespawnCountdownText();
+        respawnText.gameObject.SetActive(!string.IsNullOrEmpty(countdown));
+        if (!string.IsNullOrEmpty(countdown)) respawnText.text = countdown;
+        activationText.gameObject.SetActive(WorldReplication.Instance != null && WorldReplication.Instance.HasActivationPrompt);
     }
 
     private void UpdatePlayers()

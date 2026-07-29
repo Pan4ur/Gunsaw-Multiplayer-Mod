@@ -114,8 +114,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
         {
             nativeUi.BeginDebugFrame();
-            if (WorldReplication.Instance != null) WorldReplication.Instance.DrawReplicationDebugOverlay(null, null, null);
-            if (NpcReplication.Instance != null) NpcReplication.Instance.DrawReplicationDebugOverlay(null, null, null);
+            if (WorldReplication.Instance != null) WorldReplication.Instance.DrawReplicationDebugOverlay();
+            if (NpcReplication.Instance != null) NpcReplication.Instance.DrawReplicationDebugOverlay();
         }
         nativeUi.Configure(this);
     }
@@ -322,8 +322,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (Instance != null) Instance.AddMessage("SYSTEM", message, false);
     }
 
-    internal static void DrawReplicationMarker(Camera camera, Vector3 position, bool sent,
-        GUIStyle style, GUIStyle shadowStyle)
+    internal static void DrawReplicationMarker(Vector3 position, bool sent)
     {
         if (Instance != null && Instance.nativeUi != null) Instance.nativeUi.AddDebugMarker(position, sent);
     }

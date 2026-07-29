@@ -152,6 +152,11 @@ internal static class MultiplayerPlayerSlowmoPatch
         MultiplayerTimeControl.EndPlayerUpdate(__instance, __state);
         return __exception;
     }
+
+    private static void Postfix(PlayerScript __instance)
+    {
+        NetworkAvatarReplication.SuppressSpectatorDeathEffects(__instance);
+    }
 }
 
 [HarmonyPatch(typeof(GameManager), "Update")]

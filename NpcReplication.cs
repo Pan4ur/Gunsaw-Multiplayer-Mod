@@ -623,16 +623,16 @@ internal sealed class NpcReplication : MonoBehaviour
         effectsBytesWindow += breakdown.Effects;
     }
 
-    internal void DrawReplicationDebugOverlay(Camera camera, GUIStyle style, GUIStyle shadowStyle)
+    internal void DrawReplicationDebugOverlay()
     {
         foreach (var pair in hostNpcs)
         {
             var body = pair.Value;
             if (body == null) continue;
             float changedAt;
-            MultiplayerHud.DrawReplicationMarker(camera, body.transform.position,
+            MultiplayerHud.DrawReplicationMarker(body.transform.position,
                 lastChangedNpcAt.TryGetValue(pair.Key, out changedAt) &&
-                Time.unscaledTime - changedAt <= 1f, style, shadowStyle);
+                Time.unscaledTime - changedAt <= 1f);
         }
     }
 
