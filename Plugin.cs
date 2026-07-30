@@ -540,6 +540,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal bool TryHandleHostCommand(string message)
     {
+        if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase))
+        {
+            var player = PlayerScript.player;
+            if (player == null || player.bodyScript == null || !player.bodyScript.isAlive)
+            {
+                status = "You are dead already (maybe inside only?)";
+                return true;
+            }
+            player.bodyScript.Death();
+            return true;
+        }
+
+        if (message.StartsWith("/tp", StringComparison.OrdinalIgnoreCase) &&
+            (message.Length == 3 || char.IsWhiteSpace(message[3])))
+            return TryHandleTeleportCommand(message);
+
         if (!message.StartsWith("/ban", StringComparison.OrdinalIgnoreCase)) return false;
         if (!MultiplayerSession.IsHosting || string.IsNullOrEmpty(hostedLobbyId) || string.IsNullOrEmpty(hostRelayKey))
         {
@@ -568,6 +584,62 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         var relayKey = hostRelayKey;
         status = "Banning " + playerName + "...";
         ThreadPool.QueueUserWorkItem(_ => BanPlayerInDirectory(lobbyId, relayKey, playerName, peerId));
+        return true;
+    }
+
+    private bool TryHandleTeleportCommand(string message)
+    {
+        if (!MultiplayerSession.IsConnected)
+        {
+            status = "/tp is only available in a CO-OP lobby.";
+            return true;
+        }
+        if (MultiplayerSession.PvpEnabled)
+        {
+            status = "/tp is disabled in PVP lobbies.";
+            return true;
+        }
+        var playerName = message.Length > 3 ? message.Substring(3).Trim() : "";
+        if (string.IsNullOrEmpty(playerName))
+        {
+            status = "Usage: /tp <player name>";
+            return true;
+        }
+        var targetPeerId = (ushort)0;
+        if (string.Equals(MultiplayerSession.LocalPlayerName, playerName,
+                StringComparison.OrdinalIgnoreCase))
+            targetPeerId = MultiplayerSession.LocalPeerId;
+        else
+            foreach (var id in MultiplayerSession.PeerIds())
+                if (string.Equals(MultiplayerSession.PlayerName(id), playerName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    targetPeerId = id;
+                    break;
+                }
+        if (targetPeerId == 0)
+        {
+            status = "Player " + playerName + " is not in the lobby.";
+            return true;
+        }
+        if (!MultiplayerSession.IsHost)
+        {
+            MultiplayerSession.Send(new TeleportRequestPacket(targetPeerId));
+            status = "Teleporting to " + playerName + "...";
+            return true;
+        }
+        var target = targetPeerId == MultiplayerSession.LocalPeerId
+            ? PlayerScript.player?.bodyScript
+            : NetworkAvatarReplication.RemoteBodyForPeer(targetPeerId);
+        var local = PlayerScript.player?.bodyScript;
+        if (target == null || !target.isAlive || local == null)
+        {
+            status = "Player " + playerName + " is unavailable.";
+            return true;
+        }
+        local.transform.position = target.transform.position;
+        if (local.rb != null) { local.rb.velocity = Vector2.zero; local.rb.angularVelocity = 0f; }
+        status = "Teleported to " + playerName + ".";
         return true;
     }
 

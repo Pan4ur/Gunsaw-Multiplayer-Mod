@@ -28,5 +28,6 @@ internal enum PacketType : byte
     WorldEnvironment = 0x1A,
     ProjectileImpact = 0x1B,
     VelvetWeb = 0x1C,
-    PlayerTeleport = 0x1D
+    PlayerTeleport = 0x1D,
+    TeleportRequest = 0x1E
 }

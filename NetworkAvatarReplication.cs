@@ -533,6 +533,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakePlayerTeleport(out senderId, out playerTeleport))
             ApplyRemoteTeleport(player.bodyScript, playerTeleport);
 
+        TeleportRequestPacket teleportRequest;
+        while (MultiplayerSession.TryTakeTeleportRequest(out senderId, out teleportRequest))
+            HandleTeleportRequest(senderId, teleportRequest);
+
         PlayerDamagePacket playerDamage;
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
             ApplyPlayerDamage(player.bodyScript, PacketPayload(playerDamage));
@@ -2651,6 +2655,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (unloader != null) unloader.CheckDistance();
         var sound = Resources.Load<AudioClip>("Sounds/Teleport");
         if (sound != null) Sound.Play(sound, position, false, false);
+    }
+
+    private static void HandleTeleportRequest(ushort requesterId, TeleportRequestPacket request)
+    {
+        if (!MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled || requesterId == 0) return;
+        var target = request.TargetPeerId == MultiplayerSession.LocalPeerId
+            ? (PlayerScript.player == null ? null : PlayerScript.player.bodyScript)
+            : RemoteBodyForPeer(request.TargetPeerId);
+        if (target == null || !target.isAlive) return;
+        var position = target.transform.position;
+        if (!IsFinite(position.x) || !IsFinite(position.y)) return;
+        MultiplayerSession.Send(new PlayerTeleportPacket(position.x, position.y), requesterId);
     }
 
     private void PlayRemoteVelvetWeb(VelvetWebPacket packet)

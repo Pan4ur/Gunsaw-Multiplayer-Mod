@@ -170,6 +170,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakePlayerTeleport(out ushort peerId, out PlayerTeleportPacket packet)
         => TryTakePacket(playerTeleports, out peerId, out packet);
 
+    internal static bool TryTakeTeleportRequest(out ushort peerId, out TeleportRequestPacket packet)
+        => TryTakePacket(teleportRequests, out peerId, out packet);
+
     internal static bool TryTakePlayerGrab(out ushort peerId, out PlayerGrabPacket packet)
         => TryTakePacket(playerGrabs, out peerId, out packet);
 

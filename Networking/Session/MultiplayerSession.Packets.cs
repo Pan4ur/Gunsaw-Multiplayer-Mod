@@ -281,6 +281,15 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
+            else if (isHost && decodedPacket.Type == PacketType.TeleportRequest)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueTeleportRequest(senderId, TeleportRequestPacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
             else if (decodedPacket.Type == PacketType.PlayerGrab)
             {
                 try
@@ -499,6 +508,7 @@ internal static partial class MultiplayerSession
         projectileImpacts.Clear();
         velvetWebs.Clear();
         playerTeleports.Clear();
+        teleportRequests.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();
         npcPossessions.Clear();
@@ -597,6 +607,9 @@ internal static partial class MultiplayerSession
 
     private static void EnqueuePlayerTeleport(ushort peerId, PlayerTeleportPacket packet)
         => EnqueueEvent(playerTeleports, peerId, packet);
+
+    private static void EnqueueTeleportRequest(ushort peerId, TeleportRequestPacket packet)
+        => EnqueueEvent(teleportRequests, peerId, packet);
 
     private static void EnqueuePlayerGrab(ushort peerId, PlayerGrabPacket packet)
         => EnqueueEvent(playerGrabs, peerId, packet);
