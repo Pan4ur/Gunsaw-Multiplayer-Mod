@@ -5,6 +5,14 @@ using UnityEngine;
 // https://youtu.be/-jC1soxzOYg
 internal static class MultiplayerLoadDistance
 {
+    // Mechs now tick at the default distance specified in the settings - 1800 (sqr m)
+    // I think most custom maps are designed around this distance
+    // This should also prevent the bug we had today, where we had to move close to the elevator
+    // ourselves to make it start moving.
+    // For conveyor belts, I think we may need a mechanic that "wakes up" props and npcs
+    // standing on them, so they can be carried along or slide off.
+    // Otherwise, maps with enemy waves built around conveyor belt mechanics probably no longer work
+    internal const float MechanismSleepDistanceSqr = 1800f;
     private const float DefaultTickDistanceSqr = 1000f;
     internal const float NpcPoseDistanceSqr = 600f;
 
@@ -106,7 +114,7 @@ internal static class MultiplayerLoadDistance
 
     internal static bool IsWorldNearAnyPlayer(Rigidbody2D body)
     {
-        return body != null && IsNearAnyPlayer(body.position);
+        return body != null && IsNearAnyPlayer(body.position, WorldSleepDistanceSqr(body));
     }
 
     internal static bool IsWorldNearLocalPlayer(Rigidbody2D body)
@@ -115,7 +123,7 @@ internal static class MultiplayerLoadDistance
         var localBody = player == null ? null : player.bodyScript;
         if (body == null || localBody == null) return true;
         var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
-        return (body.position - localPosition).sqrMagnitude < activeDistanceSqr;
+        return (body.position - localPosition).sqrMagnitude < WorldSleepDistanceSqr(body);
     }
 
     internal static bool ShouldTickWorld(Component component)
@@ -126,7 +134,7 @@ internal static class MultiplayerLoadDistance
         tick = component.GetComponentInParent<BodyScript>() != null ||
                component.GetComponentInParent<PlayerScript>() != null ||
                component.GetComponentInParent<NetworkReplica>() != null ||
-               IsNearAnyPlayer(component.transform.position);
+               IsNearAnyPlayer(component.transform.position, WorldSleepDistanceSqr(component));
         worldTickStates[component] = tick;
         return tick;
     }
@@ -134,7 +142,7 @@ internal static class MultiplayerLoadDistance
     internal static void ApplyWorldBody(Rigidbody2D body)
     {
         if (body == null || !IsHostSimulationActive()) return;
-        SetSimulation(body, IsNearAnyPlayer(body.position));
+        SetSimulation(body, IsNearAnyPlayer(body.position, WorldSleepDistanceSqr(body)));
     }
 
     internal static void ApplyNpc(BodyScript body)
@@ -222,6 +230,15 @@ internal static class MultiplayerLoadDistance
         foreach (var playerPosition in playerPositions)
             if ((position - playerPosition).sqrMagnitude < distanceSqr) return true;
         return false;
+    }
+
+    private static float WorldSleepDistanceSqr(Component component)
+    {
+        return component != null && (component.GetComponentInParent<DoorScript>() != null ||
+            component.GetComponentInParent<RbMoveToObj>() != null ||
+            component.GetComponentInParent<CustJoint>() != null)
+            ? MechanismSleepDistanceSqr
+            : activeDistanceSqr;
     }
 
     private static bool IsNpcTailBody(BodyScript body, Rigidbody2D rigidbody)

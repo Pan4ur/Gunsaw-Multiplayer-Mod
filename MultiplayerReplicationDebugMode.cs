@@ -9,6 +9,7 @@ internal sealed class MultiplayerReplicationDebugMode : MonoBehaviour
     private readonly List<Vector2> playerPositions = new List<Vector2>();
     private readonly List<LineRenderer> worldCircles = new List<LineRenderer>();
     private readonly List<LineRenderer> npcCircles = new List<LineRenderer>();
+    private readonly List<LineRenderer> mechanismCircles = new List<LineRenderer>();
     private bool enabledMode;
     private Transform freeCameraTarget;
     private Transform previousCameraTarget;
@@ -118,12 +119,15 @@ internal sealed class MultiplayerReplicationDebugMode : MonoBehaviour
         MultiplayerLoadDistance.CopyPlayerPositions(playerPositions);
         SetCircleCount(worldCircles, playerPositions.Count, new Color(0.15f, 0.75f, 1f, 0.8f));
         SetCircleCount(npcCircles, playerPositions.Count, new Color(1f, 0.75f, 0.15f, 0.8f));
+        SetCircleCount(mechanismCircles, playerPositions.Count, new Color(0.85f, 0.25f, 1f, 0.8f));
         var worldRadius = Mathf.Sqrt(MultiplayerLoadDistance.WorldDistanceSqr);
         var npcRadius = Mathf.Sqrt(MultiplayerLoadDistance.NpcPoseDistanceSqr);
+        var mechanismRadius = Mathf.Sqrt(MultiplayerLoadDistance.MechanismSleepDistanceSqr);
         for (var index = 0; index < playerPositions.Count; index++)
         {
             DrawCircle(worldCircles[index], playerPositions[index], worldRadius);
             DrawCircle(npcCircles[index], playerPositions[index], npcRadius);
+            DrawCircle(mechanismCircles[index], playerPositions[index], mechanismRadius);
         }
     }
 
@@ -160,6 +164,8 @@ internal sealed class MultiplayerReplicationDebugMode : MonoBehaviour
         foreach (var circle in worldCircles)
             if (circle != null) circle.gameObject.SetActive(false);
         foreach (var circle in npcCircles)
+            if (circle != null) circle.gameObject.SetActive(false);
+        foreach (var circle in mechanismCircles)
             if (circle != null) circle.gameObject.SetActive(false);
     }
 
