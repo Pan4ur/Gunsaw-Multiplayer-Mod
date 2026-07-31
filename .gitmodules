@@ -1,0 +1,3 @@
+[submodule "funnyPics"]
+	path = funnyPics
+	url = https://github.com/Pan4ur/GSMP-Gallery.git
