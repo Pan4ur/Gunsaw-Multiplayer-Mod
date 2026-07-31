@@ -20,6 +20,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal const byte GlassDamage = 6;
     internal const byte VehicleDamage = 7;
     internal const byte DroneDamage = 8;
+    internal const byte WeaponDrop = 9;
 
     // Ill just leave it like this for now (It's becoming painful to drive the karts)
     private const float SnapshotInterval = 1f / 50f;
@@ -853,6 +854,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void RestoreClientWorld()
     {
+        nextRuntimeId = 0;
         foreach (var pair in localSettings)
         {
             if (pair.Key == null) continue;
@@ -1674,6 +1676,7 @@ internal sealed class WorldReplication : MonoBehaviour
         if (MultiplayerSession.IsHost || dropped == null || body == null ||
             PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
         var rigidbody = dropped.GetComponent<Rigidbody2D>();
+        if (rigidbody == null) rigidbody = dropped.GetComponentInChildren<Rigidbody2D>(true);
         if (rigidbody == null || !IsWorldBody(rigidbody)) return;
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
@@ -1695,6 +1698,35 @@ internal sealed class WorldReplication : MonoBehaviour
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
             weaponRequestsSent++;
         }
+    }
+
+    internal static bool QueueLocalWeaponDrop(BodyScript body)
+    {
+        var current = Instance;
+        var player = PlayerScript.player;
+        if (current == null || !MultiplayerSession.IsConnected || MultiplayerSession.IsHost || body == null || player == null ||
+            body != player.bodyScript || !body.isAlive || body.unarmed || body.weapons == null ||
+            body.weaponAmmos == null) return false;
+
+        var slot = body.currentWeapon;
+        if (slot < 0 || slot >= body.weapons.Count || slot >= body.weaponAmmos.Count ||
+            body.weapons[slot] == null) return false;
+
+        using (var stream = new MemoryStream())
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(WeaponDrop);
+            writer.Write(0UL);
+            writer.Write(slot);
+            writer.Write(NetworkWireId.FromString(body.weapons[slot].name));
+            writer.Write(body.weaponAmmos[slot]);
+            writer.Write(false);
+            writer.Write(body.transform.position.x);
+            writer.Write(body.transform.position.y);
+            MultiplayerSession.SendWorldInteraction(stream.ToArray());
+            current.weaponRequestsSent++;
+        }
+        return true;
     }
 
     internal void QueueButtonActivation(ButtonScript button)
@@ -2044,6 +2076,30 @@ internal sealed class WorldReplication : MonoBehaviour
                 var requestedPosition = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 Rigidbody2D rigidbody;
                 var remoteBody = NetworkAvatarReplication.RemoteBodyForPeer(peerId);
+                if (operation == WeaponDrop)
+                {
+                    var requestedWeapon = FindWeaponPreset(oldWeaponId);
+                    if (remoteBody == null || !remoteBody.isAlive || requestedWeapon == null || slot < 0 ||
+                        slot >= remoteBody.weapons.Count || slot >= remoteBody.weaponAmmos.Count ||
+                        (requestedPosition - (Vector2)remoteBody.transform.position).sqrMagnitude > 25f)
+                    {
+                        weaponRequestsRejected++;
+                        return;
+                    }
+                    if (remoteBody.weapons[slot] != null &&
+                        NetworkWireId.FromString(remoteBody.weapons[slot].name) != oldWeaponId)
+                    {
+                        weaponRequestsRejected++;
+                        return;
+                    }
+                    remoteBody.weapons[slot] = requestedWeapon;
+                    remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
+                    remoteBody.ChangeWeapon(slot);
+                    if (remoteBody.weapon != null) remoteBody.weapon.ammo = remoteBody.weaponAmmos[slot];
+                    remoteBody.DropWeaponSingle();
+                    weaponRequestsApplied++;
+                    return;
+                }
                 if ((operation != WeaponPickup && operation != WeaponAmmoGet) || remoteBody == null ||
                     !remoteBody.isAlive || !bodies.TryGetValue(id, out rigidbody) || rigidbody == null)
                 {
@@ -2074,12 +2130,16 @@ internal sealed class WorldReplication : MonoBehaviour
                     if (operation == WeaponPickup)
                     {
                         var pickedWeapon = dropped.stats;
+                        var previousWeapon = slot >= 0 && slot < remoteBody.weapons.Count
+                            ? remoteBody.weapons[slot] : null;
                         remoteBody.weapons[slot] = FindWeaponPreset(oldWeaponId);
                         remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
                         ReplaceDroppedWeaponWithPrevious(dropped, remoteBody, pickedWeapon);
                         remoteBody.weapons[slot] = pickedWeapon;
                         remoteBody.weaponAmmos[slot] = 0;
                         remoteBody.ChangeWeapon(slot);
+                        if (previousWeapon == null)
+                            UnityEngine.Object.Destroy(dropped.gameObject);
                     }
                     else if (clientOwnsWeapon) dropped.AmmoGet(remoteBody);
                     else UnloadDroppedWeapon(dropped);
@@ -2690,7 +2750,8 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         string id;
         if (ids.TryGetValue(body, out id)) return id;
-        if (body.GetComponentInParent<DroppedWeapon>() != null)
+        var dropped = body.GetComponentInParent<DroppedWeapon>();
+        if (dropped != null && IsRuntimeDroppedWeapon(dropped))
         {
             id = "runtime/" + (++nextRuntimeId);
             ids[body] = id;
@@ -2711,6 +2772,14 @@ internal sealed class WorldReplication : MonoBehaviour
         id = path.ToString();
         ids[body] = id;
         return id;
+    }
+
+    private static bool IsRuntimeDroppedWeapon(DroppedWeapon dropped)
+    {
+        if (dropped == null) return false;
+        var root = dropped.transform.root;
+        return (root != null && root.name.Contains("(Clone)")) ||
+            dropped.gameObject.name.Contains("(Clone)");
     }
 
     private static int SameNameSiblingIndex(Transform transform)

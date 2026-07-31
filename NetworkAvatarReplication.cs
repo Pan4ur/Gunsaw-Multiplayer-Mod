@@ -570,9 +570,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (player.bodyScript == null) return;
         UpdateSpectator(player);
 
+        var serverOnlyHost = GunsawMultiplayerPlugin.IsHeadlessServer;
         var prefab = ResolveLocalCharacterPrefab(player.bodyScript);
         var currentIdentity = localName + "\n" + prefab;
-        if (identitySent != currentIdentity || Time.unscaledTime >= nextIdentity)
+        if (!serverOnlyHost && (identitySent != currentIdentity || Time.unscaledTime >= nextIdentity))
         {
             identitySent = currentIdentity;
             nextIdentity = Time.unscaledTime + 2f;
@@ -586,7 +587,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (replica != null) replica.CreateRemote(identity, player.bodyScript);
         }
 
-        if (Time.unscaledTime >= nextSnapshot)
+        if (!serverOnlyHost && Time.unscaledTime >= nextSnapshot)
         {
             nextSnapshot = Time.unscaledTime + CurrentSnapshotInterval();
             MultiplayerSession.Send(Serialize(PacketSequences.NextPlayerSnapshot(), player.bodyScript));
@@ -1731,6 +1732,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var isLocalPlayer = player != null && body == player.bodyScript;
         var isStartingPlayerBody = body.GetComponentInParent<PlayerScript>() != null;
         if (!isLocalPlayer && !isStartingPlayerBody && !body.isPlayer && !IsRemoteAvatarBody(body)) return false;
+        if (isLocalPlayer && !MultiplayerSession.IsHost && body.isAlive && !allWeapons)
+        {
+            ClearDroppedWeapon(body, false);
+            return true;
+        }
+        if (body.isAlive && !allWeapons) return false;
         ClearDroppedWeapon(body, allWeapons);
         return true;
     }

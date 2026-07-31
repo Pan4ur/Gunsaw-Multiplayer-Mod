@@ -4,8 +4,10 @@ using HarmonyLib;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -19,6 +21,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     public const string PluginName = "Gunsaw Multiplayer";
     public const string PluginVersion = "0.4.1";
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
+    private const string CustomLevelsUrl = "https://gunsaw-level-codes.jimmyking.dev/Levels.json";
+
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
@@ -67,6 +71,18 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private string hostRelayKey = "";
     private float nextHeartbeat;
     private bool shuttingDown;
+    private bool headlessMode;
+    private bool headlessStartPending;
+    private int hiddenHeadlessAvatarScene = int.MinValue;
+    private int headlessFixedTicks;
+    private int headlessFixedTicksAtLastSample;
+    private float headlessTpsSampleTime = -1f;
+    private int headlessTps;
+    private Timer headlessKeepAliveTimer;
+    private int headlessKeepAliveInFlight;
+    private string headlessDefaultMapJson = "";
+    private readonly Dictionary<string, HashSet<ushort>> headlessVotes = new Dictionary<string, HashSet<ushort>>(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<ushort> headlessKnownPeers = new HashSet<ushort>();
     private bool joinInProgress;
     private int updateCheckInProgress;
     private readonly object joinLock = new object();
@@ -104,6 +120,27 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createRespawnAtStart = savedCreateRespawnAtStart.Value;
         createRespawnTime = savedCreateRespawnTime.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
+        headlessMode = HasCommandLineFlag("-headlessLobby");
+        if (headlessMode)
+        {
+            ApplyHeadlessCommandLineOptions();
+            var mapPath = CommandLineValue("-headlessMap");
+            if (string.IsNullOrEmpty(mapPath)) mapPath = Path.Combine(Paths.GameRootPath, "default_map.txt");
+            try
+            {
+                var code = File.ReadAllText(mapPath).Trim();
+                customLevelJson = Compression.Decompress(code);
+                if (string.IsNullOrWhiteSpace(customLevelJson) || JsonUtility.FromJson<Level>(customLevelJson) == null)
+                    throw new InvalidDataException("Invalid level code.");
+                headlessDefaultMapJson = customLevelJson;
+                Logger.LogInfo("Headless lobby map loaded: " + mapPath);
+            }
+            catch (Exception exception)
+            {
+                Logger.LogError("Headless lobby could not load map: " + exception.Message);
+                customLevelJson = "";
+            }
+        }
         new Harmony(PluginGuid).PatchAll();
         avatarReplication = gameObject.AddComponent<NetworkAvatarReplication>();
         worldReplication = gameObject.AddComponent<WorldReplication>();
@@ -119,6 +156,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void Start()
     {
         KeepMultiplayerRunningInBackground();
+        if (headlessMode)
+        {
+            if (string.IsNullOrEmpty(customLevelJson)) { Logger.LogError("Headless lobby disabled: no valid map."); return; }
+            Logger.LogInfo("Starting headless lobby.");
+            if (SceneManager.GetActiveScene().name != "LevelSelect") SceneManager.LoadScene("LevelSelect");
+            CreateLobby();
+        }
     }
 
     private void OnApplicationFocus(bool focused)
@@ -139,16 +183,40 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     }
 
     internal static WorldReplication World;
+    internal static bool IsHeadlessServer { get { return Instance != null && Instance.headlessMode && MultiplayerSession.IsHosting; } }
 
     private void Update()
     {
         KeepMultiplayerRunningInBackground();
+        UpdateHeadlessTps();
+        if (headlessMode)
+        {
+            var warning = UnityEngine.Object.FindObjectOfType<ViolenceScreen>();
+            if (warning != null)
+            {
+                AccessTools.Field(typeof(ViolenceScreen), "clicked")?.SetValue(warning, true);
+                return;
+            }
+        }
         lock (mainThreadActionsLock)
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
         MultiplayerLoadDistance.Apply();
         MultiplayerSession.NoteHostSceneHandle(SceneManager.GetActiveScene().handle);
         MultiplayerSession.SetHostScene(SceneManager.GetActiveScene().name);
+        SendHeadlessHelpToNewPlayers();
+        HideHeadlessHostAvatar();
+        if (headlessStartPending && MultiplayerSession.IsHosting && SceneLoader.main != null)
+        {
+            headlessStartPending = false;
+            try
+            {
+                MultiplayerSession.StartHostCustomLevel(customLevelJson);
+                StartCustomLevelLocally(customLevelJson);
+                Logger.LogInfo("Headless lobby custom level started.");
+            }
+            catch (Exception exception) { Logger.LogError("Headless lobby could not start map: " + exception.Message); }
+        }
         if (Time.unscaledTime < customLevelPhysicsRefreshUntil &&
             Time.unscaledTime >= nextCustomLevelPhysicsRefresh)
         {
@@ -678,9 +746,304 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                     createGrabOnlyUnconscious, createAllowRespawn, respawnTime, createRespawnAtStart,
                     playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
+                if (headlessMode) StartHeadlessKeepAlive(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
+                if (headlessMode) headlessStartPending = true;
             });
         }
         catch (Exception exception) { RunOnMainThread(() => status = "Could not create lobby: " + exception.Message); }
+    }
+
+    private void FixedUpdate()
+    {
+        if (headlessMode) Interlocked.Increment(ref headlessFixedTicks);
+    }
+
+    internal bool TryHandleLobbyChatCommand(ushort senderId, string message)
+    {
+        if (!headlessMode || !MultiplayerSession.IsHost || string.IsNullOrWhiteSpace(message)) return false;
+        var command = message.Trim();
+        if (string.Equals(command, "!help", StringComparison.OrdinalIgnoreCase))
+        {
+            SendHeadlessHelp(senderId);
+            return true;
+        }
+        if (string.Equals(command, "!tps", StringComparison.OrdinalIgnoreCase))
+        {
+            UpdateHeadlessTps();
+            var stats = MultiplayerSession.DebugStats();
+            SendHeadlessChat("TPS: " + headlessTps + " | RX: " + (stats.ReceivedBytesPerSecond / 1024f).ToString("0.0") +
+                " KiB/s | TX: " + (stats.SentBytesPerSecond / 1024f).ToString("0.0") + " KiB/s");
+            return true;
+        }
+        if (string.Equals(command, "!votedefault", StringComparison.OrdinalIgnoreCase))
+            return RegisterHeadlessVote(senderId, "default", "default map");
+        if (string.Equals(command, "!vote restart", StringComparison.OrdinalIgnoreCase))
+            return RegisterHeadlessVote(senderId, "restart", "restart");
+        const string changePrefix = "!vote change ";
+        if (command.StartsWith(changePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var target = command.Substring(changePrefix.Length).Trim();
+            if (string.IsNullOrEmpty(target))
+            {
+                SendHeadlessChat("Usage: !vote change <map name or scene>", senderId);
+                return true;
+            }
+            return RegisterHeadlessVote(senderId, "change:" + target, "change to " + target);
+        }
+        return false;
+    }
+
+    private void SendHeadlessHelpToNewPlayers()
+    {
+        if (!headlessMode || !MultiplayerSession.IsHosting) return;
+        var peers = MultiplayerSession.PeerIds();
+        foreach (var peerId in peers)
+            if (headlessKnownPeers.Add(peerId)) SendHeadlessHelp(peerId);
+        headlessKnownPeers.RemoveWhere(peerId => Array.IndexOf(peers, peerId) < 0);
+    }
+
+    private void StartHeadlessKeepAlive(string lobbyId, string relayKey, string directoryUrl)
+    {
+        if (headlessKeepAliveTimer != null) headlessKeepAliveTimer.Dispose();
+        headlessKeepAliveTimer = new Timer(_ =>
+        {
+            if (Interlocked.CompareExchange(ref headlessKeepAliveInFlight, 1, 0) != 0) return;
+            try
+            {
+                MultiplayerSession.UpdatePing();
+                var players = MultiplayerSession.PlayerCount;
+                HttpAt(directoryUrl, "PUT", "/v1/lobbies/" + lobbyId,
+                    "{\"players\":" + players + ",\"map\":\"LevelLoader\"}", "Bearer " + relayKey);
+            }
+            catch (Exception exception) { Logger.LogWarning("Headless keep-alive failed: " + exception.Message); }
+            finally { Interlocked.Exchange(ref headlessKeepAliveInFlight, 0); }
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private void UpdateHeadlessTps()
+    {
+        if (!headlessMode) return;
+        var now = Time.realtimeSinceStartup;
+        if (headlessTpsSampleTime < 0f)
+        {
+            headlessTpsSampleTime = now;
+            headlessFixedTicksAtLastSample = Interlocked.CompareExchange(ref headlessFixedTicks, 0, 0);
+            return;
+        }
+        var elapsed = now - headlessTpsSampleTime;
+        if (elapsed < 0.25f) return;
+        var ticks = Interlocked.CompareExchange(ref headlessFixedTicks, 0, 0);
+        headlessTps = Mathf.RoundToInt((ticks - headlessFixedTicksAtLastSample) / elapsed);
+        headlessFixedTicksAtLastSample = ticks;
+        headlessTpsSampleTime = now;
+    }
+
+    private void HideHeadlessHostAvatar()
+    {
+        if (!IsHeadlessServer || SceneManager.GetActiveScene().name != "LevelLoader") return;
+        var sceneHandle = SceneManager.GetActiveScene().handle;
+        if (hiddenHeadlessAvatarScene == sceneHandle) return;
+        var player = PlayerScript.player;
+        if (player == null || player.bodyScript == null) return;
+        hiddenHeadlessAvatarScene = sceneHandle;
+        var body = player.bodyScript;
+        body.transform.position = new Vector3(100000f, 100000f, 0f);
+        foreach (var collider in body.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
+        foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
+        {
+            rigidbody.velocity = Vector2.zero;
+            rigidbody.angularVelocity = 0f;
+            rigidbody.simulated = false;
+        }
+    }
+
+    private bool RegisterHeadlessVote(ushort senderId, string target, string description)
+    {
+        foreach (var vote in headlessVotes.Values) vote.Remove(senderId);
+        HashSet<ushort> voters;
+        if (!headlessVotes.TryGetValue(target, out voters))
+        {
+            voters = new HashSet<ushort>();
+            headlessVotes[target] = voters;
+        }
+        voters.Add(senderId);
+        var needed = MultiplayerSession.PeerIds().Length / 2 + 1;
+        SendHeadlessChat("Vote " + description + ": " + voters.Count + "/" + needed + ".");
+        if (voters.Count < needed) return true;
+        headlessVotes.Clear();
+        SendHeadlessChat("Vote passed: " + description + ".");
+        if (target == "restart") RestartHeadlessCurrentLevel();
+        else if (target == "default") StartHeadlessCustomLevel(headlessDefaultMapJson);
+        else StartHeadlessMapChange(target.Substring("change:".Length));
+        return true;
+    }
+
+    private void StartHeadlessMapChange(string mapOrScene)
+    {
+        if (IsBuiltInHeadlessScene(mapOrScene))
+        {
+            try
+            {
+                MultiplayerSession.EndHostCustomLevel(mapOrScene);
+                SceneLoader.main.LoadScene(mapOrScene);
+            }
+            catch (Exception exception) { SendHeadlessChat("Could not load scene: " + exception.Message); }
+            return;
+        }
+        SendHeadlessChat("Looking up map: " + mapOrScene + "...");
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                var catalog = new WebClient().DownloadString(CustomLevelsUrl);
+                RunOnMainThread(() => LoadHeadlessCatalogMap(catalog, mapOrScene));
+            }
+            catch (Exception exception) { RunOnMainThread(() => SendHeadlessChat("Could not load map: " + exception.Message)); }
+        });
+    }
+
+    private void LoadHeadlessCatalogMap(string catalog, string requestedName)
+    {
+        try
+        {
+            HeadlessLevelEntry match = null;
+            var requestedKey = NormalizeHeadlessLevelName(requestedName);
+            var catalogEntries = ParseHeadlessCatalog(catalog);
+            foreach (var entry in catalogEntries)
+                if (NormalizeHeadlessLevelName(entry.name) == requestedKey) { match = entry; break; }
+            if (match == null || string.IsNullOrWhiteSpace(match.code))
+            {
+                var suggestions = new List<string>();
+                foreach (var entry in catalogEntries)
+                    if (!string.IsNullOrWhiteSpace(entry.name) &&
+                        NormalizeHeadlessLevelName(entry.name).Contains(requestedKey)) suggestions.Add(entry.name);
+                throw new InvalidDataException(suggestions.Count == 0 ? "map not found" :
+                    "map not found; try: " + string.Join(" | ", suggestions.GetRange(0, Math.Min(3, suggestions.Count)).ToArray()));
+            }
+            var mapJson = DecodeCatalogLevelCode(match.code);
+            if (JsonUtility.FromJson<Level>(mapJson) == null) throw new InvalidDataException("map code is invalid");
+            StartHeadlessCustomLevel(mapJson);
+        }
+        catch (Exception exception) { SendHeadlessChat("Could not load map: " + exception.Message); }
+    }
+
+    private void StartHeadlessCustomLevel(string levelJson)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(levelJson)) throw new InvalidDataException("no default map is loaded");
+            customLevelJson = levelJson;
+            MultiplayerSession.NotifyHostSceneReload("LevelLoader");
+            MultiplayerSession.StartHostCustomLevel(levelJson);
+            StartCustomLevelLocally(levelJson);
+        }
+        catch (Exception exception) { SendHeadlessChat("Could not load map: " + exception.Message); }
+    }
+
+    private void RestartHeadlessCurrentLevel()
+    {
+        try
+        {
+            var loader = SceneLoader.main;
+            if (loader == null) throw new InvalidOperationException("scene loader is not ready");
+            loader.LoadScene(SceneManager.GetActiveScene().name);
+        }
+        catch (Exception exception) { SendHeadlessChat("Could not restart level: " + exception.Message); }
+    }
+
+    private static string DecodeCatalogLevelCode(string value)
+    {
+        var code = (value ?? "").Trim();
+        if (code.StartsWith("{", StringComparison.Ordinal)) return code;
+        using (var compressed = new MemoryStream(Convert.FromBase64String(code)))
+        using (var inflater = new DeflateStream(compressed, CompressionMode.Decompress))
+        using (var output = new MemoryStream())
+        {
+            inflater.CopyTo(output);
+            return Encoding.UTF8.GetString(output.ToArray()).Trim();
+        }
+    }
+
+    private static bool IsBuiltInHeadlessScene(string value)
+    {
+        value = (value ?? "").Trim();
+        if (value.StartsWith("actualLevel", StringComparison.OrdinalIgnoreCase)) value = value.Substring("actualLevel".Length);
+        else if (value.StartsWith("campaign", StringComparison.OrdinalIgnoreCase)) value = value.Substring("campaign".Length);
+        else return false;
+        int ignored;
+        return int.TryParse(value, out ignored);
+    }
+
+    private static string NormalizeHeadlessLevelName(string value)
+    {
+        var source = value ?? "";
+        var builder = new StringBuilder(source.Length);
+        foreach (var character in source)
+            if (char.IsLetterOrDigit(character)) builder.Append(char.ToLowerInvariant(character));
+        return builder.ToString();
+    }
+
+    private static List<HeadlessLevelEntry> ParseHeadlessCatalog(string catalog)
+    {
+        var result = new List<HeadlessLevelEntry>();
+        var matches = Regex.Matches(catalog ?? "", "\\\"name\\\"\\s*:\\s*\\\"(?<name>(?:\\\\.|[^\\\"])*)\\\".*?\\\"code\\\"\\s*:\\s*\\\"(?<code>(?:\\\\.|[^\\\"])*)\\\"", RegexOptions.Singleline);
+        foreach (Match match in matches)
+        {
+            var name = Regex.Unescape(match.Groups["name"].Value);
+            var code = Regex.Unescape(match.Groups["code"].Value);
+            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(code))
+                result.Add(new HeadlessLevelEntry { name = name, code = code });
+        }
+        if (result.Count == 0) throw new InvalidDataException("level catalog returned no maps");
+        return result;
+    }
+
+    private void SendHeadlessHelp(ushort targetPeerId)
+    {
+        SendHeadlessChat("Maps: !vote change <name>; scenes: actualLevel1/campaign6; !vote restart | !tps | !votedefault | !help", targetPeerId);
+    }
+
+    private static void SendHeadlessChat(string text, ushort targetPeerId = 0)
+    {
+        ChatPacket packet;
+        if (ChatService.TryCreate(text, true, out packet)) MultiplayerSession.Send(packet, targetPeerId);
+    }
+
+    private sealed class HeadlessLevelEntry { public string name; public string code; }
+
+    private static bool HasCommandLineFlag(string flag)
+    {
+        foreach (var arg in Environment.GetCommandLineArgs())
+            if (string.Equals(arg, flag, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    private static string CommandLineValue(string flag)
+    {
+        var args = Environment.GetCommandLineArgs();
+        for (var index = 0; index + 1 < args.Length; index++)
+            if (string.Equals(args[index], flag, StringComparison.OrdinalIgnoreCase)) return args[index + 1];
+        return "";
+    }
+
+    private void ApplyHeadlessCommandLineOptions()
+    {
+        var value = CommandLineValue("--master");
+        if (!string.IsNullOrWhiteSpace(value)) { masterUrl.Value = value; lobbyServerAddress = DisplayServerAddress(value); }
+        value = CommandLineValue("--name");
+        if (!string.IsNullOrWhiteSpace(value)) lobbyName = value.Trim();
+        value = CommandLineValue("--host");
+        if (!string.IsNullOrWhiteSpace(value)) playerName = value.Trim();
+        value = CommandLineValue("--max-players");
+        if (!string.IsNullOrWhiteSpace(value)) createMaxPlayers = value;
+        value = CommandLineValue("--respawn-seconds");
+        if (!string.IsNullOrWhiteSpace(value)) createRespawnTime = value;
+        if (HasCommandLineFlag("--pvp")) createPvp = true;
+        if (HasCommandLineFlag("--can-grab")) createCanGrab = true;
+        if (HasCommandLineFlag("--grab-only-unconscious")) { createCanGrab = true; createGrabOnlyUnconscious = true; }
+        if (HasCommandLineFlag("--allow-respawn")) createAllowRespawn = true;
+        if (HasCommandLineFlag("--respawn-at-start")) createRespawnAtStart = true;
+        Logger.LogInfo("Headless settings: lobby=" + lobbyName + ", host=" + playerName + ", max=" + createMaxPlayers + ".");
     }
 
     private void JoinLobbyRequest(string id, ConnectionMode listedMode)
@@ -968,6 +1331,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private void ShutdownMultiplayer(bool removeHostedLobby)
     {
+        if (headlessKeepAliveTimer != null)
+        {
+            headlessKeepAliveTimer.Dispose();
+            headlessKeepAliveTimer = null;
+        }
         if (shuttingDown) return;
         shuttingDown = true;
         MultiplayerSession.Shutdown();

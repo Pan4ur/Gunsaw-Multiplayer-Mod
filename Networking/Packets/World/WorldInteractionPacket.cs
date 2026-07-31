@@ -7,7 +7,8 @@ internal enum WorldInteractionOperation : byte
     ZoneActivate = 5,
     GlassDamage = 6,
     VehicleDamage = 7,
-    DroneDamage = 8
+    DroneDamage = 8,
+    WeaponDrop = 9
 }
 
 internal readonly struct WorldInteractionPacket : INetworkPacket
@@ -53,6 +54,11 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
         int previousAmmo, bool clientOwnsWeapon, float positionX, float positionY)
         => new WorldInteractionPacket(WorldInteractionOperation.WeaponAmmoGet, targetId, weaponSlot,
             previousWeaponId, previousAmmo, clientOwnsWeapon, positionX, positionY);
+
+    internal static WorldInteractionPacket WeaponDrop(int weaponSlot, ulong weaponId, int ammo,
+        float positionX, float positionY)
+        => new WorldInteractionPacket(WorldInteractionOperation.WeaponDrop, 0UL, weaponSlot, weaponId,
+            ammo, false, positionX, positionY);
 
     internal static WorldInteractionPacket ButtonActivate(ulong targetId)
         => new WorldInteractionPacket(WorldInteractionOperation.ButtonActivate, targetId);
@@ -132,6 +138,14 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
             case WorldInteractionOperation.WeaponAmmoGet:
                 return WeaponAmmoGet(targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(),
                     reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
+            case WorldInteractionOperation.WeaponDrop:
+            {
+                var slot = reader.ReadInt32();
+                var weaponId = reader.ReadUInt64();
+                var ammo = reader.ReadInt32();
+                reader.ReadBoolean();
+                return WeaponDrop(slot, weaponId, ammo, reader.ReadSingle(), reader.ReadSingle());
+            }
             default: throw new System.IO.InvalidDataException("Unknown world interaction operation.");
         }
     }

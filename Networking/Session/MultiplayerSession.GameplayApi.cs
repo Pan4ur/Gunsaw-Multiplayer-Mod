@@ -13,7 +13,7 @@ internal static partial class MultiplayerSession
 
     internal static void UpdatePing()
     {
-        if (!IsConnected) return;
+        if (!IsActive) return;
         var now = DateTime.UtcNow.Ticks;
         lock (statusLock)
         {

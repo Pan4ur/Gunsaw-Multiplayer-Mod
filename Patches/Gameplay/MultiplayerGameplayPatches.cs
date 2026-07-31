@@ -680,6 +680,11 @@ internal static class ClientNpcDropWeaponSinglePatch
 {
     private static bool Prefix(BodyScript __instance)
     {
+        if (WorldReplication.QueueLocalWeaponDrop(__instance))
+        {
+            NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, false);
+            return false;
+        }
         if (NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, false)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
@@ -774,11 +779,13 @@ internal static class ClientDroppedWeaponPickupPatch
 [HarmonyPatch(typeof(DroppedWeapon), "AmmoGet")]
 internal static class ClientDroppedWeaponAmmoPatch
 {
-    private static void Prefix(DroppedWeapon __instance, BodyScript body)
+    private static bool Prefix(DroppedWeapon __instance, BodyScript body)
     {
-        if (!MultiplayerSession.IsHost && __instance != null) __instance.pickupCool = -1f;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost)
+            return true;
         if (GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.QueueWeaponInteraction(__instance, body, WorldReplication.WeaponAmmoGet);
+        return false;
     }
 }
 

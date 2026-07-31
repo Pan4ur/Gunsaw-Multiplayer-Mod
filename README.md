@@ -128,6 +128,44 @@ available in `GunsawMultiplayer/lib/`. For the standard local installation, the 
 
 The relay/lobby service lives in [LobbyServer](https://github.com/Pan4ur/Gunsaw-Lobby-Server)
 
+## Headless mode
+
+This mode launches Gunsaw without graphics in minimized mode. As a result, GPU usage drops to zero and RAM usage decreases slightly. This is necessary for hosting a lobby 24/7, for example, on a VPS. Players can also manage the lobby through voting
+
+Open a terminal in the game directory and run Gunsaw.exe with the required arguments:
+
+```powershell
+.\Gunsaw.exe -batchmode -nographics -headlessLobby -headlessMap ".\default_map.txt" -logFile - --master "https://gunsawudp.e621.su" --name "HEADLESS LOBBY" --host "HOST" --max-players 16 --pvp --can-grab --allow-respawn --respawn-seconds 5 --respawn-at-start 2>&1 | Tee-Object -FilePath ".\headless.log"
+```
+
+CTRL + C to stop
+
+### Startup args
+
+- -headlessMap <path> - File with a code for custom map
+- -logFile <path> - File used for server logs
+
+### Lobby args
+
+- --master <url> - Address of the master server
+- --name <name> - Lobby name
+- --host <name> - "Host" name
+- --max-players <count> - Max lobby size
+- --respawn-seconds <seconds> - Respawn delay
+- --pvp - Enables pvp
+- --can-grab - Allows players to grab other players
+- --grab-only-unconscious - Disables the ability to grab conscious players
+- --allow-respawn - Allows respawning
+- --respawn-at-start - You'll respawn at the spawn point. If you don't include this argument, you'll respawn at the location where you died (or near other players if you were crushed and have nowhere else to respawn), and the random respawn point feature won't work
+
+### Chat commands
+
+- !tps - Displays server statistics
+- !vote restart - Voting for level restart
+- !vote change <level name> - Voting for level change. Works with built in <campaign1, actualLevel1, ...> and from [gunsaw-level-codes](gunsaw-level-codes) <Foundry, Leapy jump - CART trials, ...>
+- !votedefault - Voting for load level from headlessMap file
+- !help - Displays all commands
+
 ## Contributing
 
 Pull requests are very welcome

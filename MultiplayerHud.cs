@@ -83,7 +83,10 @@ internal sealed class MultiplayerHud : MonoBehaviour
         string message;
         ushort senderId;
         while (MultiplayerSession.TryTakeChat(out senderId, out sender, out message))
+        {
+            if (GunsawMultiplayerPlugin.Instance.TryHandleLobbyChatCommand(senderId, message)) continue;
             AddMessage(sender, message, false, senderId);
+        }
 
         if (!MultiplayerSession.IsConnected)
         {
