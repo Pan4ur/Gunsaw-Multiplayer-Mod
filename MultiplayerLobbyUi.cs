@@ -303,8 +303,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void RebuildLobbyRows()
     {
         var canJoin = plugin.CanJoinLobby;
-        var hash = plugin.lobbies.Count + (canJoin ? 1 : 0);
-        foreach (var lobby in plugin.lobbies) hash = hash * 31 + (lobby.id ?? "").GetHashCode() + lobby.players;
+        var hash = plugin.lobbies.Count + (canJoin ? 1 : 0) + (MultiplayerSession.IsActive ? 7 : 0);
+        foreach (var lobby in plugin.lobbies)
+            hash = hash * 31 + (lobby.id ?? "").GetHashCode() + lobby.players + (plugin.IsJoinedLobby(lobby.id) ? 13 : 0);
         if (hash == renderedLobbyHash) return;
         renderedLobbyHash = hash;
         for (var i = lobbyRows.childCount - 1; i >= 0; i--) Destroy(lobbyRows.GetChild(i).gameObject);
@@ -312,10 +313,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         {
             var row = new GameObject("Lobby", typeof(RectTransform), typeof(LayoutElement)); row.transform.SetParent(lobbyRows, false); row.GetComponent<LayoutElement>().preferredHeight = 46f;
             var info = CreateText(row.transform, lobby.name + "  |  " + lobby.hostName + "  |  " + lobby.map + "  |  " + (lobby.pvp ? "PVP" : "CO-OP") + "  |  " + lobby.players + "/" + lobby.maxPlayers, new Vector2(-135f, 0f), new Vector2(810f, 42f), 14); info.enableWordWrapping = false;
-            var join = CreateButton(row.transform, "JOIN", new Vector2(450f, 0f), new Vector2(140f, 40f));
-            join.interactable = canJoin;
             var id = lobby.id;
-            join.onClick.AddListener(() => plugin.JoinLobby(id));
+            var joined = plugin.IsJoinedLobby(id);
+            var join = CreateButton(row.transform, joined ? "LEAVE" : "JOIN", new Vector2(450f, 0f), new Vector2(140f, 40f));
+            join.interactable = joined || canJoin;
+            if (joined) join.onClick.AddListener(plugin.LeaveLobby);
+            else join.onClick.AddListener(() => plugin.JoinLobby(id));
         }
     }
 }
