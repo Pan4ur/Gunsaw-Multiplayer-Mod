@@ -2061,7 +2061,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 if (!IsRespawnPositionBlocked(spawnPoint + offset, oldBody)) return spawnPoint + offset;
             }
         }
-        var candidate = MultiplayerSession.RespawnAtStart ? localSpawnPosition : localDeathPosition;
+        var candidate = MultiplayerSession.RespawnAtStart
+            ? localSpawnPosition
+            : (oldBody == null ? localDeathPosition : oldBody.transform.position);
         if (!IsRespawnPositionBlocked(candidate, oldBody)) return candidate;
         if (!MultiplayerSession.RespawnAtStart &&
             TryFindRespawnPositionNearPlayer(oldBody, out candidate)) return candidate;
