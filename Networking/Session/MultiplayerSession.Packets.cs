@@ -426,6 +426,8 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             if (!peers.Remove(peerId)) return;
+            peerListRevision++;
+            if (isHost && !hostLeft) disconnectedPeers.Enqueue(peerId);
             status = message;
             if (hostLeft)
             {
@@ -649,8 +651,10 @@ internal static partial class MultiplayerSession
     private static void TouchPeerLocked(ushort peerId, string name)
     {
         if (peerId == 0 || peerId == localPeerId) return;
+        var existed = peers.Contains(peerId);
         PeerState peer;
         peer = peers.Touch(peerId, DateTime.UtcNow.Ticks);
+        if (!existed) peerListRevision++;
         if (!string.IsNullOrEmpty(name)) peer.Name = NormalizePlayerName(name);
     }
 

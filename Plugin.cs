@@ -70,6 +70,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private string hostedLobbyDisplayName = "";
     private string hostRelayKey = "";
     private float nextHeartbeat;
+    private int lastHostedPeerListRevision = -1;
     private bool shuttingDown;
     private bool headlessMode;
     private bool headlessStartPending;
@@ -84,6 +85,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private readonly Dictionary<string, HashSet<ushort>> headlessVotes = new Dictionary<string, HashSet<ushort>>(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<ushort> headlessKnownPeers = new HashSet<ushort>();
     private bool joinInProgress;
+    private string joinedLobbyId = "";
     private int updateCheckInProgress;
     private readonly object joinLock = new object();
     private readonly Queue<Action> mainThreadActions = new Queue<Action>();
@@ -201,6 +203,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lock (mainThreadActionsLock)
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
+        if (MultiplayerSession.IsHosting)
+        {
+            ushort disconnectedPeer;
+            while (MultiplayerSession.TryTakePeerDisconnected(out disconnectedPeer))
+                RemoveHostedPeer(disconnectedPeer);
+        }
         MultiplayerLoadDistance.Apply();
         MultiplayerSession.NoteHostSceneHandle(SceneManager.GetActiveScene().handle);
         MultiplayerSession.SetHostScene(SceneManager.GetActiveScene().name);
@@ -235,7 +243,14 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             Logger.LogInfo("Gameplay mapping active: PlayerScript, BodyScript, WeaponScript, LimbScript, SceneLoader.");
         }
 
-        if (!string.IsNullOrEmpty(hostedLobbyId) && Time.unscaledTime >= nextHeartbeat)
+        if (MultiplayerSession.IsHosting && !string.IsNullOrEmpty(hostedLobbyId) &&
+            lastHostedPeerListRevision != MultiplayerSession.PeerListRevision)
+        {
+            lastHostedPeerListRevision = MultiplayerSession.PeerListRevision;
+            nextHeartbeat = Time.unscaledTime + 10f;
+            SendHeartbeat();
+        }
+        else if (!string.IsNullOrEmpty(hostedLobbyId) && Time.unscaledTime >= nextHeartbeat)
         {
             nextHeartbeat = Time.unscaledTime + 10f;
             SendHeartbeat();
@@ -248,6 +263,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
         if (MultiplayerSession.TryTakeHostDisconnected())
         {
+            joinedLobbyId = "";
             status = "Host closed the lobby.";
             Time.timeScale = 1f;
             if (SceneManager.GetActiveScene().name != "LevelSelect")
@@ -538,6 +554,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         requestedHostScene = "";
         waitingForCustomLevel = false;
         nextHeartbeat = 0f;
+        lastHostedPeerListRevision = -1;
         status = "Lobby closed.";
         if (!string.IsNullOrEmpty(lobbyId) && !string.IsNullOrEmpty(relayKey))
             DeleteHostedLobby(lobbyId, relayKey);
@@ -604,6 +621,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             lock (joinLock)
                 return !joinInProgress && !MultiplayerSession.IsHosting && !MultiplayerSession.IsActive;
         }
+    }
+
+    internal bool IsJoinedLobby(string id)
+    {
+        return !string.IsNullOrEmpty(id) && string.Equals(joinedLobbyId, id, StringComparison.Ordinal);
+    }
+
+    internal void LeaveLobby()
+    {
+        if (!MultiplayerSession.IsActive || MultiplayerSession.IsHosting) return;
+        MultiplayerSession.Shutdown();
+        joinedLobbyId = "";
+        requestedHostScene = "";
+        waitingForCustomLevel = false;
+        receivedCustomLevelJson = "";
+        status = "Left lobby.";
     }
 
     internal bool TryHandleHostCommand(string message)
@@ -719,6 +752,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             mode, Logger, out error))
         {
             SetJoinInProgress(false);
+            joinedLobbyId = "";
             status = error;
             return;
         }
@@ -1062,7 +1096,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var mode = string.IsNullOrEmpty(modeText) ? listedMode : ParseConnectionMode(modeText);
             if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayAddress();
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
-            RunOnMainThread(() => ConnectRelay(relayAddress, lobbyId, relayKey, peerId, hostPeerId, maxPlayers, mode));
+            RunOnMainThread(() =>
+            {
+                joinedLobbyId = lobbyId;
+                ConnectRelay(relayAddress, lobbyId, relayKey, peerId, hostPeerId, maxPlayers, mode);
+            });
         }
         catch (Exception exception)
         {
@@ -1281,6 +1319,18 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             try { Http("PUT", "/v1/lobbies/" + hostedLobbyId, "{\"players\":" + players + ",\"map\":\"" + EscapeJson(scene) + "\"}", "Bearer " + hostRelayKey); }
             catch (Exception exception) { Logger.LogWarning("Lobby heartbeat failed: " + exception.Message); }
+        });
+    }
+
+    private void RemoveHostedPeer(ushort peerId)
+    {
+        var lobbyId = hostedLobbyId;
+        var relayKey = hostRelayKey;
+        if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey) || peerId == 0) return;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try { Http("DELETE", "/v1/lobbies/" + lobbyId + "/peers/" + peerId, null, "Bearer " + relayKey); }
+            catch (Exception exception) { Logger.LogWarning("Lobby peer removal failed: " + exception.Message); }
         });
     }
 

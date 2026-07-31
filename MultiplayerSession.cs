@@ -100,6 +100,8 @@ internal static partial class MultiplayerSession
     private static string hostCustomLevel = "";
     private static string pendingCustomLevel = "";
     private static readonly PeerRegistry peers = new PeerRegistry();
+    private static readonly Queue<ushort> disconnectedPeers = new Queue<ushort>();
+    private static int peerListRevision;
     private static readonly HashSet<ushort> blockedPeers = new HashSet<ushort>();
     private static readonly Queue<PeerIdentity> identities = new Queue<PeerIdentity>();
     private static readonly Dictionary<ushort, PlayerSnapshotPacket> snapshots = new Dictionary<ushort, PlayerSnapshotPacket>();
@@ -405,6 +407,21 @@ internal static partial class MultiplayerSession
     internal static ushort LocalPeerId { get { lock (statusLock) return localPeerId; } }
     internal static int MaxPlayers { get { lock (statusLock) return maxPlayers; } }
     internal static int PlayerCount { get { lock (statusLock) return 1 + peers.Count; } }
+    internal static int PeerListRevision { get { lock (statusLock) return peerListRevision; } }
+
+    internal static bool TryTakePeerDisconnected(out ushort peerId)
+    {
+        lock (statusLock)
+        {
+            if (disconnectedPeers.Count == 0)
+            {
+                peerId = 0;
+                return false;
+            }
+            peerId = disconnectedPeers.Dequeue();
+            return true;
+        }
+    }
     internal static string ActiveTransport
     {
         get
