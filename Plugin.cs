@@ -316,7 +316,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             try
             {
                 var response = HttpAt(server, "GET", "/v1/lobbies", null, null);
-                var refreshed = ParseLobbies(response);
+                var refreshed = ParseAndSortLobbies(response);
                 RunOnMainThread(() => { lobbies.Clear(); lobbies.AddRange(refreshed); status = "Connected to " + DisplayServerAddress(masterUrl.Value) + ". Found " + lobbies.Count + " lobby/lobbies."; });
             }
             catch (Exception exception) { RunOnMainThread(() => status = "Lobby server unavailable: " + exception.Message); }
@@ -856,7 +856,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return Enum.TryParse(value, true, out mode) ? mode : ConnectionMode.Relay;
     }
 
-    private static List<LobbyInfo> ParseLobbies(string json)
+    private static List<LobbyInfo> ParseAndSortLobbies(string json)
     {
         var result = new List<LobbyInfo>();
         var cursor = 0;
@@ -885,6 +885,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             if (!string.IsNullOrEmpty(lobby.id)) result.Add(lobby);
             cursor = end + 1;
         }
+        result.Sort((x, y) => x.name.CompareTo(y.name));
         return result;
     }
 
@@ -1083,7 +1084,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         WorldReplication.TrackDroppedWeapons();
         status = "Spawned " + weapon.name + ".";
     }
-
+    // holy inliners
     [Serializable] internal sealed class LobbyInfo { public string id = ""; public string name = ""; public string hostName = ""; public string map = ""; public int players; public int maxPlayers; public bool pvp; public bool canGrab; public bool grabOnlyUnconscious; public bool allowRespawn; public int respawnTime; public bool respawnAtStart; public bool hostP2P; public ConnectionMode connectionMode = ConnectionMode.Relay; }
     [Serializable] private sealed class JoinLobbyPayload { public string playerName = ""; public string modVersion = ""; }
     [Serializable] private sealed class BanPlayerRequest { public string playerName = ""; public int durationMinutes; }
