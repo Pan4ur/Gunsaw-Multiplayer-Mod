@@ -34,6 +34,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal readonly float Health;
     internal readonly bool IsAlive;
     internal readonly PlayerDeathCause DeathCause;
+    internal readonly float SusnessMultiplier;
     internal readonly float Stamina;
     internal readonly byte ControlState;
     internal readonly bool CanBeGrabbed;
@@ -54,7 +55,8 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
 
     internal PlayerSnapshotPacket(int sequence, bool inVehicle, ulong vehicleId,
         bool isVehicleDriver, byte entityState, bool isRight, bool isReflected, bool isActive,
-        float headRotation, PlayerSnapshotBodyState body, float health, bool isAlive, PlayerDeathCause deathCause, float stamina,
+        float headRotation, PlayerSnapshotBodyState body, float health, bool isAlive, PlayerDeathCause deathCause,
+        float susnessMultiplier, float stamina,
         byte controlState, bool canBeGrabbed, float burnIntensity, bool hasNoLegs, bool isDecapitated,
         PlayerSnapshotTransform armsTransform, PlayerSnapshotTransform gunTransform,
         PlayerSnapshotTransform gunAnimationTransform, PlayerSnapshotTransform weaponTransform,
@@ -77,6 +79,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         Health = health;
         IsAlive = isAlive;
         DeathCause = deathCause;
+        SusnessMultiplier = susnessMultiplier;
         Stamina = stamina;
         ControlState = controlState;
         CanBeGrabbed = canBeGrabbed;
@@ -132,6 +135,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         writer.WriteBoolean(IncludesVisualState);
         if (IncludesVisualState) WriteVisualState(ref writer, VisualState.Value);
         writer.WriteByte((byte)DeathCause);
+        writer.WriteSingle(SusnessMultiplier);
     }
 
     private static void WriteBody(ref PacketWriter writer, PlayerSnapshotBodyState value)
@@ -181,8 +185,9 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var crystalTongue = ReadLine(ref reader);
         var includesVisualState = reader.ReadBoolean(); var visualState = includesVisualState ? (PlayerSnapshotVisualState?)ReadVisualState(ref reader) : null;
         var deathCause = reader.Remaining > 0 ? (PlayerDeathCause)reader.ReadByte() : PlayerDeathCause.Unknown;
+        var susnessMultiplier = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
         return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight, isReflected, isActive,
-            headRotation, body, health, isAlive, deathCause, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
+            headRotation, body, health, isAlive, deathCause, susnessMultiplier, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
             arms, gun, gunAnimation, weaponTransform, limbs, tailBases, tails, weaponSlot, weaponAmmo, weaponSpriteId,
             inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, crystalTongue, includesVisualState, visualState);
     }
