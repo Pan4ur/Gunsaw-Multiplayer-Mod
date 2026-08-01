@@ -173,6 +173,15 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         {
             var body = remote.Body;
             if (body == null || body.rb == null) continue;
+            var visibility = NetworkAvatarReplication.PvpVoyagerVisibility(body);
+            if (visibility <= 0.01f)
+            {
+                active.Add(body);
+                TMP_Text hiddenTag;
+                if (nameTags.TryGetValue(body, out hiddenTag) && hiddenTag != null)
+                    hiddenTag.gameObject.SetActive(false);
+                continue;
+            }
             var scale = Mathf.Clamp(Mathf.Abs(body.characterScale), 0.7f, 1.8f);
             var screen = camera.WorldToScreenPoint((Vector3)body.rb.position + Vector3.up * (1.35f * scale));
             if (screen.z <= 0f) continue;
@@ -185,7 +194,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 nameTags[body] = tag;
             }
             tag.text = NetworkAvatarReplication.RemoteNameTag(body);
-            tag.color = !body.isAlive ? new Color(1f, 0.28f, 0.28f) : !body.IsConsc() ? new Color(1f, 0.72f, 0.22f) : Color.white;
+            tag.color = !body.isAlive ? new Color(1f, 0.28f, 0.28f, visibility) :
+                !body.IsConsc() ? new Color(1f, 0.72f, 0.22f, visibility) : new Color(1f, 1f, 1f, visibility);
             tag.rectTransform.anchoredPosition = CanvasPosition(screen + new Vector3(0f, 12f, 0f));
             tag.gameObject.SetActive(true);
         }

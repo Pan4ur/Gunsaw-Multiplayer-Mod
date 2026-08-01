@@ -108,6 +108,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         new Dictionary<int, PlayerDeathCause>();
     private static readonly Dictionary<int, float> localKillBloodTimes =
         new Dictionary<int, float>();
+    private static readonly Dictionary<SpriteRenderer, float> voyagerWeaponBaseAlpha =
+        new Dictionary<SpriteRenderer, float>();
+    private static readonly Dictionary<LineRenderer, Vector2> voyagerScarfBaseAlpha =
+        new Dictionary<LineRenderer, Vector2>();
     private static readonly HashSet<int> announcedDeaths = new HashSet<int>();
     private static BodyScript suppressNpcKillEffectFor;
     private bool coordinator;
@@ -762,6 +766,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (remoteAvatar == null) return;
         UpdateRemotePhysicsMode();
+        UpdatePvpVoyagerVisuals(remoteBody, Time.deltaTime);
         foreach (var pair in targets)
         {
             var body = pair.Key;
@@ -798,6 +803,70 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         foreach (var transform in staleWorldTargets) localTargets.Remove(transform);
         MaintainRemoteVehicleAttachment();
+    }
+
+    internal static void UpdatePvpVoyagerVisuals(BodyScript body, float deltaTime)
+    {
+        if (body == null || body.GetComponentInChildren<CarverCamo>(true) == null) return;
+        var visibility = PvpVoyagerVisibility(body);
+        var blend = 1f - Mathf.Exp(-10f * Mathf.Max(0f, deltaTime));
+        var isRemote = IsRemoteAvatarBody(body);
+        foreach (var renderer in body.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (renderer == null || (renderer.gameObject.name != "testGun" &&
+                renderer.gameObject.name != "BackWep1" && renderer.gameObject.name != "BackWep2")) continue;
+            float baseAlpha;
+            if (!voyagerWeaponBaseAlpha.TryGetValue(renderer, out baseAlpha))
+            {
+                baseAlpha = isRemote && visibility > 0.001f
+                    ? renderer.color.a / visibility : renderer.color.a;
+                voyagerWeaponBaseAlpha[renderer] = baseAlpha;
+            }
+            var color = renderer.color;
+            color.a = visibility <= 0.001f ? 0f : Mathf.Lerp(color.a, baseAlpha * visibility, blend);
+            renderer.color = color;
+        }
+
+        foreach (var renderer in body.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (renderer == null || (renderer.gameObject.name != "ScarfHold" &&
+                renderer.gameObject.name != "MP Remote Scarf Hold")) continue;
+            float baseAlpha;
+            if (!voyagerWeaponBaseAlpha.TryGetValue(renderer, out baseAlpha))
+            {
+                baseAlpha = isRemote && visibility > 0.001f
+                    ? renderer.color.a / visibility : renderer.color.a;
+                voyagerWeaponBaseAlpha[renderer] = baseAlpha;
+            }
+            var color = renderer.color;
+            color.a = visibility <= 0.001f ? 0f : Mathf.Lerp(color.a, baseAlpha * visibility, blend);
+            renderer.color = color;
+        }
+
+        foreach (var scarf in body.GetComponentsInChildren<ScarfPhysics>(true))
+        {
+            if (scarf == null || scarf.pointRenderer == null) continue;
+            var line = scarf.pointRenderer;
+            Vector2 baseAlpha;
+            if (!voyagerScarfBaseAlpha.TryGetValue(line, out baseAlpha))
+            {
+                baseAlpha = new Vector2(line.startColor.a, line.endColor.a);
+                voyagerScarfBaseAlpha[line] = baseAlpha;
+            }
+            var start = line.startColor;
+            var end = line.endColor;
+            start.a = visibility <= 0.001f ? 0f : Mathf.Lerp(start.a, baseAlpha.x * visibility, blend);
+            end.a = visibility <= 0.001f ? 0f : Mathf.Lerp(end.a, baseAlpha.y * visibility, blend);
+            line.startColor = start;
+            line.endColor = end;
+        }
+    }
+
+    internal static float PvpVoyagerVisibility(BodyScript body)
+    {
+        if (body == null || !MultiplayerSession.PvpEnabled ||
+            body.GetComponentInChildren<CarverCamo>(true) == null) return 1f;
+        return Mathf.InverseLerp(0.25f, 1f, body.susnessMult);
     }
 
     private void LateUpdate()

@@ -895,6 +895,17 @@ internal static class MultiplayerAllyPvpTargetPatch
     }
 }
 
+[HarmonyPatch(typeof(CarverCamo), "Update")]
+internal static class MultiplayerVoyagerPvpVisualPatch
+{
+    private static void Postfix(CarverCamo __instance)
+    {
+        if (__instance == null) return;
+        var body = __instance.GetComponent<BodyScript>();
+        NetworkAvatarReplication.UpdatePvpVoyagerVisuals(body, Time.deltaTime);
+    }
+}
+
 [HarmonyPatch(typeof(GrenadeScript), "SetBody")]
 internal static class MultiplayerGrenadeOwnerPatch
 {
