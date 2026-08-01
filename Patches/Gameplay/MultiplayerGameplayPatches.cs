@@ -387,7 +387,7 @@ internal static class MultiplayerTargetBloodSplatPatch
 {
     private static bool Prefix()
     {
-        return !NetworkAvatarReplication.SuppressTargetedScreenEffect();
+        return true;
     }
 }
 
@@ -583,6 +583,7 @@ internal static class ClientNpcDamagePatch
     {
         __state = NetworkAvatarReplication.BeginTargetScreenEffect(__instance);
         NetworkAvatarReplication.RecordDamageSource(__instance);
+        NetworkAvatarReplication.TryCreateLocalKillBloodSplat(__instance);
         if (NetworkAvatarReplication.HandleHostRemoteDamaged(__instance, isCrit)) return false;
         return !NpcReplication.HandleClientDamaged(__instance, isCrit);
     }
