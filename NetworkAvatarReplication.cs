@@ -106,6 +106,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         new Dictionary<int, float>();
     private static readonly Dictionary<int, PlayerDeathCause> deathCauses =
         new Dictionary<int, PlayerDeathCause>();
+    private static readonly Dictionary<int, float> localKillBloodTimes =
+        new Dictionary<int, float>();
     private static readonly HashSet<int> announcedDeaths = new HashSet<int>();
     private static BodyScript suppressNpcKillEffectFor;
     private bool coordinator;
@@ -320,6 +322,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (currentShooter == null || currentShooter == victim) return;
         SetDamageSource(victim, currentShooter,
             explosion ? WeaponName(currentShooter.weapon) : ActiveWeaponName(currentShooter));
+    }
+
+    internal static void TryCreateLocalKillBloodSplat(BodyScript victim)
+    {
+        var player = PlayerScript.player;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || victim == null || victim.isRobot ||
+            player == null || player.bodyScript == null || currentShooter != player.bodyScript ||
+            victim == player.bodyScript || victim.health > 0f || CameraFollow.cam == null ||
+            CameraFollow.cam.DistanceFromCam(victim.transform.position) >= 4f) return;
+        var id = victim.GetInstanceID();
+        float previous;
+        if (localKillBloodTimes.TryGetValue(id, out previous) && Time.unscaledTime - previous < 0.5f) return;
+        localKillBloodTimes[id] = Time.unscaledTime;
+        CameraFollow.cam.CreateBloodSplat(victim.transform.position, victim.bloodColor);
     }
 
     internal static void RecordDamageSource(BodyScript victim, BodyScript source)
@@ -1212,6 +1228,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             writer.Write(includeVisualState);
             if (includeVisualState) WriteVisualState(writer, visualState);
             writer.Write((byte)deathCause);
+            writer.Write(body.susnessMult);
             breakdown.Visual += (int)(writer.BaseStream.Position - sectionStarted);
             var packet = stream.ToArray();
             AddAvatarWireBreakdown(breakdown);
@@ -1222,7 +1239,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 (PlayerSnapshotVisualState?)null;
             return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
                 (byte)body.CurrentState, body.isRight, isReflected, isActive, headRotation, coreBody, health,
-                isAlive, deathCause, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
+                isAlive, deathCause, body.susnessMult, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
                 armsTransform, gunTransformState, gunAnimationTransformState, weaponTransformState, limbStates,
                 tailBaseStates, tailStates, weaponSlot, weaponAmmo, weaponSpriteId, inventoryIds, inventoryChanged,
                 scarfState, weaponLaserState, levitatorLaserState, crystalTongueState, includeVisualState,
@@ -1416,6 +1433,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 remoteBody.health = remoteHealth;
                 remoteBody.isAlive = reader.ReadBoolean();
                 lastRemoteDeathCause = snapshot.DeathCause;
+                remoteBody.susnessMult = Mathf.Clamp(snapshot.SusnessMultiplier, 0.25f, 1f);
                 remoteBody.stamina = reader.ReadSingle();
                 remoteBody.controlState = (BodyScript.RagdollState)reader.ReadByte();
                 remoteCanBeGrabbed = reader.ReadBoolean();

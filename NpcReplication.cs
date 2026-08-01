@@ -589,6 +589,16 @@ internal sealed class NpcReplication : MonoBehaviour
         catch (IOException) { return false; }
     }
 
+    private static float Alertness(BodyScript body)
+    {
+        if (body == null) return 0f;
+        var root = NpcRoot(body);
+        if (root == null) return 0f;
+        foreach (var ai in root.GetComponentsInChildren<AIScript>(true))
+            if (ai != null && ai.body == body) return Mathf.Clamp01(ai.susness);
+        return 0f;
+    }
+
     private void WriteState(BinaryWriter writer, string id, BodyScript body, bool includeIdentity,
         ref NpcWireBreakdown breakdown)
     {
@@ -617,6 +627,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 writer.Write(body.noLegs);
                 writer.Write(body.deHeaded);
                 writer.Write(body.burnIntensity);
+                writer.Write(Alertness(body));
                 var destroyOnDeath = layout.DestroyOnDeath;
                 writer.Write((ushort)destroyOnDeath.Count);
                 foreach (GameObject item in destroyOnDeath) writer.Write(item != null && item.activeSelf);
@@ -810,7 +821,8 @@ internal sealed class NpcReplication : MonoBehaviour
             IsInWater = reader.ReadBoolean(),
             NoLegs = reader.ReadBoolean(),
             DeHeaded = reader.ReadBoolean(),
-            BurnIntensity = reader.ReadSingle()
+            BurnIntensity = reader.ReadSingle(),
+            Alertness = reader.ReadSingle()
         };
         var deathObjectCount = reader.ReadUInt16();
         state.DeathObjects = new bool[deathObjectCount];
@@ -1050,7 +1062,7 @@ internal sealed class NpcReplication : MonoBehaviour
         }
         foreach (var behaviour in proxy.Root.GetComponentsInChildren<MonoBehaviour>(true))
         {
-            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is ScarfPhysics) continue;
+            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is ScarfPhysics || behaviour is SusnessShow) continue;
             if (!proxy.Behaviours.ContainsKey(behaviour)) proxy.Behaviours.Add(behaviour, behaviour.enabled);
             behaviour.enabled = false;
         }
@@ -1099,6 +1111,8 @@ internal sealed class NpcReplication : MonoBehaviour
         body.noLegs = state.NoLegs;
         body.deHeaded = state.DeHeaded;
         body.burnIntensity = state.BurnIntensity;
+        foreach (var ai in proxy.Root.GetComponentsInChildren<AIScript>(true))
+            if (ai != null && ai.body == body) ai.susness = state.Alertness;
         if (body.limbMat != null) body.limbMat.SetFloat("BurnIntensity", state.BurnIntensity);
         var destroyOnDeath = body.destroyOnDeath;
         for (var index = 0; index < state.DeathObjects.Length && index < destroyOnDeath.Count; index++)
@@ -2597,6 +2611,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public bool NoLegs;
         public bool DeHeaded;
         public float BurnIntensity;
+        public float Alertness;
         public bool[] DeathObjects = new bool[0];
         public Pose Body;
         public TransformPose Arms;
