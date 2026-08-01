@@ -96,12 +96,23 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         new Dictionary<ushort, NetworkAvatarReplication>();
     private static readonly Dictionary<int, BodyScript> lastDamageSources =
         new Dictionary<int, BodyScript>();
+    private static readonly Dictionary<int, string> lastDamageWeapons =
+        new Dictionary<int, string>();
+    private static readonly Dictionary<int, float> lastDamageSourceTimes =
+        new Dictionary<int, float>();
+    private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses =
+        new Dictionary<int, PlayerDeathCause>();
+    private static readonly Dictionary<int, float> environmentalDeathCauseTimes =
+        new Dictionary<int, float>();
+    private static readonly Dictionary<int, PlayerDeathCause> deathCauses =
+        new Dictionary<int, PlayerDeathCause>();
     private static readonly HashSet<int> announcedDeaths = new HashSet<int>();
     private static BodyScript suppressNpcKillEffectFor;
     private bool coordinator;
     private ushort remotePeerId;
     private float lastRemoteHealth;
     private bool lastRemoteAlive = true;
+    private PlayerDeathCause lastRemoteDeathCause;
     private static BodyScript currentShooter;
     private static ShotState activeShotState;
     private static RocketProjectile activeRocketProjectile;
@@ -304,15 +315,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (victim == null) return;
         if (victim.isAlive) announcedDeaths.Remove(victim.GetInstanceID());
+        var explosion = activeShotState != null && activeShotState.IsExplosion;
+        if (explosion) RecordEnvironmentalDeathCause(victim, PlayerDeathCause.Explosion);
         if (currentShooter == null || currentShooter == victim) return;
-        lastDamageSources[victim.GetInstanceID()] = currentShooter;
+        SetDamageSource(victim, currentShooter,
+            explosion ? WeaponName(currentShooter.weapon) : ActiveWeaponName(currentShooter));
     }
 
     internal static void RecordDamageSource(BodyScript victim, BodyScript source)
     {
         if (victim == null) return;
         if (victim.isAlive) announcedDeaths.Remove(victim.GetInstanceID());
-        if (source != null && source != victim) lastDamageSources[victim.GetInstanceID()] = source;
+        if (source != null && source != victim) SetDamageSource(victim, source, WeaponName(source.weapon));
     }
 
     internal static BodyScript DamageSourceFor(BodyScript victim)
@@ -320,6 +334,114 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (victim == null) return null;
         BodyScript source;
         return lastDamageSources.TryGetValue(victim.GetInstanceID(), out source) ? source : null;
+    }
+
+    internal static string DamageWeaponFor(BodyScript victim)
+    {
+        if (victim == null) return "";
+        string weapon;
+        return lastDamageWeapons.TryGetValue(victim.GetInstanceID(), out weapon) ? weapon : "";
+    }
+
+    private static void SetDamageSource(BodyScript victim, BodyScript source, string weaponName)
+    {
+        var id = victim.GetInstanceID();
+        lastDamageSources[id] = source;
+        lastDamageSourceTimes[id] = Time.unscaledTime;
+        if (string.IsNullOrEmpty(weaponName)) lastDamageWeapons.Remove(id);
+        else lastDamageWeapons[id] = weaponName;
+    }
+
+    private static string ActiveWeaponName(BodyScript source)
+    {
+        return activeShotState != null && activeShotState.Weapon != null &&
+            activeShotState.Weapon.body == source ? WeaponName(activeShotState.Weapon) : "";
+    }
+
+    private static string WeaponName(WeaponScript weapon)
+    {
+        return weapon == null || weapon.stats == null || string.IsNullOrWhiteSpace(weapon.stats.name)
+            ? "" : weapon.stats.name.Replace("(Clone)", "").Trim();
+    }
+
+    internal static void CaptureDeathCause(BodyScript body)
+    {
+        if (body == null) return;
+        var id = body.GetInstanceID();
+        float damageTime;
+        if (!lastDamageSourceTimes.TryGetValue(id, out damageTime) ||
+            Time.unscaledTime - damageTime > 0.25f)
+        {
+            lastDamageSources.Remove(id);
+            lastDamageWeapons.Remove(id);
+            lastDamageSourceTimes.Remove(id);
+        }
+        PlayerDeathCause cause;
+        float environmentalTime;
+        if (environmentalDeathCauses.TryGetValue(id, out cause) &&
+            environmentalDeathCauseTimes.TryGetValue(id, out environmentalTime) &&
+            Time.unscaledTime - environmentalTime <= 0.5f) { }
+        else
+        {
+            environmentalDeathCauses.Remove(id);
+            environmentalDeathCauseTimes.Remove(id);
+            cause = PlayerDeathCause.Unknown;
+            if (body.burnIntensity > 0.01f) cause = PlayerDeathCause.Fire;
+            else if (body.oxygen <= 0.01f && body.headInWater) cause = PlayerDeathCause.Drowning;
+            else if (body.oxygen <= 0.01f && body.forcedOxyLoss > 0) cause = PlayerDeathCause.Suffocation;
+            else if (body.fallDamageCooldown > 0f) cause = PlayerDeathCause.Fall;
+        }
+        deathCauses[id] = cause;
+    }
+
+    internal static void RecordSawDamage(SawScript saw, Collision2D collision)
+    {
+        if (saw == null || collision == null) return;
+        var limb = collision.gameObject.GetComponent<LimbScript>();
+        var body = limb == null ? collision.gameObject.GetComponent<BodyScript>() : limb.body;
+        RecordEnvironmentalDeathCause(body, PlayerDeathCause.Saw);
+    }
+
+    internal static void RecordAcidDamage(WaterScript water, Collider2D collision)
+    {
+        if (water == null || water.damagePerSecond <= 0f || collision == null) return;
+        var limb = collision.GetComponent<LimbScript>();
+        RecordEnvironmentalDeathCause(limb == null ? null : limb.body, PlayerDeathCause.Acid);
+    }
+
+    internal static bool HandleClientRestart()
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
+        KillLocalPlayer(PlayerDeathCause.SelfKill);
+        return false;
+    }
+
+    internal static bool KillLocalPlayer(PlayerDeathCause cause)
+    {
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        if (body == null || !body.isAlive) return false;
+        RecordEnvironmentalDeathCause(body, cause);
+        body.Death();
+        return true;
+    }
+
+    private static void RecordEnvironmentalDeathCause(BodyScript body, PlayerDeathCause cause)
+    {
+        if (body == null) return;
+        var id = body.GetInstanceID();
+        environmentalDeathCauses[id] = cause;
+        environmentalDeathCauseTimes[id] = Time.unscaledTime;
+        lastDamageSources.Remove(id);
+        lastDamageWeapons.Remove(id);
+        lastDamageSourceTimes.Remove(id);
+    }
+
+    internal static PlayerDeathCause DeathCauseFor(BodyScript body)
+    {
+        if (body == null) return PlayerDeathCause.Unknown;
+        PlayerDeathCause cause;
+        return deathCauses.TryGetValue(body.GetInstanceID(), out cause) ? cause : PlayerDeathCause.Unknown;
     }
 
     internal static void RouteNpcKillScreenEffect(BodyScript victim)
@@ -352,6 +474,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (victim.isAlive)
         {
             announcedDeaths.Remove(id);
+            deathCauses.Remove(id);
+            lastDamageSources.Remove(id);
+            lastDamageWeapons.Remove(id);
+            lastDamageSourceTimes.Remove(id);
+            environmentalDeathCauses.Remove(id);
+            environmentalDeathCauseTimes.Remove(id);
             return false;
         }
         return announcedDeaths.Add(id);
@@ -539,7 +667,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
         PlayerDamagePacket playerDamage;
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
+        {
+            RecordDamageSource(player.bodyScript, RemoteBodyForPeer(senderId));
             ApplyPlayerDamage(player.bodyScript, PacketPayload(playerDamage));
+        }
         PlayerDamagePacket pvpDamage;
         while (MultiplayerSession.TryTakePvpDamage(out senderId, out pvpDamage))
             ApplyPvpDamage(player.bodyScript, senderId, pvpDamage);
@@ -1022,6 +1153,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             sectionStarted = writer.BaseStream.Position;
             var health = body.health;
             var isAlive = body.isAlive;
+            var deathCause = DeathCauseFor(body);
             var stamina = body.stamina;
             var controlState = (byte)body.controlState;
             var canBeGrabbed = CanGrabOnlyState(body);
@@ -1079,6 +1211,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             sectionStarted = writer.BaseStream.Position;
             writer.Write(includeVisualState);
             if (includeVisualState) WriteVisualState(writer, visualState);
+            writer.Write((byte)deathCause);
             breakdown.Visual += (int)(writer.BaseStream.Position - sectionStarted);
             var packet = stream.ToArray();
             AddAvatarWireBreakdown(breakdown);
@@ -1089,7 +1222,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 (PlayerSnapshotVisualState?)null;
             return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
                 (byte)body.CurrentState, body.isRight, isReflected, isActive, headRotation, coreBody, health,
-                isAlive, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
+                isAlive, deathCause, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
                 armsTransform, gunTransformState, gunAnimationTransformState, weaponTransformState, limbStates,
                 tailBaseStates, tailStates, weaponSlot, weaponAmmo, weaponSpriteId, inventoryIds, inventoryChanged,
                 scarfState, weaponLaserState, levitatorLaserState, crystalTongueState, includeVisualState,
@@ -1282,13 +1415,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 var wasRemoteAlive = lastRemoteAlive;
                 remoteBody.health = remoteHealth;
                 remoteBody.isAlive = reader.ReadBoolean();
+                lastRemoteDeathCause = snapshot.DeathCause;
                 remoteBody.stamina = reader.ReadSingle();
                 remoteBody.controlState = (BodyScript.RagdollState)reader.ReadByte();
                 remoteCanBeGrabbed = reader.ReadBoolean();
                 lastRemoteHealth = remoteBody.health;
                 lastRemoteAlive = remoteBody.isAlive;
-                if (MultiplayerSession.IsHost && wasRemoteAlive && !lastRemoteAlive)
-                    ClientNpcDeathPatch.Announce(remoteBody);
                 if (lastRemoteAlive && !wasRemoteAlive)
                 {
                     remoteDeathDropSpawned = false;
@@ -2518,7 +2650,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     internal static ShotState BeginProjectileExplosion(GameObject projectile)
     {
-        var state = new ShotState { PreviousShooter = currentShooter };
+        var state = new ShotState
+        {
+            PreviousShooter = currentShooter,
+            PreviousShotState = activeShotState,
+            IsExplosion = true
+        };
+        activeShotState = state;
         currentShooter = ProjectileOwner(projectile);
         return state;
     }
@@ -3356,6 +3494,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         internal BodyScript PreviousShooter;
         internal ShotState PreviousShotState;
         internal WeaponScript Weapon;
+        internal bool IsExplosion;
         internal int AmmoBefore;
         internal int SpreadSeed;
         internal int SpreadIndex;

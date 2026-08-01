@@ -337,6 +337,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdateChat(MultiplayerHud hud)
     {
+        chatText.richText = true;
         var entries = hud.ChatHistory;
         var start = hud.ChatOpen ? Mathf.Max(0, entries.Count - 9) : Mathf.Max(0, entries.Count - 5);
         var text = "";

@@ -600,6 +600,7 @@ internal static class ClientNpcDeathPatch
 {
     private static bool Prefix(BodyScript __instance)
     {
+        NetworkAvatarReplication.CaptureDeathCause(__instance);
         if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer)
             __instance.dropWeapon = false;
         if (NetworkAvatarReplication.BlockLocalRespawnDeath(__instance)) return false;
@@ -622,22 +623,28 @@ internal static class ClientNpcDeathPatch
         return __exception;
     }
 
-    internal static void Announce(BodyScript __instance)
+    internal static void Announce(BodyScript __instance, bool allowRemoteReplica = false,
+        PlayerDeathCause deathCause = PlayerDeathCause.Unknown)
     {
-        if (!MultiplayerSession.IsHosting || __instance == null ||
+        if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || __instance == null ||
             NetworkAvatarReplication.IsCreatingRemoteAvatar() ||
-            NetworkAvatarReplication.IsRemoteReplicaBody(__instance) ||
+            (!allowRemoteReplica && NetworkAvatarReplication.IsRemoteReplicaBody(__instance)) ||
             (!__instance.isPlayer && !NpcReplication.IsHostNpc(__instance)) ||
             !NetworkAvatarReplication.BeginDeathAnnouncement(__instance)) return;
+        var localPlayer = PlayerScript.player;
+        if (!MultiplayerSession.IsHosting && (localPlayer == null || localPlayer.bodyScript != __instance)) return;
         var victimName = DeathDisplayName(__instance);
         var killer = NetworkAvatarReplication.DamageSourceFor(__instance);
-        var message = killer == null
-            ? victimName + " died."
-            : DeathDisplayName(killer) + " killed " + victimName + ".";
+        if (deathCause == PlayerDeathCause.Unknown)
+            deathCause = NetworkAvatarReplication.DeathCauseFor(__instance);
+        var weaponName = NetworkAvatarReplication.DamageWeaponFor(__instance);
+        var message = KillMessageService.Create(deathCause, victimName,
+            killer == null ? "" : DeathDisplayName(killer), weaponName);
         MultiplayerHud.AddSystemMessage(message);
         ChatPacket packet;
         if (ChatService.TryCreate(message, true, out packet)) MultiplayerSession.Send(packet);
     }
+
 
     private static string DeathDisplayName(BodyScript body)
     {
@@ -727,6 +734,7 @@ internal static class ClientSawCollisionEnterPatch
 {
     private static bool Prefix(SawScript __instance, Collision2D collision)
     {
+        NetworkAvatarReplication.RecordSawDamage(__instance, collision);
         return ClientSawCollisionPatch.ShouldRun(__instance, collision);
     }
 }
@@ -736,7 +744,17 @@ internal static class ClientSawCollisionStayPatch
 {
     private static bool Prefix(SawScript __instance, Collision2D collision)
     {
+        NetworkAvatarReplication.RecordSawDamage(__instance, collision);
         return ClientSawCollisionPatch.ShouldRun(__instance, collision);
+    }
+}
+
+[HarmonyPatch(typeof(WaterScript), "OnTriggerStay2D")]
+internal static class AcidDeathCausePatch
+{
+    private static void Prefix(WaterScript __instance, Collider2D collision)
+    {
+        NetworkAvatarReplication.RecordAcidDamage(__instance, collision);
     }
 }
 
@@ -967,6 +985,47 @@ internal static class HostSceneReloadNotifyPatch
         if (!MultiplayerSession.IsHosting) return;
         if (scene != SceneManager.GetActiveScene().name) return;
         MultiplayerSession.NotifyHostSceneReload(scene);
+    }
+}
+
+[HarmonyPatch(typeof(GameManager), "Restart")]
+internal static class ClientRestartAsDeathPatch
+{
+    private static bool Prefix()
+    {
+        return NetworkAvatarReplication.HandleClientRestart();
+    }
+}
+
+[HarmonyPatch(typeof(PlayerScript), "Update")]
+internal static class ClientRestartKeyPatch
+{
+    private static void Prefix(PlayerScript __instance)
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || __instance == null ||
+            GameManager.main == null || GameManager.main.paused || __instance.keys == null) return;
+        KeyCode restartKey;
+        if (!__instance.keys.TryGetValue("Restart", out restartKey) || !Input.GetKeyDown(restartKey)) return;
+        NetworkAvatarReplication.KillLocalPlayer(PlayerDeathCause.SelfKill);
+        ClientRestartSceneLoadPatch.SuppressNextLoad();
+    }
+}
+
+[HarmonyPatch(typeof(SceneLoader), "LoadScene")]
+internal static class ClientRestartSceneLoadPatch
+{
+    private static bool suppressNextLoad;
+
+    internal static void SuppressNextLoad()
+    {
+        suppressNextLoad = true;
+    }
+
+    private static bool Prefix()
+    {
+        if (!suppressNextLoad) return true;
+        suppressNextLoad = false;
+        return false;
     }
 }
 

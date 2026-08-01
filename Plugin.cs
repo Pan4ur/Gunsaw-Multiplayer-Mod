@@ -643,13 +643,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase))
         {
-            var player = PlayerScript.player;
-            if (player == null || player.bodyScript == null || !player.bodyScript.isAlive)
+            if (!NetworkAvatarReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
             {
                 status = "You are dead already (maybe inside only?)";
                 return true;
             }
-            player.bodyScript.Death();
             return true;
         }
 

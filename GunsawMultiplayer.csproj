@@ -9,6 +9,7 @@
     <AssemblyName>GunsawMultiplayer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="killmessages.json" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
     <Reference Include="BepInEx">
       <HintPath>$(GameDirectory)/BepInEx/core/BepInEx.dll</HintPath>

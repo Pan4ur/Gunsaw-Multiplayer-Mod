@@ -1,0 +1,167 @@
+{
+  "categories": [
+    {
+      "name": "fall",
+      "messages": [
+        "%player% hit the ground too hard.",
+        "%player% swam out of a waterfall and fell to death.",
+        "%player% broke apart from falling.",
+        "%player% fell and was reduced into a jittering flesh heap.",
+        "%player% broke their neck, and the rest of their body.",
+        "%player% fell to death.",
+        "%player% fell and crushed their insides with their legbones.",
+        "%player% tripped too hard and died.",
+        "%player% sprained their entire body and instantly died.",
+        "%player% fell and was reduced into a jittering flesh pile.",
+        "%player% lost grip of vines and fell to death.",
+        "%player% smashed themselves and died trying to fly with elytra.",
+        "%player% lost grip of a ladder and fell to death."
+      ]
+    },
+    {
+      "name": "fire",
+      "messages": [
+        "%player% burned apart.",
+        "%player% burned to death.",
+        "%player% melted by fire.",
+        "%player% died in fire somehow.",
+        "%player% combusted.",
+        "%player% turned into ash.",
+        "%player%'s fur turned black."
+      ]
+    },
+    {
+      "name": "drowning",
+      "messages": [
+        "%player% drowned.",
+        "%player% forgot to breathe air.",
+        "%player% couldn't swim up quickly enough.",
+        "%player% suffocated in water.",
+        "%player% suffocated.",
+        "%player% choked to death."
+      ]
+    },
+    {
+      "name": "explosion",
+      "messages": [
+        "%player% was violently separated by explosives.",
+        "%player% was torn into unrecognizable pieces by an explosion.",
+        "%player% was turned into a painting of gore by explosives.",
+        "%player% was reduced to a bloody mist and scattered bone.",
+        "%player%'s flesh was stripped to the bone by a brutal detonation.",
+        "%player% didn't even leave enough behind for a proper burial.",
+        "%player% was completely obliterated by the blast."
+      ]
+    },
+    {
+      "name": "player_explosion",
+      "messages": [
+        "%player% was blown apart by %killer%.",
+        "%player% was blown up by %killer%.",
+        "%player% was painted across the walls by %killer%'s explosives.",
+        "%player% was violently dismembered by %killer%'s detonation.",
+        "%player% was shredded into meat by %killer%'s explosive trap.",
+        "%player% had their body scattered in all directions by %killer%.",
+        "%player% was liquefied by the high-yield blast from %killer%.",
+        "%player% was turned into absolute carnage by %killer%."
+      ]
+    },
+    {
+      "name": "self_kill",
+      "messages": [
+        "%player% had their life instantly removed.",
+        "%player% shot themselves.",
+        "%player% destroyed themselves."
+      ]
+    },
+    {
+      "name": "saw",
+      "messages": [
+        "%player% was cut in half with a saw.",
+        "%player% got chopped up in the blender.",
+        "%player% was shredded by a saw."
+      ]
+    },
+    {
+      "name": "acid",
+      "messages": [
+        "%player% dissolved in acid.",
+        "%player% got the wrong pool.",
+        "%player% was doused in acid.",
+        "%player% took an acid shower"
+      ]
+    },
+    {
+      "name": "player_kill",
+      "messages": [
+        "%player% was destroyed by %killer% with an %weapon%.",
+        "%player% was turned into bloody rain by %killer% with an %weapon%.",
+        "%player% was deleted by %killer% with an %weapon%.",
+        "%player% was turned into yellow dust by %killer% with an %weapon%.",
+        "%player% was utterly destroyed by %killer% with an %weapon%.",
+        "%player% was removed by %killer% with an %weapon%.",
+        "%player% was violently assassinated by %killer% with an %weapon%.",
+        "%killer% chopped %player% up with %weapon%.",
+        "%player% was slain by %killer% using %weapon%.",
+        "%killer% pummeled %player% to death using %weapon%.",
+        "%killer% crushed %player% using %weapon%.",
+        "%killer% slayed %player% with %weapon%.",
+        "%killer% murdered %player% using %weapon%.",
+        "%killer% assassinated %player% using %weapon%.",
+        "%killer% put %weapon% through %player%'s body.",
+        "%killer% assassinated %player% with %weapon%.",
+        "%killer% exterminated %player% with %weapon%.",
+        "%killer% disintegrated %player% with %weapon%.",
+        "%player% was assassinated by %killer% using %weapon%.",
+        "%killer% terminated %player% with %weapon%.",
+        "%killer% stabbed %player% using %weapon%.",
+        "%killer% exterminated %player% using %weapon%.",
+        "%killer% pummeled %player% to death with %weapon%.",
+        "%killer% murdered %player% with %weapon%.",
+        "%killer% obliterated %player% using %weapon%.",
+        "%player% was shot by %killer% using %weapon%.",
+        "%killer% chopped %player% up using %weapon%.",
+        "%killer% ravaged %player% using %weapon%.",
+        "%killer% smashed %player% with %weapon%.",
+        "%killer% used %weapon% to separate %player%.",
+        "%killer% broke %player% using %weapon%.",
+        "%killer% annihilated %player% using %weapon%.",
+        "%killer% ruined %player% with %weapon%.",
+        "%killer% smashed %player% using %weapon%.",
+        "%killer% butchered %player% with %weapon%.",
+        "%killer% broke %player% with %weapon%.",
+        "%killer% unmade %player% with %weapon%.",
+        "%killer% wrecked %player% with %weapon%.",
+        "%killer% abused %weapon% on %player%.",
+        "%killer% killed %player% using %weapon%.",
+        "%killer% crumbled %player% using %weapon%.",
+        "%killer% separated %player% using %weapon%.",
+        "%killer% butchered %player% using %weapon%.",
+        "%killer% killed %player% with %weapon%.",
+        "%killer% wrecked %player% using %weapon%.",
+        "%killer% demolished %player% with %weapon%.",
+        "%killer% disintegrated %player% using %weapon%.",
+        "%killer% destroyed %player% using %weapon%.",
+        "%killer% demolished %player% using %weapon%.",
+        "%killer% cracked %player% open with %weapon%.",
+        "%killer% liquefied %player% with %weapon%.",
+        "%killer% shoved %weapon% down %player%'s throat.",
+        "%killer% liquefied %player% using %weapon%.",
+        "%killer% ravaged %player% with %weapon%.",
+        "%killer% mashed %player% with %weapon%.",
+        "%killer% stabbed %player% with %weapon%.",
+        "%killer% ruined %player% using %weapon%.",
+        "%killer% crumbled %player% with %weapon%.",
+        "%killer% cracked %player% open using %weapon%.",
+        "%killer% violently combined %weapon% and %player%.",
+        "%killer% executed %player% with %weapon%.",
+        "%killer% separated %player% with %weapon%.",
+        "%killer% slayed %player% using %weapon%.",
+        "%killer% annihilated %player% with %weapon%.",
+        "%killer% tore %player% apart using %weapon%.",
+        "%killer% executed %player% using %weapon%.",
+        "%player% was ripped and smashed apart by %killer% with %weapon%."
+      ]
+    }
+  ]
+}

@@ -1,3 +1,17 @@
+internal enum PlayerDeathCause : byte
+{
+    Unknown,
+    Fire,
+    Drowning,
+    Suffocation,
+    Fall,
+    Saw,
+    Acid,
+    Restart,
+    SelfKill,
+    Explosion
+}
+
 internal readonly struct PlayerSnapshotPacket : INetworkPacket
 {
     internal readonly int Sequence;
@@ -19,6 +33,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal readonly PlayerSnapshotTransform WeaponTransform;
     internal readonly float Health;
     internal readonly bool IsAlive;
+    internal readonly PlayerDeathCause DeathCause;
     internal readonly float Stamina;
     internal readonly byte ControlState;
     internal readonly bool CanBeGrabbed;
@@ -39,7 +54,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
 
     internal PlayerSnapshotPacket(int sequence, bool inVehicle, ulong vehicleId,
         bool isVehicleDriver, byte entityState, bool isRight, bool isReflected, bool isActive,
-        float headRotation, PlayerSnapshotBodyState body, float health, bool isAlive, float stamina,
+        float headRotation, PlayerSnapshotBodyState body, float health, bool isAlive, PlayerDeathCause deathCause, float stamina,
         byte controlState, bool canBeGrabbed, float burnIntensity, bool hasNoLegs, bool isDecapitated,
         PlayerSnapshotTransform armsTransform, PlayerSnapshotTransform gunTransform,
         PlayerSnapshotTransform gunAnimationTransform, PlayerSnapshotTransform weaponTransform,
@@ -61,6 +76,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         Body = body;
         Health = health;
         IsAlive = isAlive;
+        DeathCause = deathCause;
         Stamina = stamina;
         ControlState = controlState;
         CanBeGrabbed = canBeGrabbed;
@@ -115,6 +131,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         WriteLine(ref writer, CrystalTongue);
         writer.WriteBoolean(IncludesVisualState);
         if (IncludesVisualState) WriteVisualState(ref writer, VisualState.Value);
+        writer.WriteByte((byte)DeathCause);
     }
 
     private static void WriteBody(ref PacketWriter writer, PlayerSnapshotBodyState value)
@@ -163,8 +180,9 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var weaponLaser = ReadLine(ref reader); var levitatorLaser = ReadLine(ref reader); var scarf = ReadScarf(ref reader);
         var crystalTongue = ReadLine(ref reader);
         var includesVisualState = reader.ReadBoolean(); var visualState = includesVisualState ? (PlayerSnapshotVisualState?)ReadVisualState(ref reader) : null;
+        var deathCause = reader.Remaining > 0 ? (PlayerDeathCause)reader.ReadByte() : PlayerDeathCause.Unknown;
         return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight, isReflected, isActive,
-            headRotation, body, health, isAlive, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
+            headRotation, body, health, isAlive, deathCause, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
             arms, gun, gunAnimation, weaponTransform, limbs, tailBases, tails, weaponSlot, weaponAmmo, weaponSpriteId,
             inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, crystalTongue, includesVisualState, visualState);
     }
