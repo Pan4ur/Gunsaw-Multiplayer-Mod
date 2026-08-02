@@ -404,8 +404,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
         MultiplayerDiagnosticLog.Write(isHost, "WARN", message);
     }
 
-    private static void SendPacket(byte[] packet, ushort targetId = 0, bool? priority = null,
-        bool allowReliable = true, bool sendImmediately = false)
+    private static void SendPacket(byte[] packet, ushort targetId = 0, bool? priority = null, bool allowReliable = true, bool sendImmediately = false)
     {
         if (packet == null || packet.Length == 0) return;
         if (socket == null || !relayConnected) throw new IOException("Relay connection is closed.");
@@ -427,7 +426,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
                 var targetPeers = PeerIds();
                 if (targetPeers.Length > 0)
                 {
-                    foreach (var peerId in targetPeers) SendPacket(packet, peerId, priority, true);
+                    foreach (var peerId in targetPeers) SendPacket(packet, peerId, priority);
                     return;
                 }
             }
@@ -740,13 +739,4 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
         if (cancellation != null) cancellation.Dispose();
         sendThread = null;
     }
-
-    private static byte[] PacketWithPayload(byte[] header, byte[] payload)
-    {
-        PacketHeader packetHeader;
-        return PacketHeader.TryRead(header, out packetHeader)
-            ? PacketCodec.Encode(packetHeader.Type, payload)
-            : new byte[0];
-    }
-
 }

@@ -519,16 +519,6 @@ internal static partial class MultiplayerSession
         receivedChatOrder.Clear();
     }
 
-    private static void EnqueuePayload(Queue<PeerPayload> queue, ushort peerId, byte[] data)
-    {
-        lock (statusLock)
-        {
-            TouchPeerLocked(peerId, null);
-            while (queue.Count >= MaxPendingEventPackets) queue.Dequeue();
-            queue.Enqueue(new PeerPayload { PeerId = peerId, Data = data });
-        }
-    }
-
     private static void EnqueueWorldInteraction(ushort peerId, WorldInteractionPacket packet)
     {
         lock (statusLock)

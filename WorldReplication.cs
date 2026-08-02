@@ -1,9 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
-using BepInEx;
-using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -14,13 +9,13 @@ internal sealed class WorldReplication : MonoBehaviour
     // пиздец почему это не енам
     internal const byte WeaponPickup = 1;
     internal const byte WeaponAmmoGet = 2;
-    internal const byte ButtonActivate = 3;
-    internal const byte DoorActivate = 4;
-    internal const byte ZoneActivate = 5;
-    internal const byte GlassDamage = 6;
-    internal const byte VehicleDamage = 7;
-    internal const byte DroneDamage = 8;
-    internal const byte WeaponDrop = 9;
+    private const byte ButtonActivate = 3;
+    private const byte DoorActivate = 4;
+    private const byte ZoneActivate = 5;
+    private const byte GlassDamage = 6;
+    private const byte VehicleDamage = 7;
+    private const byte DroneDamage = 8;
+    private const byte WeaponDrop = 9;
 
     // Ill just leave it like this for now (It's becoming painful to drive the karts)
     private const float SnapshotInterval = 1f / 50f;
@@ -28,112 +23,86 @@ internal sealed class WorldReplication : MonoBehaviour
     private const float FullSnapshotInterval = 1f;
     private const float ClientAuthorityGrace = 0.35f;
     private const float ContactStateInterval = 0.1f;
-    private const bool DiagnosticsEnabled = false;
-    private readonly Dictionary<string, Rigidbody2D> bodies = new Dictionary<string, Rigidbody2D>();
-    private readonly Dictionary<Rigidbody2D, string> ids = new Dictionary<Rigidbody2D, string>();
-    private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
-    private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
-    private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons =
-        new Dictionary<Rigidbody2D, DroppedWeapon>();
-    private readonly Dictionary<Rigidbody2D, BodyLayout> bodyLayouts =
-        new Dictionary<Rigidbody2D, BodyLayout>();
-    private readonly HashSet<Rigidbody2D> interactivePropBodies = new HashSet<Rigidbody2D>();
-    private readonly Dictionary<string, float> pendingDestroyedWeaponPickups =
-        new Dictionary<string, float>();
-    private readonly HashSet<string> clientDestroyedBodyIds = new HashSet<string>();
-    private readonly Dictionary<Rigidbody2D, State> received = new Dictionary<Rigidbody2D, State>();
-    private readonly Dictionary<string, ClientBodyState> pushes = new Dictionary<string, ClientBodyState>();
-    private readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new Dictionary<Rigidbody2D, float>();
-    private readonly Dictionary<string, PropAuthority> propAuthorities = new Dictionary<string, PropAuthority>();
-    private readonly Dictionary<string, PropTrace> propTraces = new Dictionary<string, PropTrace>();
+    
+    private readonly Dictionary<string, Rigidbody2D> bodies = new();
+    private readonly Dictionary<Rigidbody2D, string> ids = new();
+    private readonly Dictionary<string, ulong> wireIds = new();
+    private readonly Dictionary<ulong, string> idsByWire = new();
+    private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons = new ();
+    private readonly Dictionary<Rigidbody2D, BodyLayout> bodyLayouts = new();
+    private readonly HashSet<Rigidbody2D> interactivePropBodies = new();
+    private readonly Dictionary<string, float> pendingDestroyedWeaponPickups = new();
+    private readonly HashSet<string> clientDestroyedBodyIds = new();
+    private readonly Dictionary<Rigidbody2D, State> received = new();
+    private readonly Dictionary<string, ClientBodyState> pushes = new();
+    private readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
+    private readonly Dictionary<string, PropAuthority> propAuthorities = new();
     private readonly ContactPoint2D[] contactBuffer = new ContactPoint2D[32];
-    private readonly Dictionary<Rigidbody2D, float> nextContactStateAt = new Dictionary<Rigidbody2D, float>();
-    private readonly Dictionary<string, float> damage = new Dictionary<string, float>();
-    private readonly Dictionary<string, float> nextDamage = new Dictionary<string, float>();
+    private readonly Dictionary<Rigidbody2D, float> nextContactStateAt = new();
+    private readonly Dictionary<string, float> damage = new();
+    private readonly Dictionary<string, float> nextDamage = new();
     private int nextRuntimeId;
-    private readonly Dictionary<Rigidbody2D, LocalSettings> localSettings = new Dictionary<Rigidbody2D, LocalSettings>();
-    private readonly HashSet<Rigidbody2D> clientCreatedBodies = new HashSet<Rigidbody2D>();
-    private readonly HashSet<Rigidbody2D> clientBoundDroppedWeapons = new HashSet<Rigidbody2D>();
-    private readonly HashSet<Rigidbody2D> networkCrateDebrisBodies = new HashSet<Rigidbody2D>();
-    private readonly Dictionary<CrateScript, float> networkCrateDebrisDamageUntil = new Dictionary<CrateScript, float>();
-    private readonly Dictionary<GameObject, bool> clientHiddenObjects = new Dictionary<GameObject, bool>();
-    private readonly Dictionary<MonoBehaviour, bool> clientControllers = new Dictionary<MonoBehaviour, bool>();
-    private readonly HashSet<Rigidbody2D> initializedBodies = new HashSet<Rigidbody2D>();
-    private readonly Dictionary<string, ButtonScript> buttons = new Dictionary<string, ButtonScript>();
-    private readonly Dictionary<ButtonScript, string> buttonIds = new Dictionary<ButtonScript, string>();
-    private readonly Dictionary<string, uint> buttonActivations = new Dictionary<string, uint>();
-    private readonly Dictionary<string, uint> receivedButtonActivations = new Dictionary<string, uint>();
-    private readonly Dictionary<string, float> nextButtonActivation = new Dictionary<string, float>();
-    private readonly Dictionary<string, QDoorOpen> proximityDoors = new Dictionary<string, QDoorOpen>();
-    private readonly Dictionary<QDoorOpen, string> proximityDoorIds = new Dictionary<QDoorOpen, string>();
-    private readonly Dictionary<string, float> nextDoorActivation = new Dictionary<string, float>();
-    private readonly Dictionary<string, ActivateZoneScript> activationZones = new Dictionary<string, ActivateZoneScript>();
-    private readonly Dictionary<ActivateZoneScript, string> activationZoneIds = new Dictionary<ActivateZoneScript, string>();
-    private readonly Dictionary<string, float> nextZoneActivation = new Dictionary<string, float>();
-    private readonly HashSet<string> activatedZoneIds = new HashSet<string>();
-    private readonly HashSet<string> localZonePrompts = new HashSet<string>();
+    private readonly Dictionary<Rigidbody2D, LocalSettings> localSettings = new();
+    private readonly HashSet<Rigidbody2D> clientCreatedBodies = [];
+    private readonly HashSet<Rigidbody2D> clientBoundDroppedWeapons = [];
+    private readonly HashSet<Rigidbody2D> networkCrateDebrisBodies = [];
+    private readonly Dictionary<CrateScript, float> networkCrateDebrisDamageUntil = new();
+    private readonly Dictionary<GameObject, bool> clientHiddenObjects = new();
+    private readonly Dictionary<MonoBehaviour, bool> clientControllers = new();
+    private readonly HashSet<Rigidbody2D> initializedBodies = [];
+    private readonly Dictionary<string, ButtonScript> buttons = new();
+    private readonly Dictionary<ButtonScript, string> buttonIds = new();
+    private readonly Dictionary<string, uint> buttonActivations = new();
+    private readonly Dictionary<string, uint> receivedButtonActivations = new();
+    private readonly Dictionary<string, float> nextButtonActivation = new();
+    private readonly Dictionary<string, QDoorOpen> proximityDoors = new();
+    private readonly Dictionary<QDoorOpen, string> proximityDoorIds = new();
+    private readonly Dictionary<string, float> nextDoorActivation = new();
+    private readonly Dictionary<string, ActivateZoneScript> activationZones = new();
+    private readonly Dictionary<ActivateZoneScript, string> activationZoneIds = new();
+    private readonly Dictionary<string, float> nextZoneActivation = new();
+    private readonly HashSet<string> activatedZoneIds = [];
+    private readonly HashSet<string> localZonePrompts = [];
     private ActivateZoneScript promptZone;
-
-    internal bool HasActivationPrompt { get { return promptZone != null && MultiplayerSession.IsConnected; } }
-    private readonly Dictionary<string, GlassScript> glasses = new Dictionary<string, GlassScript>();
-    private readonly Dictionary<GlassScript, string> glassIds = new Dictionary<GlassScript, string>();
-    private readonly HashSet<string> destroyedGlass = new HashSet<string>();
-    private readonly Dictionary<string, LampState> lamps = new Dictionary<string, LampState>();
-    private readonly Dictionary<Collider2D, string> lampIds = new Dictionary<Collider2D, string>();
-    private readonly HashSet<string> destroyedLamps = new HashSet<string>();
-    private readonly Dictionary<string, DroneScript> drones = new Dictionary<string, DroneScript>();
-    private readonly Dictionary<DroneScript, string> droneIds = new Dictionary<DroneScript, string>();
-    private readonly HashSet<string> destroyedDrones = new HashSet<string>();
-    private readonly HashSet<Rigidbody2D> droneBodies = new HashSet<Rigidbody2D>();
-    private readonly Dictionary<FireScript, string> fireIds = new Dictionary<FireScript, string>();
-    private readonly Dictionary<string, FireScript> fires = new Dictionary<string, FireScript>();
-    private readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new Dictionary<FireScript, FireLocalSettings>();
-    private readonly HashSet<FireScript> clientCreatedFires = new HashSet<FireScript>();
-    private readonly Dictionary<string, AudioSource> mechanismAudio = new Dictionary<string, AudioSource>();
-    private readonly Dictionary<AudioSource, string> mechanismAudioIds = new Dictionary<AudioSource, string>();
-    private readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new Dictionary<AudioSource, bool>();
-    private readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new Dictionary<AudioSource, DoorScript>();
-    private readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new Dictionary<AudioSource, float>();
-    private readonly HashSet<string> seenSnapshotFires = new HashSet<string>();
-    private readonly HashSet<string> seenSnapshotAudio = new HashSet<string>();
-    private readonly HashSet<SawScript> clientSaws = new HashSet<SawScript>();
+    internal bool HasActivationPrompt => promptZone != null && MultiplayerSession.IsConnected;
+    private readonly Dictionary<string, GlassScript> glasses = new();
+    private readonly Dictionary<GlassScript, string> glassIds = new();
+    private readonly HashSet<string> destroyedGlass = [];
+    private readonly Dictionary<string, LampState> lamps = [];
+    private readonly Dictionary<Collider2D, string> lampIds = new();
+    private readonly HashSet<string> destroyedLamps = [];
+    private readonly Dictionary<string, DroneScript> drones = new();
+    private readonly Dictionary<DroneScript, string> droneIds = new();
+    private readonly HashSet<string> destroyedDrones = [];
+    private readonly HashSet<Rigidbody2D> droneBodies = [];
+    private readonly Dictionary<FireScript, string> fireIds = new();
+    private readonly Dictionary<string, FireScript> fires = new();
+    private readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new();
+    private readonly HashSet<FireScript> clientCreatedFires = [];
+    private readonly Dictionary<string, AudioSource> mechanismAudio = new();
+    private readonly Dictionary<AudioSource, string> mechanismAudioIds = new();
+    private readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new();
+    private readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new();
+    private readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new();
+    private readonly HashSet<string> seenSnapshotFires = [];
+    private readonly HashSet<string> seenSnapshotAudio = [];
+    private readonly HashSet<SawScript> clientSaws = [];
     private byte[] lastSerializedWorld;
     private byte[] lastSerializedEnvironment;
     private byte[] lastReliableEnvironment;
-    private readonly Dictionary<string, byte[]> lastSerializedBodyStates = new Dictionary<string, byte[]>();
-    private readonly Dictionary<string, MemoryStream> bodyStateScratch = new Dictionary<string, MemoryStream>();
-    private readonly Dictionary<string, float> lastChangedBodyAt = new Dictionary<string, float>();
+    private readonly Dictionary<string, byte[]> lastSerializedBodyStates = new();
+    private readonly Dictionary<string, MemoryStream> bodyStateScratch = new();
+    private readonly Dictionary<string, float> lastChangedBodyAt = new();
     private float nextSnapshot;
     private float nextReliableEnvironment;
     private float nextFireRefresh;
     private float nextFireDiscovery;
     private float nextDroppedWeaponIndicatorUpdate;
     private float nextFullWorldSnapshot;
-    private float nextDiagnostics;
-    private float nextManifest;
     private bool wasConnected;
     private bool wasHost;
     private bool discoveredScene;
-    private string activeScene = "";
     private int activeSceneHandle;
-    private string diagnosticPath = "";
-    private int callbackContacts;
-    private int scannedContacts;
-    private int levitatedStates;
-    private int queuedStates;
-    private int sentStates;
-    private int receivedInputPackets;
-    private int appliedInputStates;
-    private int missingInputBodies;
-    private int rejectedInputStates;
-    private int rejectedForeignAuthority;
-    private int rejectedInputDistance;
-    private int weaponRequestsSent;
-    private int weaponRequestsApplied;
-    private int weaponRequestsRejected;
-    private int receivedSnapshotPackets;
-    private int receivedSnapshotStates;
-    private int missingSnapshotBodies;
     private int lastSentPropCount;
     private int lastSentOtherCount;
     private int culledPropCount;
@@ -147,10 +116,6 @@ internal sealed class WorldReplication : MonoBehaviour
     private int sentStatesPerSecond;
     private int receivedPacketsPerSecond;
     private int receivedStatesPerSecond;
-    private string lastQueuedId = "";
-    private string lastMissingInputId = "";
-    private string lastRejectedInputId = "";
-    private string lastMissingSnapshotId = "";
     private float clientFastSerializeState = 0f;
     private Transform localContactRoot;
     private Rigidbody2D[] localContactBodies = new Rigidbody2D[0];
@@ -178,24 +143,18 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    internal int LastSnapshotPropCount { get { return lastSentPropCount; } }
-    internal int LastSnapshotOtherCount { get { return lastSentOtherCount; } }
-    internal int CulledPropCount { get { return culledPropCount; } }
-    internal int CulledOtherCount { get { return culledOtherCount; } }
-    internal int SentPacketsPerSecond { get { return sentPacketsPerSecond; } }
-    internal int SentStatesPerSecond { get { return sentStatesPerSecond; } }
-    internal int ReceivedPacketsPerSecond { get { return receivedPacketsPerSecond; } }
-    internal int ReceivedStatesPerSecond { get { return receivedStatesPerSecond; } }
+    internal int LastSnapshotPropCount => lastSentPropCount;
+    internal int LastSnapshotOtherCount => lastSentOtherCount;
+    internal int CulledPropCount => culledPropCount;
+    internal int CulledOtherCount => culledOtherCount;
+    internal int SentPacketsPerSecond => sentPacketsPerSecond;
+    internal int SentStatesPerSecond => sentStatesPerSecond;
+    internal int ReceivedPacketsPerSecond => receivedPacketsPerSecond;
+    internal int ReceivedStatesPerSecond => receivedStatesPerSecond;
 
     private void Awake()
     {
         Instance = this;
-        if (!DiagnosticsEnabled) return;
-        diagnosticPath = Path.Combine(Paths.BepInExRootPath,
-            "world-sync-" + System.Diagnostics.Process.GetCurrentProcess().Id + ".log");
-        try { File.WriteAllText(diagnosticPath, "Gunsaw Multiplayer world sync diagnostics\n"); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
     }
 
     internal static void TrackDroppedWeapons()
@@ -245,7 +204,6 @@ internal sealed class WorldReplication : MonoBehaviour
         try
         {
         SampleActivity();
-        if (DiagnosticsEnabled) WriteDiagnostics();
         var scene = SceneManager.GetActiveScene();
         var isHost = MultiplayerSession.IsHost;
         var sceneChanged = activeSceneHandle != scene.handle;
@@ -253,7 +211,6 @@ internal sealed class WorldReplication : MonoBehaviour
         if (sceneChanged || roleChanged)
         {
             if (wasConnected) RestoreClientWorld();
-            activeScene = scene.name;
             activeSceneHandle = scene.handle;
             nextSnapshot = 0f;
             discoveredScene = false;
@@ -454,7 +411,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 var body = other.attachedRigidbody;
                 if (body == null || body.bodyType != RigidbodyType2D.Dynamic || !body.simulated ||
                     !ids.ContainsKey(body)) continue;
-                scannedContacts++;
+
                 QueueContactBodyState(body, now);
             }
         }
@@ -513,7 +470,6 @@ internal sealed class WorldReplication : MonoBehaviour
             bodies.Remove(id);
             ids.Remove(body);
             propAuthorities.Remove(id);
-            propTraces.Remove(id);
         }
         droppedWeapons.Remove(body);
         bodyLayouts.Remove(body);
@@ -880,7 +836,6 @@ internal sealed class WorldReplication : MonoBehaviour
         localContactRoot = null;
         localContactBodies = new Rigidbody2D[0];
         propAuthorities.Clear();
-        propTraces.Clear();
         damage.Clear();
         ids.Clear();
         initializedBodies.Clear();
@@ -1266,29 +1221,27 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void ReadSnapshot(byte[] data)
     {
-        receivedSnapshotPackets++;
         try
         {
             var reader = new SnapshotReader(data);
             var sceneEpoch = reader.ReadInt32();
             if (!MultiplayerSession.IsSnapshotEpochCurrent(sceneEpoch)) return;
             var count = reader.ReadUInt16();
-            receivedSnapshotStates += count;
             receivedPacketsWindow++;
             receivedStatesWindow += count;
             var parseStarted = MultiplayerPerformance.StartPhase();
-                for (var index = 0; index < count; index++)
+            for (var index = 0; index < count; index++)
+            {
+                var id = ResolveWireId(reader.ReadUInt64());
+                var decodeStarted = MultiplayerPerformance.StartPhase();
+                var destroyed = reader.ReadBoolean();
+                Rigidbody2D body;
+                if (destroyed)
                 {
-                    var id = ResolveWireId(reader.ReadUInt64());
-                    var decodeStarted = MultiplayerPerformance.StartPhase();
-                    var destroyed = reader.ReadBoolean();
-                    Rigidbody2D body;
-                    if (destroyed)
+                    MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDecode, decodeStarted);
+                    var dispatchStarted = MultiplayerPerformance.StartPhase();
+                    try
                     {
-                        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDecode, decodeStarted);
-                        var dispatchStarted = MultiplayerPerformance.StartPhase();
-                        try
-                        {
                         clientDestroyedBodyIds.Add(id);
                         float pendingUntil;
                         if (pendingDestroyedWeaponPickups.TryGetValue(id, out pendingUntil) &&
@@ -1302,12 +1255,15 @@ internal sealed class WorldReplication : MonoBehaviour
                                 ids.Remove(body);
                                 continue;
                             }
+
                             var crate = body.GetComponentInParent<CrateScript>();
                             if (crate != null && crate.objOnDestroy != null)
                             {
-                                var debris = Instantiate(crate.objOnDestroy, crate.transform.position, crate.transform.rotation);
+                                var debris = Instantiate(crate.objOnDestroy, crate.transform.position,
+                                    crate.transform.rotation);
                                 if (crate.breakType == CrateScript.BreakType.None)
-                                    RegisterCrateDebrisBodies(id, debris.GetComponentsInChildren<Rigidbody2D>(true), true);
+                                    RegisterCrateDebrisBodies(id, debris.GetComponentsInChildren<Rigidbody2D>(true),
+                                        true);
                             }
 
                             var objectToRemove = crate != null ? crate.gameObject : body.gameObject;
@@ -1319,46 +1275,51 @@ internal sealed class WorldReplication : MonoBehaviour
                             {
                                 HideClientObjectHierarchy(objectToRemove);
                             }
+
                             ids.Remove(body);
                         }
-                        bodies.Remove(id);
-                        }
-                        finally
-                        {
-                            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDispatch, dispatchStarted);
-                        }
-                        continue;
-                    }
-                    var isDropped = reader.ReadBoolean();
-                    var isCrate = reader.ReadBoolean();
-                    var cratePrefabName = isCrate ? reader.ReadString() : "";
-                    var state = new State
-                    {
-                        position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-                        rotation = reader.ReadSingle(),
-                        velocity = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-                        angularVelocity = reader.ReadSingle(),
-                        gravityScale = reader.ReadSingle(),
-                        constraints = (RigidbodyConstraints2D)reader.ReadInt32(),
-                        bodyType = (RigidbodyType2D)reader.ReadByte(),
-                        simulated = reader.ReadBoolean(),
-                        awake = reader.ReadBoolean(),
-                        safetyRailing = reader.ReadBoolean(),
-                        safetyRailingAttached = reader.ReadBoolean(),
-                        vehiclePart = reader.ReadBoolean()
-                    };
-                    if (state.vehiclePart)
-                    {
-                        state.vehiclePartHealth = reader.ReadSingle();
-                        state.vehicleHealth = reader.ReadSingle();
-                        state.vehicleEngineDisabled = reader.ReadBoolean();
-                        state.vehicleJointAttached = reader.ReadBoolean();
-                    }
-                    MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDecode, decodeStarted);
-                    var stateDispatchStarted = MultiplayerPerformance.StartPhase();
-                    try
-                    {
 
+                        bodies.Remove(id);
+                    }
+                    finally
+                    {
+                        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDispatch,
+                            dispatchStarted);
+                    }
+
+                    continue;
+                }
+
+                var isDropped = reader.ReadBoolean();
+                var isCrate = reader.ReadBoolean();
+                var cratePrefabName = isCrate ? reader.ReadString() : "";
+                var state = new State
+                {
+                    position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
+                    rotation = reader.ReadSingle(),
+                    velocity = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
+                    angularVelocity = reader.ReadSingle(),
+                    gravityScale = reader.ReadSingle(),
+                    constraints = (RigidbodyConstraints2D)reader.ReadInt32(),
+                    bodyType = (RigidbodyType2D)reader.ReadByte(),
+                    simulated = reader.ReadBoolean(),
+                    awake = reader.ReadBoolean(),
+                    safetyRailing = reader.ReadBoolean(),
+                    safetyRailingAttached = reader.ReadBoolean(),
+                    vehiclePart = reader.ReadBoolean()
+                };
+                if (state.vehiclePart)
+                {
+                    state.vehiclePartHealth = reader.ReadSingle();
+                    state.vehicleHealth = reader.ReadSingle();
+                    state.vehicleEngineDisabled = reader.ReadBoolean();
+                    state.vehicleJointAttached = reader.ReadBoolean();
+                }
+
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDecode, decodeStarted);
+                var stateDispatchStarted = MultiplayerPerformance.StartPhase();
+                try
+                {
                     if (clientDestroyedBodyIds.Contains(id)) continue;
                     if (isDropped)
                     {
@@ -1370,6 +1331,7 @@ internal sealed class WorldReplication : MonoBehaviour
                             if (Time.unscaledTime < pendingUntil) continue;
                             pendingDestroyedWeaponPickups.Remove(id);
                         }
+
                         if (!bodies.TryGetValue(id, out body) || body == null)
                         {
                             body = FindExistingDroppedWeapon(id, weaponId, state.position);
@@ -1377,7 +1339,8 @@ internal sealed class WorldReplication : MonoBehaviour
                             {
                                 var objectStarted = MultiplayerPerformance.StartPhase();
                                 body = CreateDroppedWeapon(id, weaponId, ammo, state.position, state.rotation);
-                                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects, objectStarted);
+                                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects,
+                                    objectStarted);
                             }
                         }
                         else
@@ -1391,23 +1354,22 @@ internal sealed class WorldReplication : MonoBehaviour
                     {
                         var objectStarted = MultiplayerPerformance.StartPhase();
                         body = CreateRuntimeCrate(id, cratePrefabName, state.position, state.rotation);
-                        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects, objectStarted);
+                        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects,
+                            objectStarted);
                     }
+
                     if (bodies.TryGetValue(id, out body) && body != null)
                     {
                         received[body] = state;
                     }
-                    else
-                    {
-                        missingSnapshotBodies++;
-                        lastMissingSnapshotId = id;
-                    }
-                    }
-                    finally
-                    {
-                        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDispatch, stateDispatchStarted);
-                    }
                 }
+                finally
+                {
+                    MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDispatch,
+                        stateDispatchStarted);
+                }
+            }
+
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotParse, parseStarted);
             if (reader.ReadBoolean())
             {
@@ -1416,7 +1378,9 @@ internal sealed class WorldReplication : MonoBehaviour
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldEnvironmentApply, environmentStarted);
             }
         }
-        catch (EndOfStreamException) { }
+        catch (EndOfStreamException)
+        {
+        }
     }
 
     private void ApplyEnvironment(byte[] data)
@@ -1520,7 +1484,6 @@ internal sealed class WorldReplication : MonoBehaviour
                 body.simulated = true;
                 body.bodyType = RigidbodyType2D.Dynamic;
                 body.WakeUp();
-                TraceSnapshot(body, state, "ignored");
                 return;
             }
             locallyControlledUntil.Remove(body);
@@ -1565,7 +1528,6 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         if (state.awake) body.WakeUp();
         else if (state.bodyType != RigidbodyType2D.Dynamic) body.Sleep();
-        TraceSnapshot(body, state, "applied");
     }
 
     private static void ApplyVehicleState(Rigidbody2D body, State state)
@@ -1586,7 +1548,6 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal void QueuePush(LimbScript limb, Collision2D collision)
     {
-        callbackContacts++;
         if (MultiplayerSession.IsHost || limb == null || limb.body == null || !limb.body.isPlayer || collision == null) return;
         var localPlayer = PlayerScript.player;
         if (localPlayer == null || limb.body != localPlayer.bodyScript) return;
@@ -1607,9 +1568,6 @@ internal sealed class WorldReplication : MonoBehaviour
         body.WakeUp();
         var id = Id(body);
         pushes[id] = CaptureBodyState(body);
-        lastQueuedId = id;
-        TraceLocal(body);
-        queuedStates++;
     }
 
     private void QueueContactBodyState(Rigidbody2D body, float now)
@@ -1667,7 +1625,6 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (MultiplayerSession.IsHost || body == null ||
             !(IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
-        levitatedStates++;
         QueueBodyState(body);
     }
 
@@ -1696,7 +1653,6 @@ internal sealed class WorldReplication : MonoBehaviour
             writer.Write(body.transform.position.x);
             writer.Write(body.transform.position.y);
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
-            weaponRequestsSent++;
         }
     }
 
@@ -1724,7 +1680,6 @@ internal sealed class WorldReplication : MonoBehaviour
             writer.Write(body.transform.position.x);
             writer.Write(body.transform.position.y);
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
-            current.weaponRequestsSent++;
         }
         return true;
     }
@@ -1826,7 +1781,7 @@ internal sealed class WorldReplication : MonoBehaviour
             states[index++] = new WorldInputState(WireId(pair.Key), state.position.x, state.position.y,
                 state.rotation, state.velocity.x, state.velocity.y, state.angularVelocity);
         }
-        sentStates += pushes.Count;
+
         pushes.Clear();
         return new WorldInputPacket(states);
     }
@@ -1852,7 +1807,6 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void ApplyPushes(ushort peerId, byte[] data)
     {
-        receivedInputPackets++;
         try
         {
             using (var reader = new BinaryReader(new MemoryStream(data)))
@@ -1871,30 +1825,20 @@ internal sealed class WorldReplication : MonoBehaviour
                     Rigidbody2D body;
                     if (!bodies.TryGetValue(id, out body) || body == null)
                     {
-                        missingInputBodies++;
-                        lastMissingInputId = id;
                         continue;
                     }
                     if (!IsInteractivePropBody(body) && !droneBodies.Contains(body))
                     {
-                        rejectedInputStates++;
-                        lastRejectedInputId = id + ":not-prop";
                         continue;
                     }
                     PropAuthority authority;
                     if (propAuthorities.TryGetValue(id, out authority) &&
                         authority.expiresAt >= Time.unscaledTime && authority.peerId != peerId)
                     {
-                        rejectedInputStates++;
-                        rejectedForeignAuthority++;
-                        lastRejectedInputId = id + ":owner";
                         continue;
                     }
                     if ((body.position - predicted.position).sqrMagnitude > 9f)
                     {
-                        rejectedInputStates++;
-                        rejectedInputDistance++;
-                        lastRejectedInputId = id + ":distance";
                         continue;
                     }
                     propAuthorities[id] = new PropAuthority
@@ -1909,112 +1853,10 @@ internal sealed class WorldReplication : MonoBehaviour
                     body.velocity = predicted.velocity;
                     body.angularVelocity = predicted.angularVelocity;
                     body.WakeUp();
-                    TraceHostInput(id, peerId, body, predicted);
-                    appliedInputStates++;
                 }
             }
         }
         catch (EndOfStreamException) { }
-    }
-
-    private void WriteDiagnostics()
-    {
-        if (Time.unscaledTime < nextDiagnostics || string.IsNullOrEmpty(diagnosticPath)) return;
-        nextDiagnostics = Time.unscaledTime + 1f;
-        var inventory = BuildInventorySummary();
-        var line = DateTime.Now.ToString("HH:mm:ss.fff") +
-            " role=" + (MultiplayerSession.IsHost ? "host" : "client") +
-            " connected=" + MultiplayerSession.IsConnected +
-            " scene=" + activeScene +
-            " bodies=" + bodies.Count +
-            " inventory=" + inventory +
-            " callbackContacts=" + callbackContacts +
-            " scannedContacts=" + scannedContacts +
-            " levitated=" + levitatedStates +
-            " queued=" + queuedStates +
-            " sent=" + sentStates +
-            " inputPackets=" + receivedInputPackets +
-            " applied=" + appliedInputStates +
-            " missing=" + missingInputBodies +
-            " lastMissingInput=" + ShortDiagnosticId(lastMissingInputId) +
-            " rejected=" + rejectedInputStates +
-            " rejectedOwner=" + rejectedForeignAuthority +
-            " rejectedDistance=" + rejectedInputDistance +
-            " lastRejected=" + ShortDiagnosticId(lastRejectedInputId) +
-            " snapshots=" + receivedSnapshotPackets + "/" + receivedSnapshotStates +
-            " missingSnapshot=" + missingSnapshotBodies +
-            " lastMissingSnapshot=" + ShortDiagnosticId(lastMissingSnapshotId) +
-            " lastQueued=" + ShortDiagnosticId(lastQueuedId) +
-            " localAuthority=" + locallyControlledUntil.Count +
-            " hostAuthority=" + propAuthorities.Count +
-            " traces=" + FormatPropTraces() +
-            " weaponSent=" + weaponRequestsSent +
-            " weaponApplied=" + weaponRequestsApplied +
-            " weaponRejected=" + weaponRequestsRejected + Environment.NewLine;
-        try { File.AppendAllText(diagnosticPath, line); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-        WriteBodyManifest(inventory);
-    }
-
-    private string BuildInventorySummary()
-    {
-        var identifiers = new List<string>();
-        var props = 0;
-        var mechanisms = 0;
-        foreach (var pair in bodies)
-        {
-            var body = pair.Value;
-            if (body == null || !body.gameObject.scene.isLoaded) continue;
-            var kind = IsInteractivePropBody(body) ? "P" :
-                (IsMechanismBody(body) ? "M" : "W");
-            if (kind == "P") props++;
-            else if (kind == "M") mechanisms++;
-            identifiers.Add(kind + ":" + pair.Key);
-        }
-        identifiers.Sort(StringComparer.Ordinal);
-        uint hash = 2166136261u;
-        foreach (var identifier in identifiers)
-        {
-            for (var index = 0; index < identifier.Length; index++)
-            {
-                hash ^= identifier[index];
-                hash *= 16777619u;
-            }
-        }
-        return identifiers.Count + ":P" + props + ":M" + mechanisms + ":H" + hash.ToString("X8");
-    }
-
-    private void WriteBodyManifest(string inventory)
-    {
-        if (Time.unscaledTime < nextManifest || string.IsNullOrEmpty(diagnosticPath)) return;
-        nextManifest = Time.unscaledTime + 3f;
-        var processId = System.Diagnostics.Process.GetCurrentProcess().Id;
-        var manifestPath = Path.Combine(Paths.BepInExRootPath,
-            "world-manifest-" + processId + ".txt");
-        var entries = new List<string>();
-        foreach (var pair in bodies)
-        {
-            var body = pair.Value;
-            if (body == null || !body.gameObject.scene.isLoaded) continue;
-            var kind = IsInteractivePropBody(body) ? "prop" :
-                (IsMechanismBody(body) ? "mechanism" : "world");
-            entries.Add(pair.Key + "\t" + kind + "\t" + body.gameObject.activeInHierarchy +
-                "\t" + body.simulated + "\t" + body.bodyType);
-        }
-        entries.Sort(StringComparer.Ordinal);
-        var content = "scene=" + activeScene + " role=" +
-            (MultiplayerSession.IsHost ? "host" : "client") + " inventory=" + inventory +
-            Environment.NewLine + string.Join(Environment.NewLine, entries.ToArray());
-        try { File.WriteAllText(manifestPath, content); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
-
-    private static string ShortDiagnosticId(string id)
-    {
-        if (string.IsNullOrEmpty(id)) return "-";
-        return id.Length <= 72 ? id : id.Substring(id.Length - 72);
     }
 
     private void ApplyDamage(WorldDamagePacket packet)
@@ -2083,13 +1925,11 @@ internal sealed class WorldReplication : MonoBehaviour
                         slot >= remoteBody.weapons.Count || slot >= remoteBody.weaponAmmos.Count ||
                         (requestedPosition - (Vector2)remoteBody.transform.position).sqrMagnitude > 25f)
                     {
-                        weaponRequestsRejected++;
                         return;
                     }
                     if (remoteBody.weapons[slot] != null &&
                         NetworkWireId.FromString(remoteBody.weapons[slot].name) != oldWeaponId)
                     {
-                        weaponRequestsRejected++;
                         return;
                     }
                     remoteBody.weapons[slot] = requestedWeapon;
@@ -2097,25 +1937,21 @@ internal sealed class WorldReplication : MonoBehaviour
                     remoteBody.ChangeWeapon(slot);
                     if (remoteBody.weapon != null) remoteBody.weapon.ammo = remoteBody.weaponAmmos[slot];
                     remoteBody.DropWeaponSingle();
-                    weaponRequestsApplied++;
                     return;
                 }
                 if ((operation != WeaponPickup && operation != WeaponAmmoGet) || remoteBody == null ||
                     !remoteBody.isAlive || !bodies.TryGetValue(id, out rigidbody) || rigidbody == null)
                 {
-                    weaponRequestsRejected++;
                     return;
                 }
                 var dropped = rigidbody.GetComponentInParent<DroppedWeapon>();
                 if (dropped == null || (requestedPosition - (Vector2)dropped.transform.position).sqrMagnitude > 25f)
                 {
-                    weaponRequestsRejected++;
                     return;
                 }
                 if (operation == WeaponPickup && (slot < 0 || slot >= remoteBody.weapons.Count ||
                     slot >= remoteBody.weaponAmmos.Count || dropped.stats == null))
                 {
-                    weaponRequestsRejected++;
                     return;
                 }
                 if (operation == WeaponAmmoGet && clientOwnsWeapon && dropped.stats != null &&
@@ -2145,7 +1981,6 @@ internal sealed class WorldReplication : MonoBehaviour
                     else UnloadDroppedWeapon(dropped);
                 }
                 finally { remoteBody.isPlayer = wasPlayer; }
-                weaponRequestsApplied++;
             }
         }
         catch (EndOfStreamException) { }
@@ -2988,13 +2823,6 @@ internal sealed class WorldReplication : MonoBehaviour
         ammoSprite.enabled = dropped.ammoAmount > 0 && Mathf.PingPong(Time.time, 0.3f) > 0.15f;
     }
 
-    private static WeaponPreset FindWeaponPreset(string weaponName)
-    {
-        foreach (var candidate in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (candidate != null && candidate.name == weaponName) return candidate;
-        return null;
-    }
-
     private static WeaponPreset FindWeaponPreset(ulong weaponId)
     {
         if (weaponId == 0UL) return null;
@@ -3148,108 +2976,9 @@ internal sealed class WorldReplication : MonoBehaviour
         public float expiresAt;
     }
 
-    private void TraceLocal(Rigidbody2D body)
-    {
-        if (!DiagnosticsEnabled || body == null) return;
-        var id = Id(body);
-        PropTrace trace;
-        propTraces.TryGetValue(id, out trace);
-        trace.id = id;
-        trace.localPosition = body.position;
-        trace.localVelocity = body.velocity;
-        trace.localType = body.bodyType;
-        trace.localSamples++;
-        propTraces[id] = trace;
-    }
-
-    private void TraceHostInput(string id, ushort peerId, Rigidbody2D body, ClientBodyState input)
-    {
-        if (!DiagnosticsEnabled) return;
-        PropTrace trace;
-        propTraces.TryGetValue(id, out trace);
-        trace.id = id;
-        trace.peerId = peerId;
-        trace.inputPosition = input.position;
-        trace.inputVelocity = input.velocity;
-        trace.hostPosition = body.position;
-        trace.hostType = body.bodyType;
-        trace.hostSamples++;
-        propTraces[id] = trace;
-    }
-
-    private void TraceSnapshot(Rigidbody2D body, State state, string action)
-    {
-        if (!DiagnosticsEnabled || body == null) return;
-        string id;
-        if (!ids.TryGetValue(body, out id) || !propTraces.ContainsKey(id)) return;
-        var trace = propTraces[id];
-        trace.id = id;
-        trace.snapshotPosition = state.position;
-        trace.snapshotVelocity = state.velocity;
-        trace.snapshotType = state.bodyType;
-        trace.actualPosition = body.position;
-        trace.actualVelocity = body.velocity;
-        trace.snapshotAction = action;
-        trace.snapshotSamples++;
-        propTraces[id] = trace;
-    }
-
-    private string FormatPropTraces()
-    {
-        if (propTraces.Count == 0) return "none";
-        var builder = new StringBuilder();
-        var written = 0;
-        foreach (var pair in propTraces)
-        {
-            if (written++ >= 4) break;
-            var trace = pair.Value;
-            if (builder.Length > 0) builder.Append('|');
-            var label = trace.id ?? pair.Key;
-            var slash = label.LastIndexOf('/');
-            if (slash >= 0 && slash + 1 < label.Length) label = label.Substring(slash + 1);
-            if (label.Length > 36) label = label.Substring(label.Length - 36);
-            builder.Append(label).Append(" local=").Append(TraceVector(trace.localPosition))
-                .Append('/').Append(trace.localType).Append('#').Append(trace.localSamples)
-                .Append(" in=").Append(TraceVector(trace.inputPosition)).Append('#').Append(trace.hostSamples)
-                .Append(" host=").Append(TraceVector(trace.hostPosition)).Append('/').Append(trace.hostType)
-                .Append(" snap=").Append(TraceVector(trace.snapshotPosition)).Append('/').Append(trace.snapshotType)
-                .Append('/').Append(trace.snapshotAction ?? "-").Append('#').Append(trace.snapshotSamples)
-                .Append(" actual=").Append(TraceVector(trace.actualPosition));
-        }
-        return builder.ToString();
-    }
-
-    private static string TraceVector(Vector2 value)
-    {
-        return value.x.ToString("F2") + "," + value.y.ToString("F2");
-    }
-
-    private struct PropTrace
-    {
-        public string id;
-        public ushort peerId;
-        public Vector2 localPosition;
-        public Vector2 localVelocity;
-        public RigidbodyType2D localType;
-        public int localSamples;
-        public Vector2 inputPosition;
-        public Vector2 inputVelocity;
-        public Vector2 hostPosition;
-        public RigidbodyType2D hostType;
-        public int hostSamples;
-        public Vector2 snapshotPosition;
-        public Vector2 snapshotVelocity;
-        public RigidbodyType2D snapshotType;
-        public Vector2 actualPosition;
-        public Vector2 actualVelocity;
-        public string snapshotAction;
-        public int snapshotSamples;
-    }
-
     private struct FireLocalSettings
     {
         public bool enabled;
         public bool active;
     }
-
 }

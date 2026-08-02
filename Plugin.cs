@@ -1,18 +1,12 @@
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using TMPro;
-using UnityEngine.UI;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
 public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
@@ -38,8 +32,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<string> savedCreateMaxPlayers;
     internal bool visible;
     internal string status = "Select an option.";
-    internal string updateStatus = "Checking for updates...";
-    internal bool IsCheckingForUpdates { get { return Volatile.Read(ref updateCheckInProgress) != 0; } }
+    internal string updateStatus = "Checking for updates..."; 
     internal string lobbyServerAddress = "gunsawudp.e621.su";
     internal string lobbyName = "Lobby";
     internal string playerName = "Player";
@@ -96,8 +89,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         KeepMultiplayerRunningInBackground();
         Instance = this;
         masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsawudp.e621.su", "Lobby directory URL.");
-        if (masterUrl.Value == "http://127.0.0.1:18080" ||
-            masterUrl.Value == "http://gunsawudp.e621.su") masterUrl.Value = "https://gunsawudp.e621.su";
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
         savedPlayerName = Config.Bind("Lobby", "PlayerName", playerName, "Name shown to other players.");
         savedLobbyName = Config.Bind("Lobby", "LobbyName", lobbyName, "Default name for new lobbies.");
@@ -185,7 +176,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     }
 
     internal static WorldReplication World;
-    internal static bool IsHeadlessServer { get { return Instance != null && Instance.headlessMode && MultiplayerSession.IsHosting; } }
+    internal static bool IsHeadlessServer => Instance != null && Instance.headlessMode && MultiplayerSession.IsHosting;
 
     private void Update()
     {
@@ -343,22 +334,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha1))
         {
             debugWeaponSequence = 0;
-            SpawnGrenadeLauncher();
+            SpawnNamedWeapon("Grenade Launcher", "Grenade launcher");
         }
         else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha2))
         {
             debugWeaponSequence = 0;
-            SpawnRocketLauncher();
+            SpawnNamedWeapon("Rocket Launcher", "Rocket", "RPG");
         }
         else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha3))
         {
             debugWeaponSequence = 0;
-            SpawnSniperRifle();
+            SpawnNamedWeapon("Sniper Rifle", "Sniper rifle");
         }
         else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha4))
         {
             debugWeaponSequence = 0;
-            SpawnMarksmanRifle();
+            SpawnNamedWeapon("Marksman Rifle", "Marksman rifle");
         }
         else if (Input.anyKeyDown) debugWeaponSequence = 0;
     }
@@ -1195,8 +1186,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
     }
 
-
-
     private static string ReleaseRequest(string address)
     {
         Uri uri;
@@ -1446,26 +1435,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         WorldReplication.TrackDroppedWeapons();
         status = "Spawned " + weapon.name + ".";
     }
-
-    private void SpawnGrenadeLauncher()
-    {
-        SpawnNamedWeapon("Grenade Launcher", "Grenade launcher");
-    }
-
-    private void SpawnRocketLauncher()
-    {
-        SpawnNamedWeapon("Rocket Launcher", "Rocket", "RPG");
-    }
-
-   private void SpawnSniperRifle()
-   {
-        SpawnNamedWeapon("Sniper Rifle", "Sniper rifle");
-   }
-
-   private void SpawnMarksmanRifle()
-   {
-       SpawnNamedWeapon("Marksman Rifle", "Marksman rifle");
-   }
 
     private void SpawnNamedWeapon(string weaponName, string fallbackName, string alternateName = "")
     {

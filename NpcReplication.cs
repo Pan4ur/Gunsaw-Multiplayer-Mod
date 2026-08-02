@@ -1,9 +1,6 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.IO.Compression;
 using System.Text;
-using BepInEx;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -22,25 +19,24 @@ internal sealed class NpcReplication : MonoBehaviour
     private const float FullSnapshotInterval = 1f;
     private const float VisualStateInterval = 0.1f;
     private static readonly Transform[] emptyTransforms = new Transform[0];
-    private readonly Dictionary<BodyScript, string> hostIds = new Dictionary<BodyScript, string>();
-    private readonly HashSet<BodyScript> registeredBodies = new HashSet<BodyScript>();
-    private readonly Dictionary<BodyScript, float> pendingBodies = new Dictionary<BodyScript, float>();
-    private readonly Dictionary<string, BodyScript> hostNpcs = new Dictionary<string, BodyScript>();
-    private readonly Dictionary<string, ulong> wireIds = new Dictionary<string, ulong>();
-    private readonly Dictionary<ulong, string> idsByWire = new Dictionary<ulong, string>();
-    private readonly Dictionary<BodyScript, HostNpcLayout> hostLayouts =
-        new Dictionary<BodyScript, HostNpcLayout>();
-    private readonly Dictionary<string, byte[]> lastSentStates = new Dictionary<string, byte[]>();
-    private readonly Dictionary<string, MemoryStream> stateScratch = new Dictionary<string, MemoryStream>();
-    private readonly Dictionary<string, float> lastChangedNpcAt = new Dictionary<string, float>();
-    private readonly Dictionary<string, NpcProxy> clientNpcs = new Dictionary<string, NpcProxy>();
-    private readonly Dictionary<string, NpcIdentity> clientIdentities = new Dictionary<string, NpcIdentity>();
-    private readonly Dictionary<BodyScript, NpcProxy> clientBodies = new Dictionary<BodyScript, NpcProxy>();
-    private readonly HashSet<NpcProxy> clientProxies = new HashSet<NpcProxy>();
-    private readonly HashSet<string> locallyPossessedNpcIds = new HashSet<string>();
-    private readonly HashSet<string> remotelyPossessedNpcIds = new HashSet<string>();
+    private readonly Dictionary<BodyScript, string> hostIds = new();
+    private readonly HashSet<BodyScript> registeredBodies = new();
+    private readonly Dictionary<BodyScript, float> pendingBodies = new();
+    private readonly Dictionary<string, BodyScript> hostNpcs = new();
+    private readonly Dictionary<string, ulong> wireIds = new();
+    private readonly Dictionary<ulong, string> idsByWire = new();
+    private readonly Dictionary<BodyScript, HostNpcLayout> hostLayouts = new();
+    private readonly Dictionary<string, byte[]> lastSentStates = new();
+    private readonly Dictionary<string, MemoryStream> stateScratch = new();
+    private readonly Dictionary<string, float> lastChangedNpcAt = new();
+    private readonly Dictionary<string, NpcProxy> clientNpcs = new();
+    private readonly Dictionary<string, NpcIdentity> clientIdentities = new();
+    private readonly Dictionary<BodyScript, NpcProxy> clientBodies = new();
+    private readonly HashSet<NpcProxy> clientProxies = [];
+    private readonly HashSet<string> locallyPossessedNpcIds = [];
+    private readonly HashSet<string> remotelyPossessedNpcIds = [];
     private float possessionRenderGuardUntil;
-    private readonly Dictionary<string, float> prefabRetryAt = new Dictionary<string, float>();
+    private readonly Dictionary<string, float> prefabRetryAt = new();
     private float nextSnapshot;
     private float nextDiscovery;
     private float nextFullSnapshot;
@@ -49,9 +45,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private bool wasConnected;
     private bool wasHost;
     private bool bodyRegistryReady;
-    private string activeScene = "";
     private int activeSceneHandle;
-    private int lastPacketBytes;
     private int lastStateCount;
     private int culledNpcCount;
     private float nextActivitySample;
@@ -81,41 +75,29 @@ internal sealed class NpcReplication : MonoBehaviour
     private int tailBytesPerSecond;
     private int weaponBytesPerSecond;
     private int effectsBytesPerSecond;
-    private int createdFromNetwork;
-    private int missingPrefabs;
-    private int reboundExisting;
-    private int applyFailures;
-    private int rigMisses;
-    private string lastApplyError = "none";
-    private int weaponApplyFailures;
-    private int hostUnarmedWeaponStates;
-    private string lastWeaponApplyError = "none";
     internal static NpcReplication Instance;
     internal static bool ApplyingAuthoritativeDeath;
 
 
     internal static bool IsEvaluatingAuthoritativePose { get; private set; }
 
-    internal int TotalNpcCount
-    {
-        get { return MultiplayerSession.IsHost ? hostNpcs.Count : clientProxies.Count; }
-    }
+    internal int TotalNpcCount => MultiplayerSession.IsHost ? hostNpcs.Count : clientProxies.Count;
 
-    internal int LastSnapshotNpcCount { get { return lastStateCount; } }
-    internal int CulledNpcCount { get { return culledNpcCount; } }
-    internal int SentPacketsPerSecond { get { return sentPacketsPerSecond; } }
-    internal int SentStatesPerSecond { get { return sentStatesPerSecond; } }
-    internal int ReceivedPacketsPerSecond { get { return receivedPacketsPerSecond; } }
-    internal int ReceivedStatesPerSecond { get { return receivedStatesPerSecond; } }
-    internal int ClientFullPoseCount { get { return clientFullPoseCount; } }
-    internal int ClientPoseCulledCount { get { return clientPoseCulledCount; } }
-    internal int ClientSkippedPoseCount { get { return clientSkippedPoseCount; } }
-    internal int CoreBytesPerSecond { get { return coreBytesPerSecond; } }
-    internal int RigBytesPerSecond { get { return rigBytesPerSecond; } }
-    internal int LimbBytesPerSecond { get { return limbBytesPerSecond; } }
-    internal int TailBytesPerSecond { get { return tailBytesPerSecond; } }
-    internal int WeaponBytesPerSecond { get { return weaponBytesPerSecond; } }
-    internal int EffectsBytesPerSecond { get { return effectsBytesPerSecond; } }
+    internal int LastSnapshotNpcCount => lastStateCount;
+    internal int CulledNpcCount => culledNpcCount;
+    internal int SentPacketsPerSecond => sentPacketsPerSecond;
+    internal int SentStatesPerSecond => sentStatesPerSecond;
+    internal int ReceivedPacketsPerSecond => receivedPacketsPerSecond;
+    internal int ReceivedStatesPerSecond => receivedStatesPerSecond;
+    internal int ClientFullPoseCount => clientFullPoseCount;
+    internal int ClientPoseCulledCount => clientPoseCulledCount;
+    internal int ClientSkippedPoseCount => clientSkippedPoseCount;
+    internal int CoreBytesPerSecond => coreBytesPerSecond;
+    internal int RigBytesPerSecond => rigBytesPerSecond;
+    internal int LimbBytesPerSecond => limbBytesPerSecond;
+    internal int TailBytesPerSecond => tailBytesPerSecond;
+    internal int WeaponBytesPerSecond => weaponBytesPerSecond;
+    internal int EffectsBytesPerSecond => effectsBytesPerSecond;
 
     private void Awake()
     {
@@ -135,7 +117,6 @@ internal sealed class NpcReplication : MonoBehaviour
         if (sceneChanged || roleChanged)
         {
             ResetReplication(wasConnected && !wasHost);
-            activeScene = scene.name;
             activeSceneHandle = scene.handle;
             nextDiscovery = 0f;
         }
@@ -408,7 +389,6 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             if (body == null || !body.gameObject.activeInHierarchy || !MultiplayerLoadDistance.IsNpcNearAnyPlayer(body)) continue;
             var layout = HostLayout(body);
-            if (body.unarmed || body.currentWeapon < 0 || layout.Weapons.Count == 0) hostUnarmedWeaponStates++;
             IsEvaluatingAuthoritativePose = true;
             try
             {
@@ -534,7 +514,6 @@ internal sealed class NpcReplication : MonoBehaviour
             var compressStarted = MultiplayerPerformance.StartPhase();
             var packet = CompressSnapshot(stream.ToArray());
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcCompress, compressStarted);
-            lastPacketBytes = packet.Length;
             lastStateCount = changed.Count;
             sentPacketsWindow++;
             sentStatesWindow += changed.Count;
@@ -603,7 +582,6 @@ internal sealed class NpcReplication : MonoBehaviour
         ref NpcWireBreakdown breakdown)
     {
             var layout = HostLayout(body);
-            if (body.unarmed || body.currentWeapon < 0 || layout.Weapons.Count == 0) hostUnarmedWeaponStates++;
             var sectionStarted = writer.BaseStream.Position;
             writer.Write(WireId(id));
                 writer.Write(includeIdentity);
@@ -779,7 +757,6 @@ internal sealed class NpcReplication : MonoBehaviour
                 for (var index = 0; index < count; index++) states.Add(ReadState(reader));
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSnapshotParse, parseStarted);
                 receivedSequence = sequence;
-                lastPacketBytes = packet.Length;
                 lastStateCount = count;
                 receivedPacketsWindow++;
                 receivedStatesWindow += count;
@@ -896,10 +873,9 @@ internal sealed class NpcReplication : MonoBehaviour
                 ApplyState(proxy, state);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStatePose, poseStarted);
             }
-            catch (Exception exception)
+            catch (Exception ignored)
             {
-                applyFailures++;
-                lastApplyError = exception.GetType().Name + ":" + exception.Message.Replace('\n', ' ');
+
             }
         }
 
@@ -947,7 +923,6 @@ internal sealed class NpcReplication : MonoBehaviour
             clientNpcs.Remove(best.NetworkId);
             best.NetworkId = state.Id;
             clientNpcs[state.Id] = best;
-            reboundExisting++;
             return best;
         }
 
@@ -958,7 +933,6 @@ internal sealed class NpcReplication : MonoBehaviour
         var prefab = FindNpcPrefab(state);
         if (prefab == null)
         {
-            missingPrefabs++;
             return null;
         }
         var root = Instantiate(prefab, state.Body.Position, Quaternion.Euler(0f, 0f, state.Body.Rotation));
@@ -969,7 +943,6 @@ internal sealed class NpcReplication : MonoBehaviour
             return null;
         }
         var created = CreateProxy(state.Id, body, root, true);
-        createdFromNetwork++;
         clientNpcs[state.Id] = created;
         clientBodies[body] = created;
         return created;
@@ -1137,8 +1110,6 @@ internal sealed class NpcReplication : MonoBehaviour
                 SetTarget(proxy, rigBody, rigState.Pose);
                 SetTransformTarget(proxy, rigBody.transform, TransformPose.From(rigState.Pose));
             }
-            else
-                rigMisses++;
         }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateRig, rigStarted);
 
@@ -1550,11 +1521,9 @@ internal sealed class NpcReplication : MonoBehaviour
                 ApplyProxyWeaponSlot(body, state);
                 proxy.AppliedWeapon = state.WeaponSlot;
             }
-            catch (Exception exception)
+            catch (Exception ignored)
             {
                 proxy.AppliedWeapon = -2;
-                if (Instance != null) Instance.weaponApplyFailures++;
-                if (Instance != null) Instance.lastWeaponApplyError = exception.GetType().Name + ":" + exception.Message.Replace('\n', ' ');
             }
             FreezeProxy(proxy);
         }
@@ -1565,11 +1534,9 @@ internal sealed class NpcReplication : MonoBehaviour
                 ApplyProxyUnarmed(body);
                 proxy.AppliedWeapon = -1;
             }
-            catch (Exception exception)
+            catch (Exception ignored)
             {
                 proxy.AppliedWeapon = -2;
-                if (Instance != null) Instance.weaponApplyFailures++;
-                if (Instance != null) Instance.lastWeaponApplyError = exception.GetType().Name + ":" + exception.Message.Replace('\n', ' ');
             }
             FreezeProxy(proxy);
         }

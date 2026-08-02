@@ -1,11 +1,5 @@
-using System;
-using System.IO;
 using System.Collections;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
-using BepInEx;
-using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -14,13 +8,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private const bool BufferedRemoteInterpolation = true;
     private const float SnapshotInterval = 1f / 50f;
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
-    private static readonly List<string> knownCharacterPrefabs = new List<string>();
-    private static readonly Dictionary<string, Sprite> spriteCache = new Dictionary<string, Sprite>();
-    private static readonly Dictionary<Sprite, string> spriteIdCache = new Dictionary<Sprite, string>();
-    private static readonly Dictionary<Texture2D, string> textureSignatureCache =
-        new Dictionary<Texture2D, string>();
-    private static readonly Dictionary<string, WeaponPreset> weaponPresetCache =
-        new Dictionary<string, WeaponPreset>();
+    private static readonly List<string> knownCharacterPrefabs = [];
+    private static readonly Dictionary<string, Sprite> spriteCache = new();
+    private static readonly Dictionary<Sprite, string> spriteIdCache = new();
+    private static readonly Dictionary<Texture2D, string> textureSignatureCache = new();
+    private static readonly Dictionary<string, WeaponPreset> weaponPresetCache = new();
     private static string selectedCharacterPrefab = "";
     private static int remoteAvatarCreationDepth;
     private BodyScript remoteBody;
@@ -56,11 +48,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private int avatarEffectsBytesPerSecond;
     private int avatarVisualBytesPerSecond;
     private string localName;
-    private readonly Queue<RemoteProjectileVisual> remoteProjectiles =
-        new Queue<RemoteProjectileVisual>();
-    private readonly Dictionary<Rigidbody2D, TargetState> targets = new Dictionary<Rigidbody2D, TargetState>();
-    private readonly Dictionary<Transform, WorldTargetState> worldTargets = new Dictionary<Transform, WorldTargetState>();
-    private readonly Dictionary<Transform, WorldTargetState> localTargets = new Dictionary<Transform, WorldTargetState>();
+    private readonly Queue<RemoteProjectileVisual> remoteProjectiles = new();
+    private readonly Dictionary<Rigidbody2D, TargetState> targets = new();
+    private readonly Dictionary<Transform, WorldTargetState> worldTargets = new();
+    private readonly Dictionary<Transform, WorldTargetState> localTargets = new();
     private bool receivedFirstSnapshot;
     private int appliedWeapon = -1;
     private ulong appliedWeaponSprite;
@@ -73,17 +64,16 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private LineRenderer remoteCrystalTongueLine;
     private GameObject remoteScarf;
     private GameObject remoteScarfHold;
-    private readonly Dictionary<int, GameObject> remoteFires = new Dictionary<int, GameObject>();
-    private readonly Dictionary<Collider2D, bool> remoteColliderTriggers = new Dictionary<Collider2D, bool>();
-    private readonly Dictionary<SpriteRenderer, Sprite> originalDismemberSprites = new Dictionary<SpriteRenderer, Sprite>();
-    private readonly List<Transform> staleWorldTargets = new List<Transform>();
-    private readonly List<KeyValuePair<Transform, WorldTargetState>> orderedWorldTargets =
-        new List<KeyValuePair<Transform, WorldTargetState>>();
+    private readonly Dictionary<int, GameObject> remoteFires = new();
+    private readonly Dictionary<Collider2D, bool> remoteColliderTriggers = new();
+    private readonly Dictionary<SpriteRenderer, Sprite> originalDismemberSprites = new();
+    private readonly List<Transform> staleWorldTargets = [];
+    private readonly List<KeyValuePair<Transform, WorldTargetState>> orderedWorldTargets = new();
     private Rigidbody2D[] remoteRigidbodies = new Rigidbody2D[0];
-    private readonly List<Rigidbody2D> remoteTailBases = new List<Rigidbody2D>();
+    private readonly List<Rigidbody2D> remoteTailBases = [];
     private Transform[] remoteTails = new Transform[0];
-    private readonly List<SpriteRenderer[]> remoteTailSprites = new List<SpriteRenderer[]>();
-    private readonly List<SpriteRenderer[]> remoteTailRootSprites = new List<SpriteRenderer[]>();
+    private readonly List<SpriteRenderer[]> remoteTailSprites = [];
+    private readonly List<SpriteRenderer[]> remoteTailRootSprites = [];
     private bool remotePhysicsModeKnown;
     private bool lastRemoteSimulated;
     private bool lastPassiveGrabProxy;
@@ -92,40 +82,29 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool remoteVehicleReflected;
     private bool hasRemoteVehicleReflection;
     private static NetworkAvatarReplication instance;
-    private static readonly Dictionary<ushort, NetworkAvatarReplication> replicas =
-        new Dictionary<ushort, NetworkAvatarReplication>();
-    private static readonly Dictionary<int, BodyScript> lastDamageSources =
-        new Dictionary<int, BodyScript>();
-    private static readonly Dictionary<int, string> lastDamageWeapons =
-        new Dictionary<int, string>();
-    private static readonly Dictionary<int, float> lastDamageSourceTimes =
-        new Dictionary<int, float>();
-    private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses =
-        new Dictionary<int, PlayerDeathCause>();
-    private static readonly Dictionary<int, float> environmentalDeathCauseTimes =
-        new Dictionary<int, float>();
-    private static readonly Dictionary<int, PlayerDeathCause> deathCauses =
-        new Dictionary<int, PlayerDeathCause>();
-    private static readonly Dictionary<int, float> localKillBloodTimes =
-        new Dictionary<int, float>();
-    private static readonly Dictionary<SpriteRenderer, float> voyagerWeaponBaseAlpha =
-        new Dictionary<SpriteRenderer, float>();
-    private static readonly Dictionary<LineRenderer, Vector2> voyagerScarfBaseAlpha =
-        new Dictionary<LineRenderer, Vector2>();
-    private static readonly HashSet<int> announcedDeaths = new HashSet<int>();
+    private static readonly Dictionary<ushort, NetworkAvatarReplication> replicas = new();
+    private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
+    private static readonly Dictionary<int, string> lastDamageWeapons = new();
+    private static readonly Dictionary<int, float> lastDamageSourceTimes = new();
+    private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses = new();
+    private static readonly Dictionary<int, float> environmentalDeathCauseTimes = new();
+    private static readonly Dictionary<int, PlayerDeathCause> deathCauses = new();
+    private static readonly Dictionary<int, float> localKillBloodTimes = new();
+    private static readonly Dictionary<SpriteRenderer, float> voyagerWeaponBaseAlpha = new();
+    private static readonly Dictionary<LineRenderer, Vector2> voyagerScarfBaseAlpha = new();
+    private static readonly HashSet<int> announcedDeaths = [];
     private static BodyScript suppressNpcKillEffectFor;
     private bool coordinator;
     private ushort remotePeerId;
     private float lastRemoteHealth;
     private bool lastRemoteAlive = true;
-    private PlayerDeathCause lastRemoteDeathCause;
     private static BodyScript currentShooter;
     private static ShotState activeShotState;
     private static RocketProjectile activeRocketProjectile;
     private static int nextShotSpreadSeed;
     private static bool applyingNetworkPlayerDamage;
     private static Material fallbackTracerMaterial;
-    private static readonly HashSet<WebScript> localVelvetWebs = new HashSet<WebScript>();
+    private static readonly HashSet<WebScript> localVelvetWebs = [];
     private static int suppressedTargetScreenEffects;
     private static float suppressedCameraUntil = -1f;
     private static PlayerScript localPlayerInstance;
@@ -689,7 +668,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
         {
             RecordDamageSource(player.bodyScript, RemoteBodyForPeer(senderId));
-            ApplyPlayerDamage(player.bodyScript, PacketPayload(playerDamage));
+            ApplyPlayerDamage(player.bodyScript, playerDamage);
         }
         PlayerDamagePacket pvpDamage;
         while (MultiplayerSession.TryTakePvpDamage(out senderId, out pvpDamage))
@@ -698,7 +677,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakeShotVisual(out senderId, out shotVisual))
         {
             var shooter = GetOrCreateReplica(senderId);
-            if (shooter != null) shooter.PlayRemoteShot(PacketPayload(shotVisual));
+            if (shooter != null) shooter.PlayRemoteShot(shotVisual);
         }
         ProjectileImpactPacket projectileImpact;
         while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
@@ -1299,7 +1278,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             writer.Write((byte)deathCause);
             writer.Write(body.susnessMult);
             breakdown.Visual += (int)(writer.BaseStream.Position - sectionStarted);
-            var packet = stream.ToArray();
             AddAvatarWireBreakdown(breakdown);
             MultiplayerPerformance.AddAvatarSerialize(performanceStarted);
             var coreBody = body.rb == null ? new PlayerSnapshotBodyState(0f, 0f, 0f) :
@@ -1501,7 +1479,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 var wasRemoteAlive = lastRemoteAlive;
                 remoteBody.health = remoteHealth;
                 remoteBody.isAlive = reader.ReadBoolean();
-                lastRemoteDeathCause = snapshot.DeathCause;
                 remoteBody.susnessMult = Mathf.Clamp(snapshot.SusnessMultiplier, 0.25f, 1f);
                 remoteBody.stamina = reader.ReadSingle();
                 remoteBody.controlState = (BodyScript.RagdollState)reader.ReadByte();
@@ -1787,50 +1764,43 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (MultiplayerSession.IsHost) MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical), targetPeerId);
     }
 
-    private static byte[] PacketPayload(INetworkPacket packet)
-    {
-        var writer = new PacketWriter(64);
-        packet.Write(ref writer);
-        return writer.ToArray();
-    }
-
-    private static void ApplyPlayerDamage(BodyScript body, byte[] data)
+    private static void ApplyPlayerDamage(BodyScript body, PlayerDamagePacket playerDamage)
     {
         if (body == null) return;
-        try
+        
+        
+        var amount = Mathf.Clamp(playerDamage.Amount, 0f, 1000f);
+        var critical = playerDamage.Critical;
+        var effectType = playerDamage.Effect;
+        
+        if (effectType == PlayerDamageEffect.Explosion)
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                var amount = Mathf.Clamp(reader.ReadSingle(), 0f, 1000f);
-                var critical = reader.ReadBoolean();
-                var effectType = reader.BaseStream.Position < reader.BaseStream.Length ? reader.ReadByte() : (byte)0;
-                if (effectType == 2)
-                {
-                    ApplyExplosionImpulse(body, reader);
-                    return;
-                }
-                if (Time.unscaledTime < localRespawnProtectionUntil) return;
-                if (amount > 0f && body.isAlive)
-                {
-                    body.health -= amount;
-                    applyingNetworkPlayerDamage = true;
-                    try { body.Damaged(critical); }
-                    finally { applyingNetworkPlayerDamage = false; }
-                }
-                if (effectType != 1) return;
-                ApplyNetworkWound(body, reader);
-            }
+            ApplyExplosionImpulse(body, playerDamage);
+            return;
         }
-        catch (EndOfStreamException) { }
+        
+        if (Time.unscaledTime < localRespawnProtectionUntil) return;
+        
+        if (amount > 0f && body.isAlive)
+        {
+            body.health -= amount;
+            applyingNetworkPlayerDamage = true;
+            try { body.Damaged(critical); }
+            finally { applyingNetworkPlayerDamage = false; }
+        }
+        
+        if (effectType == PlayerDamageEffect.Wound) ApplyNetworkWound(body, playerDamage);
     }
 
-    private static void ApplyExplosionImpulse(BodyScript body, BinaryReader reader)
+    private static void ApplyExplosionImpulse(BodyScript body, PlayerDamagePacket packet)
     {
-        var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        var range = reader.ReadSingle();
-        var force = reader.ReadSingle();
+        var position = new Vector2(packet.ExplosionX, packet.ExplosionY);
+        var range = packet.ExplosionRange;
+        var force = packet.ExplosionForce;
+        
         if (!IsFinite(position.x) || !IsFinite(position.y) || !IsFinite(range) || !IsFinite(force) ||
             range <= 0f || force <= 0f) return;
+        
         range = Mathf.Min(range, 100f);
         force = Mathf.Min(force, 1000f);
 
@@ -1840,6 +1810,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var affected = new HashSet<Rigidbody2D>();
         if (body.rb != null && affected.Add(body.rb))
             ApplyExplosionForce(body.rb, body.rb.position, position, range, force);
+        
         foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
         {
             if (collider == null) continue;
@@ -1855,7 +1826,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var offset = targetPosition - origin;
         if (offset.sqrMagnitude > range * range) return false;
         var direction = offset.sqrMagnitude > 0.0001f ? offset.normalized : Vector2.up;
-        rigidbody.AddForce(direction * force * rigidbody.mass, ForceMode2D.Impulse);
+        rigidbody.AddForce(direction * (force * rigidbody.mass), ForceMode2D.Impulse);
         rigidbody.AddTorque(UnityEngine.Random.Range(-force, force), ForceMode2D.Impulse);
         return true;
     }
@@ -1870,20 +1841,22 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return true;
     }
 
-    private static void ApplyNetworkWound(BodyScript body, BinaryReader reader)
+    private static void ApplyNetworkWound(BodyScript body, PlayerDamagePacket packet)
     {
         var localPlayer = PlayerScript.player;
 
         if (localPlayer == null || localPlayer.bodyScript == null || body != localPlayer.bodyScript)
             return;
-        var limbIndex = reader.ReadInt16();
-        var localPoint = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        var direction = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        var weaponSprite = reader.ReadString();
-        var woundSprite = reader.ReadString();
-        var hasSplash = reader.ReadBoolean();
-        var createScreenCrack = reader.ReadBoolean();
+        
+        var limbIndex = packet.LimbIndex;
+        var localPoint = new Vector2(packet.LocalPointX, packet.LocalPointY);
+        var direction = new Vector2(packet.DirectionX, packet.DirectionY);
+        var weaponSprite = packet.WeaponSprite;
+        var woundSprite = packet.WoundSprite;
+        var hasSplash = packet.HasSplash;
+        var createScreenCrack = packet.CreateScreenCrack;
         var limbs = GetList(body, "limbs");
+        
         if (limbIndex >= 0 && limbIndex < limbs.Count)
         {
             var limb = limbs[limbIndex] as LimbScript;
@@ -2427,10 +2400,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static void ApplyPvpDamage(BodyScript body, ushort senderId, PlayerDamagePacket packet)
     {
         if (!MultiplayerSession.PvpEnabled || body == null) return;
-        var source = senderId == MultiplayerSession.LocalPeerId
-            ? body : RemoteBodyForPeer(senderId);
+        var source = senderId == MultiplayerSession.LocalPeerId ? body : RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
-        ApplyPlayerDamage(body, PacketPayload(packet));
+        ApplyPlayerDamage(body, packet);
     }
 
     private void UpdateRemotePhysicsMode()
@@ -2938,20 +2910,21 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         var sound = Resources.Load<AudioClip>("Sounds/spit");
         if (sound != null) Sound.Play(sound, origin);
-        StartCoroutine(MoveRemoteVelvetWeb(visual, direction.normalized, speed,
-            groundSprite, bodySprite, remoteBody));
+        StartCoroutine(MoveRemoteVelvetWeb(visual, speed, groundSprite, bodySprite, remoteBody));
     }
 
-    private static IEnumerator MoveRemoteVelvetWeb(GameObject visual, Vector2 direction, float speed,
-        Sprite groundSprite, Sprite bodySprite, BodyScript ignoredBody)
+    private static IEnumerator MoveRemoteVelvetWeb(GameObject visual, float speed, Sprite groundSprite, Sprite bodySprite, BodyScript ignoredBody)
     {
         var downwardVelocity = 0f;
         var remaining = 5f;
         while (visual != null && remaining > 0f)
         {
-            visual.transform.position += visual.transform.right * speed * Time.deltaTime;
-            downwardVelocity += Time.deltaTime * Physics2D.gravity.y * 0.1f;
-            visual.transform.position += Vector3.up * downwardVelocity * Time.deltaTime;
+            Transform visualTransform = visual.transform;
+            float deltaTime = Time.deltaTime;
+            visualTransform.position += visualTransform.right * (speed * deltaTime);
+            downwardVelocity += Physics2D.gravity.y * (0.1f * deltaTime);
+            visualTransform.position += Vector3.up * (downwardVelocity * deltaTime);
+            
             var velocity = ((Vector2)visual.transform.right * speed + Vector2.up * downwardVelocity).normalized;
             visual.transform.right = velocity;
             visual.transform.eulerAngles -= new Vector3(0f, 0f, Time.deltaTime * 10f);
@@ -3150,77 +3123,78 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             wound.WeaponSprite, wound.WoundSprite, wound.HasSplash, createScreenCrack), wound.TargetPeerId);
     }
 
-    private void PlayRemoteShot(byte[] data)
+    private void PlayRemoteShot(ShotVisualPacket packet)
     {
-        if (data == null) return;
-        try
+        var origin = new Vector2(packet.OriginX, packet.OriginY);
+        var direction = new Vector2(packet.DirectionX, packet.DirectionY);
+        var up = new Vector2(packet.UpX, packet.UpY);
+        var sprite = packet.WeaponSprite;
+        var npcShot = packet.IsNpcShot;
+        var spreadSeed = packet.SpreadSeed;
+        var exactDirections = packet.ExactDirections;
+        
+        if (!IsFinite(origin.x) || !IsFinite(origin.y) || !IsFinite(direction.x) ||
+            !IsFinite(direction.y) || !IsFinite(up.x) || !IsFinite(up.y) ||
+            direction.sqrMagnitude < 0.01f || up.sqrMagnitude < 0.01f) return;
+        direction.Normalize();
+        up.Normalize();
+        var preset = FindWeaponPreset(sprite);
+        if (preset == null && remoteBody != null && remoteBody.weapon != null)
+            preset = remoteBody.weapon.stats;
+        if (preset == null) return;
+
+        if (GunsawMultiplayerPlugin.World != null)
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
+            var lampDirs = new List<Vector2>();
+
+            if (exactDirections.Length > 0)
             {
-                var origin = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var direction = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var up = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var sprite = reader.ReadString();
-                var npcShot = reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean();
-                var targetPeers = new List<ushort>();
-                if (reader.BaseStream.Position + sizeof(ushort) <= reader.BaseStream.Length)
+                foreach (ShotVisualDirection exactDirection in exactDirections)
                 {
-                    var targetCount = reader.ReadUInt16();
-                    for (var index = 0; index < targetCount &&
-                        reader.BaseStream.Position + sizeof(ushort) <= reader.BaseStream.Length; index++)
-                        targetPeers.Add(reader.ReadUInt16());
-                }
-                var spreadSeed = reader.BaseStream.Position + sizeof(int) <= reader.BaseStream.Length
-                    ? reader.ReadInt32() : 0;
-                var exactDirections = new List<Vector2>();
-                if (reader.BaseStream.Position < reader.BaseStream.Length)
-                {
-                    var directionCount = reader.ReadByte();
-                    for (var index = 0; index < directionCount &&
-                        reader.BaseStream.Position + sizeof(float) * 2 <= reader.BaseStream.Length; index++)
-                        exactDirections.Add(new Vector2(reader.ReadSingle(), reader.ReadSingle()));
-                }
-                if (!IsFinite(origin.x) || !IsFinite(origin.y) || !IsFinite(direction.x) ||
-                    !IsFinite(direction.y) || !IsFinite(up.x) || !IsFinite(up.y) ||
-                    direction.sqrMagnitude < 0.01f || up.sqrMagnitude < 0.01f) return;
-                direction.Normalize();
-                up.Normalize();
-                var preset = FindWeaponPreset(sprite);
-                if (preset == null && remoteBody != null && remoteBody.weapon != null)
-                    preset = remoteBody.weapon.stats;
-                if (preset == null) return;
-
-                if (GunsawMultiplayerPlugin.World != null)
-                    GunsawMultiplayerPlugin.World.ApplyRemoteLampHits(origin,
-                        exactDirections.Count > 0 ? exactDirections : new List<Vector2> { direction });
-
-                if (preset.fireSound != null)
-                    Sound.Play(preset.fireSound, origin, false, false, null, 1f, 1f);
-                if (preset.muzzleFlash != null)
-                {
-                    var flash = Instantiate(preset.muzzleFlash, origin, Quaternion.identity);
-                    Destroy(flash, 0.4f);
-                }
-                if (preset.shootType == 1)
-                {
-                    PlayRemoteProjectile(preset, origin, direction, !npcShot);
-                    return;
-                }
-
-                var count = Mathf.Clamp(preset.bulletAmount, 1, 12);
-                for (var index = 0; index < count; index++)
-                {
-                    var shotDirection = index < exactDirections.Count && exactDirections[index].sqrMagnitude > 0.01f
-                        ? exactDirections[index].normalized
-                        : (direction + up * preset.bulletSpread * SpreadValue(spreadSeed, index)).normalized;
-                    CreateRemoteTracer(preset, origin,
-                        FindRemoteShotEnd(origin, shotDirection, !npcShot));
-                    CreateRemoteBulletImpact(preset, origin, shotDirection, !npcShot);
+                    lampDirs.Add( new Vector2(exactDirection.X, exactDirection.Y) );
                 }
             }
+            else
+            {
+                lampDirs.Add(direction);
+            }
+
+            GunsawMultiplayerPlugin.World.ApplyRemoteLampHits(origin, lampDirs);
         }
-        catch (EndOfStreamException) { }
-        catch (IOException) { }
+        
+        if (preset.fireSound != null)
+            Sound.Play(preset.fireSound, origin, false, false, null, 1f, 1f);
+        
+        if (preset.muzzleFlash != null)
+        {
+            var flash = Instantiate(preset.muzzleFlash, origin, Quaternion.identity);
+            Destroy(flash, 0.4f);
+        }
+        
+        if (preset.shootType == 1)
+        {
+            PlayRemoteProjectile(preset, origin, direction, !npcShot);
+            return;
+        }
+
+        var count = Mathf.Clamp(preset.bulletAmount, 1, 12);
+        for (var index = 0; index < count; index++)
+        {
+            Vector2 exactDirection = Vector2.zero;
+
+            if (index < exactDirections.Length)
+            {
+                ShotVisualDirection dir = exactDirections[index];
+                exactDirection = new Vector2(dir.X, dir.Y);
+            }
+
+            Vector2 shotDirection = exactDirection.sqrMagnitude > 0.01f
+                ? exactDirection.normalized
+                : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
+            
+            CreateRemoteTracer(preset, origin, FindRemoteShotEnd(origin, shotDirection, !npcShot));
+            CreateRemoteBulletImpact(preset, origin, shotDirection, !npcShot);
+        }
     }
 
     private void PlayRemoteProjectile(WeaponPreset preset, Vector2 origin, Vector2 direction,

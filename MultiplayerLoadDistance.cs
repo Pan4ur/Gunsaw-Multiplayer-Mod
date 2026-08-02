@@ -17,14 +17,11 @@ internal static class MultiplayerLoadDistance
     internal const float NpcPoseDistanceSqr = 600f;
 
     private const float SimulationRefreshInterval = 0.2f;
-    private static readonly List<Vector2> playerPositions = new List<Vector2>();
-    private static readonly Dictionary<Rigidbody2D, bool> savedSimulationStates =
-        new Dictionary<Rigidbody2D, bool>();
-    private static readonly Dictionary<BodyScript, bool> npcTickStates =
-        new Dictionary<BodyScript, bool>();
-    private static readonly Dictionary<Component, bool> worldTickStates =
-        new Dictionary<Component, bool>();
-    private static readonly List<Rigidbody2D> staleBodies = new List<Rigidbody2D>();
+    private static readonly List<Vector2> playerPositions = [];
+    private static readonly Dictionary<Rigidbody2D, bool> savedSimulationStates = new();
+    private static readonly Dictionary<BodyScript, bool> npcTickStates = new();
+    private static readonly Dictionary<Component, bool> worldTickStates = new();
+    private static readonly List<Rigidbody2D> staleBodies = [];
     private static bool wasActive;
     private static bool hostSimulationActive;
     private static float activeDistanceSqr = DefaultTickDistanceSqr;

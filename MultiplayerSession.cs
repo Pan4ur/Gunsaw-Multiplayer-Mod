@@ -44,8 +44,7 @@ internal static partial class MultiplayerSession
     private const long P2PProbeRetryTicks = TimeSpan.TicksPerMillisecond * 500;
     private const int UdpFragmentPayload = 1000;
     private static int transportMessageSequence;
-    private static readonly Dictionary<long, FragmentTransfer> fragmentTransfers =
-        new Dictionary<long, FragmentTransfer>();
+    private static readonly Dictionary<long, FragmentTransfer> fragmentTransfers = new();
     private static readonly ReliableChannel reliableChannel = new ReliableChannel();
     private const int MaxQueuedPackets = 2048;
     private const int MaxPendingEventPackets = 256;
@@ -59,7 +58,8 @@ internal static partial class MultiplayerSession
     private static long p2pConnectStartedTicks;
     private static long nextP2PKeepAliveTicks;
     private static byte[] p2pKey;
-    private static readonly Dictionary<ushort, P2PPeer> p2pPeers = new Dictionary<ushort, P2PPeer>();
+    private static readonly Dictionary<ushort, P2PPeer> p2pPeers = new();
+    
     private static readonly byte[] hello = PacketHeader.Create(PacketType.Hello);
     private static readonly byte[] accepted = PacketHeader.Create(PacketType.Accepted);
     private static readonly byte[] sceneHeader = PacketHeader.Create(PacketType.Scene);
@@ -74,21 +74,12 @@ internal static partial class MultiplayerSession
     private static readonly byte[] playerDamageHeader = PacketHeader.Create(PacketType.PlayerDamage);
     private static readonly byte[] pvpDamageHeader = PacketHeader.Create(PacketType.PvpDamage);
     private static readonly byte[] settingsHeader = PacketHeader.Create(PacketType.Settings);
-    private static readonly byte[] shotVisualHeader = PacketHeader.Create(PacketType.ShotVisual);
-    private static readonly byte[] playerGrabHeader = PacketHeader.Create(PacketType.PlayerGrab);
     private static readonly byte[] pingHeader = PacketHeader.Create(PacketType.Ping);
     private static readonly byte[] pongHeader = PacketHeader.Create(PacketType.Pong);
-    private static readonly byte[] npcGrabHeader = PacketHeader.Create(PacketType.NpcGrab);
-    private static readonly byte[] disconnectHeader = PacketHeader.Create(PacketType.Disconnect);
-    private static readonly byte[] chatHeader = PacketHeader.Create(PacketType.Chat);
     private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
-    private static readonly byte[] npcPossessHeader = PacketHeader.Create(PacketType.NpcPossession);
-    private static readonly byte[] reliableHeader = PacketHeader.Create(PacketType.Reliable);
-    private static readonly byte[] reliableAckHeader = PacketHeader.Create(PacketType.ReliableAck);
     private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
-    private static readonly byte[] projectileImpactHeader = PacketHeader.Create(PacketType.ProjectileImpact);
-    private static readonly byte[] velvetWebHeader = PacketHeader.Create(PacketType.VelvetWeb);
     private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
+    
     private static string hostScene = "";
     private static string pendingScene = "";
     private static bool pendingSceneReload;

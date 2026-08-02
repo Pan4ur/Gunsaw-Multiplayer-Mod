@@ -7,7 +7,7 @@ internal static class KartPassengers
     private static readonly HashSet<BodyScript> passengers = new HashSet<BodyScript>();
     private static readonly Dictionary<BodyScript, Dictionary<Collider2D, bool>> colliderStates = new Dictionary<BodyScript, Dictionary<Collider2D, bool>>();
 
-    internal static bool IsPassenger(BodyScript body) => body != null && passengers.Contains(body);
+    private static bool IsPassenger(BodyScript body) => body != null && passengers.Contains(body);
 
     internal static Vector2 SeatPosition(VehicleBase vehicle, BodyScript body)
     {

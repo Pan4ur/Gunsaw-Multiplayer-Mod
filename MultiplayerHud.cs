@@ -6,17 +6,12 @@ using UnityEngine;
 
 internal sealed class MultiplayerHud : MonoBehaviour
 {
-    private const float BubbleLifetime = 5f;
-    private const float FeedLifetime = 8f;
-    private readonly List<ChatEntry> history = new List<ChatEntry>();
+    private readonly List<ChatEntry> history = [];
     private string localName = "Player";
-    private string hostedLobbyName = "";
     private string input = "";
     private bool chatOpen;
-    private bool lobbyWindowOpen;
     private bool focusChat;
     private bool waitForChatOpenKeyRelease;
-    private Vector2 chatScroll;
     private bool replicationDebugOverlayEnabled;
     private bool networkStatsVisible;
     private GameObject networkStatsObject;
@@ -39,15 +34,12 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         Instance = this;
         localName = SanitizeName(playerName);
-        hostedLobbyName = lobbyName ?? "";
-        lobbyWindowOpen = menuOpen;
     }
 
     internal void ResetChat()
     {
         history.Clear();
         input = "";
-        chatScroll = Vector2.zero;
         CloseChat();
     }
 
@@ -355,7 +347,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (string.IsNullOrEmpty(entry.Message)) return;
         history.Add(entry);
         while (history.Count > 80) history.RemoveAt(0);
-        chatScroll.y = float.MaxValue;
     }
 
     internal static void AddSystemMessage(string message)
@@ -366,20 +357,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
     internal static void DrawReplicationMarker(Vector3 position, bool sent)
     {
         if (Instance != null && Instance.nativeUi != null) Instance.nativeUi.AddDebugMarker(position, sent);
-    }
-
-    private static BodyScript LocalBody()
-    {
-        var player = PlayerScript.player;
-        return player == null ? null : player.bodyScript;
-    }
-
-    private static string PlayerState(BodyScript body)
-    {
-        if (body == null) return "";
-        if (!body.isAlive) return "  DEAD";
-        if (!body.IsConsc() || !body.CanMove()) return "  unconscious";
-        return "";
     }
 
     private static string SanitizeName(string value)
