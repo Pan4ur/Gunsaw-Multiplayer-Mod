@@ -18,7 +18,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private const float SnapshotInterval = 1f / 50f;
     private const float DiscoveryInterval = 60f;
-    private const float NewBodyRegistrationDelay = 1f;
+    private const float NewBodyRegistrationDelay = 0.25f;
     private const float FullSnapshotInterval = 1f;
     private const float VisualStateInterval = 0.1f;
     private static readonly Transform[] emptyTransforms = new Transform[0];
@@ -1026,6 +1026,11 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private NpcProxy CreateProxy(string id, BodyScript body, GameObject root, bool networkCreated)
     {
+        if (body != null && (body.limbs == null || body.limbs.Count == 0))
+        {
+            try { body.WakeUp(); }
+            catch (Exception) { }
+        }
         InitializeSeasonalHats(root);
         ClearWeaponBackShows(body);
         var proxy = new NpcProxy

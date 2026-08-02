@@ -121,7 +121,7 @@ You need the .NET SDK and a local Gunsaw installation whose required managed ass
 available in `GunsawMultiplayer/lib/`. For the standard local installation, the source DLLs are located in `Gunsaw\BepInEx\core\` and `Gunsaw\Gunsaw_Data\Managed\`. Copy `BepInEx.dll` and `0Harmony.dll` from the `BepInEx\core` directory, and `Assembly-CSharp.dll` together with the required `UnityEngine*.dll` files from the `Gunsaw_Data\Managed` directory into `GunsawMultiplayer\lib\`. These game DLLs are not included in the repository and must be obtained from your own Gunsaw installation.
 
 ```powershell
-.\build-mod.ps1
+dotnet build .\GunsawMultiplayer.csproj -c Release
 ```
 
 ## Running your own lobby server
