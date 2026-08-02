@@ -75,8 +75,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private readonly List<SpriteRenderer[]> remoteTailSprites = [];
     private readonly List<SpriteRenderer[]> remoteTailRootSprites = [];
     private bool remotePhysicsModeKnown;
-    private bool lastRemoteSimulated;
-    private bool lastPassiveGrabProxy;
     private float remoteVehicleHeadRotation;
     private bool hasRemoteVehicleHeadRotation;
     private bool remoteVehicleReflected;
@@ -2412,30 +2410,24 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (remoteBody != null && player != null && player.bodyScript != null)
             remoteBody.team = RemoteTeam(player.bodyScript);
 
-        var simulated = MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
-            MultiplayerSession.CanGrabPlayers;
-        var passiveGrabProxy = !MultiplayerSession.IsHost && !MultiplayerSession.PvpEnabled &&
-            MultiplayerSession.CanGrabPlayers;
-        if (remotePhysicsModeKnown && simulated == lastRemoteSimulated &&
-            passiveGrabProxy == lastPassiveGrabProxy) return;
+        if (remotePhysicsModeKnown) return;
         remotePhysicsModeKnown = true;
-        lastRemoteSimulated = simulated;
-        lastPassiveGrabProxy = passiveGrabProxy;
+        
         foreach (var body in remoteRigidbodies)
         {
             if (body == null) continue;
-            body.simulated = simulated;
-            if (simulated) body.bodyType = RigidbodyType2D.Kinematic;
+            body.simulated = true;
+            body.bodyType = RigidbodyType2D.Kinematic;
             body.velocity = Vector2.zero;
             body.angularVelocity = 0f;
         }
+        
         foreach (var pair in remoteColliderTriggers)
-            if (pair.Key != null) pair.Key.isTrigger = pair.Value || passiveGrabProxy ||
-                (!MultiplayerSession.PvpEnabled && !MultiplayerSession.IsHost);
+            if (pair.Key != null) pair.Key.isTrigger = pair.Value;
+        
         if (MultiplayerSession.IsHost)
             foreach (var prop in FindObjectsOfType<Rigidbody2D>())
-                if (prop != null && (prop.GetComponentInParent<CrateScript>() != null ||
-                    prop.GetComponentInParent<DroppedWeapon>() != null))
+                if (prop != null && (prop.GetComponentInParent<CrateScript>() != null || prop.GetComponentInParent<DroppedWeapon>() != null))
                     IgnoreRemotePlayerPropCollisions(prop);
     }
 
