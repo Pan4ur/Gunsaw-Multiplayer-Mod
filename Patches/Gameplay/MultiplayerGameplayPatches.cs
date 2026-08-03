@@ -582,6 +582,7 @@ internal static class ClientNpcDamagePatch
         out NetworkAvatarReplication.TargetScreenEffectState __state)
     {
         __state = NetworkAvatarReplication.BeginTargetScreenEffect(__instance);
+        if (KartPassengers.IsProtectedPassenger(__instance)) return false;
         NetworkAvatarReplication.RecordDamageSource(__instance);
         NetworkAvatarReplication.TryCreateLocalKillBloodSplat(__instance);
         if (NetworkAvatarReplication.HandleHostRemoteDamaged(__instance, isCrit)) return false;

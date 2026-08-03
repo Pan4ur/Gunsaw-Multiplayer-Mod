@@ -183,7 +183,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 continue;
             }
             var scale = Mathf.Clamp(Mathf.Abs(body.characterScale), 0.7f, 1.8f);
-            var screen = camera.WorldToScreenPoint((Vector3)body.rb.position + Vector3.up * (1.35f * scale));
+            Vector3 position = body.inVehicle ? body.transform.position : (Vector3)body.rb.position;
+            var screen = camera.WorldToScreenPoint(position + Vector3.up * (1.35f * scale));
             if (screen.z <= 0f) continue;
             active.Add(body);
             TMP_Text tag;
@@ -236,7 +237,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 stale.Add(pair.Key);
                 continue;
             }
-            var screen = camera.WorldToScreenPoint((Vector3)pair.Key.rb.position + Vector3.down * 1.4f);
+            var position = pair.Key.inVehicle ? pair.Key.transform.position : (Vector3)pair.Key.rb.position;
+            var screen = camera.WorldToScreenPoint(position + Vector3.down * 1.4f);
             if (screen.z <= 0f) { pair.Value.gameObject.SetActive(false); continue; }
             pair.Value.text = entry.Message;
             pair.Value.rectTransform.anchoredPosition = CanvasPosition(screen);
@@ -246,7 +248,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         foreach (var body in stale) chatBubbles.Remove(body);
         foreach (var pair in latest)
         {
-            var screen = camera.WorldToScreenPoint((Vector3)pair.Key.rb.position + Vector3.down * 1.4f);
+            var position = pair.Key.inVehicle ? pair.Key.transform.position : (Vector3)pair.Key.rb.position;
+            var screen = camera.WorldToScreenPoint(position + Vector3.down * 1.4f);
             if (screen.z <= 0f) continue;
             var bubble = Text(root.transform, pair.Value.Message, CanvasPosition(screen), new Vector2(300f, 54f), 14, TextAlignmentOptions.Center);
             bubble.fontStyle = FontStyles.Bold;

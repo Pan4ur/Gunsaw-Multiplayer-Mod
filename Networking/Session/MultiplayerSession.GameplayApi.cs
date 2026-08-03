@@ -170,6 +170,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakePlayerTeleport(out ushort peerId, out PlayerTeleportPacket packet)
         => TryTakePacket(playerTeleports, out peerId, out packet);
 
+    internal static bool TryTakeVehicleEject(out ushort peerId, out VehicleEjectPacket packet)
+        => TryTakePacket(vehicleEjects, out peerId, out packet);
+
     internal static bool TryTakeTeleportRequest(out ushort peerId, out TeleportRequestPacket packet)
         => TryTakePacket(teleportRequests, out peerId, out packet);
 
@@ -194,7 +197,7 @@ internal static partial class MultiplayerSession
         }
     }
 
-    // Decodes the legacy world-interaction payload before it enters the typed transport API.
+    // TODO remove the legacy shit
     internal static void SendWorldInteraction(byte[] serialized)
     {
         if (serialized == null) return;

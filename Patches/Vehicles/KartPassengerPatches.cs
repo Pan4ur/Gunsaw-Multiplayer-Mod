@@ -1,6 +1,4 @@
-using System.Collections.Generic;
 using HarmonyLib;
-using UnityEngine;
 
 [HarmonyPatch(typeof(VehicleBase), "EnterVehicle")]
 internal static class KartPassengerEntryPatch
@@ -14,6 +12,49 @@ internal static class KartPassengerExitPatch
 {
     private static bool Prefix(BodyScript __instance) => !KartPassengers.ExitPassenger(__instance);
     private static void Postfix(BodyScript __instance) => KartPassengers.Exit(__instance);
+}
+
+[HarmonyPatch(typeof(BodyScript), "DoFallDamage")]
+internal static class KartPassengerFallDamagePatch
+{
+    private static bool Prefix(BodyScript __instance) => !KartPassengers.IsProtectedPassenger(__instance);
+}
+
+[HarmonyPatch(typeof(BodyScript), "OnCollisionEnter2D")]
+internal static class KartPassengerCollisionDamagePatch
+{
+    private static bool Prefix(BodyScript __instance) => !KartPassengers.IsProtectedPassenger(__instance);
+}
+
+[HarmonyPatch(typeof(LimbScript), "OnCollisionEnter2D")]
+internal static class KartPassengerLimbCollisionDamagePatch
+{
+    private static bool Prefix(LimbScript __instance) =>
+        __instance == null || !KartPassengers.IsProtectedPassenger(__instance.body);
+}
+
+[HarmonyPatch(typeof(BodyScript), "FixedUpdate")]
+internal static class KartPassengerGroundSafetyPatch
+{
+    private static void Postfix(BodyScript __instance)
+    {
+        if (!KartPassengers.IsProtectedPassenger(__instance)) return;
+        __instance.framesInGround = 0;
+        __instance.grounded = false;
+        if (__instance.isAlive && __instance.controlState != BodyScript.RagdollState.FullControl)
+            __instance.EnterFullControl();
+    }
+}
+
+[HarmonyPatch(typeof(DismemberManager), "Update")]
+internal static class KartPassengerDismemberSafetyPatch
+{
+    private static bool Prefix(DismemberManager __instance)
+    {
+        if (__instance == null || !KartPassengers.IsProtectedPassenger(__instance.body)) return true;
+        __instance.currentDamage = 0f;
+        return false;
+    }
 }
 
 [HarmonyPatch(typeof(CameraFollow), "LateUpdate")]

@@ -91,8 +91,39 @@ internal static class ClientVehicleCollisionPatch
 {
     private static bool Prefix(VehiclePart __instance, Collision2D col)
     {
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
-        if (__instance == null || col == null || __instance.isWheel || __instance.vehicle == null) return false;
+        if (__instance == null || col == null || __instance.isWheel || __instance.vehicle == null)
+            return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost;
+            
+        var localBody = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
+        if (MultiplayerSession.IsHost)
+        {
+            var hostImpact = Mathf.Abs(col.relativeVelocity.magnitude *Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
+            if (hostImpact > 28f)
+            {
+                if (KartPassengers.IsProtectedPassenger(localBody) && localBody.curVehicle == __instance.vehicle)
+                    localBody.ExitVehicle();
+                NetworkAvatarReplication.EjectRemoteVehicleOccupants(__instance.vehicle);
+            }
+            return true;
+        }
+        
+        if (KartPassengers.IsProtectedPassenger(localBody) &&
+            localBody.curVehicle == __instance.vehicle && __instance.vehicle.occupant != localBody)
+        {
+            return false;
+        }
+        
+        var hitBody = col.collider == null ? null : col.collider.GetComponentInParent<BodyScript>();
+        
+        if (hitBody == null && col.collider != null)
+        {
+            var hitLimb = col.collider.GetComponentInParent<LimbScript>();
+            hitBody = hitLimb == null ? null : hitLimb.body;
+        }
+        
+        if (hitBody != null && hitBody.inVehicle && hitBody.curVehicle == __instance.vehicle && __instance.vehicle.occupant != hitBody) return false;
+        if (!MultiplayerSession.IsConnected) return true;
+        
         var impact = Mathf.Abs(col.relativeVelocity.magnitude *
             Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
         if (impact > 6f && GunsawMultiplayerPlugin.World != null)

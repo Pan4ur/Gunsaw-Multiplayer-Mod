@@ -29,5 +29,6 @@ internal enum PacketType : byte
     ProjectileImpact = 0x1B,
     VelvetWeb = 0x1C,
     PlayerTeleport = 0x1D,
-    TeleportRequest = 0x1E
+    TeleportRequest = 0x1E,
+    VehicleEject = 0x1F
 }

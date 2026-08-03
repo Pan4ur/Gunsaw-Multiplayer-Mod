@@ -79,6 +79,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
     private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
     private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
+    private static readonly byte[] vehicleEjectHeader = PacketHeader.Create(PacketType.VehicleEject);
     
     private static string hostScene = "";
     private static string pendingScene = "";
@@ -109,6 +110,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<ProjectileImpactPacket>> projectileImpacts = new Queue<PeerPacket<ProjectileImpactPacket>>();
     private static readonly Queue<PeerPacket<VelvetWebPacket>> velvetWebs = new Queue<PeerPacket<VelvetWebPacket>>();
     private static readonly Queue<PeerPacket<PlayerTeleportPacket>> playerTeleports = new Queue<PeerPacket<PlayerTeleportPacket>>();
+    private static readonly Queue<PeerPacket<VehicleEjectPacket>> vehicleEjects = new Queue<PeerPacket<VehicleEjectPacket>>();
     private static readonly Queue<PeerPacket<TeleportRequestPacket>> teleportRequests = new Queue<PeerPacket<TeleportRequestPacket>>();
     private static readonly Queue<PeerPacket<PlayerGrabPacket>> playerGrabs = new Queue<PeerPacket<PlayerGrabPacket>>();
     private static readonly Queue<PeerPacket<NpcGrabPacket>> npcGrabs = new Queue<PeerPacket<NpcGrabPacket>>();

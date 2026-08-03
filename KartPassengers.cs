@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using HarmonyLib;
 using UnityEngine;
 
 internal static class KartPassengers
@@ -9,9 +7,14 @@ internal static class KartPassengers
 
     private static bool IsPassenger(BodyScript body) => body != null && passengers.Contains(body);
 
+    internal static bool IsProtectedPassenger(BodyScript body) => IsPassenger(body) && body.inVehicle && body.curVehicle != null;
+
     internal static Vector2 SeatPosition(VehicleBase vehicle, BodyScript body)
     {
         if (vehicle == null || vehicle.seatPos == null) return Vector2.zero;
+        
+     //   var offset = IsPassenger(body) ? new Vector2(-1f, 2f) : HasPassengers(vehicle) ? new Vector2(1f, 2f) : Vector2.zero;
+     
         var offset = IsPassenger(body) ? new Vector2(-0.105f, -0.08f) : HasPassengers(vehicle) ? new Vector2(0.105f, 0.08f) : Vector2.zero;
         return vehicle.seatPos.position + vehicle.mainPart.transform.TransformVector(offset);
     }
@@ -84,10 +87,17 @@ internal static class KartPassengers
         var joint = body.GetComponent<FixedJoint2D>();
         if (joint != null) UnityEngine.Object.Destroy(joint);
         body.inVehicle = false;
+        if (body.BodyAnimator != null)
+        {
+            body.BodyAnimator.SetBool("inVehicle", false);
+            body.BodyAnimator.Rebind();
+            body.BodyAnimator.Update(0f);
+        }
         body.transform.position += vehicle.mainPart.transform.up * vehicle.upPush * 2f;
         body.curVehicle = null;
         body.rb.freezeRotation = true;
         body.rb.transform.rotation = Quaternion.identity;
+        body.standAnimForce = 1f;
         Exit(body);
         return true;
     }

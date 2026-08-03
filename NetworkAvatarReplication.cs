@@ -76,9 +76,23 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private readonly List<SpriteRenderer[]> remoteTailRootSprites = [];
     private bool remotePhysicsModeKnown;
     private float remoteVehicleHeadRotation;
+    private float vehicleHeadFromRotation;
+    private float vehicleHeadStartedAt;
     private bool hasRemoteVehicleHeadRotation;
-    private bool remoteVehicleReflected;
-    private bool hasRemoteVehicleReflection;
+    private Vector2 vehicleArmsTarget;
+    private float vehicleArmsTargetRotation;
+    private Vector2 vehicleArmsLocalPosition;
+    private float vehicleArmsLocalRotation;
+    private Vector2 vehicleArmsFromLocalPosition;
+    private float vehicleArmsFromLocalRotation;
+    private float vehicleArmsStartedAt;
+    private bool hasVehicleArmsTarget;
+    private Vector2 vehicleTailTarget;
+    private float vehicleTailTargetRotation;
+    private readonly List<VehicleTailTarget> vehicleTailTargets = [];
+    private readonly List<VehicleTailTransformTarget> vehicleTailTransformTargets = [];
+    private bool hasVehicleRigTarget;
+    private float nextVehicleRigDebug;
     private static NetworkAvatarReplication instance;
     private static readonly Dictionary<ushort, NetworkAvatarReplication> replicas = new();
     private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
@@ -125,7 +139,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private const float RespawnProtectionSeconds = 3f;
     private ushort spectatorPeerId;
     private bool spectating;
-
+    private bool remoteVehicleReflected;
+    private bool hasRemoteVehicleReflection;
+    private Vector3 remoteScaleBeforeVehicle;
+    private bool hasRemoteScaleBeforeVehicle;
+    private BodyScript localVehicleBody;
+    private VehicleBase localVehicle;
+    private bool localVehicleLocked;
+    private bool localVehicleWasSimulated;
+    
     internal static BodyScript RemoteBody
     {
         get
@@ -164,6 +186,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         NetworkAvatarReplication replica;
         return replicas.TryGetValue(peerId, out replica) && replica != null ? replica.remoteBody : null;
+    }
+
+    internal static void EjectRemoteVehicleOccupants(VehicleBase vehicle)
+    {
+        if (!MultiplayerSession.IsHost || vehicle == null) return;
+        foreach (var replica in replicas.Values)
+        {
+            if (replica == null || replica.remotePeerId == 0 || replica.remoteBody == null ||
+                !replica.remoteBody.inVehicle || replica.remoteBody.curVehicle != vehicle) continue;
+            var body = replica.remoteBody;
+            if (vehicle.occupant != body)
+                body.ExitVehicle();
+            MultiplayerSession.Send(new VehicleEjectPacket(), replica.remotePeerId);
+        }
     }
 
     internal static bool IsRemoteAvatarBody(BodyScript body)
@@ -210,19 +246,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return true;
     }
 
-    internal static void CompleteVanillaBodySwitch(BodyScript body)
-    {
-        if (instance == null || body == null) return;
-        instance.localRespawnGeneration++;
-        instance.respawnAt = -1f;
-        instance.localRespawnPending = false;
-        instance.localWasAlive = true;
-        instance.localDeathPosition = body.transform.position;
-        localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
-        localPlayerInstance = PlayerScript.player;
-        localGlobalBody = body.transform;
-        RestoreLocalPlayerSingleton();
-    }
+
 
     internal static bool ReplaceLocalPlayerBody(BodyScript oldBody, BodyScript newBody)
     {
@@ -658,6 +682,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakePlayerTeleport(out senderId, out playerTeleport))
             ApplyRemoteTeleport(player.bodyScript, playerTeleport);
 
+        VehicleEjectPacket vehicleEject;
+        while (MultiplayerSession.TryTakeVehicleEject(out senderId, out vehicleEject))
+            ApplyVehicleEject(player.bodyScript);
+
         TeleportRequestPacket teleportRequest;
         while (MultiplayerSession.TryTakeTeleportRequest(out senderId, out teleportRequest))
             HandleTeleportRequest(senderId, teleportRequest);
@@ -848,10 +876,26 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!MultiplayerSession.IsConnected || remoteAvatar == null) return;
-        MaintainRemoteVehiclePose();
-        if (hasRemoteVehicleReflection) ApplyVehicleReflection();
-        if (hasRemoteVehicleHeadRotation) ApplyVehicleHeadRotation(remoteVehicleHeadRotation);
+        if (coordinator)
+            UpdateLocalVehicleLock();
+        
+        if (!MultiplayerSession.IsConnected || remoteAvatar == null)
+            return;
+        
+        if (remoteBody != null && remoteBody.inVehicle)
+        {
+            MaintainRemoteVehiclePose();
+            ApplyVehicleArmsTarget();
+            SnapRemoteVehicleArmLimbs();
+            
+            if (hasRemoteVehicleReflection)
+                ApplyVehicleReflection();
+
+            if (hasRemoteVehicleHeadRotation)
+                ApplyVehicleHeadRotation();
+        
+            ApplyVehicleTailTargets();  
+        }
     }
 
     private void FixedUpdate()
@@ -861,7 +905,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (coordinator) return;
+        if (coordinator)
+        {
+            RestoreLocalVehiclePhysics();
+            return;
+        }
+        
         NetworkAvatarReplication current;
         if (replicas.TryGetValue(remotePeerId, out current) && current == this)
             replicas.Remove(remotePeerId);
@@ -982,6 +1031,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         pendingRemoteDamage = 0f;
         remoteCanBeGrabbed = false;
         incomingGrabUntil = 0f;
+        hasRemoteScaleBeforeVehicle = false;
     }
 
     private static void RestoreLocalPlayerSingleton()
@@ -1394,22 +1444,57 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 if (remoteState < BodyScript.EntityState.Idle || remoteState > BodyScript.EntityState.MoveLeft)
                     remoteState = BodyScript.EntityState.Idle;
                 var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteVehicleDriver, remoteState);
+                var remoteVehicleStreamed = remoteInVehicle && remoteBody.inVehicle &&
+                    remoteBody.curVehicle != null && remoteBody.curVehicle.mainPart != null &&
+                    remoteBody.curVehicle.mainPart.rb != null;
+             
                 var isRight = reader.ReadBoolean();
                 var reflected = reader.ReadBoolean();
+
                 remoteAvatar.SetActive(reader.ReadBoolean());
                 var remoteHeadRotation = reader.ReadSingle();
-                hasRemoteVehicleHeadRotation = remoteVehicleAttached;
-                remoteVehicleHeadRotation = remoteHeadRotation;
-                hasRemoteVehicleReflection = true;
+                var hadVehicleHeadRotation = hasRemoteVehicleHeadRotation;
+
+                hasRemoteVehicleHeadRotation = remoteVehicleStreamed;
+                hasVehicleArmsTarget = remoteVehicleStreamed;
+                hasRemoteVehicleReflection = remoteVehicleStreamed;
                 remoteVehicleReflected = reflected;
-                if (remoteBody.isRight != isRight)
+
+                if (remoteVehicleStreamed)
+                {
+                    if (hadVehicleHeadRotation)
+                    {
+                        var progress = Mathf.Clamp01(
+                            (Time.unscaledTime -
+                             vehicleHeadStartedAt) /
+                            0.10f);
+
+                        vehicleHeadFromRotation =
+                            Mathf.LerpAngle(
+                                vehicleHeadFromRotation,
+                                remoteVehicleHeadRotation,
+                                progress);
+                    }
+                    else
+                    {
+                        vehicleHeadFromRotation = remoteHeadRotation;
+                    }
+
+                    vehicleHeadStartedAt = Time.unscaledTime;
+                }
+
+                remoteVehicleHeadRotation = remoteHeadRotation;
+
+                if (!remoteVehicleStreamed &&
+                    remoteBody.isRight != isRight)
                 {
                     remoteBody.SwitchDir(true);
                 }
+                
                 var limbs = GetList(remoteBody, "limbs");
                 var sourceVehicleRoot = Vector2.zero;
                 var sourceVehicleRotation = 0f;
-                if (remoteVehicleAttached)
+                if (remoteInVehicle)
                 {
                     ReadVehicleRoot(reader, out sourceVehicleRoot, out sourceVehicleRotation);
                     lastAuthoritativePosition = remoteBody.rb.position;
@@ -1431,7 +1516,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                         continue;
                     }
                     var limb = (LimbScript)limbs[index];
-                    if (remoteVehicleAttached) SkipBody(reader);
+                    if (remoteInVehicle) SkipBody(reader);
                     else SetTarget(reader, limb.rb);
                     limb.dismembered = reader.ReadBoolean();
                     dismembermentHash = unchecked(dismembermentHash * 31 + (limb.dismembered ? 1 : 0));
@@ -1443,20 +1528,29 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     ApplyDismembermentVisuals();
                 }
                 var tailCount = reader.ReadUInt16();
+                if (!remoteVehicleStreamed)
+                {
+                    vehicleTailTargets.Clear();
+                    vehicleTailTransformTargets.Clear();
+                }
+                    
                 for (var index = 0; index < tailCount; index++)
                     ReadTailTarget(reader,
                         index < remoteTailBases.Count ? remoteTailBases[index] : null,
-                        index < remoteTailSprites.Count ? remoteTailSprites[index] : null);
+                        index < remoteTailSprites.Count ? remoteTailSprites[index] : null,
+                        remoteVehicleStreamed, sourceVehicleRoot, sourceVehicleRotation);
                 var tailRootCount = reader.ReadUInt16();
                 for (var index = 0; index < tailRootCount; index++)
                     ReadTailTarget(reader,
                         index < remoteTails.Length ? remoteTails[index] : null,
-                        index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null);
-                if (remoteVehicleAttached)
+                        index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null,
+                        remoteVehicleStreamed, sourceVehicleRoot, sourceVehicleRotation);
+                
+                if (remoteVehicleStreamed)
                 {
-                    ApplyVehicleWorldTransform(reader, remoteBody.Arms, sourceVehicleRoot, sourceVehicleRotation);
-                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
-                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
+                    ReadVehicleArmsTarget( reader, sourceVehicleRoot, sourceVehicleRotation);
+                    ReadLocalRotationImmediately( reader, GetTransform(remoteBody, "gunTransform"));
+                    ReadLocalRotationImmediately( reader, GetTransform(remoteBody, "gunAnimTransform"));
                 }
                 else
                 {
@@ -1464,7 +1558,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
                     ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
                 }
-                if (remoteVehicleAttached) ApplyVehicleHeadRotation(remoteHeadRotation);
+                
+                if (remoteVehicleStreamed) ApplyVehicleHeadRotation();
+                
                 ReadWorldTarget(reader, null);
                 var remoteHealth = reader.ReadSingle();
                 if (MultiplayerSession.IsHost)
@@ -1586,6 +1682,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (vehicle == null || remoteBody == null || vehicle.mainPart == null ||
             vehicle.mainPart.rb == null || vehicle.seatPos == null) return;
+        
+        remoteScaleBeforeVehicle = remoteBody.transform.localScale;
+        hasRemoteScaleBeforeVehicle = true;
+        
         if (driver)
         {
             vehicle.occupant = remoteBody;
@@ -1593,26 +1693,35 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             KartPassengers.RegisterDriver(vehicle, remoteBody);
         }
         else KartPassengers.Attach(vehicle, remoteBody, false);
+        
         remoteBody.inVehicle = true;
         remoteBody.curVehicle = vehicle;
-        remoteBody.rb.freezeRotation = false;
-        remoteBody.enabled = true;
-        foreach (var limb in remoteAvatar.GetComponentsInChildren<LimbScript>(true)) limb.enabled = true;
+        remoteBody.rb.freezeRotation = true;
+        SetRemoteVehicleRigPhysics(false);
+        remoteBody.enabled = false;
+        
+        foreach (var limb in remoteAvatar.GetComponentsInChildren<LimbScript>(true)) limb.enabled = false;
+        
         if (remoteBody.BodyAnimator != null)
         {
             remoteBody.BodyAnimator.enabled = true;
             remoteBody.BodyAnimator.SetBool("inVehicle", true);
             remoteBody.BodyAnimator.Play("PlayerSit");
         }
+        
         if (remoteAvatar != null)
         {
             var offset = (Vector3)KartPassengers.SeatPosition(vehicle, remoteBody) - remoteBody.transform.position;
             remoteAvatar.transform.SetParent(vehicle.mainPart.transform, true);
             remoteAvatar.transform.position += offset;
         }
+        
+        remoteBody.BodyAnimator.Update(0f);
+        SnapRemoteVehicleLimbs();
         targets.Clear();
         worldTargets.Clear();
         localTargets.Clear();
+        CaptureRemoteVehicleRigPose(vehicle);
         SetRemoteVehicleCollisions(vehicle, true);
     }
 
@@ -1624,23 +1733,132 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         animator.SetBool("inVehicle", true);
         animator.Play("PlayerSit", 0, 0f);
         animator.Update(0f);
-
         remoteBody.standAnimForce = 1f;
+    }
+
+    private void SnapRemoteVehicleLimbs()
+    {
+        if (remoteBody == null) return;
         foreach (var limb in remoteBody.limbs)
-            if (limb != null && !limb.dismembered) limb.MoveLimb();
+        {
+            if (limb == null || limb.dismembered || limb.rb == null || limb.transformToFollow == null) continue;
+            var position = limb.transformToFollow.localPosition;
+            if (limb.reverseXPosWhenFlipped && !remoteBody.isRight) position = -position;
+            limb.transform.localPosition = position;
+            limb.transform.localRotation = Quaternion.Euler(0f, 0f, limb.transformToFollow.localEulerAngles.z);
+            limb.rb.position = limb.transform.position;
+            limb.rb.rotation = limb.transform.eulerAngles.z;
+            limb.rb.velocity = Vector2.zero;
+            limb.rb.angularVelocity = 0f;
+        }
+    }
+
+    private void SetRemoteVehicleRigPhysics(bool simulated)
+    {
+        foreach (var body in remoteRigidbodies)
+        {
+            if (body == null) continue;
+            body.velocity = Vector2.zero;
+            body.angularVelocity = 0f;
+            body.simulated = simulated;
+        }
+    }
+
+    private void CaptureRemoteVehicleRigPose(VehicleBase vehicle)
+    {
+        hasVehicleArmsTarget = remoteBody != null && remoteBody.Arms != null && vehicle != null &&
+            vehicle.mainPart != null && vehicle.mainPart.rb != null;
+        
+        vehicleTailTargets.Clear();
+        
+        if (!hasVehicleArmsTarget) return;
+        vehicleArmsLocalPosition = vehicle.mainPart.transform.InverseTransformPoint(remoteBody.Arms.position);
+        vehicleArmsLocalRotation = Mathf.DeltaAngle(vehicle.mainPart.rb.rotation, remoteBody.Arms.eulerAngles.z);
+        vehicleArmsFromLocalPosition = vehicleArmsLocalPosition;
+        vehicleArmsFromLocalRotation = vehicleArmsLocalRotation;
+        vehicleArmsStartedAt = Time.unscaledTime;
+        foreach (var tailBody in remoteTailBases)
+        {
+            if (tailBody == null)
+                continue;
+
+            var localRotation = Mathf.DeltaAngle(
+                vehicle.mainPart.rb.rotation,
+                tailBody.rotation);
+
+            vehicleTailTargets.Add(new VehicleTailTarget
+            {
+                Body = tailBody,
+
+                LocalRotation = localRotation,
+                FromLocalRotation = localRotation,
+                StartedAt = Time.unscaledTime
+            });
+        }
+        
+        for (var index = 0;
+             index < vehicleTailTransformTargets.Count;
+             index++)
+        {
+            var state =
+                vehicleTailTransformTargets[index];
+
+            if (state.Transform == null)
+                continue;
+
+            var localRotation = Mathf.DeltaAngle(
+                vehicle.mainPart.rb.rotation,
+                state.Transform.eulerAngles.z);
+
+            state.LocalRotation = localRotation;
+            state.FromLocalRotation = localRotation;
+            state.StartedAt = Time.unscaledTime;
+
+            vehicleTailTransformTargets[index] = state;
+        }
+        
+        hasVehicleRigTarget = true;
     }
 
     private void DetachRemoteAvatar()
     {
-        if (remoteBody != null) remoteBody.enabled = false;
+        if (remoteBody != null)
+        {
+            remoteBody.inVehicle = false;
+            remoteBody.curVehicle = null;
+            remoteBody.standAnimForce = 1f;
+            if (remoteBody.BodyAnimator != null)
+            {
+                remoteBody.BodyAnimator.enabled = true;
+                remoteBody.BodyAnimator.SetBool("inVehicle", false);
+                remoteBody.BodyAnimator.Rebind();
+                remoteBody.BodyAnimator.Update(0f);
+            }
+            
+            if (hasRemoteScaleBeforeVehicle)
+            {
+                remoteBody.transform.localScale = remoteScaleBeforeVehicle;
+                hasRemoteScaleBeforeVehicle = false;
+            }
+
+            
+            SnapRemoteVehicleLimbs();
+            remoteBody.enabled = false;
+        }
         if (remoteAvatar != null)
             foreach (var limb in remoteAvatar.GetComponentsInChildren<LimbScript>(true)) limb.enabled = false;
         if (remoteBody != null && remoteBody.BodyAnimator != null)
             remoteBody.BodyAnimator.enabled = false;
         if (remoteAvatar != null) remoteAvatar.transform.SetParent(remoteAvatarParent, true);
+        remotePhysicsModeKnown = false;
+        UpdateRemotePhysicsMode();
         targets.Clear();
         worldTargets.Clear();
         localTargets.Clear();
+        vehicleTailTargets.Clear();
+        vehicleTailTransformTargets.Clear();
+        hasRemoteVehicleHeadRotation = false;
+        hasVehicleArmsTarget = false;
     }
 
     private void MaintainRemoteVehicleAttachment()
@@ -1661,37 +1879,160 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         rotation = reader.ReadSingle();
     }
 
-    private void ApplyVehicleHeadRotation(float relativeRotation)
+    private void ApplyVehicleHeadRotation()
     {
         if (remoteBody == null || remoteBody.headTransform == null || remoteBody.curVehicle == null ||
             remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null) return;
+        var progress = Mathf.Clamp01((Time.unscaledTime - vehicleHeadStartedAt) / 0.10f);
+        var relativeRotation = Mathf.LerpAngle(vehicleHeadFromRotation, remoteVehicleHeadRotation, progress);
         remoteBody.headTransform.rotation = Quaternion.Euler(0f, 0f,
             remoteBody.curVehicle.mainPart.rb.rotation + relativeRotation);
     }
 
-    private void ApplyVehicleReflection()
-    {
-        if (remoteBody == null) return;
-        var scale = remoteBody.transform.localScale;
-        var magnitude = Mathf.Abs(scale.x);
-        scale.x = (magnitude < 0.0001f ? 1f : magnitude) * (remoteVehicleReflected ? -1f : 1f);
-        remoteBody.transform.localScale = scale;
-    }
-
-    private void ApplyVehicleWorldTransform(BinaryReader reader, Transform transform, Vector2 sourceRoot,
-        float sourceRootRotation)
+    private void ReadVehicleArmsTarget(BinaryReader reader, Vector2 sourceRoot, float sourceRootRotation)
     {
         var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
         var rotation = reader.ReadSingle();
-        if (transform == null || remoteBody == null || remoteBody.curVehicle == null ||
-            remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null ||
-            remoteBody.curVehicle.seatPos == null) return;
+        if (remoteBody == null || remoteBody.curVehicle == null || remoteBody.curVehicle.mainPart == null ||
+            remoteBody.curVehicle.mainPart.rb == null) return;
         var vehicle = remoteBody.curVehicle;
         var angle = vehicle.mainPart.rb.rotation - sourceRootRotation;
-        var relativePosition = (Vector2)(Quaternion.Euler(0f, 0f, angle) * (position - sourceRoot));
-        transform.position = (Vector3)KartPassengers.SeatPosition(vehicle, remoteBody) + (Vector3)relativePosition;
-        transform.rotation = Quaternion.Euler(0f, 0f,
+        var target = KartPassengers.SeatPosition(vehicle, remoteBody) +
+            (Vector2)(Quaternion.Euler(0f, 0f, angle) * (position - sourceRoot));
+        var localPosition = vehicle.mainPart.transform.InverseTransformPoint(target);
+        var localRotation = Mathf.DeltaAngle(vehicle.mainPart.rb.rotation,
             vehicle.mainPart.rb.rotation + Mathf.DeltaAngle(sourceRootRotation, rotation));
+        var progress = Mathf.Clamp01((Time.unscaledTime - vehicleArmsStartedAt) / 0.02f);
+        vehicleArmsFromLocalPosition = Vector2.Lerp(vehicleArmsFromLocalPosition, vehicleArmsLocalPosition, progress);
+        vehicleArmsFromLocalRotation = Mathf.LerpAngle(vehicleArmsFromLocalRotation, vehicleArmsLocalRotation, progress);
+        vehicleArmsLocalPosition = localPosition;
+        vehicleArmsLocalRotation = localRotation;
+        vehicleArmsStartedAt = Time.unscaledTime;
+        hasVehicleArmsTarget = true;
+        hasVehicleRigTarget = true;
+    }
+
+    private void ApplyVehicleArmsTarget()
+    {
+        if (!hasVehicleArmsTarget ||
+            remoteBody == null ||
+            !remoteBody.inVehicle ||
+            remoteBody.Arms == null ||
+            remoteBody.curVehicle == null ||
+            remoteBody.curVehicle.mainPart == null ||
+            remoteBody.curVehicle.mainPart.rb == null)
+            return;
+
+        var progress = Mathf.Clamp01(
+            (Time.unscaledTime - vehicleArmsStartedAt) / 0.02f);
+
+        var localRotation = Mathf.LerpAngle(
+            vehicleArmsFromLocalRotation,
+            vehicleArmsLocalRotation,
+            progress);
+
+        var vehicle = remoteBody.curVehicle;
+
+        vehicleArmsTargetRotation =
+            vehicle.mainPart.rb.rotation + localRotation;
+
+        remoteBody.Arms.rotation = Quaternion.Euler(
+            0f,
+            0f,
+            vehicleArmsTargetRotation);
+    }
+
+    private static void ReadLocalRotationImmediately(
+        BinaryReader reader,
+        Transform transform)
+    {
+        reader.ReadSingle();
+        reader.ReadSingle();
+
+        var rotation = reader.ReadSingle();
+
+        if (transform == null)
+            return;
+
+        transform.localRotation =
+            Quaternion.Euler(0f, 0f, rotation);
+    }
+
+    private void ApplyVehicleTailTargets()
+    {
+        if (remoteBody == null ||
+            !remoteBody.inVehicle ||
+            remoteBody.curVehicle == null ||
+            remoteBody.curVehicle.mainPart == null ||
+            remoteBody.curVehicle.mainPart.rb == null)
+            return;
+
+        var vehicle =
+            remoteBody.curVehicle;
+
+        var vehicleRotation =
+            vehicle.mainPart.rb.rotation;
+
+        var seatPosition = KartPassengers.SeatPosition(vehicle, remoteBody)
+                           -
+                           (Vector2)vehicle.mainPart.transform.right * 0.15f; // оффсет так называемой попы (мне кажется я делаю что-то не так) 
+        
+        foreach (var target in vehicleTailTransformTargets)
+        {
+            if (target.Transform == null)
+                continue;
+
+            var position =
+                target.Transform.position;
+
+            position.x = seatPosition.x;
+            position.y = seatPosition.y;
+
+            target.Transform.position = position;
+
+            var progress = Mathf.Clamp01(
+                (Time.unscaledTime - target.StartedAt) /
+                CurrentSnapshotInterval());
+
+            var localRotation = Mathf.LerpAngle(
+                target.FromLocalRotation,
+                target.LocalRotation,
+                progress);
+
+            target.Transform.rotation =
+                Quaternion.Euler(
+                    0f,
+                    0f,
+                    vehicleRotation + localRotation);
+        }
+        
+        foreach (var target in vehicleTailTargets)
+        {
+            if (target.Body == null)
+                continue;
+
+            var progress = Mathf.Clamp01(
+                (Time.unscaledTime - target.StartedAt) /
+                CurrentSnapshotInterval());
+
+            var localRotation = Mathf.LerpAngle(
+                target.FromLocalRotation,
+                target.LocalRotation,
+                progress);
+
+            var worldRotation =
+                vehicleRotation + localRotation;
+
+            target.Body.transform.rotation =
+                Quaternion.Euler(
+                    0f,
+                    0f,
+                    worldRotation);
+
+            target.Body.rotation = worldRotation;
+            target.Body.velocity = Vector2.zero;
+            target.Body.angularVelocity = 0f;
+        }
     }
 
     private void SetRemoteVehicleCollisions(VehicleBase vehicle, bool ignored)
@@ -1741,6 +2082,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static void RouteRemotePlayerDamage(NetworkAvatarReplication replica, float amount, bool critical)
     {
+        if (replica != null && KartPassengers.IsProtectedPassenger(replica.remoteBody))
+        {
+            return;
+        }
         if (MultiplayerSession.IsHost)
         {
             if (currentShooter == null || !currentShooter.isPlayer || MultiplayerSession.PvpEnabled)
@@ -1765,6 +2110,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static void ApplyPlayerDamage(BodyScript body, PlayerDamagePacket playerDamage)
     {
         if (body == null) return;
+        if (KartPassengers.IsProtectedPassenger(body))
+        {
+            return;
+        }
         
         
         var amount = Mathf.Clamp(playerDamage.Amount, 0f, 1000f);
@@ -2855,6 +3204,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (sound != null) Sound.Play(sound, position, false, false);
     }
 
+    private static void ApplyVehicleEject(BodyScript body)
+    {
+        if (body != null && !MultiplayerSession.IsHost && body.inVehicle) body.ExitVehicle();
+    }
+
     private static void HandleTeleportRequest(ushort requesterId, TeleportRequestPacket request)
     {
         if (!MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled || requesterId == 0) return;
@@ -3690,32 +4044,156 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         };
     }
 
-    private void ReadTailTarget(BinaryReader reader, Rigidbody2D body, SpriteRenderer[] sprites)
+    private void ReadTailTarget(
+        BinaryReader reader,
+        Rigidbody2D body,
+        SpriteRenderer[] sprites,
+        bool inVehicle,
+        Vector2 sourceRoot,
+        float sourceRootRotation)
     {
-        var delta = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        var delta = new Vector2(
+            reader.ReadSingle(),
+            reader.ReadSingle());
+
         var deltaAngle = reader.ReadSingle();
+
         ApplyTailSpriteFlip(sprites, reader.ReadBoolean());
         ApplyTailSpriteColor(sprites, reader);
-        if (body == null) return;
-        SetTailTarget(body, lastAuthoritativePosition + delta,
-            Quaternion.Euler(0f, 0f, remoteBody.rb.rotation + deltaAngle));
+
+        if (body == null)
+            return;
+
+        if (inVehicle)
+        {
+            SetVehicleTailRotationTarget(body, deltaAngle);
+            return;
+        }
+
+        SetTailTarget(
+            body,
+            lastAuthoritativePosition + delta,
+            Quaternion.Euler(
+                0f,
+                0f,
+                remoteBody.rb.rotation + deltaAngle));
+    }
+    
+    private void SetVehicleTailRotationTarget(
+        Rigidbody2D body,
+        float localRotation)
+    {
+        var index = vehicleTailTargets.FindIndex(
+            target => target.Body == body);
+
+        if (index < 0)
+            return;
+
+        var state = vehicleTailTargets[index];
+
+        var progress = Mathf.Clamp01(
+            (Time.unscaledTime - state.StartedAt) /
+            CurrentSnapshotInterval());
+
+        state.FromLocalRotation = Mathf.LerpAngle(
+            state.FromLocalRotation,
+            state.LocalRotation,
+            progress);
+
+        state.LocalRotation = localRotation;
+        state.StartedAt = Time.unscaledTime;
+
+        vehicleTailTargets[index] = state;
     }
 
-    private void ReadTailTarget(BinaryReader reader, Transform transform, SpriteRenderer[] sprites)
+    private void SetVehicleTailTransformTarget(
+        Transform transform,
+        float localRotation)
     {
-        var delta = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        if (transform == null)
+            return;
+
+        var now = Time.unscaledTime;
+
+        var index =
+            vehicleTailTransformTargets.FindIndex(
+                target => target.Transform == transform);
+
+        if (index < 0)
+        {
+            vehicleTailTransformTargets.Add(
+                new VehicleTailTransformTarget
+                {
+                    Transform = transform,
+                    LocalRotation = localRotation,
+                    FromLocalRotation = localRotation,
+                    StartedAt = now
+                });
+
+            return;
+        }
+
+        var state =
+            vehicleTailTransformTargets[index];
+
+        var progress = Mathf.Clamp01(
+            (now - state.StartedAt) /
+            CurrentSnapshotInterval());
+
+        state.FromLocalRotation = Mathf.LerpAngle(
+            state.FromLocalRotation,
+            state.LocalRotation,
+            progress);
+
+        state.LocalRotation = localRotation;
+        state.StartedAt = now;
+
+        vehicleTailTransformTargets[index] = state;
+    }
+
+    private void ReadTailTarget(
+        BinaryReader reader,
+        Transform transform,
+        SpriteRenderer[] sprites,
+        bool inVehicle,
+        Vector2 sourceRoot,
+        float sourceRootRotation)
+    {
+        var delta = new Vector2(
+            reader.ReadSingle(),
+            reader.ReadSingle());
+
         var deltaAngle = reader.ReadSingle();
+
         ApplyTailSpriteFlip(sprites, reader.ReadBoolean());
         ApplyTailSpriteColor(sprites, reader);
-        if (transform == null) return;
+
+        if (transform == null)
+            return;
+
+        if (inVehicle)
+        {
+            SetVehicleTailTransformTarget(
+                transform,
+                deltaAngle);
+
+            return;
+        }
+
         SetWorldTarget(transform, new TargetState
         {
-            position = new Vector3(lastAuthoritativePosition.x + delta.x,
-                lastAuthoritativePosition.y + delta.y, transform.position.z),
-            rotation = Quaternion.Euler(0f, 0f, remoteBody.rb.rotation + deltaAngle)
+            position = new Vector3(
+                lastAuthoritativePosition.x + delta.x,
+                lastAuthoritativePosition.y + delta.y,
+                transform.position.z),
+
+            rotation = Quaternion.Euler(
+                0f,
+                0f,
+                remoteBody.rb.rotation + deltaAngle)
         });
     }
-
+    
     private static void ApplyTailSpriteFlip(SpriteRenderer[] sprites, bool flipped)
     {
         var sprite = sprites.Length == 0 ? null : sprites[0];
@@ -4107,7 +4585,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
         }
     }
-
 
     private static List<Component> FindCharacterLights(Transform root)
     {
@@ -4560,13 +5037,151 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return null;
     }
 
-    private static SpriteRenderer FindVisibleWeaponRenderer(Transform root)
+    private void SnapRemoteVehicleArmLimbs()
     {
-        foreach (var renderer in root.GetComponentsInChildren<SpriteRenderer>(true))
-            if (renderer.name == "testGun" && renderer.sprite != null) return renderer;
-        return null;
+        if (remoteBody == null || remoteBody.Arms == null ||
+            remoteBody.limbs == null)
+            return;
+
+        foreach (var limb in remoteBody.limbs)
+        {
+            if (limb == null ||
+                limb.dismembered ||
+                limb.rb == null ||
+                limb.transformToFollow == null)
+                continue;
+
+            var follow = limb.transformToFollow;
+            
+            if (follow != remoteBody.Arms &&
+                !follow.IsChildOf(remoteBody.Arms))
+                continue;
+
+            limb.transform.position = follow.position;
+            limb.transform.rotation = follow.rotation;
+
+            limb.rb.position = follow.position;
+            limb.rb.rotation = follow.eulerAngles.z;
+            limb.rb.velocity = Vector2.zero;
+            limb.rb.angularVelocity = 0f;
+        }
+    }
+    
+    private void ApplyVehicleReflection()
+    {
+        if (remoteBody == null)
+            return;
+
+        var scale = remoteBody.transform.localScale;
+        var magnitude = Mathf.Abs(scale.x);
+
+        scale.x =
+            (magnitude < 0.0001f ? 1f : magnitude) *
+            (remoteVehicleReflected ? -1f : 1f);
+
+        remoteBody.transform.localScale = scale;
     }
 
+    private void UpdateLocalVehicleLock()
+    {
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        var vehicle = body != null && body.inVehicle
+            ? body.curVehicle
+            : null;
+        
+        var valid =
+            MultiplayerSession.IsConnected &&
+            !MultiplayerSession.IsHost &&
+            body != null &&
+            body.rb != null &&
+            vehicle != null &&
+            vehicle.mainPart != null &&
+            vehicle.mainPart.rb != null;
+        
+
+        if (!valid)
+        {
+            RestoreLocalVehiclePhysics();
+            return;
+        }
+
+        if (localVehicleLocked &&
+            (localVehicleBody != body || localVehicle != vehicle))
+        {
+            RestoreLocalVehiclePhysics();
+        }
+
+        if (!localVehicleLocked)
+        {
+            localVehicleBody = body;
+            localVehicle = vehicle;
+            localVehicleWasSimulated = body.rb.simulated;
+            localVehicleLocked = true;
+
+            body.rb.velocity = Vector2.zero;
+            body.rb.angularVelocity = 0f;
+            body.rb.simulated = false;
+        }
+
+        var seat = KartPassengers.SeatPosition(vehicle, body);
+        var angle = vehicle.mainPart.rb.rotation;
+
+        var position = body.transform.position;
+        position.x = seat.x;
+        position.y = seat.y;
+
+        body.transform.SetPositionAndRotation(
+            position,
+            Quaternion.Euler(0f, 0f, angle));
+
+        body.rb.position = seat;
+        body.rb.rotation = angle;
+        
+        var vehicleRb = vehicle.mainPart.rb;
+        var vehicleVelocity = vehicleRb.velocity;
+        
+        // Todo jitter
+        body.rb.velocity = vehicleVelocity;
+        body.rb.angularVelocity = vehicleRb.angularVelocity;
+        body.lastMoveDir = vehicleVelocity;
+    }
+
+    private void RestoreLocalVehiclePhysics()
+    {
+        if (!localVehicleLocked)
+            return;
+
+        if (localVehicleBody != null && localVehicleBody.rb != null)
+        {
+            var rb = localVehicleBody.rb;
+
+            rb.position = localVehicleBody.transform.position;
+            rb.rotation = localVehicleBody.transform.eulerAngles.z;
+
+            if (localVehicle != null &&
+                localVehicle.mainPart != null &&
+                localVehicle.mainPart.rb != null)
+            {
+                rb.velocity = localVehicle.mainPart.rb.velocity;
+                rb.angularVelocity = localVehicle.mainPart.rb.angularVelocity;
+            }
+
+            rb.simulated = localVehicleWasSimulated;
+        }
+
+        localVehicleBody = null;
+        localVehicle = null;
+        localVehicleLocked = false;
+    }
+    
+    private struct VehicleTailTarget
+    {
+        public Rigidbody2D Body;
+        public float LocalRotation;
+        public float FromLocalRotation;
+        public float StartedAt;
+    }
 
     private struct TargetState
     {
@@ -4578,6 +5193,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public float receivedAt;
         public float duration;
     }
+
     private struct WorldTargetState
     {
         public Vector3 fromPosition;
@@ -4596,5 +5212,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public int FireAmount;
         public float Range;
         public float ExpiresAt;
+    }
+    
+    private struct VehicleTailTransformTarget
+    {
+        public Transform Transform;
+        public float LocalRotation;
+        public float FromLocalRotation;
+        public float StartedAt;
     }
 }

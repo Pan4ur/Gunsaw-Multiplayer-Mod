@@ -34,6 +34,9 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, float> pendingDestroyedWeaponPickups = new();
     private readonly HashSet<string> clientDestroyedBodyIds = new();
     private readonly Dictionary<Rigidbody2D, State> received = new();
+    private readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
+    private readonly List<Rigidbody2D> staleVehiclePaths = new();
+    private readonly Dictionary<VehicleBase, State> latestVehicleStates = new();
     private readonly Dictionary<string, ClientBodyState> pushes = new();
     private readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
     private readonly Dictionary<string, PropAuthority> propAuthorities = new();
@@ -369,6 +372,7 @@ internal sealed class WorldReplication : MonoBehaviour
             received.Clear();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldStateApply, applyStarted);
         }
+        TickVehiclePaths();
         if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
         {
             var clientSendStarted = MultiplayerPerformance.StartPhase();
@@ -830,6 +834,8 @@ internal sealed class WorldReplication : MonoBehaviour
         pendingDestroyedWeaponPickups.Clear();
         clientDestroyedBodyIds.Clear();
         received.Clear();
+        vehiclePaths.Clear();
+        latestVehicleStates.Clear();
         pushes.Clear();
         locallyControlledUntil.Clear();
         nextContactStateAt.Clear();
@@ -1361,6 +1367,11 @@ internal sealed class WorldReplication : MonoBehaviour
                     if (bodies.TryGetValue(id, out body) && body != null)
                     {
                         received[body] = state;
+                        var vehiclePart = state.vehiclePart ? body.GetComponent<VehiclePart>() : null;
+                        var vehicle = vehiclePart == null ? null : vehiclePart.vehicle ??
+                            vehiclePart.GetComponentInParent<VehicleBase>();
+                        if (vehicle != null && vehicle.mainPart != null && vehicle.mainPart.rb == body)
+                            latestVehicleStates[vehicle] = state;
                     }
                 }
                 finally
@@ -1499,15 +1510,50 @@ internal sealed class WorldReplication : MonoBehaviour
             // TODO This is more of a temporary fix
             // it would be better to simply signal to clients when the door is about to open or close,
             // but I'm not sure if that would break some of the custom level features
-            body.position = state.position;
-            body.rotation = state.rotation;
-            if (!initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
+
+            if (!state.vehiclePart)
+            {
+                body.position = state.position;
+                body.rotation = state.rotation;
+                if (!initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
+                {
+                    initializedBodies.Add(body);
+                }
+                body.velocity = state.velocity;
+                body.angularVelocity = state.angularVelocity;
+                return;
+            }
+            if (!initializedBodies.Contains(body) ||
+                (state.position - body.position).sqrMagnitude > 256f)
             {
                 initializedBodies.Add(body);
+                vehiclePaths.Remove(body);
+                body.position = state.position;
+                body.rotation = state.rotation;
+                body.velocity = state.velocity;
+                body.angularVelocity = state.angularVelocity;
+                return;
             }
 
-            body.velocity = state.velocity;
-            body.angularVelocity = state.angularVelocity;
+            body.interpolation = RigidbodyInterpolation2D.Interpolate;
+            List<VehiclePathState> path;
+            if (!vehiclePaths.TryGetValue(body, out path))
+                vehiclePaths[body] = path = new List<VehiclePathState>(12);
+            var now = Time.unscaledTime;
+            path.Add(new VehiclePathState
+            {
+                position = state.position,
+                rotation = state.rotation,
+                velocity = state.velocity,
+                angularVelocity = state.angularVelocity,
+                arrivedAt = now
+            });
+            while (path.Count > 2 && path[0].arrivedAt < now - 0.3f) path.RemoveAt(0);
+            if (path.Count < 2)
+            {
+                body.velocity = state.velocity;
+                body.angularVelocity = state.angularVelocity;
+            }
             return;
         }
 
@@ -1528,6 +1574,38 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         if (state.awake) body.WakeUp();
         else if (state.bodyType != RigidbodyType2D.Dynamic) body.Sleep();
+    }
+
+    private void TickVehiclePaths()
+    {
+        if (vehiclePaths.Count == 0) return;
+        var renderTime = Time.unscaledTime - 0.1f;
+        staleVehiclePaths.Clear();
+        foreach (var pair in vehiclePaths)
+        {
+            var body = pair.Key;
+            if (body == null) { staleVehiclePaths.Add(body); continue; }
+            var path = pair.Value;
+            if (path.Count < 2 || !body.simulated ||
+                body.bodyType != RigidbodyType2D.Kinematic) continue;
+            var segment = path.Count - 2;
+            while (segment > 0 && path[segment].arrivedAt > renderTime) segment--;
+            var from = path[segment];
+            var to = path[segment + 1];
+            var span = Mathf.Max(0.001f, to.arrivedAt - from.arrivedAt);
+            var alpha = Mathf.Clamp01((renderTime - from.arrivedAt) / span);
+            var targetPosition = Vector2.Lerp(from.position, to.position, alpha);
+            var targetRotation = from.rotation +
+                Mathf.DeltaAngle(from.rotation, to.rotation) * alpha;
+            const float correctionGain = 5f;
+            var correction = (targetPosition - body.position) * correctionGain;
+            if (correction.sqrMagnitude > 25f) correction = correction.normalized * 5f;
+            body.velocity = Vector2.Lerp(body.velocity, to.velocity + correction, 0.35f);
+            var angularCorrection = Mathf.DeltaAngle(body.rotation, targetRotation) * correctionGain;
+            body.angularVelocity = Mathf.Lerp(body.angularVelocity,
+                to.angularVelocity + angularCorrection, 0.35f);
+        }
+        foreach (var body in staleVehiclePaths) vehiclePaths.Remove(body);
     }
 
     private static void ApplyVehicleState(Rigidbody2D body, State state)
@@ -2849,6 +2927,15 @@ internal sealed class WorldReplication : MonoBehaviour
         public float vehicleHealth;
         public bool vehicleEngineDisabled;
         public bool vehicleJointAttached;
+    }
+
+    private class VehiclePathState
+    {
+        public Vector2 position;
+        public float rotation;
+        public Vector2 velocity;
+        public float angularVelocity;
+        public float arrivedAt;
     }
 
     private struct SnapshotReader
