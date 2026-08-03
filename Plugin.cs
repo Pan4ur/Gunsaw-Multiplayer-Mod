@@ -1096,8 +1096,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RunOnMainThread(() =>
             {
                 SetJoinInProgress(false);
-                status = "Could not join lobby: " + exception.Message;
-            });
+                status = "Could not join lobby: " + GetDirectoryErrorMessage(exception.Message);            });
         }
     }
 
@@ -1106,6 +1105,25 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lock (joinLock) joinInProgress = value;
     }
 
+    private static string GetDirectoryErrorMessage(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return "unknown error";
+
+        var jsonStart = message.IndexOf('{');
+
+        if (jsonStart >= 0)
+        {
+            var json = message.Substring(jsonStart);
+            var error = JsonString(json, "error");
+
+            if (!string.IsNullOrWhiteSpace(error))
+                return error;
+        }
+
+        return message;
+    }
+    
     private void RunOnMainThread(Action action) { lock (mainThreadActionsLock) mainThreadActions.Enqueue(action); }
 
     private void BanPlayerInDirectory(string lobbyId, string relayKey, string playerName, ushort expectedPeerId)

@@ -36,7 +36,6 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<Rigidbody2D, State> received = new();
     private readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
     private readonly List<Rigidbody2D> staleVehiclePaths = new();
-    private readonly Dictionary<VehicleBase, State> latestVehicleStates = new();
     private readonly Dictionary<string, ClientBodyState> pushes = new();
     private readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
     private readonly Dictionary<string, PropAuthority> propAuthorities = new();
@@ -533,14 +532,6 @@ internal sealed class WorldReplication : MonoBehaviour
         return false;
     }
 
-    private static bool IsSafetyRailingAttached(Rigidbody2D body)
-    {
-        if (!IsSafetyRailingBody(body)) return false;
-        foreach (var joint in body.GetComponents<Joint2D>())
-            if (joint != null && joint.enabled) return true;
-        return false;
-    }
-
     private static bool IsSafetyRailingAttached(BodyLayout layout)
     {
         if (!layout.SafetyRailing) return false;
@@ -835,7 +826,6 @@ internal sealed class WorldReplication : MonoBehaviour
         clientDestroyedBodyIds.Clear();
         received.Clear();
         vehiclePaths.Clear();
-        latestVehicleStates.Clear();
         pushes.Clear();
         locallyControlledUntil.Clear();
         nextContactStateAt.Clear();
@@ -1118,50 +1108,6 @@ internal sealed class WorldReplication : MonoBehaviour
         return true;
     }
 
-    private byte[] SerializeBodyState(string id, Rigidbody2D body)
-    {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(WireId(id));
-            var destroyed = body == null;
-            writer.Write(destroyed);
-            if (destroyed) return stream.ToArray();
-            DroppedWeapon dropped;
-            droppedWeapons.TryGetValue(body, out dropped);
-            var crate = body.GetComponentInParent<CrateScript>();
-            writer.Write(dropped != null); writer.Write(crate != null);
-
-            if (crate != null)
-                writer.Write(networkCrateDebrisBodies.Contains(body) ? "" : CleanCloneName(crate.transform.root.name));
-
-            writer.Write(body.position.x); writer.Write(body.position.y); writer.Write(body.rotation);
-            writer.Write(body.velocity.x); writer.Write(body.velocity.y); writer.Write(body.angularVelocity);
-            writer.Write(body.gravityScale); writer.Write((int)body.constraints);
-            writer.Write((byte)body.bodyType); writer.Write(body.simulated); writer.Write(body.IsAwake());
-            var safetyRailing = IsSafetyRailingBody(body);
-            writer.Write(safetyRailing);
-            writer.Write(safetyRailing && IsSafetyRailingAttached(body));
-            var vehiclePart = body.GetComponent<VehiclePart>();
-            writer.Write(vehiclePart != null);
-            if (vehiclePart != null)
-            {
-                var vehicle = vehiclePart.vehicle ?? vehiclePart.GetComponentInParent<VehicleBase>();
-                var joint = body.GetComponent<Joint2D>();
-                writer.Write(vehiclePart.health);
-                writer.Write(vehicle == null ? 0f : vehicle.health);
-                writer.Write(vehicle != null && vehicle.engineDisabled);
-                writer.Write(joint != null && joint.enabled);
-            }
-            if (dropped != null)
-            {
-                writer.Write(NetworkWireId.FromString(dropped.stats == null ? "" : dropped.stats.name));
-                writer.Write(dropped.ammoAmount);
-            }
-            return stream.ToArray();
-        }
-    }
-
     private ulong WireId(string id)
     {
         if (string.IsNullOrEmpty(id)) return 0UL;
@@ -1367,11 +1313,6 @@ internal sealed class WorldReplication : MonoBehaviour
                     if (bodies.TryGetValue(id, out body) && body != null)
                     {
                         received[body] = state;
-                        var vehiclePart = state.vehiclePart ? body.GetComponent<VehiclePart>() : null;
-                        var vehicle = vehiclePart == null ? null : vehiclePart.vehicle ??
-                            vehiclePart.GetComponentInParent<VehicleBase>();
-                        if (vehicle != null && vehicle.mainPart != null && vehicle.mainPart.rb == body)
-                            latestVehicleStates[vehicle] = state;
                     }
                 }
                 finally

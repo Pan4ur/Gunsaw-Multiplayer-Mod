@@ -7,8 +7,8 @@ using UnityEngine;
 
 internal static class KillMessageService
 {
-    private const string Red = "#FF4040";
-    private const string Blue = "#63C7FF";
+    private const string Red = "#9F0928";
+    private const string Blue = "#218C83";
     private static readonly Dictionary<string, List<string>> messages =
         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
     private static readonly System.Random random = new System.Random();
