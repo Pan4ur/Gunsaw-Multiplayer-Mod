@@ -967,9 +967,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             remoteColliderTriggers[collider] = collider.isTrigger;
         remoteRigidbodies = avatar.GetComponentsInChildren<Rigidbody2D>(true);
         remotePhysicsModeKnown = false;
+      
         remoteTailBases.Clear();
-        foreach (Rigidbody2D tailBase in GetList(remoteBody, "tailBases"))
-            if (tailBase != null) remoteTailBases.Add(tailBase);
+        remoteTailBases.AddRange(GetNetworkTailBodies(remoteBody));
+
         remoteTails = GetTransforms(remoteBody, "tails");
         remoteTailSprites.Clear();
         foreach (var tailBase in remoteTailBases)
@@ -1219,7 +1220,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             breakdown.Limbs += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
-            var tailBases = GetList(body, "tailBases");
+            var tailBases = GetNetworkTailBodies(body);
             var tailBaseStates = new PlayerSnapshotTailState[tailBases.Count];
             writer.Write((ushort)tailBases.Count);
             var tailBaseIndex = 0;
@@ -2908,7 +2909,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 index = (short)position;
                 return true;
             }
-        var tails = GetList(remoteBody, "tailBases");
+        var tails = GetNetworkTailBodies(remoteBody);
         for (var position = 0; position < tails.Count; position++)
             if ((Rigidbody2D)tails[position] == rigidbody)
             {
@@ -2919,12 +2920,38 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return false;
     }
 
-    private static Rigidbody2D ResolveLocalPart(BodyScript body, byte kind, int index)
+    private static Rigidbody2D ResolveLocalPart(
+        BodyScript body,
+        byte kind,
+        int index)
     {
-        if (kind == 0) return body.rb;
-        var parts = kind == 1 ? GetList(body, "limbs") : kind == 2 ? GetList(body, "tailBases") : null;
-        if (parts == null || index < 0 || index >= parts.Count) return null;
-        return kind == 1 ? ((LimbScript)parts[index]).rb : (Rigidbody2D)parts[index];
+        if (body == null)
+            return null;
+
+        if (kind == 0)
+            return body.rb;
+
+        if (kind == 1)
+        {
+            var limbs = GetList(body, "limbs");
+
+            if (index < 0 || index >= limbs.Count)
+                return null;
+
+            return ((LimbScript)limbs[index]).rb;
+        }
+
+        if (kind == 2)
+        {
+            var tails = GetNetworkTailBodies(body);
+
+            if (index < 0 || index >= tails.Count)
+                return null;
+
+            return tails[index];
+        }
+
+        return null;
     }
 
     private static bool CanGrabBody(BodyScript body)
@@ -5173,6 +5200,60 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         localVehicleBody = null;
         localVehicle = null;
         localVehicleLocked = false;
+    }
+    
+    private static List<Rigidbody2D> GetNetworkTailBodies(BodyScript body)
+    {
+        var result = new List<Rigidbody2D>();
+
+        if (body == null || body.tails == null)
+            return result;
+
+        var added = new HashSet<Rigidbody2D>();
+
+        foreach (var tailRoot in body.tails)
+        {
+            if (tailRoot == null)
+                continue;
+
+            CollectNetworkTailBodies(
+                tailRoot,
+                tailRoot,
+                body.rb,
+                result,
+                added);
+        }
+
+        return result;
+    }
+
+    private static void CollectNetworkTailBodies(
+        Transform current,
+        Transform tailRoot,
+        Rigidbody2D bodyRigidbody,
+        List<Rigidbody2D> result,
+        HashSet<Rigidbody2D> added)
+    {
+        for (var index = 0; index < current.childCount; index++)
+        {
+            var child = current.GetChild(index);
+            var rigidbody = child.GetComponent<Rigidbody2D>();
+
+            if (rigidbody != null &&
+                rigidbody != bodyRigidbody &&
+                rigidbody.transform != tailRoot &&
+                added.Add(rigidbody))
+            {
+                result.Add(rigidbody);
+            }
+
+            CollectNetworkTailBodies(
+                child,
+                tailRoot,
+                bodyRigidbody,
+                result,
+                added);
+        }
     }
     
     private struct VehicleTailTarget
