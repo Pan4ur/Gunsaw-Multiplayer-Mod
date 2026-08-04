@@ -2,6 +2,8 @@ using UnityEngine;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text;
+using BepInEx;
 
 // Available in the editor and synced between players
 // Can be enabled or disabled by ID
@@ -90,6 +92,14 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour
     private float nextSpawn;
     private int spawnedTotal;
     private bool active;
+    
+    private static readonly List<string> BlockedPrefabs =
+    [
+        "Abomination",
+        "BigEnemy",
+        "MadnessEnemy",
+        "TestEnemy"
+    ];
 
     internal void Configure(NpcSpawnerData value)
     {
@@ -214,11 +224,16 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour
             if (!choices.Contains(candidate)) choices.Add(candidate);
         }
     }
-
-    // TODO remove stickman
+    
     private static bool IsSpawnableBody(BodyScript body)
     {
-        return body != null && body.GetComponentsInChildren<LimbScript>(true).Length >= 8 &&
-            body.gunTransform != null && body.gunAnimTransform != null && body.BodyAnimator != null;
+        if (body == null)
+            return false;
+
+        string prefabName = body.transform.root.name
+            .Replace("(Clone)", "")
+            .Trim();
+        
+        return !BlockedPrefabs.Contains(prefabName);
     }
 }
