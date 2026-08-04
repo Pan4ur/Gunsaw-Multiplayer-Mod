@@ -727,9 +727,14 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             status = "Player " + playerName + " is unavailable.";
             return true;
         }
+
         local.transform.position = target.transform.position;
         if (local.rb != null) { local.rb.velocity = Vector2.zero; local.rb.angularVelocity = 0f; }
         status = "Teleported to " + playerName + ".";
+        
+        if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
+        var sound = Resources.Load<AudioClip>("Sounds/Teleport");
+        if (sound != null) Sound.Play(sound, local.transform.position, false, false);
         return true;
     }
 
