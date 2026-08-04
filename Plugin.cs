@@ -33,7 +33,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool visible;
     internal string status = "Select an option.";
     internal string updateStatus = "Checking for updates..."; 
-    internal string lobbyServerAddress = "gunsawudp.e621.su";
+    internal string lobbyServerAddress = "gunsaw.e621.su";
     internal string lobbyName = "Lobby";
     internal string playerName = "Player";
     internal bool createPvp;
@@ -88,7 +88,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         KeepMultiplayerRunningInBackground();
         Instance = this;
-        masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsawudp.e621.su", "Lobby directory URL.");
+        masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsaw.e621.su", "Lobby directory URL.");
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
         savedPlayerName = Config.Bind("Lobby", "PlayerName", playerName, "Name shown to other players.");
         savedLobbyName = Config.Bind("Lobby", "LobbyName", lobbyName, "Default name for new lobbies.");
@@ -1159,7 +1159,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private string DefaultRelayAddress()
     {
-        return "udp://gunsawudp.e621.su:27015";
+        return "udp://gunsaw.e621.su:27015";
     }
 
     private static string HttpAt(string server, string method, string path, string body, string authorization)
