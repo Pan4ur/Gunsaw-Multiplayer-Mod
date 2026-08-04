@@ -686,6 +686,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakeVehicleEject(out senderId, out vehicleEject))
             ApplyVehicleEject(player.bodyScript);
 
+        VehicleImpactPacket vehicleImpact;
+        while (MultiplayerSession.TryTakeVehicleImpact(out senderId, out vehicleImpact))
+            ApplyVehicleImpact(player.bodyScript, vehicleImpact);
+
         TeleportRequestPacket teleportRequest;
         while (MultiplayerSession.TryTakeTeleportRequest(out senderId, out teleportRequest))
             HandleTeleportRequest(senderId, teleportRequest);
@@ -3231,9 +3235,45 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (sound != null) Sound.Play(sound, position, false, false);
     }
 
+    internal static void RouteVehicleImpact(BodyScript body, float impact, Vector2 position, bool ragdoll)
+    {
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || body == null ||
+            !IsFinite(impact) || impact <= 6f) return;
+        var replica = ReplicaForBody(body);
+        if (replica == null || replica.remotePeerId == 0 || !replica.receivedFirstSnapshot ||
+            KartPassengers.IsProtectedPassenger(body)) return;
+        MultiplayerSession.Send(new VehicleImpactPacket(impact, position.x, position.y, ragdoll),
+            replica.remotePeerId);
+    }
+
+    private static void ApplyVehicleImpact(BodyScript body, VehicleImpactPacket packet)
+    {
+        if (body == null || !body.isAlive || !IsFinite(packet.Impact) || packet.Impact <= 6f ||
+            Time.unscaledTime < localRespawnProtectionUntil || KartPassengers.IsProtectedPassenger(body)) return;
+        var impact = Mathf.Min(packet.Impact, 1000f);
+        body.shockTime += 3f;
+        
+        if (packet.Ragdoll && body.controlState == BodyScript.RagdollState.FullControl) 
+            body.EnterHalfControl();
+        
+        body.health -= impact * 2.5f;
+        body.stamina -= impact * 3f;
+        body.temporarySlowdown += impact * 0.1f;
+        if (GameManager.main != null && IsFinite(packet.PositionX) && IsFinite(packet.PositionY))
+            GameManager.main.DamageNumber(new Vector2(packet.PositionX, packet.PositionY), impact * 2.5f, body);
+    }
+
     private static void ApplyVehicleEject(BodyScript body)
     {
-        if (body != null && !MultiplayerSession.IsHost && body.inVehicle) body.ExitVehicle();
+        if (body != null && !MultiplayerSession.IsHost && body.inVehicle)
+        {
+            Vector2 yVelocity = (Vector2)body.curVehicle.mainPart.transform.up * 10f;
+            body.ExitVehicle();
+            body.lastMoveDir += yVelocity;
+            body.EnterHalfControl();
+            body.Damaged();
+        }
+          
     }
 
     private static void HandleTeleportRequest(ushort requesterId, TeleportRequestPacket request)

@@ -158,7 +158,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdatePlayers()
     {
-        var text = "PLAYERS\n\n" + (MultiplayerSession.IsHost ? "[HOST]  " : "") + "YOU";
+        var text = "PLAYERS\n\n" + (MultiplayerSession.IsHost ? "[HOST]  " : "") + GunsawMultiplayerPlugin.Instance.playerName;
         foreach (var remote in NetworkAvatarReplication.RemotePlayers())
             text += "\n" + (remote.PeerId == 1 ? "[HOST]  " : "") + remote.Name + (remote.PingMs >= 0 ? "   " + remote.PingMs + " ms" : "");
         playersText.text = text;
@@ -258,42 +258,121 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
     }
 
-
     private void UpdateCoopMarkers()
     {
         var active = new HashSet<BodyScript>();
         var camera = Camera.main;
-        if (Input.GetKeyDown(Controls.keys[Controls.TOGGLE_PLAYER_MARKERS])) coopMarkersVisible = !coopMarkersVisible;
-        if (camera == null || MultiplayerSession.PvpEnabled || !coopMarkersVisible) { HideCoopMarkers(active); return; }
+
+        if (Input.GetKeyDown(Controls.keys[Controls.TOGGLE_PLAYER_MARKERS]))
+            coopMarkersVisible = !coopMarkersVisible;
+
+        if (camera == null || MultiplayerSession.PvpEnabled || !coopMarkersVisible)
+        {
+            HideCoopMarkers(active);
+            return;
+        }
+
         const float size = 0.75f;
+
         foreach (var remote in NetworkAvatarReplication.RemotePlayers())
         {
             var body = remote.Body;
-            if (body == null || body.rb == null) continue;
-            var screen = camera.WorldToScreenPoint(body.rb.position);
-            if (screen.z > 0f && screen.x >= 0f && screen.x <= Screen.width && screen.y >= 0f && screen.y <= Screen.height) continue;
+
+            if (body == null)
+                continue;
+
+            if (!body.inVehicle && body.rb == null)
+                continue;
+
+            Vector3 bodyPosition = body.inVehicle
+                ? body.transform.position
+                : (Vector3)body.rb.position;
+
+            var screen = camera.WorldToScreenPoint(bodyPosition);
+
+            if (screen.z > 0f &&
+                screen.x >= 0f && screen.x <= Screen.width &&
+                screen.y >= 0f && screen.y <= Screen.height)
+            {
+                continue;
+            }
+
             active.Add(body);
+
             CoopMarker marker;
-            if (!coopMarkers.TryGetValue(body, out marker)) { marker = CreateCoopMarker(); coopMarkers[body] = marker; }
-            if (marker == null) continue;
-            if (screen.z <= 0f) { screen.x = Screen.width - screen.x; screen.y = Screen.height - screen.y; }
-            var center = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            if (!coopMarkers.TryGetValue(body, out marker))
+            {
+                marker = CreateCoopMarker();
+                coopMarkers[body] = marker;
+            }
+
+            if (marker == null)
+                continue;
+
+            if (screen.z <= 0f)
+            {
+                screen.x = Screen.width - screen.x;
+                screen.y = Screen.height - screen.y;
+            }
+
+            var center = new Vector2(
+                Screen.width * 0.5f,
+                Screen.height * 0.5f
+            );
+
             var direction = new Vector2(screen.x, screen.y) - center;
-            if (direction.sqrMagnitude < 0.01f) direction = Vector2.up;
+
+            if (direction.sqrMagnitude < 0.01f)
+                direction = Vector2.up;
+
             direction.Normalize();
+
             var margin = 72f * size;
-            var edgePosition = center + new Vector2(direction.x * Mathf.Max(0f, center.x - margin), direction.y * Mathf.Max(0f, center.y - margin));
-            marker.Rect.anchoredPosition = CanvasPosition(new Vector3(edgePosition.x, edgePosition.y, 0f));
+            var edgePosition = center + new Vector2(
+                direction.x * Mathf.Max(0f, center.x - margin),
+                direction.y * Mathf.Max(0f, center.y - margin)
+            );
+
+            marker.Rect.anchoredPosition = CanvasPosition(
+                new Vector3(edgePosition.x, edgePosition.y, 0f)
+            );
+
             marker.Rect.sizeDelta = new Vector2(82f, 96f) * size;
+
             var player = PlayerScript.player;
             var localBody = player == null ? null : player.bodyScript;
-            var distance = localBody == null || localBody.rb == null ? 0f : Vector2.Distance(localBody.rb.position, body.rb.position);
-            marker.Name.text = remote.Name + " (" + Mathf.RoundToInt(distance) + " m)";
+
+            float distance = 0f;
+
+            if (localBody != null &&
+                (localBody.inVehicle || localBody.rb != null))
+            {
+                Vector3 localPosition = localBody.inVehicle
+                    ? localBody.transform.position
+                    : (Vector3)localBody.rb.position;
+
+                distance = Vector2.Distance(
+                    (Vector2)localPosition,
+                    (Vector2)bodyPosition
+                );
+            }
+
+            marker.Name.text =
+                remote.Name + " (" + Mathf.RoundToInt(distance) + " m)";
+
             marker.Name.fontSize = 16f * size;
+
             UpdateHeadVisual(marker, body);
-            marker.Visual.localScale = new Vector3(body.isRight ? 1f : -1f, 1f, 1f);
+
+            marker.Visual.localScale = new Vector3(
+                body.isRight ? 1f : -1f,
+                1f,
+                1f
+            );
+
             marker.Root.SetActive(true);
         }
+
         HideCoopMarkers(active);
     }
 

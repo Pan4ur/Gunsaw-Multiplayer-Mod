@@ -89,11 +89,12 @@ internal static class MultiplayerGlassDamagePatch
 [HarmonyPatch(typeof(VehiclePart), "OnCollisionEnter2D")]
 internal static class ClientVehicleCollisionPatch
 {
-    private static bool Prefix(VehiclePart __instance, Collision2D col)
+    private static bool Prefix(VehiclePart __instance, Collision2D col, out float __state)
     {
+        __state = __instance == null ? 0f : __instance.health;
         if (__instance == null || col == null || __instance.isWheel || __instance.vehicle == null)
             return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost;
-            
+
         var localBody = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
         if (MultiplayerSession.IsHost)
         {
@@ -129,6 +130,35 @@ internal static class ClientVehicleCollisionPatch
         if (impact > 6f && GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.QueueVehicleDamage(__instance, impact * __instance.vehicle.impactDamageMult, true);
         return false;
+    }
+
+    private static void Postfix(VehiclePart __instance, Collision2D col, float __state)
+    {
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || __instance == null ||
+            col == null || col.contactCount == 0 || __instance.isWheel || __instance.vehicle == null ||
+            __instance.health >= __state || !__instance.doBodyDamage || __instance.health <= 0f ||
+            __instance.rb == null || __instance.rb.velocity.magnitude <= 6f) return;
+
+        var impact = Mathf.Abs(col.relativeVelocity.magnitude *
+            Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
+        if (impact <= 6f) return;
+
+        BodyScript hitBody;
+        bool ragdoll;
+        if (col.gameObject.TryGetComponent(out hitBody))
+        {
+            if (__instance.vehicle.occupant != null && __instance.vehicle.occupant == hitBody) return;
+            ragdoll = true;
+        }
+        else
+        {
+            LimbScript hitLimb;
+            if (!col.gameObject.TryGetComponent(out hitLimb) || hitLimb == null) return;
+            hitBody = hitLimb.body;
+            ragdoll = false;
+        }
+
+        NetworkAvatarReplication.RouteVehicleImpact(hitBody, impact, __instance.transform.position, ragdoll);
     }
 }
 

@@ -173,6 +173,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakeVehicleEject(out ushort peerId, out VehicleEjectPacket packet)
         => TryTakePacket(vehicleEjects, out peerId, out packet);
 
+    internal static bool TryTakeVehicleImpact(out ushort peerId, out VehicleImpactPacket packet)
+        => TryTakePacket(vehicleImpacts, out peerId, out packet);
+
     internal static bool TryTakeTeleportRequest(out ushort peerId, out TeleportRequestPacket packet)
         => TryTakePacket(teleportRequests, out peerId, out packet);
 

@@ -1421,7 +1421,7 @@ internal sealed class WorldReplication : MonoBehaviour
         if (state.safetyRailing && !state.safetyRailingAttached)
             DetachSafetyRailing(body);
         ApplyVehicleState(body, state);
-        if (!MultiplayerSession.IsHost && !MultiplayerLoadDistance.IsWorldNearLocalPlayer(body))
+        if (!MultiplayerSession.IsHost && !state.vehiclePart && !MultiplayerLoadDistance.IsWorldNearLocalPlayer(body))
         {
             body.simulated = false;
             return;

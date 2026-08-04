@@ -290,6 +290,15 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
+            else if (!isHost && decodedPacket.Type == PacketType.VehicleImpact)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueVehicleImpact(senderId, VehicleImpactPacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
             else if (isHost && decodedPacket.Type == PacketType.TeleportRequest)
             {
                 try
@@ -520,6 +529,7 @@ internal static partial class MultiplayerSession
         velvetWebs.Clear();
         playerTeleports.Clear();
         vehicleEjects.Clear();
+        vehicleImpacts.Clear();
         teleportRequests.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();
@@ -612,6 +622,9 @@ internal static partial class MultiplayerSession
 
     private static void EnqueueVehicleEject(ushort peerId, VehicleEjectPacket packet)
         => EnqueueEvent(vehicleEjects, peerId, packet);
+
+    private static void EnqueueVehicleImpact(ushort peerId, VehicleImpactPacket packet)
+        => EnqueueEvent(vehicleImpacts, peerId, packet);
 
     private static void EnqueueTeleportRequest(ushort peerId, TeleportRequestPacket packet)
         => EnqueueEvent(teleportRequests, peerId, packet);

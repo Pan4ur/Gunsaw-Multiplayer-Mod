@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using HarmonyLib;
 using UnityEngine;
 
 // https://youtu.be/-jC1soxzOYg
@@ -105,7 +103,7 @@ internal static class MultiplayerLoadDistance
         var player = PlayerScript.player;
         var body = player == null ? null : player.bodyScript;
         if (body == null || !body.gameObject.activeInHierarchy) return true;
-        var playerPosition = body.rb == null ? (Vector2)body.transform.position : body.rb.position;
+        var playerPosition =  GetPlayerPosition(body);
         return (position - playerPosition).sqrMagnitude < NpcPoseDistanceSqr;
     }
 
@@ -119,7 +117,7 @@ internal static class MultiplayerLoadDistance
         var player = PlayerScript.player;
         var localBody = player == null ? null : player.bodyScript;
         if (body == null || localBody == null) return true;
-        var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
+        var localPosition = GetPlayerPosition(localBody);
         return (body.position - localPosition).sqrMagnitude < WorldSleepDistanceSqr(body);
     }
 
@@ -201,19 +199,31 @@ internal static class MultiplayerLoadDistance
     private static void RefreshPlayerPositions()
     {
         playerPositions.Clear();
+
         var localPlayer = PlayerScript.player;
-        if (localPlayer != null) AddPlayerPosition(localPlayer.bodyScript);
+        if (localPlayer != null)
+            AddPlayerPosition(localPlayer.bodyScript);
+
         foreach (var remote in NetworkAvatarReplication.RemotePlayers())
         {
-            if (remote.HasAuthoritativePosition) playerPositions.Add(remote.AuthoritativePosition);
-            else AddPlayerPosition(remote.Body, true);
+            var body = remote.Body;
+            if (body != null && body.inVehicle)
+            {
+                playerPositions.Add((Vector2)body.transform.position);
+                continue;
+            }
+
+            if (remote.HasAuthoritativePosition)
+                playerPositions.Add(remote.AuthoritativePosition);
+            else
+                AddPlayerPosition(body, true);
         }
     }
 
     private static void AddPlayerPosition(BodyScript body, bool allowInactive = false)
     {
         if (body == null || (!allowInactive && !body.gameObject.activeInHierarchy)) return;
-        playerPositions.Add(body.rb == null ? (Vector2)body.transform.position : body.rb.position);
+        playerPositions.Add(GetPlayerPosition(body));
     }
 
     private static bool IsNearAnyPlayer(Vector2 position)
@@ -231,9 +241,11 @@ internal static class MultiplayerLoadDistance
 
     private static float WorldSleepDistanceSqr(Component component)
     {
-        return component != null && (component.GetComponentInParent<DoorScript>() != null ||
+        if (component == null) return activeDistanceSqr;
+        if (component.GetComponentInParent<VehiclePart>() != null) return float.PositiveInfinity;
+        return component.GetComponentInParent<DoorScript>() != null ||
             component.GetComponentInParent<RbMoveToObj>() != null ||
-            component.GetComponentInParent<CustJoint>() != null)
+            component.GetComponentInParent<CustJoint>() != null
             ? MechanismSleepDistanceSqr
             : activeDistanceSqr;
     }
@@ -291,5 +303,18 @@ internal static class MultiplayerLoadDistance
         }
         foreach (var body in staleBodies) savedSimulationStates.Remove(body);
         staleBodies.Clear();
+    }
+    
+    private static Vector2 GetPlayerPosition(BodyScript body)
+    {
+        if (body == null)
+            return Vector2.zero;
+
+        if (body.inVehicle)
+            return body.transform.position;
+
+        return body.rb != null
+            ? body.rb.position
+            : (Vector2)body.transform.position;
     }
 }
