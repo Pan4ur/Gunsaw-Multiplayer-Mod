@@ -799,13 +799,62 @@ internal static class ClientDroppedWeaponPickupPatch
 [HarmonyPatch(typeof(DroppedWeapon), "AmmoGet")]
 internal static class ClientDroppedWeaponAmmoPatch
 {
-    private static bool Prefix(DroppedWeapon __instance, BodyScript body)
-    {
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost)
+    private static readonly Dictionary<int, float> pendingWeapons = new ();
+    private static readonly List<int> expiredWeapons = [];
+
+    private static bool Prefix(DroppedWeapon __instance, BodyScript body) {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) {
+            pendingWeapons.Clear();
             return true;
-        if (GunsawMultiplayerPlugin.World != null)
-            GunsawMultiplayerPlugin.World.QueueWeaponInteraction(__instance, body, WorldReplication.WeaponAmmoGet);
-        return false;
+        }
+
+        if (__instance == null || body == null)
+            return false;
+
+        var player = PlayerScript.player;
+        
+        if (player == null || player.bodyScript != body)
+            return false;
+
+        var world = GunsawMultiplayerPlugin.World;
+
+        if (world == null)
+            return false;
+
+        var now = Time.unscaledTime;
+
+        RemoveExpiredWeapons(now);
+
+        var weaponId = __instance.GetInstanceID();
+
+        if (pendingWeapons.ContainsKey(weaponId))
+        {
+            pendingWeapons[weaponId] = now + 5f;
+            return false;
+        }
+
+        pendingWeapons[weaponId] = now + 5f;
+
+        __instance.pickupCool = -1f;
+        world.QueueWeaponInteraction(__instance, body, WorldReplication.WeaponAmmoGet);
+
+        return true;
+    }
+
+    private static void RemoveExpiredWeapons(float now)
+    {
+        expiredWeapons.Clear();
+
+        foreach (var pair in pendingWeapons)
+        {
+            if (pair.Value <= now)
+                expiredWeapons.Add(pair.Key);
+        }
+
+        for (var i = 0; i < expiredWeapons.Count; i++)
+            pendingWeapons.Remove(expiredWeapons[i]);
+
+        expiredWeapons.Clear();
     }
 }
 
