@@ -1,12 +1,8 @@
 using BepInEx;
 using BepInEx.Logging;
-using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
 
 internal enum ConnectionMode
 {
@@ -22,11 +18,11 @@ internal static partial class MultiplayerSession
     private static volatile bool relayConnected;
     private static IPEndPoint relayEndpoint;
     private static CancellationTokenSource socketCancellation;
-    private static readonly object sendLock = new object();
-    private static readonly object sendQueueLock = new object();
-    private static readonly Queue<byte[]> prioritySendQueue = new Queue<byte[]>();
-    private static readonly Queue<byte[]> sendQueue = new Queue<byte[]>();
-    private static readonly AutoResetEvent sendSignal = new AutoResetEvent(false);
+    private static readonly object sendLock = new();
+    private static readonly object sendQueueLock = new();
+    private static readonly Queue<byte[]> prioritySendQueue = new();
+    private static readonly Queue<byte[]> sendQueue = new();
+    private static readonly AutoResetEvent sendSignal = new(false);
     private static Thread sendThread;
     private static readonly byte[] udpMagic = new byte[] { 0x47, 0x55, 0x44, 0x50 };
     private const byte UdpAuth = 1;
@@ -45,11 +41,11 @@ internal static partial class MultiplayerSession
     private const int UdpFragmentPayload = 1000;
     private static int transportMessageSequence;
     private static readonly Dictionary<long, FragmentTransfer> fragmentTransfers = new();
-    private static readonly ReliableChannel reliableChannel = new ReliableChannel();
+    private static readonly ReliableChannel reliableChannel = new();
     private const int MaxQueuedPackets = 2048;
     private const int MaxPendingEventPackets = 256;
     private const int MaxPendingIdentities = 64;
-    private static readonly object statusLock = new object();
+    private static readonly object statusLock = new();
     private static string status = "";
     private static bool isHost;
     private static ConnectionMode connectionMode = ConnectionMode.Relay;
@@ -155,7 +151,7 @@ internal static partial class MultiplayerSession
     private static ushort localPeerId;
     private static ushort hostPeerId;
     private static int maxPlayers = 2;
-    private const long PeerTimeoutTicks = TimeSpan.TicksPerSecond * 4;
+    private const long PeerTimeoutTicks = TimeSpan.TicksPerSecond * 30;
 
     internal static void StartHost(string lobbyId, string relayKey, string relayAddress, bool pvpEnabled,
         bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
