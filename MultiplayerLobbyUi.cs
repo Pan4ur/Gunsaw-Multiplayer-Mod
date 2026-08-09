@@ -1,6 +1,6 @@
-using System;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 internal sealed class MultiplayerLobbyUi : MonoBehaviour
@@ -17,20 +17,26 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private Button closeLobbyButton;
     private Transform lobbyRows;
     private int renderedLobbyHash;
+    private MainMenuManager menu;
 
     internal void Configure(GunsawMultiplayerPlugin owner)
     {
         plugin = owner;
-        var menu = FindObjectOfType<MainMenuManager>();
+        if (SceneManager.GetActiveScene().name != "LevelSelect")
+        {
+            if (root != null && root.activeSelf) root.SetActive(false);
+            return;
+        }
+        if (menu == null) menu = FindObjectOfType<MainMenuManager>();
         if (menu == null)
         {
-            if (root != null) root.SetActive(false);
+            if (root != null && root.activeSelf) root.SetActive(false);
             return;
         }
         if (root == null) Create(menu);
         if (root == null) return;
-        root.SetActive(true);
-        panel.SetActive(plugin.visible);
+        if (!root.activeSelf) root.SetActive(true);
+        if (panel.activeSelf != plugin.visible) panel.SetActive(plugin.visible);
         if (!plugin.visible) return;
         FitPanelToScreen();
 
