@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
@@ -57,6 +56,35 @@ internal static class MultiplayerCrateTickCullPatch
     private static bool Prefix(CrateScript __instance)
     {
         return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+    }
+}
+
+[HarmonyPatch(typeof(MiniCrateSpawner), "Update")]
+internal static class MultiplayerCrateSpawnerTickCullPatch
+{
+    private static bool Prefix(MiniCrateSpawner __instance, ref float ___curSpawnCool)
+    {
+        if (!MultiplayerLoadDistance.ShouldTickWorld(__instance)) return false;
+
+        ___curSpawnCool -= Time.deltaTime;
+        if (___curSpawnCool >= 0f || __instance.spawnCool == 0f) return false;
+
+        ___curSpawnCool = __instance.spawnCool;
+        var occupied = false;
+        foreach (var collider in Physics2D.OverlapCircleAll(__instance.transform.position, 0.5f,
+                     LayerMask.GetMask("Ground")))
+        {
+            if (collider.gameObject != __instance.gameObject) occupied = true;
+        }
+
+        var renderer = __instance.GetComponent<SpriteRenderer>();
+        if (occupied || renderer == null || !renderer.enabled) return false;
+
+        var spawned = UnityEngine.Object.Instantiate(__instance.spawnPrefab, __instance.transform.position,
+            __instance.transform.rotation);
+        if (spawned != null) spawned.AddComponent<RuntimeSpawnedCrate>();
+        GunsawMultiplayerPlugin.World.RegisterRuntimeWorldBodies(spawned);
+        return false;
     }
 }
 
