@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Text;
-using System.Threading;
 
 internal static partial class MultiplayerSession
 {
@@ -203,7 +200,7 @@ internal static partial class MultiplayerSession
     // TODO remove the legacy shit
     internal static void SendWorldInteraction(byte[] serialized)
     {
-        if (serialized == null) return;
+        if (serialized == null || !IsConnected || IsHost) return;
         try
         {
             var reader = new PacketReader(serialized);
@@ -211,6 +208,8 @@ internal static partial class MultiplayerSession
         }
         catch (System.IO.InvalidDataException) { }
         catch (System.IndexOutOfRangeException) { }
+        catch (System.IO.IOException) { }
+        catch (ObjectDisposedException) { }
     }
 
     private static bool TryTakePayload(Queue<PeerPayload> queue, out ushort peerId, out byte[] data)

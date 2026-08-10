@@ -3,34 +3,44 @@ using HarmonyLib;
 [HarmonyPatch(typeof(VehicleBase), "EnterVehicle")]
 internal static class KartPassengerEntryPatch
 {
-    private static bool Prefix(VehicleBase __instance, BodyScript body) => !KartPassengers.TryEnter(__instance, body);
-    private static void Postfix(VehicleBase __instance, BodyScript body) => KartPassengers.RegisterDriver(__instance, body);
+    private static bool Prefix(VehicleBase __instance, BodyScript body) =>
+        !MultiplayerSession.IsConnected || !KartPassengers.TryEnter(__instance, body);
+    private static void Postfix(VehicleBase __instance, BodyScript body)
+    {
+        if (MultiplayerSession.IsConnected) KartPassengers.RegisterDriver(__instance, body);
+    }
 }
 
 [HarmonyPatch(typeof(BodyScript), "ExitVehicle")]
 internal static class KartPassengerExitPatch
 {
-    private static bool Prefix(BodyScript __instance) => !KartPassengers.ExitPassenger(__instance);
-    private static void Postfix(BodyScript __instance) => KartPassengers.Exit(__instance);
+    private static bool Prefix(BodyScript __instance) =>
+        !MultiplayerSession.IsConnected || !KartPassengers.ExitPassenger(__instance);
+    private static void Postfix(BodyScript __instance)
+    {
+        if (MultiplayerSession.IsConnected) KartPassengers.Exit(__instance);
+    }
 }
 
 [HarmonyPatch(typeof(BodyScript), "DoFallDamage")]
 internal static class KartPassengerFallDamagePatch
 {
-    private static bool Prefix(BodyScript __instance) => !KartPassengers.IsProtectedPassenger(__instance);
+    private static bool Prefix(BodyScript __instance) =>
+        !MultiplayerSession.IsConnected || !KartPassengers.IsProtectedPassenger(__instance);
 }
 
 [HarmonyPatch(typeof(BodyScript), "OnCollisionEnter2D")]
 internal static class KartPassengerCollisionDamagePatch
 {
-    private static bool Prefix(BodyScript __instance) => !KartPassengers.IsProtectedPassenger(__instance);
+    private static bool Prefix(BodyScript __instance) =>
+        !MultiplayerSession.IsConnected || !KartPassengers.IsProtectedPassenger(__instance);
 }
 
 [HarmonyPatch(typeof(LimbScript), "OnCollisionEnter2D")]
 internal static class KartPassengerLimbCollisionDamagePatch
 {
     private static bool Prefix(LimbScript __instance) =>
-        __instance == null || !KartPassengers.IsProtectedPassenger(__instance.body);
+        !MultiplayerSession.IsConnected || __instance == null || !KartPassengers.IsProtectedPassenger(__instance.body);
 }
 
 [HarmonyPatch(typeof(BodyScript), "FixedUpdate")]
@@ -38,7 +48,7 @@ internal static class KartPassengerGroundSafetyPatch
 {
     private static void Postfix(BodyScript __instance)
     {
-        if (!KartPassengers.IsProtectedPassenger(__instance)) return;
+        if (!MultiplayerSession.IsConnected || !KartPassengers.IsProtectedPassenger(__instance)) return;
         __instance.framesInGround = 0;
         __instance.grounded = false;
         if (__instance.isAlive && __instance.controlState != BodyScript.RagdollState.FullControl)
@@ -51,7 +61,7 @@ internal static class KartPassengerDismemberSafetyPatch
 {
     private static bool Prefix(DismemberManager __instance)
     {
-        if (__instance == null || !KartPassengers.IsProtectedPassenger(__instance.body)) return true;
+        if (!MultiplayerSession.IsConnected || __instance == null || !KartPassengers.IsProtectedPassenger(__instance.body)) return true;
         __instance.currentDamage = 0f;
         return false;
     }
@@ -62,7 +72,7 @@ internal static class KartCameraSafetyPatch
 {
     private static void Prefix(CameraFollow __instance)
     {
-        if (__instance != null && __instance.followedBody != null && __instance.followedBody.inVehicle &&
+        if (MultiplayerSession.IsConnected && __instance != null && __instance.followedBody != null && __instance.followedBody.inVehicle &&
             __instance.followedBody.rb == null)
             __instance.followedBody.inVehicle = false;
     }

@@ -1659,7 +1659,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal void QueueWeaponInteraction(DroppedWeapon dropped, BodyScript body, byte operation)
     {
-        if (MultiplayerSession.IsHost || dropped == null || body == null ||
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || dropped == null || body == null ||
             PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
         var rigidbody = dropped.GetComponent<Rigidbody2D>();
         if (rigidbody == null) rigidbody = dropped.GetComponentInChildren<Rigidbody2D>(true);

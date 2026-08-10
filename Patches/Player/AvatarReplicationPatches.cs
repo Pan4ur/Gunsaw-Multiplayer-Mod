@@ -1,13 +1,5 @@
-using System;
-using System.IO;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Text;
-using BepInEx;
 using HarmonyLib;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 internal sealed class NetworkReplica : MonoBehaviour { }
 
@@ -16,6 +8,7 @@ internal static class CharacterSelectionReplicationPatch
 {
     private static void Postfix(MainMenuManager __instance)
     {
+        if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
         NetworkAvatarReplication.CaptureCharacterMenu(__instance);
     }
 }
@@ -35,6 +28,7 @@ internal static class LocalCharacterCreationPatch
 {
     private static void Prefix()
     {
+        if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
         NetworkAvatarReplication.RestoreCharacterSelection();
     }
 }
@@ -44,7 +38,7 @@ internal static class WeaponBackShowSlotGuardPatch
 {
     private static void Prefix(BodyScript ___body)
     {
-        if (___body != null && ___body.isPlayer)
+        if (MultiplayerSession.IsConnected && ___body != null && ___body.isPlayer)
             NetworkAvatarReplication.EnsureRespawnWeaponSlots(___body);
     }
 }
@@ -54,7 +48,7 @@ internal static class PlayerAmmoDisplaySlotGuardPatch
 {
     private static void Prefix(PlayerScript __instance)
     {
-        NetworkAvatarReplication.EnsurePlayerAmmoDisplaySlots(__instance);
+        if (MultiplayerSession.IsConnected) NetworkAvatarReplication.EnsurePlayerAmmoDisplaySlots(__instance);
     }
 }
 
@@ -63,6 +57,6 @@ internal static class WeaponReloadStateGuardPatch
 {
     private static bool Prefix(WeaponScript __instance)
     {
-        return NetworkAvatarReplication.PrepareWeaponReload(__instance);
+        return !MultiplayerSession.IsConnected || NetworkAvatarReplication.PrepareWeaponReload(__instance);
     }
 }
