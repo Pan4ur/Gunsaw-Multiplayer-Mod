@@ -445,23 +445,33 @@ internal sealed class WorldReplication : MonoBehaviour
     private void RefreshWorldBodies()
     {
         foreach (var body in FindObjectsOfType<Rigidbody2D>())
+            RegisterWorldBody(body);
+    }
+
+    internal void RegisterRuntimeWorldBodies(GameObject runtimeObject)
+    {
+        if (!MultiplayerSession.IsHost || runtimeObject == null) return;
+        foreach (var body in runtimeObject.GetComponentsInChildren<Rigidbody2D>(true))
+            RegisterWorldBody(body);
+    }
+
+    private void RegisterWorldBody(Rigidbody2D body)
+    {
+        if (!IsWorldBody(body))
         {
-            if (!IsWorldBody(body))
-            {
-                RemoveWorldBody(body);
-                continue;
-            }
-            var id = Id(body);
-            bodies[id] = body;
-            WireId(id);
-            if (!droppedWeapons.ContainsKey(body))
-                droppedWeapons[body] = body.GetComponentInParent<DroppedWeapon>();
-            if (!bodyLayouts.ContainsKey(body)) bodyLayouts[body] = CreateBodyLayout(body);
-            if (IsInteractivePropBody(body)) interactivePropBodies.Add(body);
-            if (MultiplayerSession.IsHost && IsInteractivePropBody(body))
-                NetworkAvatarReplication.IgnoreRemotePlayerPropCollisions(body);
-            if (!MultiplayerSession.IsHost) MakeClientControlled(body);
+            RemoveWorldBody(body);
+            return;
         }
+        var id = Id(body);
+        bodies[id] = body;
+        WireId(id);
+        if (!droppedWeapons.ContainsKey(body))
+            droppedWeapons[body] = body.GetComponentInParent<DroppedWeapon>();
+        if (!bodyLayouts.ContainsKey(body)) bodyLayouts[body] = CreateBodyLayout(body);
+        if (IsInteractivePropBody(body)) interactivePropBodies.Add(body);
+        if (MultiplayerSession.IsHost && IsInteractivePropBody(body))
+            NetworkAvatarReplication.IgnoreRemotePlayerPropCollisions(body);
+        if (!MultiplayerSession.IsHost) MakeClientControlled(body);
     }
 
     private void RemoveWorldBody(Rigidbody2D body)
@@ -2605,7 +2615,9 @@ internal sealed class WorldReplication : MonoBehaviour
         string id;
         if (ids.TryGetValue(body, out id)) return id;
         var dropped = body.GetComponentInParent<DroppedWeapon>();
-        if (dropped != null && IsRuntimeDroppedWeapon(dropped))
+        var crate = body.GetComponentInParent<CrateScript>();
+        if ((dropped != null && IsRuntimeDroppedWeapon(dropped)) ||
+            (crate != null && crate.GetComponentInParent<RuntimeSpawnedCrate>() != null))
         {
             id = "runtime/" + (++nextRuntimeId);
             ids[body] = id;
@@ -3010,3 +3022,5 @@ internal sealed class WorldReplication : MonoBehaviour
         public bool active;
     }
 }
+
+internal sealed class RuntimeSpawnedCrate : MonoBehaviour { }

@@ -244,6 +244,7 @@ internal static class MultiplayerLoadDistance
         if (component == null) return activeDistanceSqr;
         if (component.GetComponentInParent<VehiclePart>() != null) return float.PositiveInfinity;
         return component.GetComponentInParent<DoorScript>() != null ||
+            component.GetComponentInParent<MiniCrateSpawner>() != null ||
             component.GetComponentInParent<RbMoveToObj>() != null ||
             component.GetComponentInParent<CustJoint>() != null
             ? MechanismSleepDistanceSqr
