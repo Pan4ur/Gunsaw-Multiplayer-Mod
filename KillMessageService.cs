@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using UnityEngine;
 
 internal static class KillMessageService
 {
@@ -44,6 +40,7 @@ internal static class KillMessageService
         if (cause == PlayerDeathCause.SelfKill) return "self_kill";
         if (cause == PlayerDeathCause.Fall) return "fall";
         if (cause == PlayerDeathCause.Fire) return "fire";
+        if (cause == PlayerDeathCause.HotPlate) return "hot_plate";
         if (cause == PlayerDeathCause.Saw) return "saw";
         if (cause == PlayerDeathCause.Acid) return "acid";
         if (cause == PlayerDeathCause.Drowning || cause == PlayerDeathCause.Suffocation) return "drowning";

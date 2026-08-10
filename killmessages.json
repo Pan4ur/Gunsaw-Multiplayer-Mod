@@ -31,6 +31,16 @@
       ]
     },
     {
+      "name": "hot_plate",
+      "messages": [
+        "%player% was cooked on a hot plate.",
+        "%player% touched a hot plate for too long.",
+        "%player% became the hot plate's dinner.",
+        "%player% was seared to death.",
+        "%player% discovered that the plate was hot."
+      ]
+    },
+    {
       "name": "drowning",
       "messages": [
         "%player% drowned.",

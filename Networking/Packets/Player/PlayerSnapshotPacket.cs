@@ -9,7 +9,8 @@ internal enum PlayerDeathCause : byte
     Acid,
     Restart,
     SelfKill,
-    Explosion
+    Explosion,
+    HotPlate
 }
 
 internal readonly struct PlayerSnapshotPacket : INetworkPacket

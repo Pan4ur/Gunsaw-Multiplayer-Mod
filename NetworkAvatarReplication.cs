@@ -420,7 +420,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (saw == null || collision == null) return;
         var limb = collision.gameObject.GetComponent<LimbScript>();
         var body = limb == null ? collision.gameObject.GetComponent<BodyScript>() : limb.body;
-        RecordEnvironmentalDeathCause(body, PlayerDeathCause.Saw);
+        RecordEnvironmentalDeathCause(body, IsHotPlate(saw) ? PlayerDeathCause.HotPlate : PlayerDeathCause.Saw);
+    }
+
+    private static bool IsHotPlate(SawScript saw)
+    {
+        for (var current = saw == null ? null : saw.transform; current != null; current = current.parent)
+        {
+            var name = current.name;
+            if (name.IndexOf("hotplate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                (name.IndexOf("hot", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                 name.IndexOf("plate", StringComparison.OrdinalIgnoreCase) >= 0)) return true;
+        }
+        return false;
     }
 
     internal static void RecordAcidDamage(WaterScript water, Collider2D collision)
