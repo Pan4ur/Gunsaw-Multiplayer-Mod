@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
@@ -370,7 +368,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         if (string.IsNullOrWhiteSpace(value)) return "";
         var result = value.Replace("\r", " ").Replace("\n", " ").Trim();
-        return result.Length > 160 ? result.Substring(0, 160) : result;
+        return result.Length > 256 ? result.Substring(0, 256) : result;
     }
 
     internal sealed class ChatEntry

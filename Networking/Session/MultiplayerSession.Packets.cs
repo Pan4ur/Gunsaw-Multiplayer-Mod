@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 
 internal static partial class MultiplayerSession
 {
@@ -25,10 +21,12 @@ internal static partial class MultiplayerSession
             if ((decodedPacket.Type == PacketType.Hello) && isHost)
             {
                 string connectedName;
+                bool joined;
                 lock (statusLock)
                 {
                     var reader = new PacketReader(decodedPacket.Payload);
                     connectedName = NormalizePlayerName(HelloPacket.Read(ref reader).PlayerName);
+                    joined = !peers.Contains(senderId);
                     TouchPeerLocked(senderId, connectedName);
                 }
                 var acceptedPacket = PacketCodec.Encode(new AcceptedPacket(localPlayerName));
@@ -44,6 +42,7 @@ internal static partial class MultiplayerSession
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
                     RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers), senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
+                if (joined) BroadcastSystemChat(connectedName + " joined the game.");
             }
             else if ((decodedPacket.Type == PacketType.Accepted) && !isHost)
             {
@@ -333,7 +332,7 @@ internal static partial class MultiplayerSession
                 var chatKey = ((long)senderId << 32) | (uint)chat.MessageId;
                 var system = chat.IsSystem;
                 var text = chat.Text.Trim();
-                if (text.Length > 160) text = text.Substring(0, 160);
+                if (text.Length > 256) text = text.Substring(0, 256);
                 lock (statusLock)
                 {
                     if (!string.IsNullOrEmpty(text) && receivedChatIds.Add(chatKey))
@@ -441,11 +440,18 @@ internal static partial class MultiplayerSession
     {
         UdpClient close = null;
         CancellationTokenSource cancel = null;
+        string departedName = "";
+        var announceDeparture = false;
         lock (statusLock)
         {
+            departedName = PlayerName(peerId);
             if (!peers.Remove(peerId)) return;
             peerListRevision++;
-            if (isHost && !hostLeft) disconnectedPeers.Enqueue(peerId);
+            if (isHost && !hostLeft)
+            {
+                disconnectedPeers.Enqueue(peerId);
+                announceDeparture = true;
+            }
             status = message;
             if (hostLeft)
             {
@@ -471,6 +477,20 @@ internal static partial class MultiplayerSession
         try { if (close != null) close.Close(); } catch { }
         if (close != null) close.Dispose();
         if (cancel != null) cancel.Dispose();
+        if (announceDeparture) BroadcastSystemChat(departedName + " left the game.");
+    }
+
+    private static void BroadcastSystemChat(string message)
+    {
+        var text = "<color=#D4AF37>" + EscapeRichText(message) + "</color>";
+        MultiplayerHud.AddSystemMessage(text);
+        ChatPacket packet;
+        if (ChatService.TryCreate(text, true, out packet)) Send(packet);
+    }
+
+    private static string EscapeRichText(string value)
+    {
+        return (value ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
     }
 
     private static void DropRelay(bool hostLeft, string message)
