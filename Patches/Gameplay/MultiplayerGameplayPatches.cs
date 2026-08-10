@@ -1,16 +1,6 @@
-using BepInEx;
-using BepInEx.Configuration;
 using HarmonyLib;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net;
-using System.Text;
-using System.Threading;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using TMPro;
-using UnityEngine.UI;
 
 [HarmonyPatch(typeof(LimbScript), "OnCollisionStay2D")]
 internal static class LimbCrateCollisionPatch
@@ -644,8 +634,9 @@ internal static class ClientNpcDeathPatch
         if (deathCause == PlayerDeathCause.Unknown)
             deathCause = NetworkAvatarReplication.DeathCauseFor(__instance);
         var weaponName = NetworkAvatarReplication.DamageWeaponFor(__instance);
+        var killerName = killer == null ? NetworkAvatarReplication.DamageSourceNameFor(__instance) : DeathDisplayName(killer);
         var message = KillMessageService.Create(deathCause, victimName,
-            killer == null ? "" : DeathDisplayName(killer), weaponName);
+            killerName, weaponName);
         MultiplayerHud.AddSystemMessage(message);
         ChatPacket packet;
         if (ChatService.TryCreate(message, true, out packet)) MultiplayerSession.Send(packet);

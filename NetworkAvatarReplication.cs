@@ -96,6 +96,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static NetworkAvatarReplication instance;
     private static readonly Dictionary<ushort, NetworkAvatarReplication> replicas = new();
     private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
+    private static readonly Dictionary<int, string> lastDamageSourceNames = new();
     private static readonly Dictionary<int, string> lastDamageWeapons = new();
     private static readonly Dictionary<int, float> lastDamageSourceTimes = new();
     private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses = new();
@@ -246,8 +247,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return true;
     }
 
-
-
     internal static bool ReplaceLocalPlayerBody(BodyScript oldBody, BodyScript newBody)
     {
         var player = PlayerScript.player;
@@ -324,7 +323,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (victim.isAlive) announcedDeaths.Remove(victim.GetInstanceID());
         var explosion = activeShotState != null && activeShotState.IsExplosion;
         if (explosion) RecordEnvironmentalDeathCause(victim, PlayerDeathCause.Explosion);
-        if (currentShooter == null || currentShooter == victim) return;
+        if (applyingNetworkPlayerDamage || currentShooter == null || currentShooter == victim) return;
         SetDamageSource(victim, currentShooter,
             explosion ? WeaponName(currentShooter.weapon) : ActiveWeaponName(currentShooter));
     }
@@ -364,13 +363,43 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return lastDamageWeapons.TryGetValue(victim.GetInstanceID(), out weapon) ? weapon : "";
     }
 
+    internal static string DamageSourceNameFor(BodyScript victim)
+    {
+        if (victim == null) return "";
+        string name;
+        return lastDamageSourceNames.TryGetValue(victim.GetInstanceID(), out name) ? name : "";
+    }
+
     private static void SetDamageSource(BodyScript victim, BodyScript source, string weaponName)
     {
         var id = victim.GetInstanceID();
         lastDamageSources[id] = source;
+        lastDamageSourceNames.Remove(id);
         lastDamageSourceTimes[id] = Time.unscaledTime;
         if (string.IsNullOrEmpty(weaponName)) lastDamageWeapons.Remove(id);
         else lastDamageWeapons[id] = weaponName;
+    }
+
+    private static void SetDamageSourceName(BodyScript victim, string sourceName, string weaponName)
+    {
+        if (victim == null) return;
+        var id = victim.GetInstanceID();
+        lastDamageSources.Remove(id);
+        if (string.IsNullOrWhiteSpace(sourceName)) lastDamageSourceNames.Remove(id);
+        else lastDamageSourceNames[id] = sourceName.Trim();
+        lastDamageSourceTimes[id] = Time.unscaledTime;
+        if (string.IsNullOrEmpty(weaponName)) lastDamageWeapons.Remove(id);
+        else lastDamageWeapons[id] = weaponName;
+    }
+
+    private static void ClearDamageSource(BodyScript victim)
+    {
+        if (victim == null) return;
+        var id = victim.GetInstanceID();
+        lastDamageSources.Remove(id);
+        lastDamageSourceNames.Remove(id);
+        lastDamageWeapons.Remove(id);
+        lastDamageSourceTimes.Remove(id);
     }
 
     private static string ActiveWeaponName(BodyScript source)
@@ -394,6 +423,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             Time.unscaledTime - damageTime > 0.25f)
         {
             lastDamageSources.Remove(id);
+            lastDamageSourceNames.Remove(id);
             lastDamageWeapons.Remove(id);
             lastDamageSourceTimes.Remove(id);
         }
@@ -466,6 +496,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         environmentalDeathCauses[id] = cause;
         environmentalDeathCauseTimes[id] = Time.unscaledTime;
         lastDamageSources.Remove(id);
+        lastDamageSourceNames.Remove(id);
         lastDamageWeapons.Remove(id);
         lastDamageSourceTimes.Remove(id);
     }
@@ -509,6 +540,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             announcedDeaths.Remove(id);
             deathCauses.Remove(id);
             lastDamageSources.Remove(id);
+            lastDamageSourceNames.Remove(id);
             lastDamageWeapons.Remove(id);
             lastDamageSourceTimes.Remove(id);
             environmentalDeathCauses.Remove(id);
@@ -709,7 +741,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         PlayerDamagePacket playerDamage;
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
         {
-            RecordDamageSource(player.bodyScript, RemoteBodyForPeer(senderId));
+            if (playerDamage.HasPlayerSource)
+                RecordDamageSource(player.bodyScript, RemoteBodyForPeer(senderId));
+            else
+                SetDamageSourceName(player.bodyScript, playerDamage.SourceName, playerDamage.SourceWeapon);
             ApplyPlayerDamage(player.bodyScript, playerDamage);
         }
         PlayerDamagePacket pvpDamage;
@@ -2110,7 +2145,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (currentShooter == null || !currentShooter.isPlayer || MultiplayerSession.PvpEnabled)
             {
                 replica.SpawnRemoteDeathDropIfNeeded(amount);
-                SendRemotePlayerDamage(replica.remotePeerId, amount, critical);
+                SendRemotePlayerDamage(replica.remotePeerId, amount, critical, currentShooter);
             }
             return;
         }
@@ -2121,9 +2156,30 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         MultiplayerSession.Send(new PvpDamagePacket(amount, critical), replica.remotePeerId);
     }
 
-    private static void SendRemotePlayerDamage(ushort targetPeerId, float amount, bool critical)
+    private static void SendRemotePlayerDamage(ushort targetPeerId, float amount, bool critical, BodyScript source)
     {
-        if (MultiplayerSession.IsHost) MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical), targetPeerId);
+        if (MultiplayerSession.IsHost)
+            MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical, source != null && source.isPlayer,
+                DamageSourceName(source), DamageWeapon(source)), targetPeerId);
+    }
+
+    private static string DamageSourceName(BodyScript source)
+    {
+        if (source == null) return "";
+        if (source.isPlayer)
+        {
+            var player = PlayerScript.player;
+            if (player != null && player.bodyScript == source) return MultiplayerSession.LocalPlayerName;
+            return RemoteNameForBody(source);
+        }
+        if (!string.IsNullOrWhiteSpace(source.characterName)) return source.characterName.Trim();
+        return source.gameObject == null ? "Bot" : source.gameObject.name.Replace("(Clone)", "").Trim();
+    }
+
+    private static string DamageWeapon(BodyScript source)
+    {
+        var weapon = ActiveWeaponName(source);
+        return string.IsNullOrEmpty(weapon) ? WeaponName(source == null ? null : source.weapon) : weapon;
     }
 
     private static void ApplyPlayerDamage(BodyScript body, PlayerDamagePacket playerDamage)
@@ -3944,23 +4000,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             currentShooter = null;
             activeShotState = null;
         }
-    }
-
-    internal static float NextWeaponSpread()
-    {
-        if (!MultiplayerSession.IsConnected || activeShotState == null)
-            return UnityEngine.Random.Range(-1f, 1f);
-        var index = activeShotState.SpreadIndex++;
-        var value = SpreadValue(activeShotState.SpreadSeed, index);
-        var weapon = activeShotState.Weapon;
-        if (weapon != null && weapon.stats != null)
-        {
-            var facing = weapon.body != null && !weapon.body.isRight ? -1f : 1f;
-            var direction = ((Vector2)(weapon.transform.right * facing + weapon.transform.up *
-                weapon.stats.bulletSpread * value)).normalized;
-            activeShotState.ShotDirections.Add(direction);
-        }
-        return value;
     }
 
     private static float SpreadValue(int seed, int index)
