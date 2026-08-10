@@ -1584,6 +1584,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 remoteCanBeGrabbed = reader.ReadBoolean();
                 lastRemoteHealth = remoteBody.health;
                 lastRemoteAlive = remoteBody.isAlive;
+                if (MultiplayerSession.IsHost && wasRemoteAlive && !lastRemoteAlive)
+                    remoteBody.DropAllWeapons();
                 if (lastRemoteAlive && !wasRemoteAlive)
                 {
                     remoteDeathDropSpawned = false;
@@ -2276,6 +2278,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var isLocalPlayer = player != null && body == player.bodyScript;
         var isStartingPlayerBody = body.GetComponentInParent<PlayerScript>() != null;
         if (!isLocalPlayer && !isStartingPlayerBody && !body.isPlayer && !IsRemoteAvatarBody(body)) return false;
+        if (allWeapons && MultiplayerSession.IsHost && (isLocalPlayer || IsRemoteAvatarBody(body))) return false;
         if (isLocalPlayer && !MultiplayerSession.IsHost && body.isAlive && !allWeapons)
         {
             ClearDroppedWeapon(body, false);

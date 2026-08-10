@@ -615,6 +615,10 @@ internal static class ClientNpcDeathPatch
 
     private static void Postfix(BodyScript __instance)
     {
+        var localPlayer = PlayerScript.player;
+        if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer &&
+            localPlayer != null && localPlayer.bodyScript == __instance)
+            __instance.DropAllWeapons();
         NetworkAvatarReplication.EndNpcKillScreenEffect(__instance);
         Announce(__instance);
     }
