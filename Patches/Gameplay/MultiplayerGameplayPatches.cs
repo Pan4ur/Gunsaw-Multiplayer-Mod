@@ -169,6 +169,9 @@ internal static class MultiplayerClientMainMenuPatch
 {
     private static void Prefix()
     {
+        if (MultiplayerSession.IsHosting)
+            MultiplayerSession.EndHostCustomLevel("LevelSelect");
+
         if (SceneLoader.main != null)
         {
             SceneLoader.main.levelEditString = "";
@@ -1037,6 +1040,12 @@ internal static class NetworkChatterDiedPatch
 [HarmonyPatch(typeof(SceneLoader), "LoadScene")]
 internal static class HostSceneReloadNotifyPatch
 {
+    private static void Prefix(string scene)
+    {
+        if (MultiplayerSession.IsHosting && scene != "LevelLoader")
+            MultiplayerSession.EndHostCustomLevel(scene);
+    }
+
     private static void Postfix(string scene)
     {
         if (!MultiplayerSession.IsHosting) return;
