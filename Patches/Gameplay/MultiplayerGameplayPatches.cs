@@ -284,6 +284,15 @@ internal static class MultiplayerCustomLevelSpawnScopePatch
     }
 }
 
+[HarmonyPatch(typeof(LevelLoader), "Start")]
+internal static class MultiplayerLevelLoaderWorldRegistrationPatch
+{
+    private static void Postfix()
+    {
+        WorldReplication.Instance?.RegisterLevelLoaderWorldObjects();
+    }
+}
+
 [HarmonyPatch(typeof(GameObject), "FindGameObjectWithTag", new[] { typeof(string) })]
 internal static class MultiplayerCustomLevelSpawnLookupPatch
 {

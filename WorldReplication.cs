@@ -2161,17 +2161,27 @@ internal sealed class WorldReplication : MonoBehaviour
         RefreshLamps();
     }
 
+    internal void RegisterLevelLoaderWorldObjects()
+    {
+        if (!MultiplayerSession.IsConnected) return;
+        RefreshGlasses();
+        nextSnapshot = 0f;
+    }
+
     private void RefreshLamps()
     {
-        foreach (var collider in FindObjectsOfType<CircleCollider2D>())
+        foreach (var collider in FindObjectsOfType<Collider2D>())
         {
-            if (collider == null || lampIds.ContainsKey(collider) ||
-                !collider.gameObject.name.StartsWith("Lamp (")) continue;
-            var light = collider.GetComponent("Light2D") as Behaviour;
+            if (collider == null || lampIds.ContainsKey(collider)) continue;
+            var light = collider.GetComponentInParent<UnityEngine.Experimental.Rendering.Universal.Light2D>();
             if (light == null) continue;
+            if (!collider.CompareTag("Lamp") &&
+                !collider.gameObject.name.StartsWith("Lamp (") &&
+                !light.CompareTag("Lamp") &&
+                !light.gameObject.name.StartsWith("Lamp (")) continue;
             var id = ComponentId(collider);
             lampIds[collider] = id;
-            lamps[id] = new LampState { Object = collider.gameObject, Light = light, Collider = collider };
+            lamps[id] = new LampState { Object = light.gameObject, Light = light, Collider = collider };
         }
     }
 
@@ -2181,28 +2191,33 @@ internal sealed class WorldReplication : MonoBehaviour
             if (LampIsDestroyed(pair.Value)) destroyedLamps.Add(pair.Key);
     }
 
+    internal void CaptureDestroyedLampIds(ISet<string> ids)
+    {
+        if (ids == null) return;
+        RefreshLamps();
+        foreach (var pair in lamps)
+            if (LampIsDestroyed(pair.Value)) ids.Add(pair.Key);
+    }
+
+    internal void CollectNewDestroyedLampIds(ISet<string> before, List<string> result)
+    {
+        if (before == null || result == null) return;
+        RefreshLamps();
+        foreach (var pair in lamps)
+            if (LampIsDestroyed(pair.Value) && !before.Contains(pair.Key)) result.Add(pair.Key);
+    }
+
     private static bool LampIsDestroyed(LampState lamp)
     {
         return lamp == null || lamp.Object == null || !lamp.Object.activeSelf ||
             lamp.Light == null || !lamp.Light.enabled || lamp.Collider == null || !lamp.Collider.enabled;
     }
 
-    internal void ApplyRemoteLampHits(Vector2 origin, IList<Vector2> directions)
+    internal void ApplyRemoteDestroyedLamps(IList<string> ids)
     {
-        if (directions == null) return;
-        foreach (var direction in directions)
-        {
-            if (direction.sqrMagnitude < 0.01f) continue;
-            foreach (var hit in Physics2D.RaycastAll(origin, direction.normalized, 100f))
-            {
-                string id;
-                if (hit.collider == null || !lampIds.TryGetValue(hit.collider, out id)) continue;
-                LampState lamp;
-                if (!lamps.TryGetValue(id, out lamp)) continue;
-                BreakLamp(id, lamp, hit.point);
-                break;
-            }
-        }
+        if (ids == null) return;
+        foreach (var id in ids)
+            if (!string.IsNullOrEmpty(id)) ApplyLampState(id);
     }
 
     private void ApplyLampState(string id)

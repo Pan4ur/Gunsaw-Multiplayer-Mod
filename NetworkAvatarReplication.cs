@@ -2901,6 +2901,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             state.Up = weapon.transform.up;
             state.WeaponSprite = SpriteId(weapon.stats.sprite);
         }
+        GunsawMultiplayerPlugin.World?.CaptureDestroyedLampIds(state.DestroyedLampIds);
         var player = PlayerScript.player;
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
             instance == null || player == null || currentShooter != player.bodyScript)
@@ -3402,9 +3403,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 var direction = state.ShotDirections[index];
                 exactDirections[index] = new ShotVisualDirection(direction.x, direction.y);
             }
+            GunsawMultiplayerPlugin.World?.CollectNewDestroyedLampIds(state.DestroyedLampIds,
+                state.NewlyDestroyedLampIds);
             MultiplayerSession.Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x,
                 state.Direction.y, state.Up.x, state.Up.y, state.WeaponSprite, hostNpcShot,
-                targetPeers.ToArray(), state.SpreadSeed, exactDirections));
+                targetPeers.ToArray(), state.SpreadSeed, exactDirections,
+                state.NewlyDestroyedLampIds.ToArray()));
             foreach (var wound in state.Wounds)
                 SendRemotePlayerWound(wound, wound.Critical);
         }
@@ -3462,24 +3466,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             preset = remoteBody.weapon.stats;
         if (preset == null) return;
 
-        if (GunsawMultiplayerPlugin.World != null)
-        {
-            var lampDirs = new List<Vector2>();
-
-            if (exactDirections.Length > 0)
-            {
-                foreach (ShotVisualDirection exactDirection in exactDirections)
-                {
-                    lampDirs.Add( new Vector2(exactDirection.X, exactDirection.Y) );
-                }
-            }
-            else
-            {
-                lampDirs.Add(direction);
-            }
-
-            GunsawMultiplayerPlugin.World.ApplyRemoteLampHits(origin, lampDirs);
-        }
+        GunsawMultiplayerPlugin.World?.ApplyRemoteDestroyedLamps(packet.DestroyedLampIds);
         
         if (preset.fireSound != null)
             Sound.Play(preset.fireSound, origin, false, false, null, 1f, 1f);
@@ -3862,6 +3849,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         internal int SpreadSeed;
         internal int SpreadIndex;
         internal readonly List<Vector2> ShotDirections = new();
+        internal readonly HashSet<string> DestroyedLampIds = new();
+        internal readonly List<string> NewlyDestroyedLampIds = new();
         internal Vector2 Origin;
         internal Vector2 Direction;
         internal Vector2 Up;

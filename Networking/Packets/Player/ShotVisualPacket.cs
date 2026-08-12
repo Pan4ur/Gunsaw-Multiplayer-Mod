@@ -19,10 +19,11 @@ internal readonly struct ShotVisualPacket : INetworkPacket
     internal readonly ushort[] TargetPeerIds;
     internal readonly int SpreadSeed;
     internal readonly ShotVisualDirection[] ExactDirections;
+    internal readonly string[] DestroyedLampIds;
 
     internal ShotVisualPacket(float originX, float originY, float directionX, float directionY, float upX,
         float upY, string weaponSprite, bool isNpcShot, ushort[] targetPeerIds, int spreadSeed,
-        ShotVisualDirection[] exactDirections)
+        ShotVisualDirection[] exactDirections, string[] destroyedLampIds)
     {
         OriginX = originX;
         OriginY = originY;
@@ -35,6 +36,7 @@ internal readonly struct ShotVisualPacket : INetworkPacket
         TargetPeerIds = targetPeerIds ?? new ushort[0];
         SpreadSeed = spreadSeed;
         ExactDirections = exactDirections ?? new ShotVisualDirection[0];
+        DestroyedLampIds = destroyedLampIds ?? new string[0];
     }
 
     public PacketType Type => PacketType.ShotVisual;
@@ -59,6 +61,9 @@ internal readonly struct ShotVisualPacket : INetworkPacket
             writer.WriteSingle(ExactDirections[index].X);
             writer.WriteSingle(ExactDirections[index].Y);
         }
+        writer.WriteByte((byte)System.Math.Min(DestroyedLampIds.Length, byte.MaxValue));
+        for (var index = 0; index < DestroyedLampIds.Length && index < byte.MaxValue; index++)
+            writer.WriteBinaryString(DestroyedLampIds[index] ?? "");
     }
 
     internal static ShotVisualPacket Read(ref PacketReader reader)
@@ -77,7 +82,10 @@ internal readonly struct ShotVisualPacket : INetworkPacket
         var exactDirections = new ShotVisualDirection[reader.Remaining > 0 ? reader.ReadByte() : 0];
         for (var index = 0; index < exactDirections.Length; index++)
             exactDirections[index] = new ShotVisualDirection(reader.ReadSingle(), reader.ReadSingle());
+        var destroyedLampIds = new string[reader.Remaining > 0 ? reader.ReadByte() : 0];
+        for (var index = 0; index < destroyedLampIds.Length; index++)
+            destroyedLampIds[index] = reader.ReadBinaryString();
         return new ShotVisualPacket(originX, originY, directionX, directionY, upX, upY, weaponSprite,
-            isNpcShot, targetPeerIds, spreadSeed, exactDirections);
+            isNpcShot, targetPeerIds, spreadSeed, exactDirections, destroyedLampIds);
     }
 }
