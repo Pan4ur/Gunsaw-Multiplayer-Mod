@@ -6,7 +6,7 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NpcReplication : MonoBehaviour
 {
-    private const byte ProtocolVersion = 11;
+    private const byte ProtocolVersion = 12;
     private const byte CompressedSnapshotMarker = 0xFF;
     private const int CompressionThresholdBytes = 256;
     private const int MaxDecompressedSnapshotBytes = 1024 * 1024;
@@ -222,8 +222,12 @@ internal sealed class NpcReplication : MonoBehaviour
         InterpolateClientNpcs();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolate, interpolationStarted);
         foreach (var proxy in clientProxies)
+        {
+            if (proxy != null && proxy.NetworkVisible)
+                ApplyFacialExpressions(proxy.FacialExpressions, proxy.FacialExpressionStates);
             if (proxy != null && proxy.Root != null && !proxy.NetworkVisible && proxy.Root.activeSelf)
                 proxy.Root.SetActive(false);
+        }
     }
 
     internal void ApplyDistanceCulling()
@@ -675,6 +679,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 sectionStarted = writer.BaseStream.Position;
                 WriteLine(writer, layout.WeaponLaserLine);
                 WriteVisuals(writer, layout);
+                WriteFacialExpressions(writer, layout.FacialExpressions);
                 breakdown.Effects += (int)(writer.BaseStream.Position - sectionStarted);
     }
 
@@ -849,6 +854,7 @@ internal sealed class NpcReplication : MonoBehaviour
         for (var index = 0; index < weaponCount; index++) state.Weapons[index] = reader.ReadUInt64();
         state.Laser = ReadLine(reader);
         state.Visuals = ReadVisuals(reader);
+        state.FacialExpressions = ReadFacialExpressions(reader);
         return state;
     }
 
@@ -1039,6 +1045,8 @@ internal sealed class NpcReplication : MonoBehaviour
             proxy.ReplicatedSpriteRenderers[index] = !IsCoreNpcRenderer(proxy.SpriteRenderers[index]);
         proxy.Particles = GetParticles(root);
         proxy.Lights = GetLights(root);
+        proxy.FacialExpressions = root == null ? Array.Empty<FacialExpression>() :
+            root.GetComponentsInChildren<FacialExpression>(true);
         FreezeProxy(proxy);
         return proxy;
     }
@@ -1166,6 +1174,8 @@ internal sealed class NpcReplication : MonoBehaviour
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateTransforms, transformsStarted);
         var visualsStarted = MultiplayerPerformance.StartPhase();
         ApplyVisuals(proxy, state.Visuals);
+        ApplyFacialExpressions(proxy.FacialExpressions, state.FacialExpressions);
+        proxy.FacialExpressionStates = state.FacialExpressions;
         ApplyDismembermentVisuals(proxy);
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcVisuals, visualsStarted);
         proxy.ReceivedFirstState = true;
@@ -2018,7 +2028,9 @@ internal sealed class NpcReplication : MonoBehaviour
             WeaponLaserLine = body.wepLaserLine,
             SpriteRenderers = GetSpriteRenderers(root),
             Particles = GetParticles(root),
-            Lights = GetLights(root)
+            Lights = GetLights(root),
+            FacialExpressions = root == null ? Array.Empty<FacialExpression>() :
+                root.GetComponentsInChildren<FacialExpression>(true)
         };
         hostLayouts[body] = layout;
         return layout;
@@ -2183,6 +2195,62 @@ internal sealed class NpcReplication : MonoBehaviour
             layout.NextVisualState = Time.unscaledTime + VisualStateInterval;
         }
         writer.Write(layout.VisualState);
+    }
+
+    private static void WriteFacialExpressions(BinaryWriter writer, FacialExpression[] expressions)
+    {
+        writer.Write((ushort)expressions.Length);
+        foreach (var expression in expressions) writer.Write(FacialExpressionSprite(expression));
+    }
+
+    private static byte FacialExpressionSprite(FacialExpression expression)
+    {
+        if (expression == null || expression.head == null) return 0;
+        var sprite = expression.head.sprite;
+        if (sprite == expression.normalFace) return 1;
+        if (sprite == expression.worriedFace) return 2;
+        if (sprite == expression.deadFace) return 3;
+        if (sprite == expression.halfClosedFace) return 4;
+        if (sprite == expression.sadFace) return 5;
+        if (sprite == expression.alertFace) return 6;
+        if (sprite == expression.fightFace) return 7;
+        if (sprite == expression.specialSprite) return 8;
+        return 0;
+    }
+
+    private static byte[] ReadFacialExpressions(BinaryReader reader)
+    {
+        var count = reader.ReadUInt16();
+        var states = new byte[count];
+        for (var index = 0; index < count; index++) states[index] = reader.ReadByte();
+        return states;
+    }
+
+    private static void ApplyFacialExpressions(FacialExpression[] expressions, byte[] states)
+    {
+        if (expressions == null || states == null) return;
+        for (var index = 0; index < expressions.Length && index < states.Length; index++)
+        {
+            var expression = expressions[index];
+            if (expression == null || expression.head == null) continue;
+            expression.head.sprite = FacialExpressionSprite(expression, states[index]);
+        }
+    }
+
+    private static Sprite FacialExpressionSprite(FacialExpression expression, byte state)
+    {
+        switch (state)
+        {
+            case 1: return expression.normalFace;
+            case 2: return expression.worriedFace;
+            case 3: return expression.deadFace;
+            case 4: return expression.halfClosedFace;
+            case 5: return expression.sadFace;
+            case 6: return expression.alertFace;
+            case 7: return expression.fightFace;
+            case 8: return expression.specialSprite;
+            default: return null;
+        }
     }
 
     private static void WriteVisualState(BinaryWriter writer, HostNpcLayout layout)
@@ -2555,6 +2623,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public ParticleSystem[] Particles = new ParticleSystem[0];
         public UnityEngine.Experimental.Rendering.Universal.Light2D[] Lights =
             new UnityEngine.Experimental.Rendering.Universal.Light2D[0];
+        public FacialExpression[] FacialExpressions = Array.Empty<FacialExpression>();
         public byte[] VisualState;
         public float NextVisualState;
         public readonly MemoryStream VisualStream = new();
@@ -2646,6 +2715,8 @@ internal sealed class NpcReplication : MonoBehaviour
         public ParticleSystem[] Particles = new ParticleSystem[0];
         public UnityEngine.Experimental.Rendering.Universal.Light2D[] Lights =
             new UnityEngine.Experimental.Rendering.Universal.Light2D[0];
+        public FacialExpression[] FacialExpressions = Array.Empty<FacialExpression>();
+        public byte[] FacialExpressionStates = Array.Empty<byte>();
         public bool HasVisualState;
         public NpcVisualState LastVisualState = new NpcVisualState();
     }
@@ -2684,6 +2755,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public ulong[] Weapons = new ulong[0];
         public LineState Laser;
         public NpcVisualState Visuals = new NpcVisualState();
+        public byte[] FacialExpressions = Array.Empty<byte>();
     }
 
     private sealed class NpcIdentity
