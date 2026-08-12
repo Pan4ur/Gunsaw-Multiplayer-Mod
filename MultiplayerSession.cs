@@ -66,6 +66,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] worldDamageHeader = PacketHeader.Create(PacketType.WorldDamage);
     private static readonly byte[] npcHeader = PacketHeader.Create(PacketType.NpcSnapshot);
     private static readonly byte[] npcDamageHeader = PacketHeader.Create(PacketType.NpcDamage);
+    private static readonly byte[] npcSpeechHeader = PacketHeader.Create(PacketType.NpcSpeech);
     private static readonly byte[] worldInteractionHeader = PacketHeader.Create(PacketType.WorldInteraction);
     private static readonly byte[] playerDamageHeader = PacketHeader.Create(PacketType.PlayerDamage);
     private static readonly byte[] pvpDamageHeader = PacketHeader.Create(PacketType.PvpDamage);
@@ -100,6 +101,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<WorldDamagePacket>> worldDamage = new Queue<PeerPacket<WorldDamagePacket>>();
     private static readonly Queue<PeerPayload> npcSnapshots = new Queue<PeerPayload>();
     private static readonly Queue<PeerPacket<NpcDamagePacket>> npcDamage = new Queue<PeerPacket<NpcDamagePacket>>();
+    private static readonly Queue<PeerPacket<NpcSpeechPacket>> npcSpeech = new Queue<PeerPacket<NpcSpeechPacket>>();
     private static readonly Queue<PeerPacket<WorldInteractionPacket>> worldInteractions = new Queue<PeerPacket<WorldInteractionPacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> playerDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> pvpDamage = new Queue<PeerPacket<PlayerDamagePacket>>();

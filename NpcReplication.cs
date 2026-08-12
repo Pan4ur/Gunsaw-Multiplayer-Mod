@@ -43,6 +43,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private float nextFullSnapshot;
     private int sendSequence;
     private int receivedSequence = -1;
+    private static bool applyingRemoteSpeech;
     private bool wasConnected;
     private bool wasHost;
     private bool bodyRegistryReady;
@@ -208,6 +209,15 @@ internal sealed class NpcReplication : MonoBehaviour
             ApplySnapshot(latestPacket);
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSnapshotRead, readStarted);
         }
+        NpcSpeechPacket speechPacket;
+        ushort speechPeer;
+        while (MultiplayerSession.TryTakeNpcSpeech(out speechPeer, out speechPacket))
+        {
+            NpcProxy speechProxy;
+            var speechId = ResolveWireId(speechPacket.NpcId);
+            if (clientNpcs.TryGetValue(speechId, out speechProxy))
+                speechProxy.PendingSpeech = speechPacket;
+        }
         }
         finally
         {
@@ -224,7 +234,11 @@ internal sealed class NpcReplication : MonoBehaviour
         foreach (var proxy in clientProxies)
         {
             if (proxy != null && proxy.NetworkVisible)
+            {
+                if (proxy.PendingSpeech.HasValue && ApplyNpcSpeech(proxy, proxy.PendingSpeech.Value))
+                    proxy.PendingSpeech = null;
                 ApplyFacialExpressions(proxy.FacialExpressions, proxy.FacialExpressionStates);
+            }
             if (proxy != null && proxy.Root != null && !proxy.NetworkVisible && proxy.Root.activeSelf)
                 proxy.Root.SetActive(false);
         }
@@ -545,6 +559,18 @@ internal sealed class NpcReplication : MonoBehaviour
         for (var index = 0; index < previous.Length; index++) if (buffer[index] != previous[index]) return false;
         return true;
     }
+
+    internal static void ReplicateNpcSpeech(Chatter chatter, string text, int priority, float duration)
+    {
+        var current = Instance;
+        if (current == null || !MultiplayerSession.IsHost || chatter == null || string.IsNullOrEmpty(text)) return;
+        var body = chatter.GetComponentInParent<BodyScript>();
+        string id;
+        if (body == null || !current.hostIds.TryGetValue(body, out id)) return;
+        MultiplayerSession.Send(new NpcSpeechPacket(current.WireId(id), text, priority, duration), priority: true);
+    }
+
+    internal static bool AllowRemoteNpcSpeech() => applyingRemoteSpeech;
 
     private static byte[] CompressSnapshot(byte[] packet)
     {
@@ -1061,7 +1087,8 @@ internal sealed class NpcReplication : MonoBehaviour
         }
         foreach (var behaviour in proxy.Root.GetComponentsInChildren<MonoBehaviour>(true))
         {
-            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is ScarfPhysics || behaviour is SusnessShow) continue;
+            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is ScarfPhysics ||
+                behaviour is SusnessShow || behaviour is Chatter) continue;
             if (!proxy.Behaviours.ContainsKey(behaviour)) proxy.Behaviours.Add(behaviour, behaviour.enabled);
             behaviour.enabled = false;
         }
@@ -2237,6 +2264,21 @@ internal sealed class NpcReplication : MonoBehaviour
         }
     }
 
+    private static bool ApplyNpcSpeech(NpcProxy proxy, NpcSpeechPacket state)
+    {
+        if (proxy == null || string.IsNullOrEmpty(state.Text) || state.Duration <= 0f) return true;
+        var applied = false;
+        foreach (var chatter in proxy.Root.GetComponentsInChildren<Chatter>(true))
+        {
+            if (chatter == null) continue;
+            applyingRemoteSpeech = true;
+            try { chatter.Say(state.Text, state.Priority, state.Duration); applied = true; }
+            catch (NullReferenceException) { }
+            finally { applyingRemoteSpeech = false; }
+        }
+        return applied;
+    }
+
     private static Sprite FacialExpressionSprite(FacialExpression expression, byte state)
     {
         switch (state)
@@ -2717,6 +2759,7 @@ internal sealed class NpcReplication : MonoBehaviour
             new UnityEngine.Experimental.Rendering.Universal.Light2D[0];
         public FacialExpression[] FacialExpressions = Array.Empty<FacialExpression>();
         public byte[] FacialExpressionStates = Array.Empty<byte>();
+        public NpcSpeechPacket? PendingSpeech;
         public bool HasVisualState;
         public NpcVisualState LastVisualState = new NpcVisualState();
     }
@@ -2798,6 +2841,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public bool Active;
         public bool Playing;
     }
+
 
     private struct LightVisualState
     {

@@ -874,6 +874,24 @@ internal static class ClientDroppedWeaponAmmoPatch
     }
 }
 
+[HarmonyPatch(typeof(Chatter), "Say")]
+internal static class MultiplayerNpcChatterPatch
+{
+    private static bool Prefix(Chatter __instance, int prior, ref int ___curPriority, ref float ___curShowTime,
+        out bool __state)
+    {
+        __state = prior > ___curPriority || ___curShowTime < 0f;
+        if (!MultiplayerSession.IsConnected) return true;
+        return MultiplayerSession.IsHost || NpcReplication.AllowRemoteNpcSpeech();
+    }
+
+    private static void Postfix(Chatter __instance, string textt, int prior, float time, bool __state)
+    {
+        if (__state && MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
+            NpcReplication.ReplicateNpcSpeech(__instance, textt, prior, time);
+    }
+}
+
 [HarmonyPatch(typeof(WeaponScript), "Shoot")]
 internal static class MultiplayerWeaponShotPatch
 {

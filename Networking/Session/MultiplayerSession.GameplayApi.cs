@@ -106,6 +106,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakeNpcDamage(out ushort peerId, out NpcDamagePacket packet)
         => TryTakePacket(npcDamage, out peerId, out packet);
 
+    internal static bool TryTakeNpcSpeech(out ushort peerId, out NpcSpeechPacket packet)
+        => TryTakePacket(npcSpeech, out peerId, out packet);
+
     internal static bool TryTakeWorldInteraction(out ushort peerId, out byte[] data)
     {
         lock (statusLock)

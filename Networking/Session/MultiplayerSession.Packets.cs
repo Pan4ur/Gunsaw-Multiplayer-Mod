@@ -182,6 +182,11 @@ internal static partial class MultiplayerSession
                 var reader = new PacketReader(decodedPacket.Payload);
                 ReceiveNpcChunk(senderId, NpcSnapshotPacket.Read(ref reader));
             }
+            else if (!isHost && decodedPacket.Type == PacketType.NpcSpeech)
+            {
+                try { var reader = new PacketReader(decodedPacket.Payload); EnqueueEvent(npcSpeech, senderId, NpcSpeechPacket.Read(ref reader)); }
+                catch (System.Exception) { }
+            }
             else if (isHost && decodedPacket.Type == PacketType.NpcDamage)
             {
                 try
@@ -541,6 +546,7 @@ internal static partial class MultiplayerSession
         npcSnapshots.Clear();
         npcTransfers.Clear();
         npcDamage.Clear();
+        npcSpeech.Clear();
         worldInteractions.Clear();
         playerDamage.Clear();
         pvpDamage.Clear();

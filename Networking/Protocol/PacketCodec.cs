@@ -50,6 +50,7 @@ internal static class PacketCodec
             case PacketType.Chat: return Encode(new PayloadPacket(type, payload));
             case PacketType.CustomLevel: return Encode(new PayloadPacket(type, payload));
             case PacketType.NpcPossession: return Encode(new PayloadPacket(type, payload));
+            case PacketType.NpcSpeech: return Encode(new PayloadPacket(type, payload));
             case PacketType.Reliable: return Encode(new PayloadPacket(type, payload));
             case PacketType.ReliableAck: return Encode(new PayloadPacket(type, payload));
             case PacketType.WorldEnvironment: return Encode(new WorldEnvironmentPacket(payload));
