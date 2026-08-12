@@ -152,3 +152,12 @@ internal static class MultiplayerFireTickCullPatch
         return MultiplayerLoadDistance.ShouldTickWorld(__instance);
     }
 }
+
+[HarmonyPatch(typeof(FireScript), "Awake")]
+internal static class MultiplayerFireRegistrationPatch
+{
+    private static void Postfix(FireScript __instance)
+    {
+        WorldReplication.RegisterRuntimeWorldFire(__instance);
+    }
+}

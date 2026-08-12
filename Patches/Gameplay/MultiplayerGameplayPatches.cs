@@ -58,7 +58,7 @@ internal static class ClientCrystalTongueRemotePlayerPatch
         var closestDistance = 13f;
         Collider2D closestCollider = null;
         Vector2 closestPoint = Vector2.zero;
-        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
         {
             if (remote.Body == null) continue;
             foreach (var collider in remote.Body.GetComponentsInChildren<Collider2D>(true))
@@ -334,7 +334,7 @@ internal static class MultiplayerLimbAnimationPatch
     {
         var body = __instance == null ? null : __instance.body;
         if (body == null || NpcReplication.IsPossessionRenderGuard(body) ||
-            NpcReplication.IsClientProxy(body) || NetworkAvatarReplication.IsRemoteAvatarBody(body))
+            NpcReplication.IsClientProxy(body) || NetworkAvatarRegistry.IsRemoteAvatarBody(body))
             return false;
 
         if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
@@ -530,13 +530,31 @@ internal static class ClientCrateDamagePatch
     {
         if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
         {
-            WorldReplication.TrackDroppedWeapons();
             if (__state == null || GunsawMultiplayerPlugin.World == null) return;
             var created = new List<Rigidbody2D>();
             foreach (var body in UnityEngine.Object.FindObjectsOfType<Rigidbody2D>())
                 if (body != null && !__state.ExistingBodies.Contains(body.GetInstanceID())) created.Add(body);
             GunsawMultiplayerPlugin.World.RegisterDestroyedCrateDebris(__instance, created.ToArray());
         }
+    }
+}
+
+[HarmonyPatch(typeof(CrateScript), "FixedUpdate")]
+internal static class CrateFixedUpdateInitializationPatch
+{
+    private static bool Prefix(Rigidbody2D ___rb, AudioSource ___scrapeSource)
+    {
+        return ___rb != null && ___scrapeSource != null;
+    }
+}
+
+[HarmonyPatch(typeof(DroppedWeapon), nameof(DroppedWeapon.ChangeWeapon))]
+internal static class HostDroppedWeaponRegistrationPatch
+{
+    private static void Postfix(DroppedWeapon __instance)
+    {
+        if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
+            WorldReplication.RegisterDroppedWeapon(__instance);
     }
 }
 
@@ -627,7 +645,7 @@ internal static class ClientNpcDeathPatch
     {
         if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || __instance == null ||
             NetworkAvatarReplication.IsCreatingRemoteAvatar() ||
-            (!allowRemoteReplica && NetworkAvatarReplication.IsRemoteReplicaBody(__instance)) ||
+            (!allowRemoteReplica && NetworkAvatarRegistry.IsRemoteReplicaBody(__instance)) ||
             (!__instance.isPlayer && !NpcReplication.IsHostNpc(__instance)) ||
             !NetworkAvatarReplication.BeginDeathAnnouncement(__instance)) return;
         var localPlayer = PlayerScript.player;
@@ -654,7 +672,7 @@ internal static class ClientNpcDeathPatch
             var localPlayer = PlayerScript.player;
             if (localPlayer != null && body == localPlayer.bodyScript)
                 return MultiplayerSession.LocalPlayerName;
-            var remoteName = NetworkAvatarReplication.RemoteNameForBody(body);
+            var remoteName = NetworkAvatarRegistry.RemoteNameForBody(body);
             return string.IsNullOrEmpty(remoteName) ? "Player" : remoteName;
         }
         var characterName = body.characterName;
@@ -725,7 +743,7 @@ internal static class ClientNpcLimbCollisionPatch
         return __instance == null ||
             (!NpcReplication.IsClientProxy(__instance.body) &&
              !NpcReplication.IsLocallyPossessedBody(__instance.body) &&
-             !NetworkAvatarReplication.IsRemoteAvatarBody(__instance.body));
+             !NetworkAvatarRegistry.IsRemoteAvatarBody(__instance.body));
     }
 }
 
@@ -950,7 +968,7 @@ internal static class MultiplayerVoyagerPvpVisualPatch
     {
         if (__instance == null) return;
         var body = __instance.GetComponent<BodyScript>();
-        NetworkAvatarReplication.UpdatePvpVoyagerVisuals(body, Time.deltaTime);
+        VoyagerBody.UpdatePvpVoyagerVisuals(body, Time.deltaTime);
     }
 }
 

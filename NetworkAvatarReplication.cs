@@ -15,13 +15,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<string, WeaponPreset> weaponPresetCache = new();
     private static string selectedCharacterPrefab = "";
     private static int remoteAvatarCreationDepth;
-    private BodyScript remoteBody;
-    private Vector2 lastAuthoritativePosition;
-    private bool hasAuthoritativePosition;
+    internal BodyScript remoteBody;
+    internal Vector2 lastAuthoritativePosition;
+    internal bool hasAuthoritativePosition;
     private GameObject remoteAvatar;
     private Transform remoteAvatarParent;
     private string remotePrefabPath = "";
-    private string remoteName = "Player";
+    internal string remoteName = "Player";
     private string identitySent = "";
     private float nextIdentity;
     private BodyScript identityBody;
@@ -30,6 +30,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private string identityRootName = "";
     private string identityFallback = "";
     private string resolvedIdentityPrefab = "";
+    private string? cachedCharacterPrefabPreference;
     private float nextSnapshot;
     private PlayerVisualState lastSerializedVisualState;
     private float visualResendUntil;
@@ -47,7 +48,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private int avatarWeaponBytesPerSecond;
     private int avatarEffectsBytesPerSecond;
     private int avatarVisualBytesPerSecond;
-    private string localName;
+    internal string localName;
     private readonly Queue<RemoteProjectileVisual> remoteProjectiles = new();
     private readonly Dictionary<Rigidbody2D, TargetState> targets = new();
     private readonly Dictionary<Transform, WorldTargetState> worldTargets = new();
@@ -92,9 +93,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private readonly List<VehicleTailTarget> vehicleTailTargets = [];
     private readonly List<VehicleTailTransformTarget> vehicleTailTransformTargets = [];
     private bool hasVehicleRigTarget;
-    private float nextVehicleRigDebug;
     private static NetworkAvatarReplication instance;
-    private static readonly Dictionary<ushort, NetworkAvatarReplication> replicas = new();
+    internal static NetworkAvatarReplication Instance => instance;
     private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
     private static readonly Dictionary<int, string> lastDamageSourceNames = new();
     private static readonly Dictionary<int, string> lastDamageWeapons = new();
@@ -103,12 +103,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<int, float> environmentalDeathCauseTimes = new();
     private static readonly Dictionary<int, PlayerDeathCause> deathCauses = new();
     private static readonly Dictionary<int, float> localKillBloodTimes = new();
-    private static readonly Dictionary<SpriteRenderer, float> voyagerWeaponBaseAlpha = new();
-    private static readonly Dictionary<LineRenderer, Vector2> voyagerScarfBaseAlpha = new();
     private static readonly HashSet<int> announcedDeaths = [];
     private static BodyScript suppressNpcKillEffectFor;
     private bool coordinator;
-    private ushort remotePeerId;
+    internal ushort remotePeerId;
     private float lastRemoteHealth;
     private bool lastRemoteAlive = true;
     private static BodyScript currentShooter;
@@ -148,16 +146,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private VehicleBase localVehicle;
     private bool localVehicleLocked;
     private bool localVehicleWasSimulated;
-    
-    internal static BodyScript RemoteBody
-    {
-        get
-        {
-            foreach (var replica in replicas.Values)
-                if (replica != null && replica.remoteBody != null) return replica.remoteBody;
-            return null;
-        }
-    }
 
     internal static int AvatarCoreBytesPerSecond { get { return instance == null ? 0 : instance.avatarCoreBytesPerSecond; } }
     internal static int AvatarLimbBytesPerSecond { get { return instance == null ? 0 : instance.avatarLimbBytesPerSecond; } }
@@ -171,7 +159,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (instance == null || instance.spectatorPeerId == 0) return "NO ALIVE PLAYERS";
         NetworkAvatarReplication replica;
-        return replicas.TryGetValue(instance.spectatorPeerId, out replica) && replica != null
+        return NetworkAvatarRegistry.replicas.TryGetValue(instance.spectatorPeerId, out replica) && replica != null
             ? "SPECTATING " + replica.remoteName : "NO ALIVE PLAYERS";
     }
 
@@ -183,16 +171,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(instance.respawnAt - Time.unscaledTime));
     }
 
-    internal static BodyScript RemoteBodyForPeer(ushort peerId)
-    {
-        NetworkAvatarReplication replica;
-        return replicas.TryGetValue(peerId, out replica) && replica != null ? replica.remoteBody : null;
-    }
-
     internal static void EjectRemoteVehicleOccupants(VehicleBase vehicle)
     {
         if (!MultiplayerSession.IsHost || vehicle == null) return;
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             if (replica == null || replica.remotePeerId == 0 || replica.remoteBody == null ||
                 !replica.remoteBody.inVehicle || replica.remoteBody.curVehicle != vehicle) continue;
@@ -203,14 +185,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    internal static bool IsRemoteAvatarBody(BodyScript body)
-    {
-        return ReplicaForBody(body) != null;
-    }
-
     internal static void ForceRefreshRemotePhysics()
     {
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             if (replica == null) continue;
             replica.remotePhysicsModeKnown = false;
@@ -309,12 +286,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         player.UnDie();
         if (CameraFollow.cam != null) CameraFollow.cam.target = newBody.transform;
         return true;
-    }
-
-    internal static string RemoteNameForBody(BodyScript body)
-    {
-        var replica = ReplicaForBody(body);
-        return replica == null ? "Player" : replica.remoteName;
     }
 
     internal static void RecordDamageSource(BodyScript victim)
@@ -513,7 +484,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || victim == null ||
             victim.isPlayer) return;
         var killer = DamageSourceFor(victim);
-        var replica = ReplicaForBody(killer);
+        var replica = NetworkAvatarRegistry.ReplicaForBody(killer);
         if (replica == null || replica.remotePeerId == 0) return;
 
         suppressNpcKillEffectFor = victim;
@@ -550,27 +521,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return announcedDeaths.Add(id);
     }
 
-    internal static RemotePlayerInfo[] RemotePlayers()
-    {
-        var result = new List<RemotePlayerInfo>(replicas.Count);
-        foreach (var pair in replicas)
-            if (pair.Value != null)
-                result.Add(new RemotePlayerInfo
-                {
-                    PeerId = pair.Key,
-                    Name = pair.Value.remoteName,
-                    Body = pair.Value.remoteBody,
-                    AuthoritativePosition = pair.Value.lastAuthoritativePosition,
-                    HasAuthoritativePosition = pair.Value.hasAuthoritativePosition,
-                    PingMs = MultiplayerSession.PeerPing(pair.Key)
-                });
-        result.Sort((left, right) => left.PeerId.CompareTo(right.PeerId));
-        return result.ToArray();
-    }
-
     internal static string RemoteNameTag(BodyScript body)
     {
-        var replica = ReplicaForBody(body);
+        var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (replica == null) return "Player";
         var ping = MultiplayerSession.PingMs;
         ping = MultiplayerSession.PeerPing(replica.remotePeerId);
@@ -644,54 +597,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return SnapshotInterval;
     }
 
-    private static NetworkAvatarReplication GetOrCreateReplica(ushort peerId)
-    {
-        if (instance == null || peerId == 0 || peerId == MultiplayerSession.LocalPeerId) return null;
-        NetworkAvatarReplication replica;
-        if (replicas.TryGetValue(peerId, out replica) && replica != null) return replica;
-        replica = instance.gameObject.AddComponent<NetworkAvatarReplication>();
-        replica.remotePeerId = peerId;
-        replica.localName = instance.localName;
-        replicas[peerId] = replica;
-        return replica;
-    }
-
-    private static NetworkAvatarReplication ReplicaForBody(BodyScript body)
-    {
-        if (body == null) return null;
-        foreach (var replica in replicas.Values)
-            if (replica != null && replica.remoteBody == body) return replica;
-        return null;
-    }
-
-    private static void CleanupDisconnectedReplicas()
-    {
-        var stale = new List<ushort>();
-        foreach (var pair in replicas)
-            if (pair.Value == null || !MultiplayerSession.HasPeer(pair.Key)) stale.Add(pair.Key);
-        foreach (var peerId in stale)
-        {
-            NetworkAvatarReplication replica;
-            if (replicas.TryGetValue(peerId, out replica) && replica != null)
-            {
-                replica.DestroyRemote();
-                Destroy(replica);
-            }
-            replicas.Remove(peerId);
-        }
-    }
-
-    private static void DestroyAllReplicas()
-    {
-        foreach (var replica in new List<NetworkAvatarReplication>(replicas.Values))
-            if (replica != null)
-            {
-                replica.DestroyRemote();
-                Destroy(replica);
-            }
-        replicas.Clear();
-    }
-
     private void Update()
     {
         if (!coordinator)
@@ -704,10 +609,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
         if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected)
         {
-            DestroyAllReplicas();
+            NetworkAvatarRegistry.DestroyAllReplicas();
             return;
         }
-        CleanupDisconnectedReplicas();
+        NetworkAvatarRegistry.CleanupDisconnectedReplicas();
         if (!MultiplayerSession.IsConnected) return;
 
         EnsureLocalPlayerSingleton();
@@ -742,7 +647,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
         {
             if (playerDamage.HasPlayerSource)
-                RecordDamageSource(player.bodyScript, RemoteBodyForPeer(senderId));
+                RecordDamageSource(player.bodyScript, NetworkAvatarRegistry.RemoteBodyForPeer(senderId));
             else
                 SetDamageSourceName(player.bodyScript, playerDamage.SourceName, playerDamage.SourceWeapon);
             ApplyPlayerDamage(player.bodyScript, playerDamage);
@@ -753,19 +658,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         ShotVisualPacket shotVisual;
         while (MultiplayerSession.TryTakeShotVisual(out senderId, out shotVisual))
         {
-            var shooter = GetOrCreateReplica(senderId);
+            var shooter = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteShot(shotVisual);
         }
         ProjectileImpactPacket projectileImpact;
         while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
         {
-            var shooter = GetOrCreateReplica(senderId);
+            var shooter = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteProjectileImpact(projectileImpact);
         }
         VelvetWebPacket velvetWeb;
         while (MultiplayerSession.TryTakeVelvetWeb(out senderId, out velvetWeb))
         {
-            var shooter = GetOrCreateReplica(senderId);
+            var shooter = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteVelvetWeb(velvetWeb);
         }
         PlayerGrabPacket playerGrab;
@@ -790,7 +695,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         string identity;
         while (MultiplayerSession.TryTakeIdentity(out senderId, out identity))
         {
-            var replica = GetOrCreateReplica(senderId);
+            var replica = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (replica != null) replica.CreateRemote(identity, player.bodyScript);
         }
 
@@ -804,7 +709,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakeSnapshot(out senderId, out snapshot))
         {
             NetworkAvatarReplication replica;
-            if (replicas.TryGetValue(senderId, out replica) && replica != null) replica.Apply(snapshot);
+            if (NetworkAvatarRegistry.replicas.TryGetValue(senderId, out replica) && replica != null) replica.Apply(snapshot);
         }
         }
         finally
@@ -822,7 +727,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (remoteAvatar == null) return;
         UpdateRemotePhysicsMode();
-        UpdatePvpVoyagerVisuals(remoteBody, Time.deltaTime);
+        VoyagerBody.UpdatePvpVoyagerVisuals(remoteBody, Time.deltaTime);
         foreach (var pair in targets)
         {
             var body = pair.Key;
@@ -859,70 +764,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         foreach (var transform in staleWorldTargets) localTargets.Remove(transform);
         MaintainRemoteVehicleAttachment();
-    }
-
-    internal static void UpdatePvpVoyagerVisuals(BodyScript body, float deltaTime)
-    {
-        if (body == null || body.GetComponentInChildren<CarverCamo>(true) == null) return;
-        var visibility = PvpVoyagerVisibility(body);
-        var blend = 1f - Mathf.Exp(-10f * Mathf.Max(0f, deltaTime));
-        var isRemote = IsRemoteAvatarBody(body);
-        foreach (var renderer in body.GetComponentsInChildren<SpriteRenderer>(true))
-        {
-            if (renderer == null || (renderer.gameObject.name != "testGun" &&
-                renderer.gameObject.name != "BackWep1" && renderer.gameObject.name != "BackWep2")) continue;
-            float baseAlpha;
-            if (!voyagerWeaponBaseAlpha.TryGetValue(renderer, out baseAlpha))
-            {
-                baseAlpha = isRemote && visibility > 0.001f
-                    ? renderer.color.a / visibility : renderer.color.a;
-                voyagerWeaponBaseAlpha[renderer] = baseAlpha;
-            }
-            var color = renderer.color;
-            color.a = visibility <= 0.001f ? 0f : Mathf.Lerp(color.a, baseAlpha * visibility, blend);
-            renderer.color = color;
-        }
-
-        foreach (var renderer in body.GetComponentsInChildren<SpriteRenderer>(true))
-        {
-            if (renderer == null || (renderer.gameObject.name != "ScarfHold" &&
-                renderer.gameObject.name != "MP Remote Scarf Hold")) continue;
-            float baseAlpha;
-            if (!voyagerWeaponBaseAlpha.TryGetValue(renderer, out baseAlpha))
-            {
-                baseAlpha = isRemote && visibility > 0.001f
-                    ? renderer.color.a / visibility : renderer.color.a;
-                voyagerWeaponBaseAlpha[renderer] = baseAlpha;
-            }
-            var color = renderer.color;
-            color.a = visibility <= 0.001f ? 0f : Mathf.Lerp(color.a, baseAlpha * visibility, blend);
-            renderer.color = color;
-        }
-
-        foreach (var scarf in body.GetComponentsInChildren<ScarfPhysics>(true))
-        {
-            if (scarf == null || scarf.pointRenderer == null) continue;
-            var line = scarf.pointRenderer;
-            Vector2 baseAlpha;
-            if (!voyagerScarfBaseAlpha.TryGetValue(line, out baseAlpha))
-            {
-                baseAlpha = new Vector2(line.startColor.a, line.endColor.a);
-                voyagerScarfBaseAlpha[line] = baseAlpha;
-            }
-            var start = line.startColor;
-            var end = line.endColor;
-            start.a = visibility <= 0.001f ? 0f : Mathf.Lerp(start.a, baseAlpha.x * visibility, blend);
-            end.a = visibility <= 0.001f ? 0f : Mathf.Lerp(end.a, baseAlpha.y * visibility, blend);
-            line.startColor = start;
-            line.endColor = end;
-        }
-    }
-
-    internal static float PvpVoyagerVisibility(BodyScript body)
-    {
-        if (body == null || !MultiplayerSession.PvpEnabled ||
-            body.GetComponentInChildren<CarverCamo>(true) == null) return 1f;
-        return Mathf.InverseLerp(0.25f, 1f, body.susnessMult);
     }
 
     private void LateUpdate()
@@ -963,8 +804,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         
         NetworkAvatarReplication current;
-        if (replicas.TryGetValue(remotePeerId, out current) && current == this)
-            replicas.Remove(remotePeerId);
+        if (NetworkAvatarRegistry.replicas.TryGetValue(remotePeerId, out current) && current == this)
+            NetworkAvatarRegistry.replicas.Remove(remotePeerId);
     }
 
     private void CreateRemote(string identity, BodyScript localBody)
@@ -1042,7 +883,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         Debug.Log("[Gunsaw MP] Spawned remote avatar for " + name + ".");
     }
 
-    private void DestroyRemote()
+    internal void DestroyRemote()
     {
         if (remoteAvatar != null)
         {
@@ -1151,7 +992,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (body == null) return "";
         var fallback = string.IsNullOrEmpty(selectedCharacterPrefab)
-            ? PlayerPrefs.GetString("charPrefab")
+            ? (cachedCharacterPrefabPreference ??= PlayerPrefs.GetString("charPrefab"))
             : selectedCharacterPrefab;
         var characterName = body.characterName ?? "";
         var speciesName = body.speciesName ?? "";
@@ -2102,12 +1943,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    internal static bool IsRemoteReplicaBody(BodyScript body)
-    {
-        return body != null && (ReplicaForBody(body) != null ||
-            body.GetComponentInParent<NetworkReplica>() != null);
-    }
-
     internal static bool IsCreatingRemoteAvatar()
     {
         return remoteAvatarCreationDepth > 0;
@@ -2115,7 +1950,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     internal static bool HandleHostRemoteDamaged(BodyScript body, bool critical)
     {
-        var replica = ReplicaForBody(body);
+        var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         var amount = Mathf.Clamp(replica.lastRemoteHealth - body.health, 0f, 1000f);
         body.health = replica.lastRemoteHealth;
@@ -2126,7 +1961,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     internal static bool HandleHostRemoteDeath(BodyScript body)
     {
-        var replica = ReplicaForBody(body);
+        var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         body.health = replica.lastRemoteHealth;
         body.isAlive = replica.lastRemoteAlive;
@@ -2170,7 +2005,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var player = PlayerScript.player;
             if (player != null && player.bodyScript == source) return MultiplayerSession.LocalPlayerName;
-            return RemoteNameForBody(source);
+            return NetworkAvatarRegistry.RemoteNameForBody(source);
         }
         if (!string.IsNullOrWhiteSpace(source.characterName)) return source.characterName.Trim();
         return source.gameObject == null ? "Bot" : source.gameObject.name.Replace("(Clone)", "").Trim();
@@ -2345,8 +2180,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || body == null) return false;
         var isLocalPlayer = player != null && body == player.bodyScript;
         var isStartingPlayerBody = body.GetComponentInParent<PlayerScript>() != null;
-        if (!isLocalPlayer && !isStartingPlayerBody && !body.isPlayer && !IsRemoteAvatarBody(body)) return false;
-        if (allWeapons && MultiplayerSession.IsHost && (isLocalPlayer || IsRemoteAvatarBody(body))) return false;
+        if (!isLocalPlayer && !isStartingPlayerBody && !body.isPlayer && !NetworkAvatarRegistry.IsRemoteAvatarBody(body)) return false;
+        if (allWeapons && MultiplayerSession.IsHost && (isLocalPlayer || NetworkAvatarRegistry.IsRemoteAvatarBody(body))) return false;
         if (isLocalPlayer && !MultiplayerSession.IsHost && body.isAlive && !allWeapons)
         {
             ClearDroppedWeapon(body, false);
@@ -2434,7 +2269,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
 
         var candidates = new List<NetworkAvatarReplication>();
-        foreach (var pair in replicas)
+        foreach (var pair in NetworkAvatarRegistry.replicas)
         {
             var replica = pair.Value;
             if (replica != null && replica.remoteBody != null && replica.remoteBody.isAlive)
@@ -2823,7 +2658,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static void ApplyPvpDamage(BodyScript body, ushort senderId, PlayerDamagePacket packet)
     {
         if (!MultiplayerSession.PvpEnabled || body == null) return;
-        var source = senderId == MultiplayerSession.LocalPeerId ? body : RemoteBodyForPeer(senderId);
+        var source = senderId == MultiplayerSession.LocalPeerId ? body : NetworkAvatarRegistry.RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
         ApplyPlayerDamage(body, packet);
     }
@@ -2861,7 +2696,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (prop == null || !MultiplayerSession.IsHost) return;
         var propColliders = prop.GetComponentsInChildren<Collider2D>(true);
         if (propColliders == null || propColliders.Length == 0) return;
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             if (replica == null) continue;
             foreach (var remoteCollider in replica.remoteColliderTriggers.Keys)
@@ -2893,7 +2728,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 if (!collider.isTrigger) break;
                 continue;
             }
-            var remote = ReplicaForBody(collider.GetComponentInParent<BodyScript>());
+            var remote = NetworkAvatarRegistry.ReplicaForBody(collider.GetComponentInParent<BodyScript>());
             if (remote == null || !CanGrabBody(remote.remoteBody)) continue;
             var rigidbody = hit.rigidbody == null ? collider.attachedRigidbody : hit.rigidbody;
             if (rigidbody == null) return;
@@ -2917,7 +2752,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (instance == null || !MultiplayerSession.IsConnected || levitator == null) return;
         var target = levitator.currentlyLevitating;
         var targetBody = target == null ? null : target.GetComponentInParent<BodyScript>();
-        var replica = ReplicaForBody(targetBody);
+        var replica = NetworkAvatarRegistry.ReplicaForBody(targetBody);
         byte kind;
         short index;
         if (target != null && replica != null && CanGrabBody(targetBody) &&
@@ -3033,7 +2868,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (body == null || !MultiplayerSession.CanGrabPlayers) return false;
         if (!MultiplayerSession.GrabOnlyUnconscious) return true;
-        var replica = ReplicaForBody(body);
+        var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (replica != null) return replica.remoteCanBeGrabbed;
         return CanGrabOnlyState(body);
     }
@@ -3070,7 +2905,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
             instance == null || player == null || currentShooter != player.bodyScript)
             return state;
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
             if (replica != null)
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
                 {
@@ -3089,7 +2924,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
             instance == null || player == null || attacker != player.bodyScript)
             return state;
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
             if (replica != null)
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
                 {
@@ -3113,12 +2948,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var localBody = player == null ? null : player.bodyScript;
         if (localBody == null) return;
         var current = ai.targetBody;
-        if (current != null && current != localBody && ReplicaForBody(current) == null) return;
+        if (current != null && current != localBody && NetworkAvatarRegistry.ReplicaForBody(current) == null) return;
 
         BodyScript best = null;
         var bestDistance = float.MaxValue;
         SelectNpcPlayerTarget(ai.body, localBody, ref best, ref bestDistance);
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             var remote = replica == null ? null : replica.remoteBody;
             if (remote == null) continue;
@@ -3243,7 +3078,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
             if (body == null || !teleported.Add(body)) continue;
         }
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0) continue;
             if (!teleported.Contains(replica.remoteBody) &&
@@ -3260,7 +3095,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId) return suppressed;
         var collider = zone.GetComponent<BoxCollider2D>();
         if (collider == null) return suppressed;
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             var body = replica == null ? null : replica.remoteBody;
             if (body == null || !body.isPlayer || !IsInsideTeleportZone(body, zone.transform, collider)) continue;
@@ -3310,7 +3145,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || body == null ||
             !IsFinite(impact) || impact <= 6f) return;
-        var replica = ReplicaForBody(body);
+        var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (replica == null || replica.remotePeerId == 0 || !replica.receivedFirstSnapshot ||
             KartPassengers.IsProtectedPassenger(body)) return;
         MultiplayerSession.Send(new VehicleImpactPacket(impact, position.x, position.y, ragdoll),
@@ -3352,7 +3187,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (!MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled || requesterId == 0) return;
         var target = request.TargetPeerId == MultiplayerSession.LocalPeerId
             ? (PlayerScript.player == null ? null : PlayerScript.player.bodyScript)
-            : RemoteBodyForPeer(request.TargetPeerId);
+            : NetworkAvatarRegistry.RemoteBodyForPeer(request.TargetPeerId);
         if (target == null || !target.isAlive) return;
         var position = target.transform.position;
         if (!IsFinite(position.x) || !IsFinite(position.y)) return;
@@ -3492,7 +3327,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || !IsFinite(position.x) ||
             !IsFinite(position.y) || !IsFinite(range) || !IsFinite(force) || range <= 0f || force <= 0f)
             return;
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0 ||
                 !BodyMayBeAffectedByExplosion(replica.remoteBody, explosionObject, position, range)) continue;
@@ -3529,7 +3364,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             instance == null || projectile == null || player == null ||
             shooter != player.bodyScript) return;
         foreach (var projectileCollider in projectile.GetComponentsInChildren<Collider2D>(true))
-        foreach (var replica in replicas.Values)
+        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         foreach (var remoteCollider in replica.remoteColliderTriggers.Keys)
             if (projectileCollider != null && remoteCollider != null)
                 Physics2D.IgnoreCollision(projectileCollider, remoteCollider, true);
@@ -3579,7 +3414,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static void RecordRemoteWound(WeaponScript weapon, LimbScript limb, Vector2 hitpoint,
         Vector2 direction, GameObject splash)
     {
-        var replica = limb == null ? null : ReplicaForBody(limb.body);
+        var replica = limb == null ? null : NetworkAvatarRegistry.ReplicaForBody(limb.body);
         if (!MultiplayerSession.IsConnected || activeShotState == null || replica == null ||
             weapon != activeShotState.Weapon) return;
         var limbs = GetList(replica.remoteBody, "limbs");
@@ -4026,13 +3861,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         internal int AmmoBefore;
         internal int SpreadSeed;
         internal int SpreadIndex;
-        internal readonly List<Vector2> ShotDirections = new List<Vector2>();
+        internal readonly List<Vector2> ShotDirections = new();
         internal Vector2 Origin;
         internal Vector2 Direction;
         internal Vector2 Up;
         internal string WeaponSprite = "";
-        internal readonly List<PlayerWound> Wounds = new List<PlayerWound>();
-        internal readonly List<Collider2D> DisabledColliders = new List<Collider2D>();
+        internal readonly List<PlayerWound> Wounds = new();
+        internal readonly List<Collider2D> DisabledColliders = new();
     }
 
     internal sealed class TargetScreenEffectState

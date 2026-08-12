@@ -159,7 +159,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private void UpdatePlayers()
     {
         var text = "PLAYERS\n\n" + (MultiplayerSession.IsHost ? "[HOST]  " : "") + GunsawMultiplayerPlugin.Instance.playerName;
-        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
             text += "\n" + (remote.PeerId == 1 ? "[HOST]  " : "") + remote.Name + (remote.PingMs >= 0 ? "   " + remote.PingMs + " ms" : "");
         playersText.text = text;
     }
@@ -169,11 +169,11 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var camera = Camera.main;
         if (camera == null) return;
         var active = new HashSet<BodyScript>();
-        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
         {
             var body = remote.Body;
             if (body == null || body.rb == null) continue;
-            var visibility = NetworkAvatarReplication.PvpVoyagerVisibility(body);
+            var visibility = VoyagerBody.PvpVoyagerVisibility(body);
             if (visibility <= 0.01f)
             {
                 active.Add(body);
@@ -223,7 +223,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 var player = PlayerScript.player;
                 body = player == null ? null : player.bodyScript;
             }
-            else body = NetworkAvatarReplication.RemoteBodyForPeer(entry.PeerId);
+            else body = NetworkAvatarRegistry.RemoteBodyForPeer(entry.PeerId);
             if (body != null && !latest.ContainsKey(body)) latest.Add(body, entry);
         }
 
@@ -274,7 +274,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
         const float size = 0.75f;
 
-        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
         {
             var body = remote.Body;
 

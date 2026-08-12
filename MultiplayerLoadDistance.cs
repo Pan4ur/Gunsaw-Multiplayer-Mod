@@ -17,7 +17,10 @@ internal static class MultiplayerLoadDistance
     private const float SimulationRefreshInterval = 0.2f;
     private static readonly List<Vector2> playerPositions = [];
     private static readonly Dictionary<Rigidbody2D, bool> savedSimulationStates = new();
+    private static readonly Dictionary<Rigidbody2D, float> worldSleepDistances = new();
+    private static readonly Dictionary<Rigidbody2D, bool> worldNearPlayerStates = new();
     private static readonly Dictionary<BodyScript, bool> npcTickStates = new();
+    private static readonly Dictionary<BodyScript, bool> npcNearPlayerStates = new();
     private static readonly Dictionary<Component, bool> worldTickStates = new();
     private static readonly List<Rigidbody2D> staleBodies = [];
     private static bool wasActive;
@@ -61,7 +64,10 @@ internal static class MultiplayerLoadDistance
         RestoreSimulation();
         playerPositions.Clear();
         npcTickStates.Clear();
+        npcNearPlayerStates.Clear();
         worldTickStates.Clear();
+        worldSleepDistances.Clear();
+        worldNearPlayerStates.Clear();
         hostSimulationActive = false;
         nextSimulationRefresh = 0f;
         wasActive = false;
@@ -85,7 +91,13 @@ internal static class MultiplayerLoadDistance
 
     internal static bool IsNpcNearAnyPlayer(BodyScript body)
     {
-        return body != null && IsNearAnyPlayer(body.transform.position);
+        if (body == null) return false;
+        if (!IsHostSimulationActive()) return IsNearAnyPlayer(body.transform.position);
+        bool near;
+        if (npcNearPlayerStates.TryGetValue(body, out near)) return near;
+        near = IsNearAnyPlayer(body.transform.position);
+        npcNearPlayerStates[body] = near;
+        return near;
     }
 
     internal static bool ShouldSendNpcLimbPose(BodyScript body)
@@ -109,7 +121,12 @@ internal static class MultiplayerLoadDistance
 
     internal static bool IsWorldNearAnyPlayer(Rigidbody2D body)
     {
-        return body != null && IsNearAnyPlayer(body.position, WorldSleepDistanceSqr(body));
+        if (body == null) return false;
+        bool near;
+        if (worldNearPlayerStates.TryGetValue(body, out near)) return near;
+        near = IsNearAnyPlayer(body.position, WorldSleepDistanceSqr(body));
+        worldNearPlayerStates[body] = near;
+        return near;
     }
 
     internal static bool IsWorldNearLocalPlayer(Rigidbody2D body)
@@ -137,7 +154,22 @@ internal static class MultiplayerLoadDistance
     internal static void ApplyWorldBody(Rigidbody2D body)
     {
         if (body == null || !IsHostSimulationActive()) return;
-        SetSimulation(body, IsNearAnyPlayer(body.position, WorldSleepDistanceSqr(body)));
+        var near = IsNearAnyPlayer(body.position, WorldSleepDistanceSqr(body));
+        worldNearPlayerStates[body] = near;
+        SetSimulation(body, near);
+    }
+
+    internal static void RegisterWorldBody(Rigidbody2D body)
+    {
+        if (body == null || worldSleepDistances.ContainsKey(body)) return;
+        worldSleepDistances[body] = ResolveWorldSleepDistanceSqr(body);
+    }
+
+    internal static void UnregisterWorldBody(Rigidbody2D body)
+    {
+        if (body == null) return;
+        worldSleepDistances.Remove(body);
+        worldNearPlayerStates.Remove(body);
     }
 
     internal static void ApplyNpc(BodyScript body)
@@ -145,12 +177,13 @@ internal static class MultiplayerLoadDistance
         if (body == null || !IsHostSimulationActive() || body.isPlayer ||
             body.GetComponentInParent<NetworkReplica>() != null) return;
         var tick = IsNearAnyPlayer(body.transform.position);
+        npcNearPlayerStates[body] = tick;
         var tickTails = tick && ShouldTickNpcTails(body);
         npcTickStates[body] = tick;
-        var root = NpcRoot(body);
-        foreach (var ai in root.GetComponentsInChildren<AIScript>(true))
+        NpcReplication.GetSimulationComponents(body, out var aiControllers, out var simulationBodies);
+        foreach (var ai in aiControllers)
             if (ai != null && ai.body == body) ai.enabled = tick;
-        foreach (var rigidbody in root.GetComponentsInChildren<Rigidbody2D>(true))
+        foreach (var rigidbody in simulationBodies)
             SetSimulation(rigidbody, tick && (tickTails || !IsNpcTailBody(body, rigidbody)));
     }
 
@@ -162,7 +195,8 @@ internal static class MultiplayerLoadDistance
     internal static bool IsNpcSimulationCulled(BodyScript body)
     {
         if (body == null) return false;
-        foreach (var rigidbody in NpcRoot(body).GetComponentsInChildren<Rigidbody2D>(true))
+        NpcReplication.GetSimulationComponents(body, out _, out var simulationBodies);
+        foreach (var rigidbody in simulationBodies)
             if (IsSimulationCulled(rigidbody)) return true;
         return false;
     }
@@ -204,7 +238,7 @@ internal static class MultiplayerLoadDistance
         if (localPlayer != null)
             AddPlayerPosition(localPlayer.bodyScript);
 
-        foreach (var remote in NetworkAvatarReplication.RemotePlayers())
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
         {
             var body = remote.Body;
             if (body != null && body.inVehicle)
@@ -242,6 +276,20 @@ internal static class MultiplayerLoadDistance
     private static float WorldSleepDistanceSqr(Component component)
     {
         if (component == null) return activeDistanceSqr;
+        var body = component as Rigidbody2D;
+        if (body != null)
+        {
+            float distance;
+            if (worldSleepDistances.TryGetValue(body, out distance)) return distance;
+            distance = ResolveWorldSleepDistanceSqr(body);
+            worldSleepDistances[body] = distance;
+            return distance;
+        }
+        return ResolveWorldSleepDistanceSqr(component);
+    }
+
+    private static float ResolveWorldSleepDistanceSqr(Component component)
+    {
         if (component.GetComponentInParent<VehiclePart>() != null) return float.PositiveInfinity;
         return component.GetComponentInParent<DoorScript>() != null ||
             component.GetComponentInParent<MiniCrateSpawner>() != null ||

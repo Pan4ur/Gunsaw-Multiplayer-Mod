@@ -223,6 +223,6 @@ internal static class RemoteVehicleLimbCollisionPatch
 {
     private static bool Prefix(LimbScript __instance)
     {
-        return __instance == null || !NetworkAvatarReplication.IsRemoteReplicaBody(__instance.body);
+        return __instance == null || !NetworkAvatarRegistry.IsRemoteReplicaBody(__instance.body);
     }
 }

@@ -50,7 +50,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private string requestedHostScene = "";
     private float customLevelPhysicsRefreshUntil;
     private float nextCustomLevelPhysicsRefresh;
-    private Vector2 scroll;
     private NetworkAvatarReplication avatarReplication;
     private WorldReplication worldReplication;
     private NpcReplication npcReplication;
@@ -722,7 +721,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
         var target = targetPeerId == MultiplayerSession.LocalPeerId
             ? PlayerScript.player?.bodyScript
-            : NetworkAvatarReplication.RemoteBodyForPeer(targetPeerId);
+            : NetworkAvatarRegistry.RemoteBodyForPeer(targetPeerId);
         var local = PlayerScript.player?.bodyScript;
         if (target == null || !target.isAlive || local == null)
         {
