@@ -57,6 +57,9 @@ internal static class PacketCodec
             case PacketType.ProjectileImpact: return Encode(new PayloadPacket(type, payload));
             case PacketType.VelvetWeb: return Encode(new PayloadPacket(type, payload));
             case PacketType.PlayerTeleport: return Encode(new PayloadPacket(type, payload));
+            case PacketType.HostFps:
+                var hostFpsReader = new PacketReader(payload);
+                return Encode(HostFpsPacket.Read(ref hostFpsReader));
             case PacketType.Ping:
                 return payload != null && payload.Length == sizeof(long)
                     ? Encode(new PingPacket(System.BitConverter.ToInt64(payload, 0)))

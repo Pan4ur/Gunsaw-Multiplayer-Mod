@@ -35,5 +35,6 @@ internal enum PacketType : byte
     NpcSpeech = 0x21,
     MissionFinished = 0x22,
     PlayerPerformance = 0x23,
-    PlayerCarry = 0x24
+    PlayerCarry = 0x24,
+    HostFps = 0x25
 }

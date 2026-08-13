@@ -29,7 +29,8 @@ internal static class PlayerCarrySystem
     internal static bool IsCarriedTarget(BodyScript body) => carrying && body != null && body == BodyForPeer(targetId);
     internal static bool AllowDirectionChange => allowCarryDirectionChange;
     internal static bool MustLockRemoteCarryPose(BodyScript body) =>
-        IsLocalCarrier && body != null && body == BodyForPeer(targetId);
+        carrying && body != null && body == BodyForPeer(targetId) &&
+        NetworkAvatarRegistry.IsRemoteAvatarBody(body);
 
 
     internal static void Tick()
@@ -136,6 +137,9 @@ internal static class PlayerCarrySystem
 
     internal static void LateTick()
     {
+        if (!carrying) return;
+        var target = BodyForPeer(targetId);
+        if (target != null) ApplyTargetPose(target, target == PlayerScript.player?.bodyScript);
     }
 
     private static void Receive(ushort sender, PlayerCarryPacket packet)

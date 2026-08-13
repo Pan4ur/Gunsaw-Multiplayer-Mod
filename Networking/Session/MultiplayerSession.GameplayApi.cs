@@ -197,6 +197,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakePlayerCarry(out ushort peerId, out PlayerCarryPacket packet)
         => TryTakePacket(playerCarries, out peerId, out packet);
 
+    internal static bool TryTakeHostFps(out ushort peerId, out HostFpsPacket packet)
+        => TryTakePacket(hostFpsPackets, out peerId, out packet);
+
     internal static bool TryTakeChat(out ushort peerId, out string sender, out string message)
     {
         lock (statusLock)

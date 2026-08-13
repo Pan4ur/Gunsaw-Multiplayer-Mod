@@ -20,6 +20,13 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private string networkStatsTextValue = "";
     private float nextNetworkStatsUpdate;
     private MultiplayerHudUi nativeUi;
+    private float hostFpsSampleStartedAt;
+    private int hostFpsSampleFrames;
+    private int hostFps;
+    private float lowHostFpsSince = -1f;
+    private float nextHostFpsSoundAt;
+    private AudioSource hostFpsAlert;
+    private GUIStyle hostFpsWarningStyle;
 
     internal static MultiplayerHud Instance { get; private set; }
 
@@ -94,6 +101,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         MissionEndReplication.Tick();
         PlayerCarrySystem.Tick();
         MultiplayerScoreboard.Tick();
+        UpdateHostFpsWarning();
         MultiplayerPerformance.AdvancedEnabled = networkStatsVisible;
         MultiplayerPerformance.Sample();
         if (networkStatsVisible && Input.GetKeyDown(KeyCode.C) &&
@@ -157,6 +165,83 @@ internal sealed class MultiplayerHud : MonoBehaviour
         nativeUi.Configure(this);
     }
 
+    private void UpdateHostFpsWarning()
+    {
+        if (!MultiplayerSession.IsActive)
+        {
+            hostFps = 0;
+            lowHostFpsSince = -1f;
+            return;
+        }
+        if (MultiplayerSession.IsHost)
+        {
+            hostFpsSampleFrames++;
+            if (hostFpsSampleStartedAt <= 0f) hostFpsSampleStartedAt = Time.unscaledTime;
+            var elapsed = Time.unscaledTime - hostFpsSampleStartedAt;
+            if (elapsed >= 0.5f)
+            {
+                hostFps = Mathf.RoundToInt(hostFpsSampleFrames / elapsed);
+                hostFpsSampleFrames = 0;
+                hostFpsSampleStartedAt = Time.unscaledTime;
+                MultiplayerSession.Send(new HostFpsPacket((ushort)Mathf.Clamp(hostFps, 0, ushort.MaxValue)), 0, false);
+            }
+        }
+        else
+        {
+            ushort senderId;
+            HostFpsPacket packet;
+            while (MultiplayerSession.TryTakeHostFps(out senderId, out packet)) hostFps = packet.FPS;
+        }
+        if (hostFps > 0 && hostFps < 50)
+        {
+            if (lowHostFpsSince < 0f) lowHostFpsSince = Time.unscaledTime;
+        }
+        else
+        {
+            lowHostFpsSince = -1f;
+            nextHostFpsSoundAt = 0f;
+        }
+        UpdateHostFpsAlertSound();
+    }
+
+    private bool HostFpsWarningActive => lowHostFpsSince >= 0f &&
+        Time.unscaledTime - lowHostFpsSince >= 5f;
+
+    private void UpdateHostFpsAlertSound()
+    {
+        if (!HostFpsWarningActive || hostFps >= 20 || !MultiplayerSession.IsActive) return;
+        if (hostFpsAlert == null)
+        {
+            hostFpsAlert = gameObject.AddComponent<AudioSource>();
+            hostFpsAlert.clip = Resources.Load<AudioClip>("Sounds/oxygenAlert");
+            hostFpsAlert.spatialBlend = 0f;
+        }
+        if (hostFpsAlert.clip != null && Time.unscaledTime >= nextHostFpsSoundAt)
+        {
+            hostFpsAlert.PlayOneShot(hostFpsAlert.clip, 0.65f);
+            nextHostFpsSoundAt = Time.unscaledTime + 10f;
+        }
+    }
+
+    private void OnGUI()
+    {
+        if (!MultiplayerSession.IsActive || !HostFpsWarningActive) return;
+        if (hostFpsWarningStyle == null)
+        {
+            hostFpsWarningStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.LowerRight,
+                fontSize = 16,
+                fontStyle = FontStyle.Bold,
+                wordWrap = true
+            };
+        }
+        hostFpsWarningStyle.normal.textColor = hostFps < 20 ? Color.red : new Color(1f, 0.52f, 0f);
+        var icon = Mathf.FloorToInt(Time.unscaledTime * 2f) % 2 == 0 ? "[!]" : "[.]";
+        GUI.Label(new Rect(Screen.width - 570f, Screen.height - 72f, 550f, 52f),
+            icon + " The host cannot handle the load. Issues with props are inevitable.", hostFpsWarningStyle);
+    }
+
     private void UpdateNetworkStatsWidget()
     {
         if (Time.unscaledTime >= nextNetworkStatsUpdate)
@@ -165,7 +250,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             var stats = MultiplayerSession.DebugStats();
             var npc = NpcReplication.Instance;
             var world = WorldReplication.Instance;
-            networkStatsTextValue = "MODE " + MultiplayerSession.ActiveTransport + "\n" + string.Format("PING {0} ms   RX {1:0.0} KB/s   TX {2:0.0} KB/s   PLOSS {3:0.0}%\n" +
+            networkStatsTextValue = "MODE " + MultiplayerSession.ActiveTransport + "   HOST FPS " + hostFps + "\n" + string.Format("PING {0} ms   RX {1:0.0} KB/s   TX {2:0.0} KB/s   PLOSS {3:0.0}%\n" +
                 "OUT/s  NPC P:{4} S:{5}   WORLD P:{6} S:{7}\n" +
                 "IN/s   NPC P:{8} S:{9}   WORLD P:{10} S:{11}\n" +
                 "LAST  NPC {12}/{13}   PROPS {14}/{15}   OTHER {16}/{17}\n" +
