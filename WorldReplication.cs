@@ -44,6 +44,9 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, float> damage = new();
     private readonly Dictionary<string, float> nextDamage = new();
     private int nextRuntimeId;
+    private int worldSnapshotSequence;
+    private int lastReceivedWorldSnapshotSequence;
+    private bool hasReceivedWorldSnapshotSequence;
     private readonly Dictionary<Rigidbody2D, LocalSettings> localSettings = new();
     private readonly HashSet<Rigidbody2D> clientCreatedBodies = [];
     private readonly HashSet<Rigidbody2D> clientBoundDroppedWeapons = [];
@@ -279,8 +282,17 @@ internal sealed class WorldReplication : MonoBehaviour
 
         byte[] snapshot;
         byte[] latestSnapshot = null;
+        var latestSnapshotSequence = lastReceivedWorldSnapshotSequence;
         var queueStarted = MultiplayerPerformance.StartPhase();
-        while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot)) latestSnapshot = snapshot;
+        while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot))
+        {
+            if (!TryReadWorldSnapshotSequence(snapshot, out var sequence)) continue;
+            if (latestSnapshot == null || IsNewerWorldSnapshotSequence(sequence, latestSnapshotSequence))
+            {
+                latestSnapshot = snapshot;
+                latestSnapshotSequence = sequence;
+            }
+        }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
         if (latestSnapshot != null)
         {
@@ -914,6 +926,9 @@ internal sealed class WorldReplication : MonoBehaviour
         wireIds.Clear();
         idsByWire.Clear();
         lastSerializedWorld = null;
+        worldSnapshotSequence = 0;
+        lastReceivedWorldSnapshotSequence = 0;
+        hasReceivedWorldSnapshotSequence = false;
         lastSerializedEnvironment = null;
         lastReliableEnvironment = null;
         lastSerializedBodyStates.Clear();
@@ -935,6 +950,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var writer = new BinaryWriter(stream))
         {
             writer.Write(MultiplayerSession.SnapshotEpoch);
+            writer.Write(++worldSnapshotSequence);
             var fullSnapshot = Time.unscaledTime >= nextFullWorldSnapshot;
             if (fullSnapshot) nextFullWorldSnapshot = Time.unscaledTime + FullSnapshotInterval;
             var changedStates = new List<byte[]>();
@@ -968,7 +984,7 @@ internal sealed class WorldReplication : MonoBehaviour
             if (includeEnvironment) writer.Write(environment);
             lastSerializedEnvironment = environment;
             var packet = stream.ToArray();
-            if (!fullSnapshot && BytesEqual(lastSerializedWorld, packet)) return null;
+            if (!fullSnapshot && WorldSnapshotEquals(lastSerializedWorld, packet)) return null;
             lastSerializedWorld = packet;
             lastSentPropCount = changedPropCount;
             lastSentOtherCount = changedOtherBodyCount + (includeEnvironment ? buttons.Count + fires.Count + mechanismAudio.Count : 0);
@@ -1179,6 +1195,27 @@ internal sealed class WorldReplication : MonoBehaviour
         return null;
     }
 
+    private static bool TryReadWorldSnapshotSequence(byte[] data, out int sequence)
+    {
+        sequence = 0;
+        if (data == null || data.Length < sizeof(int) * 2) return false;
+        sequence = BitConverter.ToInt32(data, sizeof(int));
+        return true;
+    }
+
+    private static bool IsNewerWorldSnapshotSequence(int sequence, int previous)
+    {
+        return unchecked(sequence - previous) > 0;
+    }
+
+    private static bool WorldSnapshotEquals(byte[] left, byte[] right)
+    {
+        if (left == null || right == null || left.Length != right.Length) return false;
+        for (var index = sizeof(int) * 2; index < left.Length; index++)
+            if (left[index] != right[index]) return false;
+        return true;
+    }
+
     private static bool BytesEqual(byte[] left, byte[] right)
     {
         if (left == right) return true;
@@ -1205,6 +1242,10 @@ internal sealed class WorldReplication : MonoBehaviour
             var reader = new SnapshotReader(data);
             var sceneEpoch = reader.ReadInt32();
             if (!MultiplayerSession.IsSnapshotEpochCurrent(sceneEpoch)) return;
+            var sequence = reader.ReadInt32();
+            if (hasReceivedWorldSnapshotSequence && !IsNewerWorldSnapshotSequence(sequence, lastReceivedWorldSnapshotSequence)) return;
+            lastReceivedWorldSnapshotSequence = sequence;
+            hasReceivedWorldSnapshotSequence = true;
             var count = reader.ReadUInt16();
             receivedPacketsWindow++;
             receivedStatesWindow += count;

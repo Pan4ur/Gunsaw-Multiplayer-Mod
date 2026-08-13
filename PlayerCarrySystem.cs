@@ -11,6 +11,7 @@ internal static class PlayerCarrySystem
     private static bool localCarrierArmsFrozen, localCarrierAnimatorWasEnabled, localCarrierWasFullControl;
     private static int localCarrierWeaponSlot = -1;
     private static bool restoreCarrierWeaponPending;
+    private static readonly Dictionary<BodyScript, float> pickupCrouchUntil = new();
     private static BodyScript collisionCarrier, collisionTarget;
     private static bool allowCarryDirectionChange;
     private static readonly Dictionary<BodyScript, List<CarryBodyPart>> targetPoses = new();
@@ -101,6 +102,25 @@ internal static class PlayerCarrySystem
         if (body == BodyForPeer(carrierId)) ApplyCarrierPose(body, body == PlayerScript.player?.bodyScript);
     }
 
+    internal static void PreBodyUpdate(BodyScript body)
+    {
+        if (body == null) return;
+        if (pickupCrouchUntil.TryGetValue(body, out var until))
+        {
+            if (Time.unscaledTime < until)
+                body.isCrouching = true;
+            else
+                pickupCrouchUntil.Remove(body);
+        }
+    }
+
+    internal static void ApplyPickupCrouch()
+    {
+        var body = PlayerScript.player?.bodyScript;
+        if (body != null && pickupCrouchUntil.TryGetValue(body, out var until) && Time.unscaledTime < until)
+            body.isCrouching = true;
+    }
+
     internal static void PostBodyFixedUpdate(BodyScript body)
     {
         if (carrying && body != null && body == BodyForPeer(targetId))
@@ -128,6 +148,7 @@ internal static class PlayerCarrySystem
                 carrying = true;
                 carrierId = packet.CarrierId;
                 targetId = packet.TargetId;
+                StartPickupCrouch(BodyForPeer(carrierId));
             }
             else
             {
@@ -146,12 +167,14 @@ internal static class PlayerCarrySystem
             carrying = packet.Carrying;
             carrierId = packet.CarrierId;
             targetId = packet.TargetId;
+            if (carrying) StartPickupCrouch(BodyForPeer(carrierId));
             if (!carrying) ClearTargetPoses();
         }
     }
 
     private static void RequestStart(ushort peerId)
     {
+        StartPickupCrouch(PlayerScript.player?.bodyScript);
         if (MultiplayerSession.IsHost) Receive(MultiplayerSession.LocalPeerId, new PlayerCarryPacket(true, MultiplayerSession.LocalPeerId, peerId));
         else
         {
@@ -162,6 +185,11 @@ internal static class PlayerCarrySystem
             pendingStartUntil = Time.unscaledTime + 2.5f;
             MultiplayerSession.Send(new PlayerCarryPacket(true, MultiplayerSession.LocalPeerId, peerId), 1, true);
         }
+    }
+
+    private static void StartPickupCrouch(BodyScript body)
+    {
+        if (body != null) pickupCrouchUntil[body] = Time.unscaledTime + 0.25f;
     }
 
     private static void RequestStop()
@@ -602,7 +630,15 @@ internal static class PlayerCarryDirectionPatch
 [HarmonyPatch(typeof(BodyScript), "Update")]
 internal static class PlayerCarryBodyPosePatch
 {
+    private static void Prefix(BodyScript __instance) => PlayerCarrySystem.PreBodyUpdate(__instance);
+
     private static void Postfix(BodyScript __instance) => PlayerCarrySystem.PostBodyUpdate(__instance);
+}
+
+[HarmonyPatch(typeof(PlayerScript), "Update")]
+internal static class PlayerCarryPickupCrouchPatch
+{
+    private static void Postfix() => PlayerCarrySystem.ApplyPickupCrouch();
 }
 
 [HarmonyPatch(typeof(BodyScript), "FixedUpdate")]
