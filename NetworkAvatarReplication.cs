@@ -158,6 +158,25 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static int AvatarWeaponBytesPerSecond { get { return instance == null ? 0 : instance.avatarWeaponBytesPerSecond; } }
     internal static int AvatarEffectsBytesPerSecond { get { return instance == null ? 0 : instance.avatarEffectsBytesPerSecond; } }
     internal static int AvatarVisualBytesPerSecond { get { return instance == null ? 0 : instance.avatarVisualBytesPerSecond; } }
+
+    internal bool TryGetLocalSpawnPosition(out Vector3 position)
+    {
+        var body = PlayerScript.player?.bodyScript;
+        if (body == null)
+        {
+            position = default(Vector3);
+            return false;
+        }
+        var scene = SceneManager.GetActiveScene();
+        if (localSpawnScene != scene.handle)
+        {
+            localSpawnScene = scene.handle;
+            localSpawnPosition = body.transform.position;
+        }
+        position = localSpawnPosition;
+        return true;
+    }
+    
     internal static bool IsSpectating { get { return instance != null && instance.spectating && !MultiplayerSession.AllowRespawn; } }
     private bool HasActiveColorEffect => colorEffects.IsActive;
 

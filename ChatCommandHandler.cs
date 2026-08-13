@@ -1,0 +1,152 @@
+using UnityEngine;
+
+internal sealed class ChatCommandHandler
+{
+    private readonly GunsawMultiplayerPlugin plugin;
+
+    internal ChatCommandHandler(GunsawMultiplayerPlugin plugin)
+    {
+        this.plugin = plugin;
+    }
+
+    internal bool TryHandle(string message)
+    {
+        if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase)) return Kill();
+        if (IsCommand(message, "/spawn")) return Spawn(message);
+        if (IsCommand(message, "/tp")) return Teleport(message);
+        if (IsCommand(message, "/ban")) return Ban(message);
+        return false;
+    }
+
+    private bool Kill()
+    {
+        if (!NetworkAvatarReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
+            plugin.status = "You are dead already (maybe inside only?)";
+        return true;
+    }
+
+    private bool Spawn(string message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Substring(6)))
+        {
+            plugin.status = "Usage: /spawn";
+            return true;
+        }
+        var body = PlayerScript.player?.bodyScript;
+        if (body == null || !body.isAlive)
+        {
+            plugin.status = "You cannot use /spawn while dead.";
+            return true;
+        }
+        if (!CustomLevelSpawnSelection.TryGetRandomSpawnPosition(out var position) &&
+            (NetworkAvatarReplication.Instance == null ||
+             !NetworkAvatarReplication.Instance.TryGetLocalSpawnPosition(out position)))
+        {
+            plugin.status = "The map spawn point is not available yet.";
+            return true;
+        }
+        body.transform.position = position;
+        if (body.rb != null)
+        {
+            body.rb.position = position;
+            body.rb.velocity = Vector2.zero;
+            body.rb.angularVelocity = 0f;
+        }
+        PlayTeleportEffect(position);
+        plugin.status = "Teleported to a map spawn point.";
+        return true;
+    }
+
+    private bool Teleport(string message)
+    {
+        if (!MultiplayerSession.IsConnected)
+        {
+            plugin.status = "/tp is only available in a CO-OP lobby.";
+            return true;
+        }
+        if (MultiplayerSession.PvpEnabled)
+        {
+            plugin.status = "/tp is disabled in PVP lobbies.";
+            return true;
+        }
+        var playerName = message.Length > 3 ? message.Substring(3).Trim() : "";
+        if (string.IsNullOrEmpty(playerName))
+        {
+            plugin.status = "Usage: /tp <player name>";
+            return true;
+        }
+        var targetPeerId = FindPeerId(playerName, true);
+        if (targetPeerId == 0)
+        {
+            plugin.status = "Player " + playerName + " is not in the lobby.";
+            return true;
+        }
+        if (!MultiplayerSession.IsHost)
+        {
+            MultiplayerSession.Send(new TeleportRequestPacket(targetPeerId));
+            plugin.status = "Teleporting to " + playerName + "...";
+            return true;
+        }
+        var target = targetPeerId == MultiplayerSession.LocalPeerId
+            ? PlayerScript.player?.bodyScript
+            : NetworkAvatarRegistry.RemoteBodyForPeer(targetPeerId);
+        var local = PlayerScript.player?.bodyScript;
+        if (target == null || !target.isAlive || local == null)
+        {
+            plugin.status = "Player " + playerName + " is unavailable.";
+            return true;
+        }
+        local.transform.position = target.transform.position;
+        if (local.rb != null) { local.rb.velocity = Vector2.zero; local.rb.angularVelocity = 0f; }
+        PlayTeleportEffect(local.transform.position);
+        plugin.status = "Teleported to " + playerName + ".";
+        return true;
+    }
+
+    private bool Ban(string message)
+    {
+        if (!plugin.CanBanPlayers)
+        {
+            plugin.status = "Only the lobby host can use /ban.";
+            return true;
+        }
+        var playerName = message.Length > 4 ? message.Substring(4).Trim() : "";
+        if (string.IsNullOrEmpty(playerName))
+        {
+            plugin.status = "Usage: /ban <player name>";
+            return true;
+        }
+        var peerId = FindPeerId(playerName, false);
+        if (peerId == 0)
+        {
+            plugin.status = "Player " + playerName + " is not in the lobby.";
+            return true;
+        }
+        plugin.status = "Banning " + playerName + "...";
+        plugin.BanPlayerFromCommand(playerName, peerId);
+        return true;
+    }
+
+    private static bool IsCommand(string message, string command)
+    {
+        return message.StartsWith(command, StringComparison.OrdinalIgnoreCase) &&
+            (message.Length == command.Length || char.IsWhiteSpace(message[command.Length]));
+    }
+
+    private static ushort FindPeerId(string playerName, bool includeLocalPlayer)
+    {
+        if (includeLocalPlayer && string.Equals(MultiplayerSession.LocalPlayerName, playerName,
+                StringComparison.OrdinalIgnoreCase)) return MultiplayerSession.LocalPeerId;
+        foreach (var peerId in MultiplayerSession.PeerIds())
+            if (string.Equals(MultiplayerSession.PlayerName(peerId), playerName,
+                    StringComparison.OrdinalIgnoreCase)) return peerId;
+        return 0;
+    }
+
+    private static void PlayTeleportEffect(Vector3 position)
+    {
+        if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
+        var sound = Resources.Load<AudioClip>("Sounds/Teleport");
+        if (sound != null) Sound.Play(sound, position, false, false);
+    }
+}

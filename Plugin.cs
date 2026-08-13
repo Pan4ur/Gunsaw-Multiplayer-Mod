@@ -58,6 +58,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private WorldReplication worldReplication;
     private NpcReplication npcReplication;
     private MultiplayerHud multiplayerHud;
+    private ChatCommandHandler chatCommandHandler;
     private MultiplayerLobbyUi multiplayerLobbyUi;
     private MultiplayerReplicationDebugMode replicationDebugMode;
     private int debugWeaponSequence;
@@ -91,6 +92,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         KeepMultiplayerRunningInBackground();
         Instance = this;
+        chatCommandHandler = new ChatCommandHandler(this);
         masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsaw.e621.su", "Lobby directory URL.");
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
         savedPlayerName = Config.Bind("Lobby", "PlayerName", playerName, "Name shown to other players.");
@@ -646,110 +648,17 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal bool TryHandleHostCommand(string message)
     {
-        if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!NetworkAvatarReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
-            {
-                status = "You are dead already (maybe inside only?)";
-                return true;
-            }
-            return true;
-        }
-
-        if (message.StartsWith("/tp", StringComparison.OrdinalIgnoreCase) &&
-            (message.Length == 3 || char.IsWhiteSpace(message[3])))
-            return TryHandleTeleportCommand(message);
-
-        if (!message.StartsWith("/ban", StringComparison.OrdinalIgnoreCase)) return false;
-        if (!MultiplayerSession.IsHosting || string.IsNullOrEmpty(hostedLobbyId) || string.IsNullOrEmpty(hostRelayKey))
-        {
-            status = "Only the lobby host can use /ban.";
-            return true;
-        }
-        var playerName = message.Length > 4 ? message.Substring(4).Trim() : "";
-        if (string.IsNullOrEmpty(playerName))
-        {
-            status = "Usage: /ban <player name>";
-            return true;
-        }
-        ushort peerId = 0;
-        foreach (var id in MultiplayerSession.PeerIds())
-            if (string.Equals(MultiplayerSession.PlayerName(id), playerName, StringComparison.OrdinalIgnoreCase))
-            {
-                peerId = id;
-                break;
-            }
-        if (peerId == 0)
-        {
-            status = "Player " + playerName + " is not in the lobby.";
-            return true;
-        }
-        var lobbyId = hostedLobbyId;
-        var relayKey = hostRelayKey;
-        status = "Banning " + playerName + "...";
-        ThreadPool.QueueUserWorkItem(_ => BanPlayerInDirectory(lobbyId, relayKey, playerName, peerId));
-        return true;
+        return chatCommandHandler != null && chatCommandHandler.TryHandle(message);
     }
 
-    private bool TryHandleTeleportCommand(string message)
-    {
-        if (!MultiplayerSession.IsConnected)
-        {
-            status = "/tp is only available in a CO-OP lobby.";
-            return true;
-        }
-        if (MultiplayerSession.PvpEnabled)
-        {
-            status = "/tp is disabled in PVP lobbies.";
-            return true;
-        }
-        var playerName = message.Length > 3 ? message.Substring(3).Trim() : "";
-        if (string.IsNullOrEmpty(playerName))
-        {
-            status = "Usage: /tp <player name>";
-            return true;
-        }
-        var targetPeerId = (ushort)0;
-        if (string.Equals(MultiplayerSession.LocalPlayerName, playerName,
-                StringComparison.OrdinalIgnoreCase))
-            targetPeerId = MultiplayerSession.LocalPeerId;
-        else
-            foreach (var id in MultiplayerSession.PeerIds())
-                if (string.Equals(MultiplayerSession.PlayerName(id), playerName,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    targetPeerId = id;
-                    break;
-                }
-        if (targetPeerId == 0)
-        {
-            status = "Player " + playerName + " is not in the lobby.";
-            return true;
-        }
-        if (!MultiplayerSession.IsHost)
-        {
-            MultiplayerSession.Send(new TeleportRequestPacket(targetPeerId));
-            status = "Teleporting to " + playerName + "...";
-            return true;
-        }
-        var target = targetPeerId == MultiplayerSession.LocalPeerId
-            ? PlayerScript.player?.bodyScript
-            : NetworkAvatarRegistry.RemoteBodyForPeer(targetPeerId);
-        var local = PlayerScript.player?.bodyScript;
-        if (target == null || !target.isAlive || local == null)
-        {
-            status = "Player " + playerName + " is unavailable.";
-            return true;
-        }
+    internal bool CanBanPlayers => MultiplayerSession.IsHosting &&
+        !string.IsNullOrEmpty(hostedLobbyId) && !string.IsNullOrEmpty(hostRelayKey);
 
-        local.transform.position = target.transform.position;
-        if (local.rb != null) { local.rb.velocity = Vector2.zero; local.rb.angularVelocity = 0f; }
-        status = "Teleported to " + playerName + ".";
-        
-        if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
-        var sound = Resources.Load<AudioClip>("Sounds/Teleport");
-        if (sound != null) Sound.Play(sound, local.transform.position, false, false);
-        return true;
+    internal void BanPlayerFromCommand(string playerName, ushort peerId)
+    {
+        var lobbyId = hostedLobbyId;
+        var relayKey = hostRelayKey;
+        ThreadPool.QueueUserWorkItem(_ => BanPlayerInDirectory(lobbyId, relayKey, playerName, peerId));
     }
 
     private void ConnectRelay(string address, string lobbyId, string relayKey, ushort peerId, ushort hostPeerId,

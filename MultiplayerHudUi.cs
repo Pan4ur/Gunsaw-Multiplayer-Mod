@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 internal sealed class MultiplayerHudUi : MonoBehaviour
@@ -48,7 +49,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         if (!hud.ChatOpen) chatWasOpen = false;
         input.gameObject.SetActive(hud.ChatOpen);
-        chatHint.gameObject.SetActive(!hud.ChatOpen);
+        chatHint.gameObject.SetActive(!hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect");
         commandHints.gameObject.SetActive(hud.ChatOpen && hud.ChatSuggestions.Count > 0);
         if (!hud.ChatOpen) chatHint.text = "Press " + Controls.keys[Controls.OPEN_CHAT] + " to open the chat";
         if (hud.ChatOpen && hud.ChatSuggestions.Count > 0)
@@ -150,6 +151,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         chatHint = Text(root.transform, "", Vector2.zero, new Vector2(620f, 42f), 14, TextAlignmentOptions.Center);
         ScreenAnchor(chatHint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
         chatHint.color = new Color(template.color.r, template.color.g, template.color.b, 0.45f);
+        chatHint.raycastTarget = false;
         commandHints = Text(root.transform, "", Vector2.zero, new Vector2(620f, 28f), 14, TextAlignmentOptions.BottomLeft);
         ScreenAnchor(commandHints.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 70f));
         commandHints.color = new Color(template.color.r, template.color.g, template.color.b, 0.68f);
