@@ -752,6 +752,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         if (remoteAvatar == null) return;
+        if (PlayerCarrySystem.MustLockRemoteCarryPose(remoteBody))
+        {
+            targets.Clear();
+            worldTargets.Clear();
+            localTargets.Clear();
+            return;
+        }
         UpdateRemotePhysicsMode();
         VoyagerBody.UpdatePvpVoyagerVisuals(remoteBody, Time.deltaTime);
         foreach (var pair in targets)
@@ -4001,6 +4008,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void SetTailTarget(Rigidbody2D body, Vector2 position, Quaternion rotation)
     {
+        if (PlayerCarrySystem.SetRemoteArmRotation(remoteBody, body, rotation)) return;
+        if (PlayerCarrySystem.MustLockRemoteCarryPose(remoteBody)) return;
         var now = Time.unscaledTime;
         TargetState previous;
         var hasPrevious = targets.TryGetValue(body, out previous);
@@ -4194,7 +4203,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     
     private static void ApplyTailSpriteFlip(SpriteRenderer[] sprites, bool flipped)
     {
-        var sprite = sprites.Length == 0 ? null : sprites[0];
+        var sprite = sprites == null || sprites.Length == 0 ? null : sprites[0];
         if (sprite == null) return;
         var scale = sprite.transform.localScale;
         if ((scale.y < 0f) == flipped) return;
@@ -4209,7 +4218,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var color = (Color)new Color32(reader.ReadByte(), reader.ReadByte(),
                 reader.ReadByte(), reader.ReadByte());
-            if (index < sprites.Length && sprites[index] != null) sprites[index].color = color;
+            if (sprites != null && index < sprites.Length && sprites[index] != null) sprites[index].color = color;
         }
     }
 
@@ -4242,21 +4251,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             name == "gunAnimTransform" ? body.gunAnimTransform : null;
     }
 
-    private static void WriteWorldTransforms(BinaryWriter writer, Transform[] transforms)
-    {
-        writer.Write((ushort)transforms.Length);
-        foreach (var transform in transforms) WriteWorldTransform(writer, transform);
-    }
-
-    private void ReadWorldTransforms(BinaryReader reader, Transform[] transforms)
-    {
-        var count = reader.ReadUInt16();
-        for (var index = 0; index < count; index++)
-        {
-            if (index < transforms.Length) ReadWorldTransform(reader, transforms[index]);
-            else SkipBody(reader);
-        }
-    }
 
     private static void WriteWorldTransform(BinaryWriter writer, Transform transform)
     {
@@ -4306,6 +4300,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void SetWorldTarget(Transform transform, TargetState target)
     {
+        if (PlayerCarrySystem.MustLockRemoteCarryPose(remoteBody))
+        {
+            if (transform == remoteBody.Arms) PlayerCarrySystem.SetRemoteArmsRotation(remoteBody, target.rotation);
+            return;
+        }
         if (transform == null) return;
         WorldTargetState previous;
         var firstTarget = !worldTargets.TryGetValue(transform, out previous);
@@ -4351,6 +4350,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void SetLocalTarget(Transform transform, TargetState target)
     {
+        if (PlayerCarrySystem.MustLockRemoteCarryPose(remoteBody)) return;
         WorldTargetState previous;
         var firstTarget = !localTargets.TryGetValue(transform, out previous);
         var now = Time.unscaledTime;

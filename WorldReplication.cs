@@ -2194,7 +2194,6 @@ internal sealed class WorldReplication : MonoBehaviour
     internal void CaptureDestroyedLampIds(ISet<string> ids)
     {
         if (ids == null) return;
-        RefreshLamps();
         foreach (var pair in lamps)
             if (LampIsDestroyed(pair.Value)) ids.Add(pair.Key);
     }
@@ -2202,7 +2201,6 @@ internal sealed class WorldReplication : MonoBehaviour
     internal void CollectNewDestroyedLampIds(ISet<string> before, List<string> result)
     {
         if (before == null || result == null) return;
-        RefreshLamps();
         foreach (var pair in lamps)
             if (LampIsDestroyed(pair.Value) && !before.Contains(pair.Key)) result.Add(pair.Key);
     }

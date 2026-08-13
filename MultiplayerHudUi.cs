@@ -41,6 +41,11 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateChatBubbles(hud);
         UpdateSpectator();
         UpdateStatusPrompts();
+        if (!string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
+        {
+            activationText.text = PlayerCarrySystem.Prompt;
+            activationText.gameObject.SetActive(true);
+        }
         UpdateFinalLeaderboard();
         statsText.gameObject.SetActive(hud.NetworkStatsVisible && !string.IsNullOrEmpty(hud.NetworkStatsText));
         if (statsText.gameObject.activeSelf) statsText.text = hud.NetworkStatsText;

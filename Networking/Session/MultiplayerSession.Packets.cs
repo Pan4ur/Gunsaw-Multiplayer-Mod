@@ -325,6 +325,11 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
+            else if (decodedPacket.Type == PacketType.PlayerCarry && (isHost || senderId == 1))
+            {
+                try { var reader = new PacketReader(decodedPacket.Payload); EnqueuePlayerCarry(senderId, PlayerCarryPacket.Read(ref reader)); }
+                catch (System.Exception) { }
+            }
             else if (isHost && decodedPacket.Type == PacketType.TeleportRequest)
             {
                 try
@@ -687,6 +692,9 @@ internal static partial class MultiplayerSession
 
     private static void EnqueuePlayerPerformance(ushort peerId, PlayerPerformancePacket packet)
         => EnqueueEvent(playerPerformance, peerId, packet);
+
+    private static void EnqueuePlayerCarry(ushort peerId, PlayerCarryPacket packet)
+        => EnqueueEvent(playerCarries, peerId, packet);
 
     private static void EnqueueNpcGrab(ushort peerId, NpcGrabPacket packet)
         => EnqueueEvent(npcGrabs, peerId, packet);

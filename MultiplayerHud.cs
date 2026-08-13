@@ -45,6 +45,21 @@ internal sealed class MultiplayerHud : MonoBehaviour
         localName = SanitizeName(playerName);
     }
 
+    private void OnEnable()
+    {
+        Camera.onPreCull += ApplyCarryPoseBeforeRender;
+    }
+
+    private void OnDisable()
+    {
+        Camera.onPreCull -= ApplyCarryPoseBeforeRender;
+    }
+
+    private static void ApplyCarryPoseBeforeRender(Camera camera)
+    {
+        if (camera == Camera.main) PlayerCarrySystem.LateTick();
+    }
+
     internal void ResetChat()
     {
         history.Clear();
@@ -77,6 +92,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void Update()
     {
         MissionEndReplication.Tick();
+        PlayerCarrySystem.Tick();
         MultiplayerScoreboard.Tick();
         MultiplayerPerformance.AdvancedEnabled = networkStatsVisible;
         MultiplayerPerformance.Sample();

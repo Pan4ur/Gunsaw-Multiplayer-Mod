@@ -34,5 +34,6 @@ internal enum PacketType : byte
     VehicleImpact = 0x20,
     NpcSpeech = 0x21,
     MissionFinished = 0x22,
-    PlayerPerformance = 0x23
+    PlayerPerformance = 0x23,
+    PlayerCarry = 0x24
 }

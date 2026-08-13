@@ -13,7 +13,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.4.3";
+    public const string PluginVersion = "0.4.4";
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     private const string CustomLevelsUrl = "https://gunsaw-level-codes.jimmyking.dev/Levels.json";
 
@@ -706,6 +706,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private void FixedUpdate()
     {
+        PlayerCarrySystem.FixedTick();
         if (headlessMode) Interlocked.Increment(ref headlessFixedTicks);
     }
 

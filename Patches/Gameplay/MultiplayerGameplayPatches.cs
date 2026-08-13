@@ -706,7 +706,6 @@ internal static class ClientNpcDropWeaponPatch
     private static void Postfix(BodyScript __instance, bool __state)
     {
         if (__state) NetworkAvatarReplication.ConsumeLocalDeathWeapon(__instance, false);
-        WorldReplication.TrackDroppedWeapons();
     }
 }
 
@@ -724,10 +723,6 @@ internal static class ClientNpcDropWeaponSinglePatch
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
 
-    private static void Postfix()
-    {
-        WorldReplication.TrackDroppedWeapons();
-    }
 }
 
 [HarmonyPatch(typeof(BodyScript), "DropAllWeapons")]
@@ -739,10 +734,6 @@ internal static class ClientNpcDropAllWeaponsPatch
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
 
-    private static void Postfix()
-    {
-        WorldReplication.TrackDroppedWeapons();
-    }
 }
 
 [HarmonyPatch(typeof(LimbScript), "OnCollisionEnter2D")]
