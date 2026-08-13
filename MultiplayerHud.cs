@@ -5,6 +5,8 @@ using UnityEngine;
 internal sealed class MultiplayerHud : MonoBehaviour
 {
     private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban"];
+    private static string savedChatDraft = "";
+    private static bool savedChatWasOpen;
     private readonly List<ChatEntry> history = [];
     private readonly List<string> chatSuggestions = [];
     private string localName = "Player";
@@ -40,6 +42,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
         set
         {
             input = value ?? "";
+            savedChatDraft = input;
+            savedChatWasOpen = chatOpen;
             UpdateChatSuggestions();
         }
     }
@@ -50,6 +54,15 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         Instance = this;
         localName = SanitizeName(playerName);
+        if (!chatOpen && savedChatWasOpen && MultiplayerSession.IsConnected)
+        {
+            chatOpen = true;
+            IsTyping = true;
+            focusChat = true;
+            waitForChatOpenKeyRelease = true;
+            input = savedChatDraft;
+            UpdateChatSuggestions();
+        }
     }
 
     private void OnEnable()
@@ -133,6 +146,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
             focusChat = true;
             waitForChatOpenKeyRelease = true;
             input = "";
+            savedChatDraft = "";
+            savedChatWasOpen = true;
             UpdateChatSuggestions();
             return;
         }
@@ -431,6 +446,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         var message = SanitizeMessage(input);
         input = "";
+        savedChatDraft = "";
         chatSuggestions.Clear();
         if (!string.IsNullOrEmpty(message))
         {
@@ -452,6 +468,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
         focusChat = false;
         waitForChatOpenKeyRelease = false;
         IsTyping = false;
+        savedChatWasOpen = false;
+        savedChatDraft = "";
         chatSuggestions.Clear();
     }
 
