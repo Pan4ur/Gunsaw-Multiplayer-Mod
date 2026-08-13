@@ -496,7 +496,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             HasHeader(packet, worldInteractionHeader) ||
             HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader) ||
             HasHeader(packet, playerTeleportHeader) || HasHeader(packet, vehicleEjectHeader) ||
-            HasHeader(packet, vehicleImpactHeader);
+            HasHeader(packet, vehicleImpactHeader) || HasHeader(packet, missionFinishedHeader);
     }
 
     private static bool ProcessReliablePacket(ref byte[] packet, ushort senderId)

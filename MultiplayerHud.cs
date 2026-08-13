@@ -76,6 +76,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
 
     private void Update()
     {
+        MissionEndReplication.Tick();
+        MultiplayerScoreboard.Tick();
         MultiplayerPerformance.AdvancedEnabled = networkStatsVisible;
         MultiplayerPerformance.Sample();
         if (networkStatsVisible && Input.GetKeyDown(KeyCode.C) &&

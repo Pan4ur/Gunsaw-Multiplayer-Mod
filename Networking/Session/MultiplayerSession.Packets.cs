@@ -307,6 +307,24 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
+            else if (!isHost && decodedPacket.Type == PacketType.MissionFinished)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueMissionFinished(senderId, MissionFinishedPacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
+            else if (decodedPacket.Type == PacketType.PlayerPerformance && (isHost || senderId == 1))
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueuePlayerPerformance(senderId, PlayerPerformancePacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
             else if (isHost && decodedPacket.Type == PacketType.TeleportRequest)
             {
                 try
@@ -564,6 +582,8 @@ internal static partial class MultiplayerSession
         playerGrabs.Clear();
         npcGrabs.Clear();
         npcPossessions.Clear();
+        missionFinished.Clear();
+        playerPerformance.Clear();
         chatMessages.Clear();
         receivedChatIds.Clear();
         receivedChatOrder.Clear();
@@ -661,6 +681,12 @@ internal static partial class MultiplayerSession
 
     private static void EnqueuePlayerGrab(ushort peerId, PlayerGrabPacket packet)
         => EnqueueEvent(playerGrabs, peerId, packet);
+
+    private static void EnqueueMissionFinished(ushort peerId, MissionFinishedPacket packet)
+        => EnqueueEvent(missionFinished, peerId, packet);
+
+    private static void EnqueuePlayerPerformance(ushort peerId, PlayerPerformancePacket packet)
+        => EnqueueEvent(playerPerformance, peerId, packet);
 
     private static void EnqueueNpcGrab(ushort peerId, NpcGrabPacket packet)
         => EnqueueEvent(npcGrabs, peerId, packet);

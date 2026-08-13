@@ -32,5 +32,7 @@ internal enum PacketType : byte
     TeleportRequest = 0x1E,
     VehicleEject = 0x1F,
     VehicleImpact = 0x20,
-    NpcSpeech = 0x21
+    NpcSpeech = 0x21,
+    MissionFinished = 0x22,
+    PlayerPerformance = 0x23
 }

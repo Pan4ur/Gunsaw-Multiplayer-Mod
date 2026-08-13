@@ -1996,8 +1996,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         var amount = Mathf.Clamp(replica.lastRemoteHealth - body.health, 0f, 1000f);
+        var lethal = amount >= Mathf.Max(0f, replica.lastRemoteHealth) - 0.001f;
         body.health = replica.lastRemoteHealth;
         body.isAlive = replica.lastRemoteAlive;
+        if (lethal && MultiplayerSession.PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
+            MultiplayerScoreboard.RecordLocalPvpKill();
         if (amount > 0.001f) RouteRemotePlayerDamage(replica, amount, critical);
         return true;
     }
@@ -2018,6 +2021,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             return;
         }
+        if (MultiplayerSession.PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
+            MultiplayerScoreboard.RecordLocalPvpHit(amount, critical);
         if (MultiplayerSession.IsHost)
         {
             if (currentShooter == null || !currentShooter.isPlayer || MultiplayerSession.PvpEnabled)
@@ -2083,7 +2088,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         
         if (amount > 0f && body.isAlive)
         {
+            var appliedAmount = Mathf.Min(amount, Mathf.Max(0f, body.health));
             body.health -= amount;
+            if (body == PlayerScript.player?.bodyScript)
+                MultiplayerScoreboard.RecordLocalDamageReceived(appliedAmount);
             applyingNetworkPlayerDamage = true;
             try { body.Damaged(critical); }
             finally { applyingNetworkPlayerDamage = false; }

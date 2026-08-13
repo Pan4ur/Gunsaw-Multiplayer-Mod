@@ -1471,7 +1471,11 @@ internal sealed class NpcReplication : MonoBehaviour
         var amount = Mathf.Clamp(proxy.LastHostHealth - body.health, 0f, 1000f);
         body.health = proxy.LastHostHealth;
         body.isAlive = proxy.LastHostAlive;
-        if (amount > 0.001f) Instance.SendClientDamage(proxy.NetworkId, amount, critical);
+        if (amount > 0.001f)
+        {
+            MultiplayerScoreboard.RecordLocalDamageDealt(amount);
+            Instance.SendClientDamage(proxy.NetworkId, amount, critical);
+        }
         return true;
     }
 

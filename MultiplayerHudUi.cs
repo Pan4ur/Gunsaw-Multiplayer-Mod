@@ -6,8 +6,8 @@ using UnityEngine.UI;
 
 internal sealed class MultiplayerHudUi : MonoBehaviour
 {
-    private GameObject root, hostPanel, playersPanel, chatPanel;
-    private TMP_Text template, hostText, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText;
+    private GameObject root, hostPanel, playersPanel, chatPanel, finalLeaderboardPanel;
+    private TMP_Text template, hostText, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText, finalLeaderboardHeader;
     private TMP_InputField input;
     private ScrollRect chatScroll;
     private RectTransform chatContent;
@@ -18,6 +18,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private readonly Dictionary<BodyScript, TMP_Text> nameTags = new Dictionary<BodyScript, TMP_Text>();
     private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new Dictionary<BodyScript, TMP_Text>();
     private readonly Dictionary<BodyScript, CoopMarker> coopMarkers = new Dictionary<BodyScript, CoopMarker>();
+    private readonly Dictionary<ushort, FinalLeaderboardRow> finalLeaderboardRows = new Dictionary<ushort, FinalLeaderboardRow>();
     private bool coopMarkersVisible = true;
 
     internal void Configure(MultiplayerHud hud)
@@ -40,6 +41,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateChatBubbles(hud);
         UpdateSpectator();
         UpdateStatusPrompts();
+        UpdateFinalLeaderboard();
         statsText.gameObject.SetActive(hud.NetworkStatsVisible && !string.IsNullOrEmpty(hud.NetworkStatsText));
         if (statsText.gameObject.activeSelf) statsText.text = hud.NetworkStatsText;
         if (Time.unscaledTime >= nextChatRefresh || hud.ChatOpen)
@@ -117,9 +119,11 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         ScreenAnchor(hostPanel.GetComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-20f, -20f));
         hostText = Text(hostPanel.transform, "", Vector2.zero, new Vector2(450f, 48f), 21, TextAlignmentOptions.Center);
 
-        playersPanel = Panel(root.transform, Vector2.zero, new Vector2(650f, 320f));
+        playersPanel = Panel(root.transform, Vector2.zero, new Vector2(1080f, 320f));
         ScreenAnchor(playersPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -20f));
-        playersText = Text(playersPanel.transform, "", Vector2.zero, new Vector2(610f, 290f), 22, TextAlignmentOptions.TopLeft);
+        playersText = Text(playersPanel.transform, "", Vector2.zero, new Vector2(1040f, 290f), 18, TextAlignmentOptions.Top);
+        playersText.enableWordWrapping = false;
+        playersText.overflowMode = TextOverflowModes.Overflow;
 
         chatPanel = Panel(root.transform, Vector2.zero, new Vector2(620f, 250f));
         ScreenAnchor(chatPanel.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 80f));
@@ -180,6 +184,16 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         ScreenAnchor(activationText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -778f));
         activationText.fontStyle = FontStyles.Bold;
         activationText.gameObject.SetActive(false);
+
+        finalLeaderboardPanel = Panel(root.transform, Vector2.zero, new Vector2(940f, 720f));
+        ScreenAnchor(finalLeaderboardPanel.GetComponent<RectTransform>(), new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(32f, -32f));
+        finalLeaderboardPanel.GetComponent<Image>().color = Color.clear;
+        finalLeaderboardPanel.GetComponent<Outline>().effectColor = Color.clear;
+        var finalTitle = Text(finalLeaderboardPanel.transform, "MISSION LEADERBOARD", new Vector2(0f, 328f), new Vector2(880f, 42f), 26f, TextAlignmentOptions.Center);
+        finalTitle.fontStyle = FontStyles.Bold;
+        finalLeaderboardHeader = Text(finalLeaderboardPanel.transform, Monospace("PLAYER                 PING    K    D     AIM      HS     DMG     RANK"), new Vector2(37f, 280f), new Vector2(820f, 30f), 16f, TextAlignmentOptions.Left);
+        finalLeaderboardHeader.enableWordWrapping = false;
+        finalLeaderboardPanel.SetActive(false);
     }
 
     private void UpdateSpectator()
@@ -200,10 +214,92 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdatePlayers()
     {
-        var text = "PLAYERS\n\n" + (MultiplayerSession.IsHost ? "[HOST]  " : "") + GunsawMultiplayerPlugin.Instance.playerName;
+        var text = Monospace("PLAYER                 PING    K    D     AIM      HS     DMG     RANK") + "\n\n" +
+            PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
+            MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
         foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
-            text += "\n" + (remote.PeerId == 1 ? "[HOST]  " : "") + remote.Name + (remote.PingMs >= 0 ? "   " + remote.PingMs + " ms" : "");
+            text += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
         playersText.text = text;
+    }
+
+    private static string PlayerScoreLine(ushort peerId, string name, int ping, bool host)
+    {
+        var score = MultiplayerScoreboard.ForPlayer(peerId);
+        var rank = MultiplayerScoreboard.Rank(score);
+        var displayName = (host ? "[HOST] " : "") + name;
+        if (displayName.Length > 21) displayName = displayName.Substring(0, 21);
+        return Monospace(displayName.PadRight(22) + (ping >= 0 ? ping.ToString().PadLeft(4) : "   -") + "  " +
+            score.Kills.ToString().PadLeft(3) + "  " + score.Deaths.ToString().PadLeft(3) + "  " +
+            score.Accuracy.ToString("0.00").PadLeft(6) + "  " + score.HeadshotRatio.ToString("0.00").PadLeft(6) + "  " +
+            score.DamageRatio.ToString("0.00").PadLeft(6) + "     <color=" + MultiplayerScoreboard.RankColor(rank) + ">" + rank + "</color>");
+    }
+
+    private static string Monospace(string value) => "<mspace=0.72em>" + value + "</mspace>";
+
+    private void UpdateFinalLeaderboard()
+    {
+        if (finalLeaderboardPanel == null) return;
+        var mission = MissionManager.main;
+        var visible = mission != null && mission.finished;
+        finalLeaderboardPanel.SetActive(visible);
+        if (!visible) return;
+
+        var entries = new List<FinalLeaderboardEntry>();
+        var player = PlayerScript.player;
+        entries.Add(new FinalLeaderboardEntry(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
+            MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost,
+            player == null ? null : player.bodyScript));
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+            entries.Add(new FinalLeaderboardEntry(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1, remote.Body));
+        entries.Sort((left, right) =>
+        {
+            var result = MultiplayerScoreboard.PerformanceValue(MultiplayerScoreboard.ForPlayer(right.PeerId)).CompareTo(
+                MultiplayerScoreboard.PerformanceValue(MultiplayerScoreboard.ForPlayer(left.PeerId)));
+            return result != 0 ? result : left.PeerId.CompareTo(right.PeerId);
+        });
+
+        foreach (var pair in finalLeaderboardRows)
+            if (pair.Value != null && pair.Value.Root != null) pair.Value.Root.SetActive(false);
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            FinalLeaderboardRow row;
+            if (!finalLeaderboardRows.TryGetValue(entry.PeerId, out row) || row == null)
+            {
+                row = CreateFinalLeaderboardRow();
+                finalLeaderboardRows[entry.PeerId] = row;
+            }
+            row.Root.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, 230f - index * 70f);
+            var score = MultiplayerScoreboard.ForPlayer(entry.PeerId);
+            var rank = MultiplayerScoreboard.Rank(score);
+            var name = (entry.Host ? "[HOST] " : "") + entry.Name;
+            if (MultiplayerScoreboard.IsMvp(entry.PeerId)) name = "[MVP] " + name;
+            if (name.Length > 21) name = name.Substring(0, 21);
+            var line = name.PadRight(22) + (entry.Ping >= 0 ? entry.Ping.ToString().PadLeft(4) : "   -") + "  " +
+                score.Kills.ToString().PadLeft(3) + "  " + score.Deaths.ToString().PadLeft(3) + "  " +
+                score.Accuracy.ToString("0.00").PadLeft(6) + "  " + score.HeadshotRatio.ToString("0.00").PadLeft(6) + "  " +
+                score.DamageRatio.ToString("0.00").PadLeft(6) + "     " + rank;
+            var mvp = MultiplayerScoreboard.IsMvp(entry.PeerId);
+            row.Background.color = mvp ? new Color(0.75f, 0.55f, 0.08f, 0.84f) : Color.clear;
+            row.Stats.text = "<color=" + MultiplayerScoreboard.RankColor(rank) + ">" + Monospace(line) + "</color>";
+            row.Visual.localScale = entry.Body != null && !entry.Body.isRight ? new Vector3(-1f, 1f, 1f) : Vector3.one;
+            UpdateHeadVisual(row.HeadParts, row.Visual, entry.Body, 58f);
+            row.Root.SetActive(true);
+        }
+    }
+
+    private FinalLeaderboardRow CreateFinalLeaderboardRow()
+    {
+        var rootObject = new GameObject("FinalLeaderboardRow", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        rootObject.transform.SetParent(finalLeaderboardPanel.transform, false);
+        Rect(rootObject.GetComponent<RectTransform>(), Vector2.zero, new Vector2(900f, 62f));
+        var visualObject = new GameObject("HeadVisual", typeof(RectTransform));
+        visualObject.transform.SetParent(rootObject.transform, false);
+        Rect(visualObject.GetComponent<RectTransform>(), new Vector2(-415f, 0f), new Vector2(58f, 58f));
+        var stats = Text(rootObject.transform, "", new Vector2(37f, 0f), new Vector2(820f, 56f), 16f, TextAlignmentOptions.Left);
+        stats.enableWordWrapping = false;
+        stats.overflowMode = TextOverflowModes.Overflow;
+        return new FinalLeaderboardRow { Root = rootObject, Background = rootObject.GetComponent<Image>(), Visual = visualObject.transform, Stats = stats };
     }
 
     private void UpdateNameTags()
@@ -236,7 +332,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 tag.fontStyle = FontStyles.Bold;
                 nameTags[body] = tag;
             }
-            tag.text = NetworkAvatarReplication.RemoteNameTag(body);
+            var name = NetworkAvatarReplication.RemoteNameTag(body);
+            tag.text = MultiplayerScoreboard.IsMvp(remote.PeerId) ? "[MVP] " + name : name;
             tag.color = !body.isAlive ? new Color(1f, 0.28f, 0.28f, visibility) :
                 !body.IsConsc() ? new Color(1f, 0.72f, 0.22f, visibility) : new Color(1f, 1f, 1f, visibility);
             tag.rectTransform.anchoredPosition = CanvasPosition(screen + new Vector3(0f, 12f, 0f));
@@ -404,7 +501,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
             marker.Name.fontSize = 16f * size;
 
-            UpdateHeadVisual(marker, body);
+            UpdateHeadVisual(marker.HeadParts, marker.Visual, body, 60f);
 
             marker.Visual.localScale = new Vector3(
                 body.isRight ? 1f : -1f,
@@ -434,10 +531,19 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         return new CoopMarker { Root = go, Rect = rect, Visual = visualGo.transform, Name = name };
     }
 
-    private static void UpdateHeadVisual(CoopMarker marker, BodyScript body)
+    private static void UpdateHeadVisual(List<Image> parts, Transform visual, BodyScript body, float width)
     {
+        if (body == null)
+        {
+            for (var index = 0; index < parts.Count; index++) parts[index].gameObject.SetActive(false);
+            return;
+        }
         var head = body.headTransform;
-        if (head == null) return;
+        if (head == null)
+        {
+            for (var index = 0; index < parts.Count; index++) parts[index].gameObject.SetActive(false);
+            return;
+        }
         var renderers = head.GetComponentsInChildren<SpriteRenderer>(true);
         var main = head.GetComponent<SpriteRenderer>();
         if (main == null || main.sprite == null)
@@ -446,17 +552,17 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 if (renderer != null && renderer.sprite != null) { main = renderer; break; }
         }
         if (main == null || main.sprite == null) return;
-        var pixelsPerUnit = 60f / Mathf.Max(0.01f, main.sprite.bounds.size.x);
+        var pixelsPerUnit = width / Mathf.Max(0.01f, main.sprite.bounds.size.x);
         var count = 0;
         foreach (var renderer in renderers)
         {
             if (renderer == null || renderer.sprite == null || !renderer.enabled) continue;
             Image image;
-            if (count < marker.HeadParts.Count) image = marker.HeadParts[count];
+            if (count < parts.Count) image = parts[count];
             else
             {
-                var part = new GameObject("HeadPart", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); part.transform.SetParent(marker.Visual, false);
-                image = part.GetComponent<Image>(); image.preserveAspect = true; marker.HeadParts.Add(image);
+                var part = new GameObject("HeadPart", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); part.transform.SetParent(visual, false);
+                image = part.GetComponent<Image>(); image.preserveAspect = true; parts.Add(image);
             }
             image.sprite = renderer.sprite;
             image.color = renderer.color;
@@ -466,7 +572,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             image.gameObject.SetActive(true);
             count++;
         }
-        for (var index = count; index < marker.HeadParts.Count; index++) marker.HeadParts[index].gameObject.SetActive(false);
+        for (var index = count; index < parts.Count; index++) parts[index].gameObject.SetActive(false);
     }
 
     private void UpdateChat(MultiplayerHud hud)
@@ -545,4 +651,15 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         return local;
     }
     private sealed class CoopMarker { internal GameObject Root; internal RectTransform Rect; internal Transform Visual; internal readonly List<Image> HeadParts = new List<Image>(); internal TMP_Text Name; }
+    private sealed class FinalLeaderboardRow { internal GameObject Root; internal Image Background; internal Transform Visual; internal readonly List<Image> HeadParts = new List<Image>(); internal TMP_Text Stats; }
+    private readonly struct FinalLeaderboardEntry
+    {
+        internal readonly ushort PeerId;
+        internal readonly string Name;
+        internal readonly int Ping;
+        internal readonly bool Host;
+        internal readonly BodyScript Body;
+        internal FinalLeaderboardEntry(ushort peerId, string name, int ping, bool host, BodyScript body)
+        { PeerId = peerId; Name = name ?? "Player"; Ping = ping; Host = host; Body = body; }
+    }
 }

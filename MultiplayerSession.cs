@@ -78,6 +78,8 @@ internal static partial class MultiplayerSession
     private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
     private static readonly byte[] vehicleEjectHeader = PacketHeader.Create(PacketType.VehicleEject);
     private static readonly byte[] vehicleImpactHeader = PacketHeader.Create(PacketType.VehicleImpact);
+    private static readonly byte[] missionFinishedHeader = PacketHeader.Create(PacketType.MissionFinished);
+    private static readonly byte[] playerPerformanceHeader = PacketHeader.Create(PacketType.PlayerPerformance);
     
     private static string hostScene = "";
     private static string pendingScene = "";
@@ -115,6 +117,8 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<PlayerGrabPacket>> playerGrabs = new Queue<PeerPacket<PlayerGrabPacket>>();
     private static readonly Queue<PeerPacket<NpcGrabPacket>> npcGrabs = new Queue<PeerPacket<NpcGrabPacket>>();
     private static readonly Queue<PeerPacket<NpcPossessionPacket>> npcPossessions = new Queue<PeerPacket<NpcPossessionPacket>>();
+    private static readonly Queue<PeerPacket<MissionFinishedPacket>> missionFinished = new Queue<PeerPacket<MissionFinishedPacket>>();
+    private static readonly Queue<PeerPacket<PlayerPerformancePacket>> playerPerformance = new Queue<PeerPacket<PlayerPerformancePacket>>();
     private static readonly Queue<ChatMessage> chatMessages = new Queue<ChatMessage>();
     private static readonly HashSet<long> receivedChatIds = new HashSet<long>();
     private static readonly Queue<long> receivedChatOrder = new Queue<long>();
