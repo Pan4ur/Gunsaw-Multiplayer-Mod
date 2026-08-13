@@ -10,11 +10,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
     private const string ProtogenPrefabPath = "Enemies/RobotEnemy";
     private static readonly List<string> knownCharacterPrefabs = [];
+    private static readonly Dictionary<string, string> characterDisplayNames = new();
     private static readonly Dictionary<string, Sprite> spriteCache = new();
     private static readonly Dictionary<Sprite, string> spriteIdCache = new();
     private static readonly Dictionary<Texture2D, string> textureSignatureCache = new();
     private static readonly Dictionary<string, WeaponPreset> weaponPresetCache = new();
     private static string selectedCharacterPrefab = "";
+    private static string pendingRespawnCharacterPrefab = "";
     private static int remoteAvatarCreationDepth;
     internal BodyScript remoteBody;
     internal Vector2 lastAuthoritativePosition;
@@ -194,6 +196,76 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (instance == null || !MultiplayerSession.AllowRespawn || instance.respawnAt < 0f ||
             player == null || player.bodyScript == null || player.bodyScript.isAlive) return "";
         return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(instance.respawnAt - Time.unscaledTime));
+    }
+
+    internal static bool TrySetPendingRespawnCharacter(string character, out string characterName)
+    {
+        if (!TryResolveCharacterPrefab(character, out var prefabPath, out characterName)) return false;
+        pendingRespawnCharacterPrefab = prefabPath;
+        return true;
+    }
+
+    internal static IEnumerable<string> SwapCharacterNames()
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in knownCharacterPrefabs)
+        {
+            string displayName;
+            if (characterDisplayNames.TryGetValue(path, out displayName) && !string.IsNullOrWhiteSpace(displayName))
+                names.Add(displayName);
+            else names.Add(path.Substring(path.LastIndexOf('/') + 1));
+        }
+        return names.OrderBy(name => name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool TryResolveCharacterPrefab(string character, out string prefabPath, out string characterName)
+    {
+        prefabPath = "";
+        characterName = "";
+        var requested = (character ?? "").Trim();
+        if (string.IsNullOrEmpty(requested)) return false;
+        foreach (var path in knownCharacterPrefabs)
+        {
+            var prefab = Resources.Load<GameObject>(path);
+            var body = prefab == null ? null : prefab.GetComponentInChildren<BodyScript>(true);
+            if (body == null) continue;
+            var prefabName = CleanCloneName(prefab.name);
+            string displayName;
+            characterDisplayNames.TryGetValue(path, out displayName);
+            if (!string.Equals(requested, body.characterName, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(requested, prefabName, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(requested, displayName, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(requested, path.Substring(path.LastIndexOf('/') + 1), StringComparison.OrdinalIgnoreCase))
+                continue;
+            prefabPath = path;
+            characterName = string.IsNullOrWhiteSpace(displayName)
+                ? (string.IsNullOrWhiteSpace(body.characterName) ? prefabName : body.characterName) : displayName;
+            return true;
+        }
+        return false;
+    }
+
+    internal static bool TryBroadcastSwapRequest(ushort senderId, string message)
+    {
+        if (!MultiplayerSession.IsHost || string.IsNullOrWhiteSpace(message)) return false;
+        const string prefix = "/swap";
+        if (!message.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+            (message.Length > prefix.Length && !char.IsWhiteSpace(message[prefix.Length]))) return false;
+        var requested = message.Length == prefix.Length ? "" : message.Substring(prefix.Length).Trim();
+        if (!MultiplayerSession.AllowSwap) return true;
+        if (!TryResolveCharacterPrefab(requested, out _, out var characterName)) return true;
+        var playerName = senderId == MultiplayerSession.LocalPeerId
+            ? MultiplayerSession.LocalPlayerName : MultiplayerSession.PlayerName(senderId);
+        BroadcastSwapAnnouncement(playerName, characterName);
+        return true;
+    }
+
+    internal static void BroadcastSwapAnnouncement(string playerName, string characterName)
+    {
+        var message = playerName + " will respawn as " + characterName + ".";
+        MultiplayerHud.AddSystemMessage(message);
+        ChatPacket packet;
+        if (ChatService.TryCreate(message, true, out packet)) MultiplayerSession.Send(packet);
     }
 
     internal static void EjectRemoteVehicleOccupants(VehicleBase vehicle)
@@ -980,6 +1052,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var path = characters[index] == null ? null : characters[index].prefabPath;
             if (!string.IsNullOrEmpty(path) && !knownCharacterPrefabs.Contains(path))
                 knownCharacterPrefabs.Add(path);
+            if (!string.IsNullOrEmpty(path) && !string.IsNullOrWhiteSpace(characters[index].name))
+                characterDisplayNames[path] = characters[index].name.Trim();
         }
 
         var selectedIndex = menu.charIndex;
@@ -2399,13 +2473,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var generation = ++localRespawnGeneration;
         respawnAt = -1f;
         localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
-        var prefabPath = ResolveCharacterPrefab(oldBody);
+        var prefabPath = string.IsNullOrEmpty(pendingRespawnCharacterPrefab)
+            ? ResolveCharacterPrefab(oldBody) : pendingRespawnCharacterPrefab;
         var prefab = string.IsNullOrEmpty(prefabPath) ? null : Resources.Load<GameObject>(prefabPath);
         if (prefab == null)
         {
             localRespawnPending = false;
             Debug.LogError("[Gunsaw MP] Could not respawn player: character prefab is missing.");
             return;
+        }
+        if (!string.IsNullOrEmpty(pendingRespawnCharacterPrefab))
+        {
+            selectedCharacterPrefab = pendingRespawnCharacterPrefab;
+            PlayerPrefs.SetString("charPrefab", selectedCharacterPrefab);
+            pendingRespawnCharacterPrefab = "";
         }
         EnsureRespawnWeaponSlots(oldBody);
 

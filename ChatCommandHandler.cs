@@ -13,6 +13,7 @@ internal sealed class ChatCommandHandler
     {
         if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase)) return Kill();
         if (IsCommand(message, "/spawn")) return Spawn(message);
+        if (IsCommand(message, "/swap")) return Swap(message);
         if (IsCommand(message, "/tp")) return Teleport(message);
         if (IsCommand(message, "/ban")) return Ban(message);
         return false;
@@ -54,6 +55,30 @@ internal sealed class ChatCommandHandler
         }
         PlayTeleportEffect(position);
         plugin.status = "Teleported to a map spawn point.";
+        return true;
+    }
+
+    private bool Swap(string message)
+    {
+        if (MultiplayerSession.IsActive && !MultiplayerSession.AllowSwap)
+        {
+            plugin.status = "/swap is disabled in this lobby.";
+            return true;
+        }
+        var character = message.Length > 5 ? message.Substring(5).Trim() : "";
+        if (!NetworkAvatarReplication.TrySetPendingRespawnCharacter(character, out var characterName))
+        {
+            plugin.status = "Usage: /swap <character name>";
+            return true;
+        }
+        if (MultiplayerSession.IsHost)
+            NetworkAvatarReplication.BroadcastSwapAnnouncement(MultiplayerSession.LocalPlayerName, characterName);
+        else
+        {
+            ChatPacket packet;
+            if (ChatService.TryCreate("/swap " + characterName, false, out packet)) MultiplayerSession.Send(packet);
+            plugin.status = "You will respawn as " + characterName + ".";
+        }
         return true;
     }
 

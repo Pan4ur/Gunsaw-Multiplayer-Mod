@@ -12,7 +12,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, serverInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
@@ -54,6 +54,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         respawnAtStartToggle.isOn = plugin.createRespawnAtStart;
         playerCollisionsToggle.isOn = plugin.createPlayerCollisions;
         cheatsToggle.isOn = plugin.createCheats;
+        allowSwapToggle.isOn = plugin.createAllowSwap;
         respawnInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
         connectionModeText.text = plugin.createConnectionMode.ToString();
@@ -130,6 +131,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(playerCollisionsToggle.gameObject, "PLAYER COLLISIONS: When disabled, players can pass through each other without blocking one another, which can help on parkour maps.");
         cheatsToggle = CreateToggle(CreateSettingsRow(settings), "CHEATS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createCheats = value);
         AddTooltip(cheatsToggle.gameObject, "CHEATS: Allows the cheats opened with SPACE + END.");
+        allowSwapToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW SWAP", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowSwap = value);
+        AddTooltip(allowSwapToggle.gameObject, "ALLOW SWAP: Allows players to use /swap to choose a different character for their next respawn.");
 
         CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -120f), new Vector2(125f, 32f), 14);
         connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -120f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);

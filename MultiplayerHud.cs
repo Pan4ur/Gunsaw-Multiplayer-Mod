@@ -4,7 +4,7 @@ using UnityEngine;
 
 internal sealed class MultiplayerHud : MonoBehaviour
 {
-    private static readonly string[] chatCommands = ["/kill", "/spawn", "/tp", "/ban"];
+    private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban"];
     private readonly List<ChatEntry> history = [];
     private readonly List<string> chatSuggestions = [];
     private string localName = "Player";
@@ -104,6 +104,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         ushort senderId;
         while (MultiplayerSession.TryTakeChat(out senderId, out sender, out message))
         {
+            if (NetworkAvatarReplication.TryBroadcastSwapRequest(senderId, message)) continue;
             if (GunsawMultiplayerPlugin.Instance.TryHandleLobbyChatCommand(senderId, message)) continue;
             AddMessage(sender, message, false, senderId);
         }
@@ -383,6 +384,16 @@ internal sealed class MultiplayerHud : MonoBehaviour
         }
 
         var commandName = input.Substring(0, separator);
+        if (string.Equals(commandName, "/swap", StringComparison.OrdinalIgnoreCase))
+        {
+            var characterPrefix = input.Substring(separator).TrimStart();
+            foreach (var character in NetworkAvatarReplication.SwapCharacterNames())
+            {
+                if (character.StartsWith(characterPrefix, StringComparison.OrdinalIgnoreCase))
+                    chatSuggestions.Add("/swap " + character);
+            }
+            return;
+        }
         if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase)) return;
 

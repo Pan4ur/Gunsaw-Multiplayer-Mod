@@ -9,8 +9,9 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly byte MaxPlayers;
     internal readonly bool PlayerCollisions;
     internal readonly bool CheatsEnabled;
+    internal readonly bool AllowSwap;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap)
     {
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -21,6 +22,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         MaxPlayers = maxPlayers;
         PlayerCollisions = playerCollisions;
         CheatsEnabled = cheatsEnabled;
+        AllowSwap = allowSwap;
     }
 
     public PacketType Type => PacketType.Settings;
@@ -36,7 +38,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteByte(MaxPlayers);
         writer.WriteByte(PlayerCollisions ? (byte)1 : (byte)0);
         writer.WriteByte(CheatsEnabled ? (byte)1 : (byte)0);
+        writer.WriteByte(AllowSwap ? (byte)1 : (byte)0);
     }
 
-    internal static SettingsPacket Read(ref PacketReader reader) => new SettingsPacket(reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadUInt16(), reader.ReadByte(), reader.ReadByte() != 0, reader.ReadByte() != 0);
+    internal static SettingsPacket Read(ref PacketReader reader) => new SettingsPacket(reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadUInt16(), reader.ReadByte(), reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0);
 }

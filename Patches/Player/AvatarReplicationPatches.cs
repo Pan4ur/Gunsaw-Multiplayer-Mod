@@ -8,7 +8,6 @@ internal static class CharacterSelectionReplicationPatch
 {
     private static void Postfix(MainMenuManager __instance)
     {
-        if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
         NetworkAvatarReplication.CaptureCharacterMenu(__instance);
     }
 }
