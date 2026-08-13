@@ -8,6 +8,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private const bool BufferedRemoteInterpolation = true;
     private const float SnapshotInterval = 1f / 50f;
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
+    private const string ProtogenPrefabPath = "Enemies/RobotEnemy";
     private static readonly List<string> knownCharacterPrefabs = [];
     private static readonly Dictionary<string, Sprite> spriteCache = new();
     private static readonly Dictionary<Sprite, string> spriteIdCache = new();
@@ -146,6 +147,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private VehicleBase localVehicle;
     private bool localVehicleLocked;
     private bool localVehicleWasSimulated;
+    private readonly AvatarColorDebug colorEffects = new();
 
     internal static int AvatarCoreBytesPerSecond { get { return instance == null ? 0 : instance.avatarCoreBytesPerSecond; } }
     internal static int AvatarLimbBytesPerSecond { get { return instance == null ? 0 : instance.avatarLimbBytesPerSecond; } }
@@ -154,6 +156,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static int AvatarEffectsBytesPerSecond { get { return instance == null ? 0 : instance.avatarEffectsBytesPerSecond; } }
     internal static int AvatarVisualBytesPerSecond { get { return instance == null ? 0 : instance.avatarVisualBytesPerSecond; } }
     internal static bool IsSpectating { get { return instance != null && instance.spectating && !MultiplayerSession.AllowRespawn; } }
+    private bool HasActiveColorEffect => colorEffects.IsActive;
 
     internal static string SpectatorTargetName()
     {
@@ -681,6 +684,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (player == null) return;
         if (player.bodyScript == null) return;
         UpdateSpectator(player);
+        colorEffects.Update(player.bodyScript);
 
         var serverOnlyHost = GunsawMultiplayerPlugin.IsHeadlessServer;
         var prefab = ResolveLocalCharacterPrefab(player.bodyScript);
@@ -797,6 +801,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void OnDestroy()
     {
+        colorEffects.Restore();
         if (coordinator)
         {
             RestoreLocalVehiclePhysics();
@@ -991,6 +996,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private string ResolveLocalCharacterPrefab(BodyScript body)
     {
         if (body == null) return "";
+        if (IsProtogenBody(body)) return ProtogenPrefabPath;
         var fallback = string.IsNullOrEmpty(selectedCharacterPrefab)
             ? (cachedCharacterPrefabPreference ??= PlayerPrefs.GetString("charPrefab"))
             : selectedCharacterPrefab;
@@ -1008,6 +1014,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         identityFallback = fallback;
         resolvedIdentityPrefab = ResolveCharacterPrefab(body);
         return resolvedIdentityPrefab;
+    }
+
+    private static bool IsProtogenBody(BodyScript body)
+    {
+        var root = body == null || body.transform.root == null ? "" :
+            CleanCloneName(body.transform.root.name);
+        return string.Equals(root, "RobotEnemy", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(body.characterName, "G4", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string CleanCloneName(string name)
@@ -1059,9 +1073,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (visualChanged)
         {
             lastSerializedVisualState = visualState;
-            visualResendUntil = Time.unscaledTime + 1f;
+            if (!HasActiveColorEffect) visualResendUntil = Time.unscaledTime + 1f;
         }
-        var includeVisualState = visualChanged || Time.unscaledTime < visualResendUntil ||
+        var includeVisualState = visualChanged || (!HasActiveColorEffect && Time.unscaledTime < visualResendUntil) ||
             Time.unscaledTime >= nextFullVisualSnapshot;
         if (includeVisualState && Time.unscaledTime >= nextFullVisualSnapshot)
             nextFullVisualSnapshot = Time.unscaledTime + 1f;
@@ -1292,7 +1306,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 behaviour == null || behaviour.enabled && light.gameObject.activeInHierarchy,
                 light2D == null ? 0f : light2D.intensity, light2D == null ? Color.white : light2D.color);
         }
-        return new PlayerVisualState(rendererStates, lightStates);
+        var expressions = layout == null || layout.Root == null
+            ? Array.Empty<FacialExpression>() : layout.Root.GetComponentsInChildren<FacialExpression>(true);
+        var expressionStates = new byte[expressions.Length];
+        for (var index = 0; index < expressions.Length; index++)
+            expressionStates[index] = FacialExpressionState(expressions[index]);
+        return new PlayerVisualState(rendererStates, lightStates, expressionStates);
     }
 
     private static PlayerSnapshotVisualState CreatePacketVisualState(PlayerVisualState state)
@@ -1316,7 +1335,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             lights[index] = new PlayerSnapshotLightState(light.Path, light.Visible, light.Intensity,
                 new PlayerSnapshotColor(light.Color.r, light.Color.g, light.Color.b, light.Color.a));
         }
-        return new PlayerSnapshotVisualState(renderers, lights);
+        return new PlayerSnapshotVisualState(renderers, lights, state == null ? Array.Empty<byte>() : state.FacialExpressions);
     }
 
     private void Apply(PlayerSnapshotPacket snapshot)
@@ -4463,6 +4482,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             writer.Write(light.Intensity);
             WriteColor(writer, light.Color);
         }
+        var expressions = state == null ? Array.Empty<byte>() : state.FacialExpressions;
+        writer.Write((ushort)expressions.Length);
+        for (var index = 0; index < expressions.Length; index++) writer.Write(expressions[index]);
     }
 
     private static PlayerVisualState ReadVisualState(BinaryReader reader)
@@ -4478,7 +4500,40 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         for (var index = 0; index < lightCount; index++)
             lights[index] = new LightVisualState(reader.ReadString(), reader.ReadBoolean(), reader.ReadSingle(),
                 ReadColor(reader));
-        return new PlayerVisualState(renderers, lights);
+        var expressionStates = new byte[reader.ReadUInt16()];
+        for (var index = 0; index < expressionStates.Length; index++) expressionStates[index] = reader.ReadByte();
+        return new PlayerVisualState(renderers, lights, expressionStates);
+    }
+
+    private static byte FacialExpressionState(FacialExpression expression)
+    {
+        if (expression == null || expression.head == null) return 0;
+        var sprite = expression.head.sprite;
+        if (sprite == expression.normalFace) return 1;
+        if (sprite == expression.worriedFace) return 2;
+        if (sprite == expression.deadFace) return 3;
+        if (sprite == expression.halfClosedFace) return 4;
+        if (sprite == expression.sadFace) return 5;
+        if (sprite == expression.alertFace) return 6;
+        if (sprite == expression.fightFace) return 7;
+        return sprite == expression.specialSprite ? (byte)8 : (byte)0;
+    }
+
+    private static Sprite FacialExpressionSprite(FacialExpression expression, byte state)
+    {
+        if (expression == null) return null;
+        switch (state)
+        {
+            case 1: return expression.normalFace;
+            case 2: return expression.worriedFace;
+            case 3: return expression.deadFace;
+            case 4: return expression.halfClosedFace;
+            case 5: return expression.sadFace;
+            case 6: return expression.alertFace;
+            case 7: return expression.fightFace;
+            case 8: return expression.specialSprite;
+            default: return null;
+        }
     }
 
     private void ApplyVisualState(PlayerVisualState state, Transform root)
@@ -4506,6 +4561,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 light2D.intensity = lightState.Intensity;
                 light2D.color = lightState.Color;
             }
+        }
+        var expressions = root.GetComponentsInChildren<FacialExpression>(true);
+        for (var index = 0; index < expressions.Length && index < state.FacialExpressions.Length; index++)
+        {
+            var sprite = FacialExpressionSprite(expressions[index], state.FacialExpressions[index]);
+            if (sprite != null && expressions[index].head != null) expressions[index].head.sprite = sprite;
         }
         HideChildrenOfDisabledHeadAccessories(root);
     }
@@ -4559,7 +4620,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         };
         for (var index = 0; index < renderers.Length; index++)
         {
-            var path = HierarchyPath(root, renderers[index].transform);
+            var path = RendererPath(root, renderers[index]);
             layout.RendererPaths[index] = path;
             layout.RenderersByPath[path] = renderers[index];
         }
@@ -4590,6 +4651,16 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         indices.Reverse();
         return string.Join("/", indices);
+    }
+
+    private static string RendererPath(Transform root, SpriteRenderer renderer)
+    {
+        if (renderer == null) return "";
+        var renderers = renderer.GetComponents<SpriteRenderer>();
+        var componentIndex = 0;
+        for (; componentIndex < renderers.Length; componentIndex++)
+            if (renderers[componentIndex] == renderer) break;
+        return HierarchyPath(root, renderer.transform) + "#" + componentIndex;
     }
 
     private sealed class VisualLayout
@@ -4643,18 +4714,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         internal readonly RendererVisualState[] Renderers;
         internal readonly LightVisualState[] Lights;
+        internal readonly byte[] FacialExpressions;
 
-        internal PlayerVisualState(RendererVisualState[] renderers, LightVisualState[] lights)
+        internal PlayerVisualState(RendererVisualState[] renderers, LightVisualState[] lights, byte[] facialExpressions)
         {
             Renderers = renderers ?? new RendererVisualState[0];
             Lights = lights ?? new LightVisualState[0];
+            FacialExpressions = facialExpressions ?? Array.Empty<byte>();
         }
 
         internal static bool Equals(PlayerVisualState left, PlayerVisualState right)
         {
             if (ReferenceEquals(left, right)) return true;
             if (left == null || right == null || left.Renderers.Length != right.Renderers.Length ||
-                left.Lights.Length != right.Lights.Length)
+                left.Lights.Length != right.Lights.Length || left.FacialExpressions.Length != right.FacialExpressions.Length)
                 return false;
             for (var index = 0; index < left.Renderers.Length; index++)
             {
@@ -4669,6 +4742,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 if (a.Path != b.Path || a.Visible != b.Visible || a.Intensity != b.Intensity || a.Color != b.Color)
                     return false;
             }
+            for (var index = 0; index < left.FacialExpressions.Length; index++)
+                if (left.FacialExpressions[index] != right.FacialExpressions[index]) return false;
             return true;
         }
     }

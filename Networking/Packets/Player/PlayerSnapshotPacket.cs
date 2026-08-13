@@ -165,6 +165,8 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         foreach (var item in renderers) { writer.WriteBinaryString(item.Path); writer.WriteBoolean(item.Visible); WriteColor(ref writer, item.Color); writer.WriteBoolean(item.FlipX); writer.WriteBoolean(item.FlipY); }
         var lights = value.Lights ?? new PlayerSnapshotLightState[0]; writer.WriteUInt16((ushort)lights.Length);
         foreach (var item in lights) { writer.WriteBinaryString(item.Path); writer.WriteBoolean(item.Visible); writer.WriteSingle(item.Intensity); WriteColor(ref writer, item.Color); }
+        var expressions = value.FacialExpressions ?? new byte[0]; writer.WriteUInt16((ushort)expressions.Length);
+        for (var index = 0; index < expressions.Length; index++) writer.WriteByte(expressions[index]);
     }
 
     internal static PlayerSnapshotPacket Read(ref PacketReader reader)
@@ -204,7 +206,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     private static PlayerSnapshotColor ReadColor(ref PacketReader reader) => new PlayerSnapshotColor(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
     private static PlayerSnapshotLineState ReadLine(ref PacketReader reader) { var visible = reader.ReadBoolean(); if (!visible) return new PlayerSnapshotLineState(false, false, default(PlayerSnapshotColor), default(PlayerSnapshotColor), 0f, 0f, new PlayerSnapshotVector3[0]); var points = new PlayerSnapshotVector3[reader.ReadByte()]; var world = reader.ReadBoolean(); var start = ReadColor(ref reader); var end = ReadColor(ref reader); var startWidth = reader.ReadSingle(); var endWidth = reader.ReadSingle(); for (var i = 0; i < points.Length; i++) points[i] = new PlayerSnapshotVector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()); return new PlayerSnapshotLineState(true, world, start, end, startWidth, endWidth, points); }
     private static PlayerSnapshotScarfState ReadScarf(ref PacketReader reader) { var visible = reader.ReadBoolean(); return visible ? new PlayerSnapshotScarfState(true, ReadColor(ref reader), ReadColor(ref reader)) : new PlayerSnapshotScarfState(false, default(PlayerSnapshotColor), default(PlayerSnapshotColor)); }
-    private static PlayerSnapshotVisualState ReadVisualState(ref PacketReader reader) { var renderers = new PlayerSnapshotRendererState[reader.ReadUInt16()]; for (var i = 0; i < renderers.Length; i++) renderers[i] = new PlayerSnapshotRendererState(reader.ReadBinaryString(), reader.ReadBoolean(), ReadColor(ref reader), reader.ReadBoolean(), reader.ReadBoolean()); var lights = new PlayerSnapshotLightState[reader.ReadUInt16()]; for (var i = 0; i < lights.Length; i++) lights[i] = new PlayerSnapshotLightState(reader.ReadBinaryString(), reader.ReadBoolean(), reader.ReadSingle(), ReadColor(ref reader)); return new PlayerSnapshotVisualState(renderers, lights); }
+    private static PlayerSnapshotVisualState ReadVisualState(ref PacketReader reader) { var renderers = new PlayerSnapshotRendererState[reader.ReadUInt16()]; for (var i = 0; i < renderers.Length; i++) renderers[i] = new PlayerSnapshotRendererState(reader.ReadBinaryString(), reader.ReadBoolean(), ReadColor(ref reader), reader.ReadBoolean(), reader.ReadBoolean()); var lights = new PlayerSnapshotLightState[reader.ReadUInt16()]; for (var i = 0; i < lights.Length; i++) lights[i] = new PlayerSnapshotLightState(reader.ReadBinaryString(), reader.ReadBoolean(), reader.ReadSingle(), ReadColor(ref reader)); var expressions = new byte[reader.ReadUInt16()]; for (var i = 0; i < expressions.Length; i++) expressions[i] = reader.ReadByte(); return new PlayerSnapshotVisualState(renderers, lights, expressions); }
 }
 
 internal readonly struct PlayerSnapshotBodyState
@@ -351,10 +353,13 @@ internal readonly struct PlayerSnapshotVisualState
 {
     internal readonly PlayerSnapshotRendererState[] Renderers;
     internal readonly PlayerSnapshotLightState[] Lights;
+    internal readonly byte[] FacialExpressions;
 
-    internal PlayerSnapshotVisualState(PlayerSnapshotRendererState[] renderers, PlayerSnapshotLightState[] lights)
+    internal PlayerSnapshotVisualState(PlayerSnapshotRendererState[] renderers, PlayerSnapshotLightState[] lights,
+        byte[] facialExpressions)
     {
         Renderers = renderers;
         Lights = lights;
+        FacialExpressions = facialExpressions;
     }
 }
