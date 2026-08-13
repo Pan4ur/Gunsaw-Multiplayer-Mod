@@ -126,6 +126,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static float suppressedCameraUntil = -1f;
     private static PlayerScript localPlayerInstance;
     private static Transform localGlobalBody;
+    private static BodyScript initialScaleAppliedBody;
+    private static float appliedInitialScale = float.NaN;
     private bool remoteDeathDropSpawned;
     private int appliedDismembermentHash = int.MinValue;
     private float pendingRemoteDamage;
@@ -719,6 +721,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         localPlayerInstance = player;
         localGlobalBody = PlayerScript.globalBody == null
             ? player.bodyScript.transform : PlayerScript.globalBody;
+        ApplyInitialLobbyScale(player.bodyScript);
         UpdateLocalRespawn(player);
         player = PlayerScript.player;
         if (player == null || player.bodyScript == null) return;
@@ -1346,7 +1349,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 (PlayerSnapshotVisualState?)null;
             return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
                 (byte)body.CurrentState, body.isRight, isReflected, isActive, headRotation, coreBody, health,
-                isAlive, deathCause, body.susnessMult, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
+                isAlive, deathCause, body.susnessMult, body.characterScale, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
                 armsTransform, gunTransformState, gunAnimationTransformState, weaponTransformState, limbStates,
                 tailBaseStates, tailStates, weaponSlot, weaponAmmo, weaponSpriteId, inventoryIds, inventoryChanged,
                 scarfState, weaponLaserState, levitatorLaserState, crystalTongueState, includeVisualState,
@@ -1591,6 +1594,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 remoteBody.health = remoteHealth;
                 remoteBody.isAlive = reader.ReadBoolean();
                 remoteBody.susnessMult = Mathf.Clamp(snapshot.SusnessMultiplier, 0.25f, 1f);
+                ApplyRemoteCharacterScale(snapshot.CharacterScale);
                 remoteBody.stamina = reader.ReadSingle();
                 remoteBody.controlState = (BodyScript.RagdollState)reader.ReadByte();
                 remoteCanBeGrabbed = reader.ReadBoolean();
@@ -1662,6 +1666,27 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         catch (EndOfStreamException) { }
         finally { MultiplayerPerformance.AddAvatarApply(performanceStarted); }
+    }
+
+    private static void ApplyInitialLobbyScale(BodyScript body)
+    {
+        if (!MultiplayerSession.IsActive)
+        {
+            initialScaleAppliedBody = null;
+            appliedInitialScale = float.NaN;
+            return;
+        }
+        var target = MultiplayerSession.InitialScale;
+        if (body == initialScaleAppliedBody && Mathf.Abs(appliedInitialScale - target) < 0.001f) return;
+        if (!CharacterScaleRules.TrySet(body, target)) return;
+        initialScaleAppliedBody = body;
+        appliedInitialScale = target;
+    }
+
+    private void ApplyRemoteCharacterScale(float characterScale)
+    {
+        if (remoteBody == null || float.IsNaN(characterScale) || float.IsInfinity(characterScale)) return;
+        CharacterScaleRules.TrySet(remoteBody, characterScale);
     }
 
     private bool SynchronizeRemoteVehicle(bool inVehicle, ulong vehicleId, bool driver, BodyScript.EntityState state)

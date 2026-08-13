@@ -11,8 +11,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GameObject panel;
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, serverInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, initialScaleInput, serverInput;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
@@ -55,6 +55,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         playerCollisionsToggle.isOn = plugin.createPlayerCollisions;
         cheatsToggle.isOn = plugin.createCheats;
         allowSwapToggle.isOn = plugin.createAllowSwap;
+        allowScaleChangingToggle.isOn = plugin.createAllowScaleChanging;
+        SetInput(initialScaleInput, plugin.createInitialScale);
         respawnInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
         connectionModeText.text = plugin.createConnectionMode.ToString();
@@ -133,6 +135,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(cheatsToggle.gameObject, "CHEATS: Allows the cheats opened with SPACE + END.");
         allowSwapToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW SWAP", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowSwap = value);
         AddTooltip(allowSwapToggle.gameObject, "ALLOW SWAP: Allows players to use /swap to choose a different character for their next respawn.");
+        allowScaleChangingToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW SCALE CHANGING", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowScaleChanging = value);
+        AddTooltip(allowScaleChangingToggle.gameObject, "ALLOW SCALE CHANGING: Allows players to use /scale between 0.25 and 2.0.");
+        var initialScaleRow = CreateSettingsRow(settings);
+        CreateText(initialScaleRow, "INITIAL SCALE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        initialScaleInput = CreateInput(initialScaleRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createInitialScale = value);
+        AddTooltip(initialScaleRow.gameObject, "INITIAL SCALE: The character scale assigned when a player joins or respawns. Allowed range: 0.25 to 2.0.");
 
         CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -120f), new Vector2(125f, 32f), 14);
         connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -120f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);

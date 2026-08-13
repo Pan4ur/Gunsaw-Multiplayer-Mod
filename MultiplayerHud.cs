@@ -4,7 +4,7 @@ using UnityEngine;
 
 internal sealed class MultiplayerHud : MonoBehaviour
 {
-    private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban"];
+    private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban", "/scale"];
     private static string savedChatDraft = "";
     private static bool savedChatWasOpen;
     private readonly List<ChatEntry> history = [];

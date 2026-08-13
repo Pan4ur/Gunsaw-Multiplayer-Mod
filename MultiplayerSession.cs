@@ -163,7 +163,7 @@ internal static partial class MultiplayerSession
 
     internal static void StartHost(string lobbyId, string relayKey, string relayAddress, bool pvpEnabled,
         bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
         ConnectionMode mode, ManualLogSource logger)
     {
         CloseSocket();
@@ -206,6 +206,8 @@ internal static partial class MultiplayerSession
         PlayerCollisions = playerCollisions;
         CheatsEnabled = cheatsEnabled;
         AllowSwap = allowSwap;
+        AllowScaleChanging = allowScaleChanging;
+        InitialScale = CharacterScaleRules.Clamp(initialScale);
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
         logger.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
@@ -254,6 +256,8 @@ internal static partial class MultiplayerSession
             PlayerCollisions = true;
             CheatsEnabled = false;
             AllowSwap = true;
+            AllowScaleChanging = true;
+            InitialScale = 1f;
             ResetPing();
             socket = ConnectRelay(relayAddress, lobbyId, relayKey);
             if (connectionMode == ConnectionMode.Relay) SendInitialHello();
@@ -341,7 +345,7 @@ internal static partial class MultiplayerSession
         hostScene = "LevelLoader";
         QueueCustomLevelTransfer(levelJson);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale));
         Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);
     }
 
@@ -401,6 +405,8 @@ internal static partial class MultiplayerSession
     internal static bool PlayerCollisions { get; private set; } = true;
     internal static bool CheatsEnabled { get; private set; }
     internal static bool AllowSwap { get; private set; } = true;
+    internal static bool AllowScaleChanging { get; private set; } = true;
+    internal static float InitialScale { get; private set; } = 1f;
     internal static int PingMs { get { lock (statusLock)
         {
             foreach (var peer in peers.All) return peer.PingMs;
@@ -638,6 +644,8 @@ internal static partial class MultiplayerSession
         PlayerCollisions = true;
         CheatsEnabled = false;
         AllowSwap = true;
+        AllowScaleChanging = true;
+        InitialScale = 1f;
         lock (statusLock)
         {
             peers.Clear();
@@ -656,7 +664,7 @@ internal static partial class MultiplayerSession
 
     internal static bool UpdateHostSettings(bool pvpEnabled, bool canGrabPlayers,
         bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, int lobbyMaxPlayers)
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, int lobbyMaxPlayers)
     {
         if (!IsHosting) return false;
         PvpEnabled = pvpEnabled;
@@ -668,9 +676,11 @@ internal static partial class MultiplayerSession
         PlayerCollisions = playerCollisions;
         CheatsEnabled = cheatsEnabled;
         AllowSwap = allowSwap;
+        AllowScaleChanging = allowScaleChanging;
+        InitialScale = CharacterScaleRules.Clamp(initialScale);
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale));
         return true;
     }
 

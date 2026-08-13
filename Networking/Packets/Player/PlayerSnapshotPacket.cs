@@ -36,6 +36,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal readonly bool IsAlive;
     internal readonly PlayerDeathCause DeathCause;
     internal readonly float SusnessMultiplier;
+    internal readonly float CharacterScale;
     internal readonly float Stamina;
     internal readonly byte ControlState;
     internal readonly bool CanBeGrabbed;
@@ -57,7 +58,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal PlayerSnapshotPacket(int sequence, bool inVehicle, ulong vehicleId,
         bool isVehicleDriver, byte entityState, bool isRight, bool isReflected, bool isActive,
         float headRotation, PlayerSnapshotBodyState body, float health, bool isAlive, PlayerDeathCause deathCause,
-        float susnessMultiplier, float stamina,
+        float susnessMultiplier, float characterScale, float stamina,
         byte controlState, bool canBeGrabbed, float burnIntensity, bool hasNoLegs, bool isDecapitated,
         PlayerSnapshotTransform armsTransform, PlayerSnapshotTransform gunTransform,
         PlayerSnapshotTransform gunAnimationTransform, PlayerSnapshotTransform weaponTransform,
@@ -81,6 +82,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         IsAlive = isAlive;
         DeathCause = deathCause;
         SusnessMultiplier = susnessMultiplier;
+        CharacterScale = characterScale;
         Stamina = stamina;
         ControlState = controlState;
         CanBeGrabbed = canBeGrabbed;
@@ -164,6 +166,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         if (IncludesVisualState) WriteVisualState(ref writer, VisualState.Value);
         writer.WriteByte((byte)DeathCause);
         writer.WriteSingle(SusnessMultiplier);
+        writer.WriteSingle(CharacterScale);
     }
 
     private static void WriteBody(ref PacketWriter writer, PlayerSnapshotBodyState value)
@@ -310,9 +313,10 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var visualState = includesVisualState ? (PlayerSnapshotVisualState?)ReadVisualState(ref reader) : null;
         var deathCause = reader.Remaining > 0 ? (PlayerDeathCause)reader.ReadByte() : PlayerDeathCause.Unknown;
         var susnessMultiplier = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
+        var characterScale = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
         return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight,
             isReflected, isActive,
-            headRotation, body, health, isAlive, deathCause, susnessMultiplier, stamina, controlState, canBeGrabbed,
+            headRotation, body, health, isAlive, deathCause, susnessMultiplier, characterScale, stamina, controlState, canBeGrabbed,
             burnIntensity, hasNoLegs, isDecapitated,
             arms, gun, gunAnimation, weaponTransform, limbs, tailBases, tails, weaponSlot, weaponAmmo, weaponSpriteId,
             inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, crystalTongue, includesVisualState,

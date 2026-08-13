@@ -40,7 +40,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale), senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
                 if (joined) BroadcastSystemChat(connectedName + " joined the game.");
             }
@@ -246,6 +246,8 @@ internal static partial class MultiplayerSession
                 PlayerCollisions = settings.PlayerCollisions;
                 CheatsEnabled = settings.CheatsEnabled;
                 AllowSwap = settings.AllowSwap;
+                AllowScaleChanging = settings.AllowScaleChanging;
+                InitialScale = settings.InitialScale;
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(16, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings received. PVP " + (PvpEnabled ? "enabled" : "disabled") +
