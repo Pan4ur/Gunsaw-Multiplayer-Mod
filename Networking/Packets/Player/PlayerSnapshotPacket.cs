@@ -117,21 +117,48 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     private void WriteTypedState(ref PacketWriter writer)
     {
         writer.WriteInt32(Sequence);
-        writer.WriteBoolean(InVehicle); writer.WriteUInt64(VehicleId); writer.WriteBoolean(IsVehicleDriver);
-        writer.WriteByte(EntityState); writer.WriteBoolean(IsRight); writer.WriteBoolean(IsReflected);
-        writer.WriteBoolean(IsActive); writer.WriteSingle(HeadRotation); WriteBody(ref writer, Body);
+        writer.WriteBoolean(InVehicle);
+        writer.WriteUInt64(VehicleId);
+        writer.WriteBoolean(IsVehicleDriver);
+        writer.WriteByte(EntityState);
+        writer.WriteBoolean(IsRight);
+        writer.WriteBoolean(IsReflected);
+        writer.WriteBoolean(IsActive);
+        writer.WriteSingle(HeadRotation);
+        WriteBody(ref writer, Body);
         writer.WriteUInt16((ushort)Limbs.Length);
-        foreach (var limb in Limbs) { WriteBody(ref writer, limb.Body); writer.WriteBoolean(limb.Dismembered); writer.WriteBoolean(limb.Burning); }
-        WriteTails(ref writer, TailBases); WriteTails(ref writer, Tails);
-        WriteTransform(ref writer, ArmsTransform); WriteTransform(ref writer, GunTransform);
-        WriteTransform(ref writer, GunAnimationTransform); WriteTransform(ref writer, WeaponTransform);
-        writer.WriteSingle(Health); writer.WriteBoolean(IsAlive); writer.WriteSingle(Stamina); writer.WriteByte(ControlState);
-        writer.WriteBoolean(CanBeGrabbed); writer.WriteSingle(BurnIntensity); writer.WriteBoolean(HasNoLegs);
-        writer.WriteBoolean(IsDecapitated); writer.WriteInt32(WeaponSlot); writer.WriteInt32(WeaponAmmo);
-        writer.WriteUInt64(WeaponSpriteId); writer.WriteUInt16((ushort)InventorySpriteIds.Length);
+        foreach (var limb in Limbs)
+        {
+            WriteBody(ref writer, limb.Body);
+            writer.WriteBoolean(limb.Dismembered);
+            writer.WriteBoolean(limb.Burning);
+        }
+
+        WriteTails(ref writer, TailBases);
+        WriteTails(ref writer, Tails);
+        WriteTransform(ref writer, ArmsTransform);
+        WriteTransform(ref writer, GunTransform);
+        WriteTransform(ref writer, GunAnimationTransform);
+        WriteTransform(ref writer, WeaponTransform);
+        writer.WriteSingle(Health);
+        writer.WriteBoolean(IsAlive);
+        writer.WriteSingle(Stamina);
+        writer.WriteByte(ControlState);
+        writer.WriteBoolean(CanBeGrabbed);
+        writer.WriteSingle(BurnIntensity);
+        writer.WriteBoolean(HasNoLegs);
+        writer.WriteBoolean(IsDecapitated);
+        writer.WriteInt32(WeaponSlot);
+        writer.WriteInt32(WeaponAmmo);
+        writer.WriteUInt64(WeaponSpriteId);
+        writer.WriteUInt16((ushort)InventorySpriteIds.Length);
         writer.WriteBoolean(InventoryChanged);
-        if (InventoryChanged) foreach (var id in InventorySpriteIds) writer.WriteUInt64(id);
-        WriteLine(ref writer, WeaponLaser); WriteLine(ref writer, LevitatorLaser); WriteScarf(ref writer, Scarf);
+        if (InventoryChanged)
+            foreach (var id in InventorySpriteIds)
+                writer.WriteUInt64(id);
+        WriteLine(ref writer, WeaponLaser);
+        WriteLine(ref writer, LevitatorLaser);
+        WriteScarf(ref writer, Scarf);
         WriteLine(ref writer, CrystalTongue);
         writer.WriteBoolean(IncludesVisualState);
         if (IncludesVisualState) WriteVisualState(ref writer, VisualState.Value);
@@ -140,80 +167,239 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     }
 
     private static void WriteBody(ref PacketWriter writer, PlayerSnapshotBodyState value)
-    { writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.Rotation); }
+    {
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Rotation);
+    }
+
     private static void WriteTransform(ref PacketWriter writer, PlayerSnapshotTransform value)
-    { writer.WriteSingle(value.X); writer.WriteSingle(value.Y); writer.WriteSingle(value.Rotation); }
+    {
+        writer.WriteSingle(value.X);
+        writer.WriteSingle(value.Y);
+        writer.WriteSingle(value.Rotation);
+    }
+
     private static void WriteTails(ref PacketWriter writer, PlayerSnapshotTailState[] values)
     {
         writer.WriteUInt16((ushort)values.Length);
-        foreach (var value in values) { writer.WriteSingle(value.OffsetX); writer.WriteSingle(value.OffsetY); writer.WriteSingle(value.Rotation); writer.WriteBoolean(value.Flipped); if (value.Colors == null) continue; writer.WriteByte((byte)value.Colors.Length); foreach (var color in value.Colors) { writer.WriteByte(color.Red); writer.WriteByte(color.Green); writer.WriteByte(color.Blue); writer.WriteByte(color.Alpha); } }
+        foreach (var value in values)
+        {
+            writer.WriteSingle(value.OffsetX);
+            writer.WriteSingle(value.OffsetY);
+            writer.WriteSingle(value.Rotation);
+            writer.WriteBoolean(value.Flipped);
+            if (value.Colors == null) continue;
+            writer.WriteByte((byte)value.Colors.Length);
+            foreach (var color in value.Colors)
+            {
+                writer.WriteByte(color.Red);
+                writer.WriteByte(color.Green);
+                writer.WriteByte(color.Blue);
+                writer.WriteByte(color.Alpha);
+            }
+        }
     }
+
     private static void WriteColor(ref PacketWriter writer, PlayerSnapshotColor value)
-    { writer.WriteSingle(value.Red); writer.WriteSingle(value.Green); writer.WriteSingle(value.Blue); writer.WriteSingle(value.Alpha); }
+    {
+        writer.WriteSingle(value.Red);
+        writer.WriteSingle(value.Green);
+        writer.WriteSingle(value.Blue);
+        writer.WriteSingle(value.Alpha);
+    }
+
     private static void WriteLine(ref PacketWriter writer, PlayerSnapshotLineState value)
     {
-        writer.WriteBoolean(value.Visible); if (!value.Visible) return; writer.WriteByte((byte)value.Points.Length);
-        writer.WriteBoolean(value.UsesWorldSpace); WriteColor(ref writer, value.StartColor); WriteColor(ref writer, value.EndColor);
-        writer.WriteSingle(value.StartWidth); writer.WriteSingle(value.EndWidth);
-        foreach (var point in value.Points) { writer.WriteSingle(point.X); writer.WriteSingle(point.Y); writer.WriteSingle(point.Z); }
+        writer.WriteBoolean(value.Visible);
+        if (!value.Visible) return;
+        writer.WriteByte((byte)value.Points.Length);
+        writer.WriteBoolean(value.UsesWorldSpace);
+        WriteColor(ref writer, value.StartColor);
+        WriteColor(ref writer, value.EndColor);
+        writer.WriteSingle(value.StartWidth);
+        writer.WriteSingle(value.EndWidth);
+        foreach (var point in value.Points)
+        {
+            writer.WriteSingle(point.X);
+            writer.WriteSingle(point.Y);
+            writer.WriteSingle(point.Z);
+        }
     }
+
     private static void WriteScarf(ref PacketWriter writer, PlayerSnapshotScarfState value)
-    { writer.WriteBoolean(value.Visible); if (value.Visible) { WriteColor(ref writer, value.StartColor); WriteColor(ref writer, value.EndColor); } }
+    {
+        writer.WriteBoolean(value.Visible);
+        if (value.Visible)
+        {
+            WriteColor(ref writer, value.StartColor);
+            WriteColor(ref writer, value.EndColor);
+        }
+    }
+
     private static void WriteVisualState(ref PacketWriter writer, PlayerSnapshotVisualState value)
     {
-        var renderers = value.Renderers ?? new PlayerSnapshotRendererState[0]; writer.WriteUInt16((ushort)renderers.Length);
-        foreach (var item in renderers) { writer.WriteBinaryString(item.Path); writer.WriteBoolean(item.Visible); WriteColor(ref writer, item.Color); writer.WriteBoolean(item.FlipX); writer.WriteBoolean(item.FlipY); }
-        var lights = value.Lights ?? new PlayerSnapshotLightState[0]; writer.WriteUInt16((ushort)lights.Length);
-        foreach (var item in lights) { writer.WriteBinaryString(item.Path); writer.WriteBoolean(item.Visible); writer.WriteSingle(item.Intensity); WriteColor(ref writer, item.Color); }
-        var expressions = value.FacialExpressions ?? new byte[0]; writer.WriteUInt16((ushort)expressions.Length);
+        var renderers = value.Renderers ?? new PlayerSnapshotRendererState[0];
+        writer.WriteUInt16((ushort)renderers.Length);
+        foreach (var item in renderers)
+        {
+            writer.WriteBinaryString(item.Path);
+            writer.WriteBoolean(item.Visible);
+            WriteColor(ref writer, item.Color);
+            writer.WriteBoolean(item.FlipX);
+            writer.WriteBoolean(item.FlipY);
+        }
+
+        var lights = value.Lights ?? new PlayerSnapshotLightState[0];
+        writer.WriteUInt16((ushort)lights.Length);
+        foreach (var item in lights)
+        {
+            writer.WriteBinaryString(item.Path);
+            writer.WriteBoolean(item.Visible);
+            writer.WriteSingle(item.Intensity);
+            WriteColor(ref writer, item.Color);
+        }
+
+        var expressions = value.FacialExpressions ?? new byte[0];
+        writer.WriteUInt16((ushort)expressions.Length);
         for (var index = 0; index < expressions.Length; index++) writer.WriteByte(expressions[index]);
     }
 
     internal static PlayerSnapshotPacket Read(ref PacketReader reader)
     {
         var sequence = reader.ReadInt32();
-        var inVehicle = reader.ReadBoolean(); var vehicleId = reader.ReadUInt64(); var isVehicleDriver = reader.ReadBoolean();
-        var entityState = reader.ReadByte(); var isRight = reader.ReadBoolean(); var isReflected = reader.ReadBoolean();
-        var isActive = reader.ReadBoolean(); var headRotation = reader.ReadSingle(); var body = ReadBody(ref reader);
+        var inVehicle = reader.ReadBoolean();
+        var vehicleId = reader.ReadUInt64();
+        var isVehicleDriver = reader.ReadBoolean();
+        var entityState = reader.ReadByte();
+        var isRight = reader.ReadBoolean();
+        var isReflected = reader.ReadBoolean();
+        var isActive = reader.ReadBoolean();
+        var headRotation = reader.ReadSingle();
+        var body = ReadBody(ref reader);
         var limbs = new PlayerSnapshotLimbState[reader.ReadUInt16()];
-        for (var i = 0; i < limbs.Length; i++) limbs[i] = new PlayerSnapshotLimbState(ReadBody(ref reader), reader.ReadBoolean(), reader.ReadBoolean());
-        var tailBases = ReadTails(ref reader); var tails = ReadTails(ref reader);
-        var arms = ReadTransform(ref reader); var gun = ReadTransform(ref reader); var gunAnimation = ReadTransform(ref reader); var weaponTransform = ReadTransform(ref reader);
-        var health = reader.ReadSingle(); var isAlive = reader.ReadBoolean(); var stamina = reader.ReadSingle(); var controlState = reader.ReadByte();
-        var canBeGrabbed = reader.ReadBoolean(); var burnIntensity = reader.ReadSingle(); var hasNoLegs = reader.ReadBoolean(); var isDecapitated = reader.ReadBoolean();
-        var weaponSlot = reader.ReadInt32(); var weaponAmmo = reader.ReadInt32(); var weaponSpriteId = reader.ReadUInt64();
-        var inventory = new ulong[reader.ReadUInt16()]; var inventoryChanged = reader.ReadBoolean();
-        if (inventoryChanged) for (var i = 0; i < inventory.Length; i++) inventory[i] = reader.ReadUInt64();
-        var weaponLaser = ReadLine(ref reader); var levitatorLaser = ReadLine(ref reader); var scarf = ReadScarf(ref reader);
+        for (var i = 0; i < limbs.Length; i++)
+            limbs[i] = new PlayerSnapshotLimbState(ReadBody(ref reader), reader.ReadBoolean(), reader.ReadBoolean());
+        var tailBases = ReadTails(ref reader);
+        var tails = ReadTails(ref reader);
+        var arms = ReadTransform(ref reader);
+        var gun = ReadTransform(ref reader);
+        var gunAnimation = ReadTransform(ref reader);
+        var weaponTransform = ReadTransform(ref reader);
+        var health = reader.ReadSingle();
+        var isAlive = reader.ReadBoolean();
+        var stamina = reader.ReadSingle();
+        var controlState = reader.ReadByte();
+        var canBeGrabbed = reader.ReadBoolean();
+        var burnIntensity = reader.ReadSingle();
+        var hasNoLegs = reader.ReadBoolean();
+        var isDecapitated = reader.ReadBoolean();
+        var weaponSlot = reader.ReadInt32();
+        var weaponAmmo = reader.ReadInt32();
+        var weaponSpriteId = reader.ReadUInt64();
+        var inventory = new ulong[reader.ReadUInt16()];
+        var inventoryChanged = reader.ReadBoolean();
+        if (inventoryChanged)
+            for (var i = 0; i < inventory.Length; i++)
+                inventory[i] = reader.ReadUInt64();
+        var weaponLaser = ReadLine(ref reader);
+        var levitatorLaser = ReadLine(ref reader);
+        var scarf = ReadScarf(ref reader);
         var crystalTongue = ReadLine(ref reader);
-        var includesVisualState = reader.ReadBoolean(); var visualState = includesVisualState ? (PlayerSnapshotVisualState?)ReadVisualState(ref reader) : null;
+        var includesVisualState = reader.ReadBoolean();
+        var visualState = includesVisualState ? (PlayerSnapshotVisualState?)ReadVisualState(ref reader) : null;
         var deathCause = reader.Remaining > 0 ? (PlayerDeathCause)reader.ReadByte() : PlayerDeathCause.Unknown;
         var susnessMultiplier = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
-        return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight, isReflected, isActive,
-            headRotation, body, health, isAlive, deathCause, susnessMultiplier, stamina, controlState, canBeGrabbed, burnIntensity, hasNoLegs, isDecapitated,
+        return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight,
+            isReflected, isActive,
+            headRotation, body, health, isAlive, deathCause, susnessMultiplier, stamina, controlState, canBeGrabbed,
+            burnIntensity, hasNoLegs, isDecapitated,
             arms, gun, gunAnimation, weaponTransform, limbs, tailBases, tails, weaponSlot, weaponAmmo, weaponSpriteId,
-            inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, crystalTongue, includesVisualState, visualState);
+            inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, crystalTongue, includesVisualState,
+            visualState);
     }
 
-    private static PlayerSnapshotBodyState ReadBody(ref PacketReader reader) => new PlayerSnapshotBodyState(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
-    private static PlayerSnapshotTransform ReadTransform(ref PacketReader reader) => new PlayerSnapshotTransform(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static PlayerSnapshotBodyState ReadBody(ref PacketReader reader) =>
+        new PlayerSnapshotBodyState(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
+    private static PlayerSnapshotTransform ReadTransform(ref PacketReader reader) =>
+        new PlayerSnapshotTransform(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
     private static PlayerSnapshotTailState[] ReadTails(ref PacketReader reader)
     {
         var values = new PlayerSnapshotTailState[reader.ReadUInt16()];
-        for (var i = 0; i < values.Length; i++) { var x = reader.ReadSingle(); var y = reader.ReadSingle(); var rotation = reader.ReadSingle(); var flipped = reader.ReadBoolean(); var colors = new PlayerSnapshotByteColor[reader.ReadByte()]; for (var j = 0; j < colors.Length; j++) colors[j] = new PlayerSnapshotByteColor(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte()); values[i] = new PlayerSnapshotTailState(x, y, rotation, flipped, colors); }
+        for (var i = 0; i < values.Length; i++)
+        {
+            var x = reader.ReadSingle();
+            var y = reader.ReadSingle();
+            var rotation = reader.ReadSingle();
+            var flipped = reader.ReadBoolean();
+            var colors = new PlayerSnapshotByteColor[reader.ReadByte()];
+            for (var j = 0; j < colors.Length; j++)
+                colors[j] = new PlayerSnapshotByteColor(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(),
+                    reader.ReadByte());
+            values[i] = new PlayerSnapshotTailState(x, y, rotation, flipped, colors);
+        }
+
         return values;
     }
-    private static PlayerSnapshotColor ReadColor(ref PacketReader reader) => new PlayerSnapshotColor(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
-    private static PlayerSnapshotLineState ReadLine(ref PacketReader reader) { var visible = reader.ReadBoolean(); if (!visible) return new PlayerSnapshotLineState(false, false, default(PlayerSnapshotColor), default(PlayerSnapshotColor), 0f, 0f, new PlayerSnapshotVector3[0]); var points = new PlayerSnapshotVector3[reader.ReadByte()]; var world = reader.ReadBoolean(); var start = ReadColor(ref reader); var end = ReadColor(ref reader); var startWidth = reader.ReadSingle(); var endWidth = reader.ReadSingle(); for (var i = 0; i < points.Length; i++) points[i] = new PlayerSnapshotVector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()); return new PlayerSnapshotLineState(true, world, start, end, startWidth, endWidth, points); }
-    private static PlayerSnapshotScarfState ReadScarf(ref PacketReader reader) { var visible = reader.ReadBoolean(); return visible ? new PlayerSnapshotScarfState(true, ReadColor(ref reader), ReadColor(ref reader)) : new PlayerSnapshotScarfState(false, default(PlayerSnapshotColor), default(PlayerSnapshotColor)); }
-    private static PlayerSnapshotVisualState ReadVisualState(ref PacketReader reader) { var renderers = new PlayerSnapshotRendererState[reader.ReadUInt16()]; for (var i = 0; i < renderers.Length; i++) renderers[i] = new PlayerSnapshotRendererState(reader.ReadBinaryString(), reader.ReadBoolean(), ReadColor(ref reader), reader.ReadBoolean(), reader.ReadBoolean()); var lights = new PlayerSnapshotLightState[reader.ReadUInt16()]; for (var i = 0; i < lights.Length; i++) lights[i] = new PlayerSnapshotLightState(reader.ReadBinaryString(), reader.ReadBoolean(), reader.ReadSingle(), ReadColor(ref reader)); var expressions = new byte[reader.ReadUInt16()]; for (var i = 0; i < expressions.Length; i++) expressions[i] = reader.ReadByte(); return new PlayerSnapshotVisualState(renderers, lights, expressions); }
+
+    private static PlayerSnapshotColor ReadColor(ref PacketReader reader) =>
+        new PlayerSnapshotColor(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+
+    private static PlayerSnapshotLineState ReadLine(ref PacketReader reader)
+    {
+        var visible = reader.ReadBoolean();
+        if (!visible)
+            return new PlayerSnapshotLineState(false, false, default(PlayerSnapshotColor), default(PlayerSnapshotColor),
+                0f, 0f, new PlayerSnapshotVector3[0]);
+        var points = new PlayerSnapshotVector3[reader.ReadByte()];
+        var world = reader.ReadBoolean();
+        var start = ReadColor(ref reader);
+        var end = ReadColor(ref reader);
+        var startWidth = reader.ReadSingle();
+        var endWidth = reader.ReadSingle();
+        for (var i = 0; i < points.Length; i++)
+            points[i] = new PlayerSnapshotVector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+        return new PlayerSnapshotLineState(true, world, start, end, startWidth, endWidth, points);
+    }
+
+    private static PlayerSnapshotScarfState ReadScarf(ref PacketReader reader)
+    {
+        var visible = reader.ReadBoolean();
+        return visible
+            ? new PlayerSnapshotScarfState(true, ReadColor(ref reader), ReadColor(ref reader))
+            : new PlayerSnapshotScarfState(false, default(PlayerSnapshotColor), default(PlayerSnapshotColor));
+    }
+
+    private static PlayerSnapshotVisualState ReadVisualState(ref PacketReader reader)
+    {
+        var renderers = new PlayerSnapshotRendererState[reader.ReadUInt16()];
+        for (var i = 0; i < renderers.Length; i++)
+            renderers[i] = new PlayerSnapshotRendererState(reader.ReadBinaryString(), reader.ReadBoolean(),
+                ReadColor(ref reader), reader.ReadBoolean(), reader.ReadBoolean());
+        var lights = new PlayerSnapshotLightState[reader.ReadUInt16()];
+        for (var i = 0; i < lights.Length; i++)
+            lights[i] = new PlayerSnapshotLightState(reader.ReadBinaryString(), reader.ReadBoolean(),
+                reader.ReadSingle(), ReadColor(ref reader));
+        var expressions = new byte[reader.ReadUInt16()];
+        for (var i = 0; i < expressions.Length; i++) expressions[i] = reader.ReadByte();
+        return new PlayerSnapshotVisualState(renderers, lights, expressions);
+    }
 }
 
 internal readonly struct PlayerSnapshotBodyState
 {
     internal readonly float X, Y, Rotation;
-    internal PlayerSnapshotBodyState(float x, float y, float rotation) { X = x; Y = y; Rotation = rotation; }
+
+    internal PlayerSnapshotBodyState(float x, float y, float rotation)
+    {
+        X = x;
+        Y = y;
+        Rotation = rotation;
+    }
 }
+
 internal readonly struct PlayerSnapshotLimbState
 {
     internal readonly PlayerSnapshotBodyState Body;
@@ -226,6 +412,7 @@ internal readonly struct PlayerSnapshotLimbState
         Burning = burning;
     }
 }
+
 internal readonly struct PlayerSnapshotTailState
 {
     internal readonly float OffsetX, OffsetY, Rotation;
@@ -242,6 +429,7 @@ internal readonly struct PlayerSnapshotTailState
         Colors = colors;
     }
 }
+
 internal readonly struct PlayerSnapshotByteColor
 {
     internal readonly byte Red, Green, Blue, Alpha;
@@ -254,6 +442,7 @@ internal readonly struct PlayerSnapshotByteColor
         Alpha = alpha;
     }
 }
+
 internal readonly struct PlayerSnapshotColor
 {
     internal readonly float Red, Green, Blue, Alpha;
@@ -266,6 +455,7 @@ internal readonly struct PlayerSnapshotColor
         Alpha = alpha;
     }
 }
+
 internal readonly struct PlayerSnapshotTransform
 {
     internal readonly float X, Y, Rotation;
@@ -277,6 +467,7 @@ internal readonly struct PlayerSnapshotTransform
         Rotation = rotation;
     }
 }
+
 internal readonly struct PlayerSnapshotVector3
 {
     internal readonly float X, Y, Z;
@@ -288,6 +479,7 @@ internal readonly struct PlayerSnapshotVector3
         Z = z;
     }
 }
+
 internal readonly struct PlayerSnapshotLineState
 {
     internal readonly bool Visible, UsesWorldSpace;
@@ -307,6 +499,7 @@ internal readonly struct PlayerSnapshotLineState
         Points = points;
     }
 }
+
 internal readonly struct PlayerSnapshotScarfState
 {
     internal readonly bool Visible;
@@ -319,6 +512,7 @@ internal readonly struct PlayerSnapshotScarfState
         EndColor = endColor;
     }
 }
+
 internal readonly struct PlayerSnapshotRendererState
 {
     internal readonly string Path;
@@ -334,6 +528,7 @@ internal readonly struct PlayerSnapshotRendererState
         FlipY = flipY;
     }
 }
+
 internal readonly struct PlayerSnapshotLightState
 {
     internal readonly string Path;
@@ -349,6 +544,7 @@ internal readonly struct PlayerSnapshotLightState
         Color = color;
     }
 }
+
 internal readonly struct PlayerSnapshotVisualState
 {
     internal readonly PlayerSnapshotRendererState[] Renderers;
