@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -11,8 +12,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, serverInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle;
-    private TMP_Text statusText, customLevelText, hostingText, connectionModeText, updateText;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle;
+    private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
+    private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
     private Button closeLobbyButton;
     private Transform lobbyRows;
@@ -50,15 +52,14 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         downToggle.isOn = plugin.createGrabOnlyUnconscious;
         respawnToggle.isOn = plugin.createAllowRespawn;
         respawnAtStartToggle.isOn = plugin.createRespawnAtStart;
+        playerCollisionsToggle.isOn = plugin.createPlayerCollisions;
+        cheatsToggle.isOn = plugin.createCheats;
         respawnInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
         connectionModeText.text = plugin.createConnectionMode.ToString();
         statusText.text = plugin.status;
         if (updateText != null) updateText.text = plugin.updateStatus;
         customLevelText.text = string.IsNullOrEmpty(plugin.customLevelJson) ? "CUSTOM LEVEL: NOT LOADED" : "CUSTOM LEVEL: LOADED";
-        hostingText.text = MultiplayerSession.IsHosting
-            ? "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS"
-            : "";
         if (lobbyActionText != null) lobbyActionText.text = MultiplayerSession.IsHosting ? "APPLY SETTINGS" : "CREATE LOBBY";
         if (closeLobbyButton != null) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
         RebuildLobbyRows();
@@ -106,37 +107,51 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         CreateText(lobbyGroup.transform, "LOBBY NAME", new Vector2(-235f, 127.5f), new Vector2(120f, 32f), 14);
         lobbyInput = CreateInput(lobbyGroup.transform, new Vector2(55f, 127.5f), new Vector2(460f, 42f), 48, value => plugin.lobbyName = value);
 
-        pvpToggle = CreateToggle(lobbyGroup.transform, "PVP", new Vector2(-255f, 62.5f), new Vector2(90f, 40f), value => plugin.createPvp = value);
-        grabToggle = CreateToggle(lobbyGroup.transform, "CAN GRAB", new Vector2(-145f, 62.5f), new Vector2(140f, 40f), value => plugin.createCanGrab = value);
-        downToggle = CreateToggle(lobbyGroup.transform, "ONLY UNCONSCIOUS", new Vector2(10f, 62.5f), new Vector2(185f, 40f), value => plugin.createGrabOnlyUnconscious = value);
-        CreateText(lobbyGroup.transform, "MAX PLAYERS", new Vector2(186f, 62.5f), new Vector2(110f, 32f), 14);
-        maxPlayersInput = CreateInput(lobbyGroup.transform, new Vector2(285f, 62.5f), new Vector2(40f, 40f), 2, value => plugin.createMaxPlayers = value);
+        var settings = CreateSettingsScroll(lobbyGroup.transform, new Vector2(0f, 0f), new Vector2(580f, 195f));
+        pvpToggle = CreateToggle(CreateSettingsRow(settings), "PVP", Vector2.zero, new Vector2(520f, 40f), value => plugin.createPvp = value);
+        AddTooltip(pvpToggle.gameObject, "PVP: Enables damage between players. Some functions, such as teammate position markers or the /tp command, will not work in this mode.");
+        grabToggle = CreateToggle(CreateSettingsRow(settings), "CAN GRAB", Vector2.zero, new Vector2(520f, 40f), value => plugin.createCanGrab = value);
+        AddTooltip(grabToggle.gameObject, "CAN GRAB: Allows players to grab other players with the gravity laser.");
+        downToggle = CreateToggle(CreateSettingsRow(settings), "ONLY UNCONSCIOUS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createGrabOnlyUnconscious = value);
+        AddTooltip(downToggle.gameObject, "ONLY UNCONSCIOUS: Applies to CAN GRAB. When enabled, other players can only be grabbed while they are in a ragdoll state.");
+        var maxPlayersRow = CreateSettingsRow(settings);
+        CreateText(maxPlayersRow, "MAX PLAYERS", new Vector2(-150f, 0f), new Vector2(220f, 32f), 14);
+        maxPlayersInput = CreateInput(maxPlayersRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 2, value => plugin.createMaxPlayers = value);
+        AddTooltip(maxPlayersRow.gameObject, "MAX PLAYERS: The maximum number of players allowed in your lobby.");
+        respawnToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW RESPAWN", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowRespawn = value);
+        AddTooltip(respawnToggle.gameObject, "ALLOW RESPAWN: When enabled, players can respawn after death. When disabled, they can only spectate living players until the game ends.");
+        var delayRow = CreateSettingsRow(settings);
+        CreateText(delayRow, "RESPAWN DELAY", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        respawnInput = CreateInput(delayRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createRespawnTime = value);
+        AddTooltip(delayRow.gameObject, "RESPAWN DELAY: The time in seconds before a player respawns when ALLOW RESPAWN is enabled.");
+        respawnAtStartToggle = CreateToggle(CreateSettingsRow(settings), "RESPAWN AT START", Vector2.zero, new Vector2(520f, 40f), value => plugin.createRespawnAtStart = value);
+        AddTooltip(respawnAtStartToggle.gameObject, "RESPAWN AT START: Applies to ALLOW RESPAWN. When enabled, players spawn at a player spawn point placed by the map author. If there are several, one is chosen at random. Some custom maps may accidentally contain too many spawn points and become impossible to complete without removing the extra points. When disabled, players respawn at the position of their corpse.");
+        playerCollisionsToggle = CreateToggle(CreateSettingsRow(settings), "PLAYER COLLISIONS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createPlayerCollisions = value);
+        AddTooltip(playerCollisionsToggle.gameObject, "PLAYER COLLISIONS: When disabled, players can pass through each other without blocking one another, which can help on parkour maps.");
+        cheatsToggle = CreateToggle(CreateSettingsRow(settings), "CHEATS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createCheats = value);
+        AddTooltip(cheatsToggle.gameObject, "CHEATS: Allows the cheats opened with SPACE + END.");
 
-        respawnToggle = CreateToggle(lobbyGroup.transform, "ALLOW RESPAWN", new Vector2(-200f, 2.5f), new Vector2(200f, 40f), value => plugin.createAllowRespawn = value);
-        CreateText(lobbyGroup.transform, "DELAY", new Vector2(-60f, 2.5f), new Vector2(70f, 32f), 14);
-        respawnInput = CreateInput(lobbyGroup.transform, new Vector2(10f, 2.5f), new Vector2(60f, 40f), 4, value => plugin.createRespawnTime = value);
-        CreateText(lobbyGroup.transform, "SEC", new Vector2(80f, 2.5f), new Vector2(50f, 32f), 14);
-        respawnAtStartToggle = CreateToggle(lobbyGroup.transform, "RESPAWN AT START", new Vector2(205f, 2.5f), new Vector2(190f, 40f), value => plugin.createRespawnAtStart = value);
-
-        CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -57.5f), new Vector2(125f, 32f), 14);
-        connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -57.5f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);
-        var p2p = CreateButton(lobbyGroup.transform, "P2P", new Vector2(0f, -57.5f), new Vector2(95f, 36f));
+        CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -120f), new Vector2(125f, 32f), 14);
+        connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -120f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);
+        var p2p = CreateButton(lobbyGroup.transform, "P2P", new Vector2(0f, -120f), new Vector2(95f, 36f));
+        AddTooltip(p2p.gameObject, "P2P: Experimental direct connection to the host computer. It can reduce ping when you are far from the lobby server, but other players in the lobby can expose your IP address. Do not use it yet unless you are playing with two people and are sure it works correctly.", Color.red);
         p2p.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.P2P);
-        var relay = CreateButton(lobbyGroup.transform, "RELAY", new Vector2(105f, -57.5f), new Vector2(95f, 36f));
+        var relay = CreateButton(lobbyGroup.transform, "RELAY", new Vector2(105f, -120f), new Vector2(95f, 36f));
+        AddTooltip(relay.gameObject, "RELAY: Standard connection mode. It uses the server as a proxy and is the recommended mode.");
         relay.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.Relay);
-        var auto = CreateButton(lobbyGroup.transform, "AUTO", new Vector2(210f, -57.5f), new Vector2(95f, 36f));
+        var auto = CreateButton(lobbyGroup.transform, "AUTO", new Vector2(210f, -120f), new Vector2(95f, 36f));
+        AddTooltip(auto.gameObject, "AUTO: First tries P2P, then falls back to RELAY if it fails. It supports P2P + RELAY, where players who can connect through P2P use it while others use RELAY. P2P is not reliable yet. Leave RELAY selected if you are not sure.", Color.red);
         auto.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.Auto);
 
-        var create = CreateButton(lobbyGroup.transform, "CREATE LOBBY", new Vector2(-155f, -159.5f), new Vector2(280f, 46f));
+        var create = CreateButton(lobbyGroup.transform, "CREATE LOBBY", new Vector2(-155f, -172.5f), new Vector2(280f, 46f));
         lobbyActionText = create.GetComponentInChildren<TMP_Text>();
         create.onClick.AddListener(() =>
         {
             if (MultiplayerSession.IsHosting) plugin.UpdateHostedLobby();
             else plugin.CreateLobby();
         });
-        closeLobbyButton = CreateButton(lobbyGroup.transform, "CLOSE LOBBY", new Vector2(155f, -159.5f), new Vector2(280f, 46f));
+        closeLobbyButton = CreateButton(lobbyGroup.transform, "CLOSE LOBBY", new Vector2(155f, -172.5f), new Vector2(280f, 46f));
         closeLobbyButton.onClick.AddListener(plugin.CloseHostedLobby);
-        hostingText = CreateText(lobbyGroup.transform, "", new Vector2(0f, -112f), new Vector2(560f, 30f), 14, TextAlignmentOptions.Center);
 
 
         // CUSTOM LEVEL
@@ -174,6 +189,13 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         refresh.onClick.AddListener(plugin.RefreshLobbies);
 
         lobbyRows = CreateScrollArea(publicGroup.transform, new Vector2(0f, -20f), new Vector2(1240f, 300f));
+
+        tooltipPanel = CreatePanel(panel.transform, new Vector2(0f, -412f), new Vector2(1160f, 66f));
+        tooltipPanel.GetComponent<Image>().color = new Color(0.04f, 0.04f, 0.04f, 0.96f);
+        tooltipText = CreateText(tooltipPanel.transform, "", Vector2.zero, new Vector2(1120f, 58f), 13, TextAlignmentOptions.Center);
+        tooltipText.enableWordWrapping = true;
+        tooltipText.raycastTarget = false;
+        tooltipPanel.SetActive(false);
     }
 
     private GameObject CreatePanel(Transform parent, Vector2 position, Vector2 size)
@@ -250,7 +272,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var back = new GameObject("Background", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         back.transform.SetParent(go.transform, false);
         SetRect((RectTransform)back.transform, new Vector2(-size.x * 0.5f + 16f, 0f), new Vector2(28f, 28f));
-        back.GetComponent<Image>().color = new Color(0.27f, 0.27f, 0.27f, 0.415f);
+        back.GetComponent<Image>().color = new Color(0.16f, 0.16f, 0.16f, 0.95f);
 
         var check = new GameObject("Checkmark", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         check.transform.SetParent(back.transform, false);
@@ -268,6 +290,34 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         return toggle;
     }
 
+    private void AddTooltip(GameObject target, string message, Color? color = null)
+    {
+        if (target == null) return;
+        var trigger = target.GetComponent<EventTrigger>() ?? target.AddComponent<EventTrigger>();
+        trigger.triggers ??= new List<EventTrigger.Entry>();
+
+        var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+        enter.callback.AddListener(_ => ShowTooltip(message, color ?? Color.white));
+        trigger.triggers.Add(enter);
+
+        var exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+        exit.callback.AddListener(_ => HideTooltip());
+        trigger.triggers.Add(exit);
+    }
+
+    private void ShowTooltip(string message, Color color)
+    {
+        if (tooltipPanel == null || tooltipText == null) return;
+        tooltipText.text = message;
+        tooltipText.color = color;
+        tooltipPanel.SetActive(true);
+    }
+
+    private void HideTooltip()
+    {
+        if (tooltipPanel != null) tooltipPanel.SetActive(false);
+    }
+
     private Transform CreateScrollArea(Transform parent, Vector2 position, Vector2 size)
     {
         var view = new GameObject("LobbyScroll", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Mask), typeof(ScrollRect)); view.transform.SetParent(parent, false); SetRect((RectTransform)view.transform, position, size);
@@ -279,6 +329,50 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         content.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         var scroll = view.GetComponent<ScrollRect>(); scroll.viewport = (RectTransform)view.transform; scroll.content = contentRect; scroll.horizontal = false; scroll.movementType = ScrollRect.MovementType.Clamped;
         return content.transform;
+    }
+
+    private Transform CreateSettingsScroll(Transform parent, Vector2 position, Vector2 size)
+    {
+        var content = CreateScrollArea(parent, position, size);
+        var view = content.parent;
+        view.name = "Game Rules Scroll";
+        var scroll = view.GetComponent<ScrollRect>();
+        scroll.scrollSensitivity = 24f;
+
+        var scrollbar = new GameObject("Scrollbar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Scrollbar));
+        scrollbar.transform.SetParent(view, false);
+        var scrollbarRect = (RectTransform)scrollbar.transform;
+        scrollbarRect.anchorMin = new Vector2(1f, 0f);
+        scrollbarRect.anchorMax = new Vector2(1f, 1f);
+        scrollbarRect.pivot = new Vector2(1f, 0.5f);
+        scrollbarRect.anchoredPosition = new Vector2(-5f, 0f);
+        scrollbarRect.sizeDelta = new Vector2(12f, -10f);
+        var scrollbarImage = scrollbar.GetComponent<Image>();
+        scrollbarImage.color = new Color(0.08f, 0.08f, 0.08f, 0.9f);
+        var handle = new GameObject("Handle", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        handle.transform.SetParent(scrollbar.transform, false);
+        var handleRect = (RectTransform)handle.transform;
+        handleRect.anchorMin = new Vector2(0f, 0f);
+        handleRect.anchorMax = new Vector2(1f, 1f);
+        handleRect.offsetMin = new Vector2(2f, 2f);
+        handleRect.offsetMax = new Vector2(-2f, -2f);
+        handle.GetComponent<Image>().color = new Color(0.65f, 0.65f, 0.65f, 0.95f);
+        var bar = scrollbar.GetComponent<Scrollbar>();
+        bar.targetGraphic = handle.GetComponent<Image>();
+        bar.handleRect = handleRect;
+        bar.direction = Scrollbar.Direction.BottomToTop;
+
+        scroll.verticalScrollbar = bar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+        return content;
+    }
+
+    private Transform CreateSettingsRow(Transform parent)
+    {
+        var row = new GameObject("Rule", typeof(RectTransform), typeof(LayoutElement));
+        row.transform.SetParent(parent, false);
+        row.GetComponent<LayoutElement>().preferredHeight = 40f;
+        return row.transform;
     }
 
     private TMP_Text CreateText(Transform parent, string value, Vector2 position, Vector2 size, float fontSize, TextAlignmentOptions alignment = TextAlignmentOptions.Left, FontStyles style = FontStyles.Normal)

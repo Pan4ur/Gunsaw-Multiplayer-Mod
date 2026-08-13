@@ -40,7 +40,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled), senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
                 if (joined) BroadcastSystemChat(connectedName + " joined the game.");
             }
@@ -234,7 +234,7 @@ internal static partial class MultiplayerSession
             }
             else if (!isHost && decodedPacket.Type == PacketType.Settings)
             {
-                if (decodedPacket.Payload.Length < 8) continue;
+                if (decodedPacket.Payload.Length < 10) continue;
                 var reader = new PacketReader(decodedPacket.Payload);
                 var settings = SettingsPacket.Read(ref reader);
                 PvpEnabled = settings.PvpEnabled;
@@ -243,11 +243,15 @@ internal static partial class MultiplayerSession
                 AllowRespawn = settings.AllowRespawn;
                 RespawnAtStart = settings.RespawnAtStart;
                 RespawnTimeSeconds = settings.RespawnTimeSeconds;
+                PlayerCollisions = settings.PlayerCollisions;
+                CheatsEnabled = settings.CheatsEnabled;
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(16, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings received. PVP " + (PvpEnabled ? "enabled" : "disabled") +
                     "; player grab " + (CanGrabPlayers ? (GrabOnlyUnconscious ? "unconscious only" : "enabled") : "disabled") +
-                    "; respawn " + (AllowRespawn ? RespawnTimeSeconds + "s." : "disabled."));
+                    "; respawn " + (AllowRespawn ? RespawnTimeSeconds + "s" : "disabled") +
+                    "; collisions " + (PlayerCollisions ? "enabled" : "disabled") +
+                    "; cheats " + (CheatsEnabled ? "enabled." : "disabled."));
             }
             else if (decodedPacket.Type == PacketType.ShotVisual)
             {

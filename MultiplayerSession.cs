@@ -157,7 +157,7 @@ internal static partial class MultiplayerSession
 
     internal static void StartHost(string lobbyId, string relayKey, string relayAddress, bool pvpEnabled,
         bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
         ConnectionMode mode, ManualLogSource logger)
     {
         CloseSocket();
@@ -197,6 +197,8 @@ internal static partial class MultiplayerSession
         AllowRespawn = allowRespawn;
         RespawnTimeSeconds = Math.Max(0, Math.Min(3600, respawnTimeSeconds));
         RespawnAtStart = respawnAtStart;
+        PlayerCollisions = playerCollisions;
+        CheatsEnabled = cheatsEnabled;
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
         logger.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
@@ -242,6 +244,8 @@ internal static partial class MultiplayerSession
             AllowRespawn = false;
             RespawnTimeSeconds = 0;
             RespawnAtStart = false;
+            PlayerCollisions = true;
+            CheatsEnabled = false;
             ResetPing();
             socket = ConnectRelay(relayAddress, lobbyId, relayKey);
             if (connectionMode == ConnectionMode.Relay) SendInitialHello();
@@ -329,7 +333,7 @@ internal static partial class MultiplayerSession
         hostScene = "LevelLoader";
         QueueCustomLevelTransfer(levelJson);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled));
         Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);
     }
 
@@ -386,6 +390,8 @@ internal static partial class MultiplayerSession
     internal static bool AllowRespawn { get; private set; }
     internal static int RespawnTimeSeconds { get; private set; }
     internal static bool RespawnAtStart { get; private set; }
+    internal static bool PlayerCollisions { get; private set; } = true;
+    internal static bool CheatsEnabled { get; private set; }
     internal static int PingMs { get { lock (statusLock)
         {
             foreach (var peer in peers.All) return peer.PingMs;
@@ -620,6 +626,8 @@ internal static partial class MultiplayerSession
         AllowRespawn = false;
         RespawnTimeSeconds = 0;
         RespawnAtStart = false;
+        PlayerCollisions = true;
+        CheatsEnabled = false;
         lock (statusLock)
         {
             peers.Clear();
@@ -638,7 +646,7 @@ internal static partial class MultiplayerSession
 
     internal static bool UpdateHostSettings(bool pvpEnabled, bool canGrabPlayers,
         bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, int lobbyMaxPlayers)
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, int lobbyMaxPlayers)
     {
         if (!IsHosting) return false;
         PvpEnabled = pvpEnabled;
@@ -647,9 +655,11 @@ internal static partial class MultiplayerSession
         AllowRespawn = allowRespawn;
         RespawnTimeSeconds = Math.Max(0, Math.Min(3600, respawnTimeSeconds));
         RespawnAtStart = allowRespawn && respawnAtStart;
+        PlayerCollisions = playerCollisions;
+        CheatsEnabled = cheatsEnabled;
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled));
         return true;
     }
 

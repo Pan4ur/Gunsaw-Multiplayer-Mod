@@ -6,9 +6,13 @@ using UnityEngine.UI;
 internal sealed class MultiplayerHudUi : MonoBehaviour
 {
     private GameObject root, hostPanel, playersPanel, chatPanel;
-    private TMP_Text template, hostText, playersText, chatText, statsText, spectatorText, spectatorHint, respawnText, activationText;
+    private TMP_Text template, hostText, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText;
     private TMP_InputField input;
+    private ScrollRect chatScroll;
+    private RectTransform chatContent;
     private float nextChatRefresh;
+    private int renderedChatEntryCount = -1;
+    private bool chatWasOpen;
     private readonly List<TMP_Text> debugMarkers = new List<TMP_Text>();
     private readonly Dictionary<BodyScript, TMP_Text> nameTags = new Dictionary<BodyScript, TMP_Text>();
     private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new Dictionary<BodyScript, TMP_Text>();
@@ -42,7 +46,13 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             nextChatRefresh = Time.unscaledTime + 0.15f;
             UpdateChat(hud);
         }
+        if (!hud.ChatOpen) chatWasOpen = false;
         input.gameObject.SetActive(hud.ChatOpen);
+        chatHint.gameObject.SetActive(!hud.ChatOpen);
+        commandHints.gameObject.SetActive(hud.ChatOpen && hud.ChatSuggestions.Count > 0);
+        if (!hud.ChatOpen) chatHint.text = "Press " + Controls.keys[Controls.OPEN_CHAT] + " to open the chat";
+        if (hud.ChatOpen && hud.ChatSuggestions.Count > 0)
+            commandHints.text = string.Join("    ", hud.ChatSuggestions);
         if (hud.ChatOpen)
         {
             if (!input.isFocused) input.ActivateInputField();
@@ -112,7 +122,37 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
         chatPanel = Panel(root.transform, Vector2.zero, new Vector2(620f, 250f));
         ScreenAnchor(chatPanel.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 80f));
-        chatText = Text(chatPanel.transform, "", new Vector2(0f, 24f), new Vector2(580f, 185f), 19, TextAlignmentOptions.BottomLeft); chatText.enableWordWrapping = true;
+        var chatViewport = new GameObject("ChatViewport", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
+        chatViewport.transform.SetParent(chatPanel.transform, false);
+        Rect(chatViewport.GetComponent<RectTransform>(), new Vector2(0f, 24f), new Vector2(580f, 185f));
+        chatViewport.GetComponent<Image>().color = Color.clear;
+        chatScroll = chatViewport.GetComponent<ScrollRect>();
+        chatScroll.horizontal = false;
+        chatScroll.movementType = ScrollRect.MovementType.Clamped;
+        chatScroll.scrollSensitivity = 32f;
+        chatScroll.viewport = chatViewport.GetComponent<RectTransform>();
+        var contentObject = new GameObject("ChatContent", typeof(RectTransform));
+        contentObject.transform.SetParent(chatViewport.transform, false);
+        chatContent = contentObject.GetComponent<RectTransform>();
+        chatContent.anchorMin = new Vector2(0f, 1f);
+        chatContent.anchorMax = new Vector2(1f, 1f);
+        chatContent.pivot = new Vector2(0.5f, 1f);
+        chatContent.anchoredPosition = Vector2.zero;
+        chatContent.sizeDelta = new Vector2(0f, 185f);
+        chatScroll.content = chatContent;
+        chatText = Text(chatContent, "", Vector2.zero, Vector2.zero, 19, TextAlignmentOptions.TopLeft);
+        chatText.rectTransform.anchorMin = new Vector2(0f, 1f);
+        chatText.rectTransform.anchorMax = new Vector2(1f, 1f);
+        chatText.rectTransform.pivot = new Vector2(0.5f, 1f);
+        chatText.rectTransform.anchoredPosition = Vector2.zero;
+        chatText.rectTransform.sizeDelta = Vector2.zero;
+        chatText.enableWordWrapping = true;
+        chatHint = Text(root.transform, "", Vector2.zero, new Vector2(620f, 42f), 14, TextAlignmentOptions.Center);
+        ScreenAnchor(chatHint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
+        chatHint.color = new Color(template.color.r, template.color.g, template.color.b, 0.45f);
+        commandHints = Text(root.transform, "", Vector2.zero, new Vector2(620f, 28f), 14, TextAlignmentOptions.BottomLeft);
+        ScreenAnchor(commandHints.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 70f));
+        commandHints.color = new Color(template.color.r, template.color.g, template.color.b, 0.68f);
 
         input = CreateInput(root.transform, Vector2.zero, new Vector2(620f, 42f));
         ScreenAnchor(input.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
@@ -431,7 +471,10 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     {
         chatText.richText = true;
         var entries = hud.ChatHistory;
-        var start = hud.ChatOpen ? Mathf.Max(0, entries.Count - 9) : Mathf.Max(0, entries.Count - 5);
+        var opened = hud.ChatOpen && !chatWasOpen;
+        var newEntry = entries.Count != renderedChatEntryCount;
+        var keepAtBottom = opened || (newEntry && chatScroll.verticalNormalizedPosition <= 0.01f);
+        var start = hud.ChatOpen ? 0 : Mathf.Max(0, entries.Count - 5);
         var text = "";
         var now = Time.unscaledTime;
         for (var i = start; i < entries.Count; i++)
@@ -441,6 +484,12 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             text += "[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message + "\n";
         }
         chatText.text = text;
+        var preferredHeight = chatText.GetPreferredValues(text, 580f, 0f).y;
+        chatContent.sizeDelta = new Vector2(0f, Mathf.Max(185f, preferredHeight + 8f));
+        Canvas.ForceUpdateCanvases();
+        if (keepAtBottom) chatScroll.verticalNormalizedPosition = 0f;
+        renderedChatEntryCount = entries.Count;
+        chatWasOpen = hud.ChatOpen;
     }
 
     private GameObject Panel(Transform parent, Vector2 position, Vector2 size)

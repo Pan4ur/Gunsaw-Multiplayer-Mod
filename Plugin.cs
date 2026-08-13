@@ -28,6 +28,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<bool> savedCreateGrabOnlyUnconscious;
     private ConfigEntry<bool> savedCreateAllowRespawn;
     private ConfigEntry<bool> savedCreateRespawnAtStart;
+    private ConfigEntry<bool> savedCreatePlayerCollisions;
+    private ConfigEntry<bool> savedCreateCheats;
     private ConfigEntry<string> savedCreateRespawnTime;
     private ConfigEntry<string> savedCreateMaxPlayers;
     internal bool visible;
@@ -41,6 +43,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool createGrabOnlyUnconscious = true;
     internal bool createAllowRespawn = true;
     internal bool createRespawnAtStart = true;
+    internal bool createPlayerCollisions = true;
+    internal bool createCheats;
     internal string createRespawnTime = "5";
     internal string createMaxPlayers = "4";
     internal string customLevelJson = "";
@@ -99,6 +103,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             "Allow respawning in new lobbies.");
         savedCreateRespawnAtStart = Config.Bind("Lobby", "RespawnAtStart", createRespawnAtStart,
             "Respawn players at level start in new lobbies.");
+        savedCreatePlayerCollisions = Config.Bind("Lobby", "PlayerCollisions", createPlayerCollisions,
+            "Allow players to collide with each other in new lobbies.");
+        savedCreateCheats = Config.Bind("Lobby", "Cheats", createCheats,
+            "Allow built-in cheats in new lobbies.");
         savedCreateRespawnTime = Config.Bind("Lobby", "RespawnTime", createRespawnTime,
             "Default respawn delay in seconds.");
         savedCreateMaxPlayers = Config.Bind("Lobby", "MaxPlayers", createMaxPlayers,
@@ -110,6 +118,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createGrabOnlyUnconscious = savedCreateGrabOnlyUnconscious.Value;
         createAllowRespawn = savedCreateAllowRespawn.Value;
         createRespawnAtStart = savedCreateRespawnAtStart.Value;
+        createPlayerCollisions = savedCreatePlayerCollisions.Value;
+        createCheats = savedCreateCheats.Value;
         createRespawnTime = savedCreateRespawnTime.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
         headlessMode = HasCommandLineFlag("-headlessLobby");
@@ -377,6 +387,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             savedCreateRespawnAtStart.Value = createRespawnAtStart;
             changed = true;
         }
+        if (savedCreatePlayerCollisions.Value != createPlayerCollisions) { savedCreatePlayerCollisions.Value = createPlayerCollisions; changed = true; }
+        if (savedCreateCheats.Value != createCheats) { savedCreateCheats.Value = createCheats; changed = true; }
         if (savedCreateRespawnTime.Value != createRespawnTime) { savedCreateRespawnTime.Value = createRespawnTime; changed = true; }
         if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
         if (changed) Config.Save();
@@ -496,6 +508,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 canGrab = createCanGrab, grabOnlyUnconscious = createGrabOnlyUnconscious,
                 allowRespawn = createAllowRespawn, respawnTime = respawnTime,
                 respawnAtStart = createRespawnAtStart,
+                playerCollisions = createPlayerCollisions, cheats = createCheats,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(), modVersion = PluginVersion });
             ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, maxPlayers));
@@ -519,7 +532,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         maxPlayers = Mathf.Clamp(maxPlayers, 2, 16);
         createMaxPlayers = maxPlayers.ToString();
         if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
-            createAllowRespawn, respawnTime, createRespawnAtStart, maxPlayers))
+            createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats, maxPlayers))
         {
             status = "Could not update lobby settings.";
             return;
@@ -590,8 +603,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 result = comparison < 0
                     ? "UPDATE AVAILABLE: " + tag
                     : comparison > 0
-                        ? "INSTALLED BUILD IS NEWER THAN " + tag
-                        : "YOU ARE UP TO DATE (" + PluginVersion + ")";
+                        ? "INSTALLED BUILD IS NEWER THAN (HOW??)" + tag
+                        : "YOU ARE UP TO DATE";
             }
             catch (Exception exception)
             {
@@ -772,7 +785,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RunOnMainThread(() =>
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
-                    createGrabOnlyUnconscious, createAllowRespawn, respawnTime, createRespawnAtStart,
+                    createGrabOnlyUnconscious, createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats,
                     playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
                 if (headlessMode) StartHeadlessKeepAlive(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
@@ -1292,6 +1305,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             lobby.allowRespawn = JsonBool(item, "allowRespawn");
             lobby.respawnTime = JsonInt(item, "respawnTime");
             lobby.respawnAtStart = JsonBool(item, "respawnAtStart");
+            lobby.playerCollisions = JsonBool(item, "playerCollisions");
+            lobby.cheats = JsonBool(item, "cheats");
             lobby.hostP2P = JsonBool(item, "HostP2P") || JsonBool(item, "hostP2P");
             lobby.connectionMode = ParseConnectionMode(JsonString(item, "connectionMode"));
             if (!string.IsNullOrEmpty(lobby.id)) result.Add(lobby);
@@ -1362,6 +1377,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowRespawn = createAllowRespawn,
                 respawnTime = MultiplayerSession.RespawnTimeSeconds,
                 respawnAtStart = createAllowRespawn && createRespawnAtStart,
+                playerCollisions = createPlayerCollisions,
+                cheats = createCheats,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(),
                 modVersion = PluginVersion
@@ -1509,6 +1526,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool allowRespawn;
         public int respawnTime;
         public bool respawnAtStart;
+        public bool playerCollisions = true;
+        public bool cheats;
         public bool hostP2P;
         public ConnectionMode connectionMode = ConnectionMode.Relay;
     }
@@ -1541,6 +1560,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool allowRespawn;
         public int respawnTime;
         public bool respawnAtStart;
+        public bool playerCollisions = true;
+        public bool cheats;
         public bool hostP2P;
         public string connectionMode = "Relay";
         public string modVersion = "";

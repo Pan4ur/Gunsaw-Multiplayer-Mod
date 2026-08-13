@@ -68,6 +68,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private GameObject remoteScarfHold;
     private readonly Dictionary<int, GameObject> remoteFires = new();
     private readonly Dictionary<Collider2D, bool> remoteColliderTriggers = new();
+    private BodyScript collisionRuleLocalBody;
+    private bool collisionRuleApplied;
+    private bool collisionRulePlayerCollisions;
     private readonly Dictionary<SpriteRenderer, Sprite> originalDismemberSprites = new();
     private readonly List<Transform> staleWorldTargets = [];
     private readonly List<KeyValuePair<Transform, WorldTargetState>> orderedWorldTargets = new();
@@ -914,6 +917,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         remoteTailSprites.Clear();
         remoteTailRootSprites.Clear();
         remoteColliderTriggers.Clear();
+        collisionRuleLocalBody = null;
+        collisionRuleApplied = false;
         originalDismemberSprites.Clear();
         targets.Clear();
         worldTargets.Clear();
@@ -2688,6 +2693,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var player = PlayerScript.player;
         if (remoteBody != null && player != null && player.bodyScript != null)
             remoteBody.team = RemoteTeam(player.bodyScript);
+
+        ApplyPlayerCollisionRule(player == null ? null : player.bodyScript);
 
         if (remotePhysicsModeKnown) return;
         remotePhysicsModeKnown = true;
@@ -4503,6 +4510,26 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var expressionStates = new byte[reader.ReadUInt16()];
         for (var index = 0; index < expressionStates.Length; index++) expressionStates[index] = reader.ReadByte();
         return new PlayerVisualState(renderers, lights, expressionStates);
+    }
+
+    private void ApplyPlayerCollisionRule(BodyScript localBody)
+    {
+        var collisionsEnabled = MultiplayerSession.PlayerCollisions;
+        if (localBody == null || (collisionRuleApplied && collisionRuleLocalBody == localBody &&
+            collisionRulePlayerCollisions == collisionsEnabled)) return;
+
+        var localColliders = localBody.GetComponentsInChildren<Collider2D>(true);
+        foreach (var remoteCollider in remoteColliderTriggers.Keys)
+        {
+            if (remoteCollider == null) continue;
+            foreach (var localCollider in localColliders)
+                if (localCollider != null)
+                    Physics2D.IgnoreCollision(remoteCollider, localCollider, !collisionsEnabled);
+        }
+
+        collisionRuleLocalBody = localBody;
+        collisionRulePlayerCollisions = collisionsEnabled;
+        collisionRuleApplied = true;
     }
 
     private static byte FacialExpressionState(FacialExpression expression)

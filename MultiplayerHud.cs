@@ -4,7 +4,9 @@ using UnityEngine;
 
 internal sealed class MultiplayerHud : MonoBehaviour
 {
+    private static readonly string[] chatCommands = ["/kill", "/tp", "/ban"];
     private readonly List<ChatEntry> history = [];
+    private readonly List<string> chatSuggestions = [];
     private string localName = "Player";
     private string input = "";
     private bool chatOpen;
@@ -24,7 +26,16 @@ internal sealed class MultiplayerHud : MonoBehaviour
     internal static bool IsTyping { get; private set; }
     internal bool ChatOpen => chatOpen;
     internal IReadOnlyList<ChatEntry> ChatHistory => history;
-    internal string ChatInput { get => input; set => input = value ?? ""; }
+    internal IReadOnlyList<string> ChatSuggestions => chatSuggestions;
+    internal string ChatInput
+    {
+        get => input;
+        set
+        {
+            input = value ?? "";
+            UpdateChatSuggestions();
+        }
+    }
     internal bool NetworkStatsVisible => networkStatsVisible;
     internal string NetworkStatsText => networkStatsTextValue;
 
@@ -38,6 +49,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         history.Clear();
         input = "";
+        chatSuggestions.Clear();
         CloseChat();
     }
 
@@ -94,6 +106,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             focusChat = true;
             waitForChatOpenKeyRelease = true;
             input = "";
+            UpdateChatSuggestions();
             return;
         }
         if (!chatOpen) return;
@@ -102,6 +115,11 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (Input.GetKeyDown(Controls.keys[Controls.CLOSE_CHAT]))
         { // Lets hope that bind is not typable
             CloseChat();
+            return;
+        }
+        if (Input.GetKeyDown(KeyCode.Tab))
+        {
+            CompleteChatInput();
             return;
         }
         if (!waitForChatOpenKeyRelease && chatOpenKeyDown)
@@ -309,6 +327,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         var message = SanitizeMessage(input);
         input = "";
+        chatSuggestions.Clear();
         if (!string.IsNullOrEmpty(message))
         {
             if (GunsawMultiplayerPlugin.Instance.TryHandleHostCommand(message))
@@ -329,6 +348,47 @@ internal sealed class MultiplayerHud : MonoBehaviour
         focusChat = false;
         waitForChatOpenKeyRelease = false;
         IsTyping = false;
+        chatSuggestions.Clear();
+    }
+
+    private void UpdateChatSuggestions()
+    {
+        chatSuggestions.Clear();
+        if (!input.StartsWith("/", StringComparison.Ordinal)) return;
+
+        var separator = input.IndexOfAny([' ', '\t']);
+        if (separator < 0)
+        {
+            foreach (var command in chatCommands)
+                if (command.StartsWith(input, StringComparison.OrdinalIgnoreCase)) chatSuggestions.Add(command);
+            return;
+        }
+
+        var commandName = input.Substring(0, separator);
+        if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase)) return;
+
+        var namePrefix = input.Substring(separator).TrimStart();
+        AddPlayerSuggestion(MultiplayerSession.LocalPlayerName, commandName, namePrefix);
+        foreach (var peerId in MultiplayerSession.PeerIds())
+            AddPlayerSuggestion(MultiplayerSession.PlayerName(peerId), commandName, namePrefix);
+    }
+
+    private void AddPlayerSuggestion(string playerName, string commandName, string namePrefix)
+    {
+        if (string.IsNullOrEmpty(playerName) ||
+            !playerName.StartsWith(namePrefix, StringComparison.OrdinalIgnoreCase)) return;
+        var suggestion = commandName + " " + playerName;
+        if (!chatSuggestions.Contains(suggestion)) chatSuggestions.Add(suggestion);
+    }
+
+    private void CompleteChatInput()
+    {
+        if (chatSuggestions.Count == 0) return;
+        input = chatSuggestions[0];
+        if (string.Equals(input, "/tp", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(input, "/ban", StringComparison.OrdinalIgnoreCase)) input += " ";
+        UpdateChatSuggestions();
     }
 
     private void AddMessage(string sender, string message, bool local, ushort peerId = 0)
