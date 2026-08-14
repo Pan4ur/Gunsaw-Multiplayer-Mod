@@ -1,7 +1,6 @@
 # Gunsaw Multiplayer Mod
 
-> **WIP, IN-DEV — not production-ready. (overall, it's already playable)**  This is an unofficial multiplayer mod for
-> [Gunsaw](https://orsonik.itch.io/gunsaw-demo). It is actively being developed and
+> This is an unofficial multiplayer mod for [Gunsaw](https://orsonik.itch.io/gunsaw-demo). It is actively being developed and
 > can contain desyncs, crashes, incomplete mechanics, and compatibility issues
 
 I only recently learned that another multiplayer project for Gunsaw has been in development, and until then I had no idea it existed. I sincerely wish you the best with your project and hope it continues to grow. My goal is simply to contribute to the community by providing a multiplayer experience and a platform for creating and testing custom maps and ideas :)
@@ -10,80 +9,47 @@ I only recently learned that another multiplayer project for Gunsaw has been in 
 
 https://youtu.be/aYmxX_OQOis
 
-## Current development features
+MP Features:
 
-- Public lobby list, lobby creation, joining, and in-game chat
-- Multiplayer settings for PvP, grabbing players, and respawning
-- Replication of players, weapons, many world props, NPCs, and selected map hazards
-- Host-to-client custom level transfer
+- Multiplayer for up to 16 players
+- PVP and CO-OP modes
+- Text chat
+- Player nametags and off-screen teammate markers
+- Configurable respawning
+- Player-to-player collisions can be enabled or disabled
+- Multiplayer scoreboard with kills, deaths, accuracy, headshots and ranks
+- Mission MVP and multiplayer leaderboard
+- Host-controlled cheats and multiplayer settings
+- When a player dies, they either respawn or enter spectator mode
+- Players can grab each other with the gravity laser
+- Players can carry each other
+- Players can ride in the same vehicle
+- Players can change their character with /swap
+- Players can change their size with /scale
+- /tp teleports you to another player in CO-OP
+- /spawn returns you to the map spawn point
+- The Host can ban players with /ban
+- Custom levels are automatically transferred from the Host to clients
+- A new NPC Spawner object is available in the level editor
+- P2P and Relay connection modes
 
-## TODO
-
-### Net
-- [x] Switch to UDP
-- [X] Reduce the packet rate (send movement and pose packets only when changed for stationary entities)
-- [X] Improve packet serialization (implement string hashing or short id) to reduce packet size
-- [X] Optimize far objects, keep them on the map but disable ticking
-- [X] Fix Hello handshake (it doesn't always work and crashes the lobby sometimes)
-- [ ] Fix & Test P2P (
-      It's probably working, but I can't physically check it. If it works for anyone, please let me know.
-      Known issue: When using a P2P + RELAY connection (host-client via P2P and a third client connected to the host via RELAY),
-      the clients will not be able to see each other
-      )
-
-### Sync Fixes
-- [x] Far objects sync
-- [X] Fix shooting randomization desync
-- [X] Fix barrel fire desync
-- [X] Fix NPC shooting tracers not being visible to other players
-- [X] Fix pallet desync when breaking into two parts (fuck, now the clients have six of them)
-- [ ] Fix dead entity body state (e.g., closed eyes) mismatch with host
-- [X] Fix ammo indicator desync on weapons dropped by killed entities (blinks on host, doesn't show on clients)
-- [X] Sync bullet hit effects
-- [X] Add interp
-- [ ] Make sure there are definitely no desyncs and crashes
-- [ ] Sync protogen (cheats -> robot mode)
-
-### Gameplay
-- [X] Fix avatar
-- [X] Fix tails
-- [X] Fix destruction of lightbulbs from hits
-- [X] Fix weapon dropping at the beginning of the game
-- [X] Fix or disable the process of transferring into another body (currently disabled)
-- [ ] Add teams
-- [ ] Add colored respawn points
-- [X] Real gameplay test
-- [ ] Fix missing rocket/grenade kill messages
-- [ ] Fix missing weapon pickup icons
-- [X] Fix teleports
-- [ ] Fix delayed trigger teleports
-- [X] Fix regeneration does not always occur after death
-- [X] Add chat to all screens
-
-### UI
-- [X] Improve MP Window
-- [ ] Add more MP settings and features
-
-### Architecture
-- [ ] Refactor god classes
-- [X] Fix compatibility with CrossOver on Apple Silicon
-- [ ] Reduce the load on the server's CPU
- 
 ## Installation
 
 1. Download [Gunsaw](https://orsonik.itch.io/gunsaw-demo/purchase)
 2. Extract the game to C:\Games\Gunsaw (or another folder)
 3. Start the unmodified game once, then close it
-4. Install [BepInEx](https://github.com/bepinex/bepinex/releases) into the game folder — the folder that contains the
-   `Gunsaw.exe`
+4. Install [BepInEx](https://github.com/bepinex/bepinex/releases) into the game folder — the folder that contains the `Gunsaw.exe`
 5. Download `GunsawMultiplayer.dll` from releases
 6. Copy the `GunsawMultiplayer.dll` to ```<Gunsaw folder>\BepInEx\plugins\GunsawMultiplayer.dll```
 7. Start Gunsaw, open the **Multiplayer** menu at bottom-left corner, and create or join a lobby
 8. Smash your friends in every way possible
 
+<details>
+<summary>Detailed</summary>
+      
 ![guide](img/guide.png)
-
-The mod currently uses a default lobby server. Idk how long it will stay online, but you can host your own lobby server by setting its IP address and following the instructions below
+      
+</details>
 
 ## Custom levels
 
@@ -97,6 +63,7 @@ The mod currently uses a default lobby server. Idk how long it will stay online,
 
 - ENTER - Open chat
 - TAB - Open player list
+- C - Carry player (You need to aim at him with your sights)
 
 ### Debug binds (ill remove it later)
 - END + SPACE + G - Spawn random gun
@@ -175,6 +142,7 @@ Pull requests are very welcome
 - [Orsoniks](https://github.com/Orsoniks) for **Gunsaw**
 - [BepInEx team](https://github.com/BepInEx) for [BepInEx](https://github.com/BepInEx/BepInEx), [HarmonyX](https://github.com/BepInEx/HarmonyX) and [AssemblyPublicizer](https://github.com/BepInEx/BepInEx.AssemblyPublicizer)
 - [OpenAI](https://github.com/OPENAI) for **GPT 5.6 Sol**
+- [Rushell](https://github.com/rushellxyz) & Sturnn - for contributions to testing and development
 
 ## Disclaimer
 
