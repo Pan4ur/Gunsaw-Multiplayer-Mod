@@ -35,6 +35,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         playersPanel.SetActive(Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
         chatPanel.SetActive(MultiplayerSession.IsConnected);
         hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
+        hostText.gameObject.SetActive(null == PlayerScript.player || PlayerScript.player.canvasVisible);
         if (playersPanel.activeSelf) UpdatePlayers();
         UpdateNameTags();
         UpdateCoopMarkers();
@@ -57,7 +58,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         if (!hud.ChatOpen) chatWasOpen = false;
         input.gameObject.SetActive(hud.ChatOpen);
-        chatHint.gameObject.SetActive(!hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player ||PlayerScript.player.canvasVisible));
+        chatHint.gameObject.SetActive(!hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player || PlayerScript.player.canvasVisible));
         commandHints.gameObject.SetActive(hud.ChatOpen && hud.ChatSuggestions.Count > 0);
         if (!hud.ChatOpen) chatHint.text = "Press " + Controls.keys[Controls.OPEN_CHAT] + " to open the chat";
         if (hud.ChatOpen && hud.ChatSuggestions.Count > 0)
