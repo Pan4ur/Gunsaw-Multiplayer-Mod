@@ -41,7 +41,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateChatBubbles(hud);
         UpdateSpectator();
         UpdateStatusPrompts();
-        if (!string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
+        if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) &&
+            !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
         {
             activationText.text = PlayerCarrySystem.Prompt;
             activationText.gameObject.SetActive(true);
