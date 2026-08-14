@@ -270,12 +270,15 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         {
             var entry = entries[index];
             FinalLeaderboardRow row;
-            if (!finalLeaderboardRows.TryGetValue(entry.PeerId, out row) || row == null)
+            if (!finalLeaderboardRows.TryGetValue(entry.PeerId, out row) || row == null || row.Root == null ||
+                row.Background == null || row.Visual == null || row.Stats == null)
             {
                 row = CreateFinalLeaderboardRow();
                 finalLeaderboardRows[entry.PeerId] = row;
             }
-            row.Root.GetComponent<RectTransform>().anchoredPosition = new Vector2(0f, 230f - index * 70f);
+            var rowRect = row.Root.GetComponent<RectTransform>();
+            if (rowRect == null) continue;
+            rowRect.anchoredPosition = new Vector2(0f, 230f - index * 70f);
             var score = MultiplayerScoreboard.ForPlayer(entry.PeerId);
             var rank = MultiplayerScoreboard.Rank(score);
             var name = (entry.Host ? "[HOST] " : "") + entry.Name;
