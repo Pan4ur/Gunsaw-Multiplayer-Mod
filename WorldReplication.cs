@@ -82,6 +82,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly HashSet<Rigidbody2D> droneBodies = [];
     private readonly Dictionary<FireScript, string> fireIds = new();
     private readonly Dictionary<string, FireScript> fires = new();
+    private readonly Dictionary<FireScript, int> pendingRuntimeFires = new();
     private int nextRuntimeFireId;
     private readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new();
     private readonly HashSet<FireScript> clientCreatedFires = [];
@@ -262,6 +263,7 @@ internal sealed class WorldReplication : MonoBehaviour
             RefreshKnownWorldFires();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldFireRefresh, fireRefreshStarted);
         }
+        ProcessPendingRuntimeFires();
         if (isHost)
         {
             var zonePromptStarted = MultiplayerPerformance.StartPhase();
@@ -908,6 +910,7 @@ internal sealed class WorldReplication : MonoBehaviour
         networkCrateDebrisDamageUntil.Clear();
         clientFireSettings.Clear();
         clientCreatedFires.Clear();
+        pendingRuntimeFires.Clear();
         nextRuntimeFireId = 0;
         fireIds.Clear();
         fires.Clear();
@@ -2143,12 +2146,27 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal static void RegisterRuntimeWorldFire(FireScript fire)
     {
-        if (fire == null || !MultiplayerSession.IsHost || IsGameplayOwned(fire)) return;
+        if (fire == null || !MultiplayerSession.IsHost) return;
         var instance = Instance;
         if (instance == null || !instance.discoveredScene || instance.fireIds.ContainsKey(fire)) return;
-        var id = "runtime-fire/" + (++instance.nextRuntimeFireId).ToString();
-        instance.fireIds[fire] = id;
-        instance.fires[id] = fire;
+        instance.pendingRuntimeFires[fire] = Time.frameCount;
+    }
+
+    private void ProcessPendingRuntimeFires()
+    {
+        if (!MultiplayerSession.IsHost || pendingRuntimeFires.Count == 0) return;
+        var ready = new List<FireScript>();
+        foreach (var pair in pendingRuntimeFires)
+        {
+            var fire = pair.Key;
+            if (Time.frameCount <= pair.Value) continue;
+            ready.Add(fire);
+            if (fire == null || IsGameplayOwned(fire) || fireIds.ContainsKey(fire)) continue;
+            var id = "runtime-fire/" + (++nextRuntimeFireId).ToString();
+            fireIds[fire] = id;
+            fires[id] = fire;
+        }
+        foreach (var fire in ready) pendingRuntimeFires.Remove(fire);
     }
 
     private void RefreshKnownWorldFires()
