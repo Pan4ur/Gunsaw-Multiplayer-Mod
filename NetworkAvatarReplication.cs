@@ -358,6 +358,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         newBody.noLegs = false;
         newBody.deHeaded = false;
         newBody.onScreen = true;
+        foreach (LimbScript limb in newBody.limbs)
+        { // Restore limbs health and regenration to merchant's level
+            if (null == limb || null == limb.passer || null == limb.passer.relevantDismember)
+                continue;
+            limb.passer.relevantDismember.damageFall = 4f;
+            limb.passer.relevantDismember.currentDamage = 54f;
+        }
         newBody.EnterFullControl();
         newBody.WakeUp();
 
