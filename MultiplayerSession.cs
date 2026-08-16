@@ -75,6 +75,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] pongHeader = PacketHeader.Create(PacketType.Pong);
     private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
     private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
+    private static readonly byte[] doorStateHeader = PacketHeader.Create(PacketType.DoorState);
     private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
     private static readonly byte[] vehicleEjectHeader = PacketHeader.Create(PacketType.VehicleEject);
     private static readonly byte[] vehicleImpactHeader = PacketHeader.Create(PacketType.VehicleImpact);
@@ -105,6 +106,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<NpcDamagePacket>> npcDamage = new Queue<PeerPacket<NpcDamagePacket>>();
     private static readonly Queue<PeerPacket<NpcSpeechPacket>> npcSpeech = new Queue<PeerPacket<NpcSpeechPacket>>();
     private static readonly Queue<PeerPacket<WorldInteractionPacket>> worldInteractions = new Queue<PeerPacket<WorldInteractionPacket>>();
+    private static readonly Queue<PeerPacket<DoorStatePacket>> doorStates = new Queue<PeerPacket<DoorStatePacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> playerDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> pvpDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
     private static readonly Queue<PeerPacket<ShotVisualPacket>> shotVisuals = new Queue<PeerPacket<ShotVisualPacket>>();

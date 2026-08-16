@@ -54,6 +54,7 @@ internal static class PacketCodec
             case PacketType.Reliable: return Encode(new PayloadPacket(type, payload));
             case PacketType.ReliableAck: return Encode(new PayloadPacket(type, payload));
             case PacketType.WorldEnvironment: return Encode(new WorldEnvironmentPacket(payload));
+            case PacketType.DoorState: return Encode(new PayloadPacket(type, payload));
             case PacketType.ProjectileImpact: return Encode(new PayloadPacket(type, payload));
             case PacketType.VelvetWeb: return Encode(new PayloadPacket(type, payload));
             case PacketType.PlayerTeleport: return Encode(new PayloadPacket(type, payload));

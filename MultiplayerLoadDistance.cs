@@ -291,10 +291,7 @@ internal static class MultiplayerLoadDistance
     private static float ResolveWorldSleepDistanceSqr(Component component)
     {
         if (component.GetComponentInParent<VehiclePart>() != null) return float.PositiveInfinity;
-        return component.GetComponentInParent<DoorScript>() != null ||
-            component.GetComponentInParent<MiniCrateSpawner>() != null ||
-            component.GetComponentInParent<RbMoveToObj>() != null ||
-            component.GetComponentInParent<CustJoint>() != null
+        return component.GetComponentInParent<MiniCrateSpawner>() != null
             ? MechanismSleepDistanceSqr
             : activeDistanceSqr;
     }

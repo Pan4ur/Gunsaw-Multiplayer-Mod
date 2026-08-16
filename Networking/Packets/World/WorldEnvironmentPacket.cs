@@ -25,19 +25,6 @@ internal readonly struct EnvironmentFireState
     }
 }
 
-internal readonly struct EnvironmentAudioState
-{
-    internal readonly ulong Id;
-    internal readonly bool IsPlaying;
-    internal readonly bool Loop;
-    internal readonly float Volume;
-    internal readonly float Pitch;
-    internal EnvironmentAudioState(ulong id, bool isPlaying, bool loop, float volume, float pitch)
-    {
-        Id = id; IsPlaying = isPlaying; Loop = loop; Volume = volume; Pitch = pitch;
-    }
-}
-
 internal readonly struct WorldEnvironmentPacket : INetworkPacket
 {
     internal readonly int SceneEpoch;
@@ -47,7 +34,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly ulong[] DestroyedGlassIds;
     internal readonly ulong[] DestroyedLampIds;
     internal readonly EnvironmentFireState[] Fires;
-    internal readonly EnvironmentAudioState[] Audio;
     internal readonly ulong[] DestroyedDroneIds;
     internal readonly float RainIntensity;
     internal readonly float SnowIntensity;
@@ -57,7 +43,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
 
     internal WorldEnvironmentPacket(int sceneEpoch, float gravityX, float gravityY, EnvironmentButtonState[] buttons,
         ulong[] destroyedGlassIds, ulong[] destroyedLampIds, EnvironmentFireState[] fires,
-        EnvironmentAudioState[] audio, ulong[] destroyedDroneIds, float rainIntensity, float snowIntensity,
+        ulong[] destroyedDroneIds, float rainIntensity, float snowIntensity,
         float fogIntensity, int enemyKills = -1, int enemyTotal = -1)
     {
         SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
@@ -65,7 +51,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         DestroyedGlassIds = destroyedGlassIds ?? new ulong[0];
         DestroyedLampIds = destroyedLampIds ?? new ulong[0];
         Fires = fires ?? new EnvironmentFireState[0];
-        Audio = audio ?? new EnvironmentAudioState[0];
         DestroyedDroneIds = destroyedDroneIds ?? new ulong[0];
         RainIntensity = rainIntensity; SnowIntensity = snowIntensity; FogIntensity = fogIntensity;
         EnemyKills = enemyKills; EnemyTotal = enemyTotal;
@@ -82,7 +67,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     {
         writer.WriteInt32(SceneEpoch); writer.WriteSingle(GravityX); writer.WriteSingle(GravityY);
         WriteButtons(ref writer, Buttons); WriteIds(ref writer, DestroyedGlassIds); WriteIds(ref writer, DestroyedLampIds);
-        WriteFires(ref writer, Fires); WriteAudio(ref writer, Audio); WriteIds(ref writer, DestroyedDroneIds);
+        WriteFires(ref writer, Fires); WriteIds(ref writer, DestroyedDroneIds);
         writer.WriteSingle(RainIntensity); writer.WriteSingle(SnowIntensity); writer.WriteSingle(FogIntensity);
         writer.WriteInt32(EnemyKills); writer.WriteInt32(EnemyTotal);
     }
@@ -92,11 +77,11 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var sceneEpoch = reader.ReadInt32();
         var gravityX = reader.ReadSingle(); var gravityY = reader.ReadSingle();
         var buttons = ReadButtons(ref reader); var glass = ReadIds(ref reader); var lamps = ReadIds(ref reader);
-        var fires = ReadFires(ref reader); var audio = ReadAudio(ref reader); var drones = ReadIds(ref reader);
+        var fires = ReadFires(ref reader); var drones = ReadIds(ref reader);
         var rain = reader.ReadSingle(); var snow = reader.ReadSingle(); var fog = reader.ReadSingle();
         var enemyKills = reader.Remaining >= sizeof(int) * 2 ? reader.ReadInt32() : -1;
         var enemyTotal = reader.Remaining >= sizeof(int) ? reader.ReadInt32() : -1;
-        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, lamps, fires, audio, drones,
+        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, lamps, fires, drones,
             rain, snow, fog, enemyKills, enemyTotal);
     }
 
@@ -148,18 +133,4 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         return values;
     }
 
-    private static void WriteAudio(ref PacketWriter writer, EnvironmentAudioState[] values)
-    {
-        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
-        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
-        { var value = values[index]; writer.WriteUInt64(value.Id); writer.WriteBoolean(value.IsPlaying); writer.WriteBoolean(value.Loop); writer.WriteSingle(value.Volume); writer.WriteSingle(value.Pitch); }
-    }
-
-    private static EnvironmentAudioState[] ReadAudio(ref PacketReader reader)
-    {
-        var values = new EnvironmentAudioState[reader.ReadUInt16()];
-        for (var index = 0; index < values.Length; index++) values[index] = new EnvironmentAudioState(reader.ReadUInt64(),
-            reader.ReadBoolean(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
-        return values;
-    }
 }

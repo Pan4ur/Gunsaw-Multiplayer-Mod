@@ -36,5 +36,6 @@ internal enum PacketType : byte
     MissionFinished = 0x22,
     PlayerPerformance = 0x23,
     PlayerCarry = 0x24,
-    HostFps = 0x25
+    HostFps = 0x25,
+    DoorState = 0x26
 }

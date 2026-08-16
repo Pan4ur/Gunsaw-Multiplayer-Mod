@@ -63,6 +63,16 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, QDoorOpen> proximityDoors = new();
     private readonly Dictionary<QDoorOpen, string> proximityDoorIds = new();
     private readonly Dictionary<string, float> nextDoorActivation = new();
+    private readonly Dictionary<string, DoorScript> replicatedDoors = new();
+    private readonly Dictionary<DoorScript, string> replicatedDoorIds = new();
+    private readonly Dictionary<string, bool> hostDoorTargets = new();
+    private readonly Dictionary<string, bool> hostDoorMoving = new();
+    private readonly Dictionary<string, uint> hostDoorRevisions = new();
+    private readonly Dictionary<string, uint> clientDoorRevisions = new();
+    private readonly Dictionary<string, bool> clientDoorTargets = new();
+    private readonly Dictionary<string, bool> clientDoorMoving = new();
+    private readonly Dictionary<string, Vector2> clientDoorTargetPositions = new();
+    private bool requestedDoorSnapshot;
     private readonly Dictionary<string, ActivateZoneScript> activationZones = new();
     private readonly Dictionary<ActivateZoneScript, string> activationZoneIds = new();
     private readonly Dictionary<string, float> nextZoneActivation = new();
@@ -86,13 +96,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private int nextRuntimeFireId;
     private readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new();
     private readonly HashSet<FireScript> clientCreatedFires = [];
-    private readonly Dictionary<string, AudioSource> mechanismAudio = new();
-    private readonly Dictionary<AudioSource, string> mechanismAudioIds = new();
-    private readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new();
-    private readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new();
-    private readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new();
     private readonly HashSet<string> seenSnapshotFires = [];
-    private readonly HashSet<string> seenSnapshotAudio = [];
     private readonly HashSet<SawScript> clientSaws = [];
     private byte[] lastSerializedWorld;
     private byte[] lastSerializedEnvironment;
@@ -141,7 +145,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         get
         {
-            var count = buttons.Count + mechanismAudio.Count;
+            var count = buttons.Count;
             foreach (var fire in fires.Values) if (fire != null) count++;
             foreach (var body in bodies.Values)
                 if (body != null && !IsInteractivePropBody(body)) count++;
@@ -247,13 +251,13 @@ internal sealed class WorldReplication : MonoBehaviour
             RefreshWorldBodies();
             RefreshButtons();
             RefreshProximityDoors();
+            RefreshReplicatedDoors();
             RefreshActivationZones();
             RefreshGlasses();
             RefreshDrones();
             DiscoverWorldFires();
             RefreshClientSaws();
             RefreshWorldControllers();
-            RefreshMechanismAudio();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDiscovery, discoveryStarted);
         }
         if (Time.unscaledTime >= nextFireRefresh)
@@ -274,8 +278,17 @@ internal sealed class WorldReplication : MonoBehaviour
             ushort interactionPeer;
             while (MultiplayerSession.TryTakeWorldInteraction(out interactionPeer, out interaction))
                 ApplyWeaponInteraction(interactionPeer, interaction);
+            ProcessDoorStatePackets();
+            BroadcastChangedDoorStates();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
             return;
+        }
+
+        ProcessDoorStatePackets();
+        if (!requestedDoorSnapshot)
+        {
+            MultiplayerSession.Send(DoorStatePacket.RequestSnapshot(MultiplayerSession.SnapshotEpoch));
+            requestedDoorSnapshot = true;
         }
 
         var clientZonePromptStarted = MultiplayerPerformance.StartPhase();
@@ -322,7 +335,6 @@ internal sealed class WorldReplication : MonoBehaviour
         var weaponIndicatorsStarted = MultiplayerPerformance.StartPhase();
         AnimateClientDroppedWeaponIndicators();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators, weaponIndicatorsStarted);
-        StopSettledClientDoorAudio();
         }
         finally
         {
@@ -383,6 +395,7 @@ internal sealed class WorldReplication : MonoBehaviour
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldStateApply, applyStarted);
         }
         TickVehiclePaths();
+        AnimateClientDoors();
         if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
         {
             var clientSendStarted = MultiplayerPerformance.StartPhase();
@@ -543,12 +556,13 @@ internal sealed class WorldReplication : MonoBehaviour
     private static bool IsMechanismBody(Rigidbody2D body)
     {
         return body != null && (body.GetComponentInParent<DoorScript>() != null ||
-            body.GetComponentInParent<MovingBelt>() != null ||
-            body.GetComponentInParent<RbMoveToObj>() != null ||
-            body.GetComponentInParent<SawScript>() != null ||
-            body.GetComponentInParent<CustJoint>() != null ||
             body.GetComponentInParent<VehiclePart>() != null ||
             IsSafetyRailingBody(body));
+    }
+
+    private static bool IsDoorBody(Rigidbody2D body)
+    {
+        return body != null && body.GetComponentInParent<DoorScript>() != null;
     }
 
     private static bool IsDroneBody(Rigidbody2D body)
@@ -665,11 +679,6 @@ internal sealed class WorldReplication : MonoBehaviour
         if (MultiplayerSession.IsHost) return;
         RestoreGameplayControllers();
         DisableControllers(FindObjectsOfType<DoorScript>());
-        DisableControllers(FindObjectsOfType<RbMoveToObj>());
-        foreach (var joint in FindObjectsOfType<CustJoint>())
-            if (joint != null && !IsGameplayOwned(joint) &&
-                !IsInteractivePropBody(joint.GetComponentInParent<Rigidbody2D>()))
-                DisableController(joint);
         DisableControllers(FindObjectsOfType<DelayedTrigger>());
         DisableControllers(FindObjectsOfType<TimedTrigger>());
         DisableControllers(FindObjectsOfType<MiniCrateSpawner>());
@@ -740,101 +749,6 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private void RefreshMechanismAudio()
-    {
-        if (MultiplayerSession.IsHost) mechanismAudio.Clear();
-        CollectMechanismAudio(FindObjectsOfType<DoorScript>());
-        CollectMechanismAudio(FindObjectsOfType<MovingBelt>());
-        CollectMechanismAudio(FindObjectsOfType<RbMoveToObj>());
-        CollectMechanismAudio(FindObjectsOfType<SawScript>());
-        CollectMechanismAudio(FindObjectsOfType<CustJoint>());
-    }
-
-    private void CollectMechanismAudio<T>(T[] controllers) where T : MonoBehaviour
-    {
-        foreach (var controller in controllers)
-        {
-            if (controller == null || IsGameplayOwned(controller)) continue;
-            var door = controller as DoorScript;
-            foreach (var source in controller.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source, door);
-            var parentSource = controller.GetComponentInParent<AudioSource>();
-            RegisterMechanismAudio(parentSource, door);
-            var body = controller.GetComponentInParent<Rigidbody2D>();
-            if (body == null) continue;
-            foreach (var source in body.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source, door);
-        }
-    }
-
-    private void RegisterMechanismAudio(AudioSource source, DoorScript door = null)
-    {
-        if (source == null || IsGameplayOwned(source)) return;
-        string id;
-        if (!mechanismAudioIds.TryGetValue(source, out id))
-        {
-            id = ComponentId(source);
-            mechanismAudioIds[source] = id;
-        }
-        mechanismAudio[id] = source;
-        if (door != null) doorAudioSources[source] = door;
-        if (MultiplayerSession.IsHost || clientAudioWasPlaying.ContainsKey(source)) return;
-        clientAudioWasPlaying[source] = source.isPlaying;
-        source.Stop();
-    }
-
-    private void ApplyMechanismAudio(string id, bool playing, bool loop, float volume, float pitch)
-    {
-        AudioSource source;
-        if (!mechanismAudio.TryGetValue(id, out source) || source == null) return;
-        source.loop = loop;
-        source.volume = Mathf.Clamp01(volume);
-        source.pitch = Mathf.Clamp(pitch, -3f, 3f);
-        if (playing)
-        {
-            if (!source.isPlaying && source.clip != null)
-            {
-                source.Play();
-                if (doorAudioSources.ContainsKey(source)) clientDoorAudioStartedAt[source] = Time.unscaledTime;
-            }
-        }
-        else if (source.isPlaying)
-        {
-            source.Stop();
-            clientDoorAudioStartedAt.Remove(source);
-        }
-    }
-
-    private void StopSettledClientDoorAudio()
-    {
-        if (MultiplayerSession.IsHost) return;
-        foreach (var pair in doorAudioSources)
-        {
-            var source = pair.Key;
-            var door = pair.Value;
-            if (source == null || door == null || !source.isPlaying) continue;
-            float startedAt;
-            if (!clientDoorAudioStartedAt.TryGetValue(source, out startedAt) ||
-                Time.unscaledTime - startedAt < 0.2f) continue;
-            var body = door.GetComponent<Rigidbody2D>();
-            if (body == null || body.velocity.sqrMagnitude > 0.0001f || door.point1 == null || door.point2 == null) continue;
-            var closeEnough = Mathf.Min(Vector2.Distance(door.transform.position, door.point1.position),
-                Vector2.Distance(door.transform.position, door.point2.position)) < door.speed * 0.05f;
-            if (!closeEnough) continue;
-            source.Stop();
-            clientDoorAudioStartedAt.Remove(source);
-        }
-    }
-
-    private void StopMissingMechanismAudio(HashSet<string> seen)
-    {
-        foreach (var pair in mechanismAudio)
-        {
-            if (pair.Value != null && !seen.Contains(pair.Key) && pair.Value.isPlaying)
-                pair.Value.Stop();
-        }
-    }
-
     private void RestoreClientWorld()
     {
         nextRuntimeId = 0;
@@ -875,6 +789,16 @@ internal sealed class WorldReplication : MonoBehaviour
         proximityDoors.Clear();
         proximityDoorIds.Clear();
         nextDoorActivation.Clear();
+        replicatedDoors.Clear();
+        replicatedDoorIds.Clear();
+        hostDoorTargets.Clear();
+        hostDoorMoving.Clear();
+        hostDoorRevisions.Clear();
+        clientDoorRevisions.Clear();
+        clientDoorTargets.Clear();
+        clientDoorMoving.Clear();
+        clientDoorTargetPositions.Clear();
+        requestedDoorSnapshot = false;
         activationZones.Clear();
         activationZoneIds.Clear();
         nextZoneActivation.Clear();
@@ -914,17 +838,6 @@ internal sealed class WorldReplication : MonoBehaviour
         nextRuntimeFireId = 0;
         fireIds.Clear();
         fires.Clear();
-        foreach (var pair in clientAudioWasPlaying)
-        {
-            if (pair.Key == null) continue;
-            if (pair.Value && pair.Key.clip != null) pair.Key.Play();
-            else pair.Key.Stop();
-        }
-        clientAudioWasPlaying.Clear();
-        doorAudioSources.Clear();
-        clientDoorAudioStartedAt.Clear();
-        mechanismAudioIds.Clear();
-        mechanismAudio.Clear();
         clientSaws.Clear();
         wireIds.Clear();
         idsByWire.Clear();
@@ -963,6 +876,7 @@ internal sealed class WorldReplication : MonoBehaviour
             foreach (var pair in bodies)
             {
                 var body = pair.Value;
+                if (IsDoorBody(body)) continue;
                 if (!fullSnapshot && body != null && !MultiplayerLoadDistance.IsWorldNearAnyPlayer(body)) continue;
                 var awake = body != null && body.IsAwake();
                 if (!fullSnapshot && body != null && !awake) continue;
@@ -990,9 +904,9 @@ internal sealed class WorldReplication : MonoBehaviour
             if (!fullSnapshot && WorldSnapshotEquals(lastSerializedWorld, packet)) return null;
             lastSerializedWorld = packet;
             lastSentPropCount = changedPropCount;
-            lastSentOtherCount = changedOtherBodyCount + (includeEnvironment ? buttons.Count + fires.Count + mechanismAudio.Count : 0);
+            lastSentOtherCount = changedOtherBodyCount + (includeEnvironment ? buttons.Count + fires.Count : 0);
             sentPacketsWindow++;
-            sentStatesWindow += changedStates.Count + (includeEnvironment ? buttons.Count + fires.Count + mechanismAudio.Count : 0);
+            sentStatesWindow += changedStates.Count + (includeEnvironment ? buttons.Count + fires.Count : 0);
             return packet;
         }
     }
@@ -1040,17 +954,6 @@ internal sealed class WorldReplication : MonoBehaviour
                 BinaryWriterRaw.WriteSingle(writer, fire.fuel); writer.Write(fire.canIgnite);
                 BinaryWriterRaw.WriteSingle(writer, fire.damageMult);
                 BinaryWriterRaw.WriteSingle(writer, fire.fuelConsMult); writtenFires++;
-            }
-            var audioCount = 0;
-            foreach (var pair in mechanismAudio) if (pair.Value != null && audioCount < ushort.MaxValue) audioCount++;
-            writer.Write((ushort)audioCount);
-            var writtenAudio = 0;
-            foreach (var pair in mechanismAudio)
-            {
-                if (pair.Value == null || writtenAudio >= audioCount) continue;
-                writer.Write(WireId(pair.Key)); writer.Write(pair.Value.isPlaying); writer.Write(pair.Value.loop);
-                BinaryWriterRaw.WriteSingle(writer, pair.Value.volume);
-                BinaryWriterRaw.WriteSingle(writer, pair.Value.pitch); writtenAudio++;
             }
             CaptureDestroyedDrones();
             writer.Write((ushort)Math.Min(ushort.MaxValue, destroyedDrones.Count));
@@ -1190,7 +1093,7 @@ internal sealed class WorldReplication : MonoBehaviour
         foreach (var id in bodies.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in buttons.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in fires.Keys) if (NetworkWireId.FromString(id) == wire) return id;
-        foreach (var id in mechanismAudio.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in replicatedDoors.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in proximityDoors.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in activationZones.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in glasses.Keys) if (NetworkWireId.FromString(id) == wire) return id;
@@ -1433,16 +1336,6 @@ internal sealed class WorldReplication : MonoBehaviour
                 seenSnapshotFires.Add(id); ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
             }
             RemoveMissingFires(seenSnapshotFires);
-            seenSnapshotAudio.Clear();
-            var audioCount = reader.ReadUInt16();
-            for (var index = 0; index < audioCount; index++)
-            {
-                var id = ResolveWireId(reader.ReadUInt64());
-                var playing = reader.ReadBoolean(); var loop = reader.ReadBoolean();
-                var volume = reader.ReadSingle(); var pitch = reader.ReadSingle();
-                seenSnapshotAudio.Add(id); ApplyMechanismAudio(id, playing, loop, volume, pitch);
-            }
-            StopMissingMechanismAudio(seenSnapshotAudio);
             var droneCount = reader.ReadUInt16();
             for (var index = 0; index < droneCount; index++)
                 ApplyDroneState(ResolveWireId(reader.ReadUInt64()));
@@ -1489,6 +1382,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void ApplyAuthoritativeState(Rigidbody2D body, State state)
     {
+        if (!MultiplayerSession.IsHost && IsDoorBody(body)) return;
         if (state.safetyRailing && !state.safetyRailingAttached)
             DetachSafetyRailing(body);
         ApplyVehicleState(body, state);
@@ -1517,24 +1411,8 @@ internal sealed class WorldReplication : MonoBehaviour
         body.bodyType = mechanism && state.simulated ? RigidbodyType2D.Kinematic : state.bodyType;
         if (!state.simulated) return;
 
-        if (mechanism)
+        if (mechanism && state.vehiclePart)
         {
-            // TODO This is more of a temporary fix
-            // it would be better to simply signal to clients when the door is about to open or close,
-            // but I'm not sure if that would break some of the custom level features
-
-            if (!state.vehiclePart)
-            {
-                body.position = state.position;
-                body.rotation = state.rotation;
-                if (!initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
-                {
-                    initializedBodies.Add(body);
-                }
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
-                return;
-            }
             if (!initializedBodies.Contains(body) ||
                 (state.position - body.position).sqrMagnitude > 256f)
             {
@@ -1568,6 +1446,8 @@ internal sealed class WorldReplication : MonoBehaviour
             }
             return;
         }
+
+        if (mechanism) return;
 
         if (state.bodyType != RigidbodyType2D.Dynamic || !initializedBodies.Contains(body))
         {
@@ -2112,6 +1992,166 @@ internal sealed class WorldReplication : MonoBehaviour
             proximityDoorIds[opener] = id;
             proximityDoors[id] = opener;
         }
+    }
+
+    private void RefreshReplicatedDoors()
+    {
+        foreach (var door in FindObjectsOfType<DoorScript>())
+        {
+            if (door == null || IsGameplayOwned(door)) continue;
+            if (!replicatedDoorIds.TryGetValue(door, out var id))
+            {
+                id = ComponentId(door);
+                replicatedDoorIds[door] = id;
+                replicatedDoors[id] = door;
+            }
+            if (MultiplayerSession.IsHost)
+            {
+                if (hostDoorTargets.ContainsKey(id)) continue;
+                hostDoorTargets[id] = door.followingFirstPoint;
+                hostDoorMoving[id] = IsDoorMoving(door);
+                hostDoorRevisions[id] = 1;
+            }
+            else
+            {
+                var source = door.GetComponent<AudioSource>();
+                if (source != null) source.Stop();
+            }
+        }
+    }
+
+    private void ProcessDoorStatePackets()
+    {
+        ushort peerId;
+        DoorStatePacket packet;
+        while (MultiplayerSession.TryTakeDoorState(out peerId, out packet))
+        {
+            if (!MultiplayerSession.IsSnapshotEpochCurrent(packet.SceneEpoch)) continue;
+            if (MultiplayerSession.IsHost)
+            {
+                if (packet.Message == DoorStateMessage.RequestSnapshot) SendDoorStateSnapshot(peerId);
+                continue;
+            }
+            if (packet.Message != DoorStateMessage.States) continue;
+            foreach (var state in packet.States) ApplyDoorState(state, packet.IncludesPositions);
+        }
+    }
+
+    private void BroadcastChangedDoorStates()
+    {
+        var changed = new List<DoorStateEntry>();
+        foreach (var pair in replicatedDoors)
+        {
+            var door = pair.Value;
+            if (door == null) continue;
+            bool previous;
+            var moving = IsDoorMoving(door);
+            bool wasMoving;
+            hostDoorMoving.TryGetValue(pair.Key, out wasMoving);
+            if (hostDoorTargets.TryGetValue(pair.Key, out previous) && previous == door.followingFirstPoint &&
+                wasMoving == moving) continue;
+            hostDoorTargets[pair.Key] = door.followingFirstPoint;
+            hostDoorMoving[pair.Key] = moving;
+            uint revision;
+            hostDoorRevisions.TryGetValue(pair.Key, out revision);
+            revision++;
+            hostDoorRevisions[pair.Key] = revision;
+            var target = DoorTarget(door);
+            changed.Add(new DoorStateEntry(WireId(pair.Key), revision, door.followingFirstPoint, moving,
+                target.x, target.y));
+        }
+        if (changed.Count > 0)
+            MultiplayerSession.Send(DoorStatePacket.StatesUpdate(MultiplayerSession.SnapshotEpoch, false, changed.ToArray()));
+    }
+
+    private void SendDoorStateSnapshot(ushort peerId)
+    {
+        var states = new List<DoorStateEntry>(replicatedDoors.Count);
+        foreach (var pair in replicatedDoors)
+        {
+            var door = pair.Value;
+            if (door == null) continue;
+            uint revision;
+            if (!hostDoorRevisions.TryGetValue(pair.Key, out revision)) revision = 1;
+            var position = door.transform.position;
+            var target = DoorTarget(door);
+            states.Add(new DoorStateEntry(WireId(pair.Key), revision, door.followingFirstPoint, IsDoorMoving(door),
+                target.x, target.y, position.x, position.y, door.transform.eulerAngles.z));
+        }
+        MultiplayerSession.Send(DoorStatePacket.StatesUpdate(MultiplayerSession.SnapshotEpoch, true, states.ToArray()), peerId);
+    }
+
+    private void ApplyDoorState(DoorStateEntry state, bool includesPosition)
+    {
+        var id = ResolveWireId(state.Id);
+        uint previousRevision;
+        if (clientDoorRevisions.TryGetValue(id, out previousRevision) && state.Revision < previousRevision) return;
+        DoorScript door;
+        if (!replicatedDoors.TryGetValue(id, out door) || door == null) return;
+        clientDoorRevisions[id] = state.Revision;
+        clientDoorTargets[id] = state.FollowingFirstPoint;
+        bool wasMoving;
+        clientDoorMoving.TryGetValue(id, out wasMoving);
+        clientDoorMoving[id] = state.IsMoving;
+        clientDoorTargetPositions[id] = new Vector2(state.TargetX, state.TargetY);
+        door.followingFirstPoint = state.FollowingFirstPoint;
+        var source = door.GetComponent<AudioSource>();
+        if (includesPosition && source != null)
+        {
+            if (state.IsMoving && source.clip != null) source.Play();
+            else source.Stop();
+        }
+        if (!includesPosition && wasMoving != state.IsMoving)
+        {
+            if (state.IsMoving) door.StartMoving();
+            else
+            {
+                if (source != null) source.Stop();
+                if (door.endSound != null) Sound.Play(door.endSound, door.transform.position, false, false, door.transform);
+            }
+        }
+        if (!includesPosition) return;
+        var body = door.GetComponent<Rigidbody2D>();
+        if (body == null) return;
+        body.position = new Vector2(state.PositionX, state.PositionY);
+        body.rotation = state.Rotation;
+        body.velocity = Vector2.zero;
+        body.angularVelocity = 0f;
+    }
+
+    private void AnimateClientDoors()
+    {
+        if (MultiplayerSession.IsHost) return;
+        foreach (var pair in clientDoorTargets)
+        {
+            DoorScript door;
+            if (!replicatedDoors.TryGetValue(pair.Key, out door) || door == null) continue;
+            var body = door.GetComponent<Rigidbody2D>();
+            Vector2 target;
+            if (!clientDoorTargetPositions.TryGetValue(pair.Key, out target) || body == null || door.speed <= 0f) continue;
+            var next = Vector2.MoveTowards(body.position, target, door.speed * Time.fixedDeltaTime);
+            body.MovePosition(next);
+            if ((next - target).sqrMagnitude <= 0.0001f)
+            {
+                body.velocity = Vector2.zero;
+                body.angularVelocity = 0f;
+                var source = door.GetComponent<AudioSource>();
+                if (source != null) source.Stop();
+            }
+        }
+    }
+
+    private static bool IsDoorMoving(DoorScript door)
+    {
+        if (door == null) return false;
+        var target = DoorTarget(door);
+        return Vector2.Distance(door.transform.position, target) >= door.speed * 0.05f;
+    }
+
+    private static Vector2 DoorTarget(DoorScript door)
+    {
+        var target = door != null && door.followingFirstPoint ? door.point1 : door == null ? null : door.point2;
+        return target == null ? Vector2.zero : target.position;
     }
 
     private void RefreshActivationZones()
