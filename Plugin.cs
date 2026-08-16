@@ -176,6 +176,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void Start()
     {
         KeepMultiplayerRunningInBackground();
+        RPCManager.CheckInstance();
         if (headlessMode)
         {
             if (string.IsNullOrEmpty(customLevelJson)) { Logger.LogError("Headless lobby disabled: no valid map."); return; }
