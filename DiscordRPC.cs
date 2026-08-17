@@ -43,6 +43,7 @@ internal sealed class RPCManager : MonoBehaviour
 {   // Stole that code from CU, and dll
     // Would need TODO cleanup TODO actual rpc
     public bool enable;
+    public string lobbyId;
     public static RPCManager instance;
     private DiscordRpcClient client;
     private float timer = 5f;
@@ -50,14 +51,14 @@ internal sealed class RPCManager : MonoBehaviour
     public static void CheckInstance()
     {
         if (!instance)
-        { // Inverted, so its on by default
+        {
             new GameObject("RPCManager", typeof(RPCManager));
         }
     }
 
     private void Awake()
     {
-        instance = this;
+        instance = this; // Inverted, so its on by default
         enable = 0 == PlayerPrefs.GetInt("rpcdisable");
         UnityEngine.Object.DontDestroyOnLoad(base.gameObject);
     }
@@ -82,24 +83,37 @@ internal sealed class RPCManager : MonoBehaviour
 
     public RichPresence GetCurrentRichPresence()
     {
-        string state = "";
-        string details = "";
-        state = "Gunsaw";
-        details = "Testing testing testing";
-        return new RichPresence
+        RichPresence rpc = new RichPresence
         {
-            Details = details,
-            State = state,
             Assets = new Assets
             {
-                /*
-                 https://img.itch.zone/aW1nLzEyMTkxNTgyLnBuZw==/315x250%23c/DAf0%2F%2F.png
-                 11:30 at 17 aug TODO come back later and see if image is still there
-                */
                 LargeImageKey = "",
                 LargeImageText = ""
-            }
+            },
         };
+        /*if (null != MissionManager.main) // It is kinda broken
+            rpc.Timestamps = Timestamps.FromTimeSpan(MissionManager.main.curSeeTime);*/
+        if (MultiplayerSession.IsActive)
+        {
+            rpc.Party = new Party
+            {
+                Size = MultiplayerSession.PlayerCount,
+                Max = MultiplayerSession.MaxPlayers,
+                ID = lobbyId,
+            };
+            if ("gunsawudp.e621.su" == GunsawMultiplayerPlugin.Instance.lobbyServerAddress)
+            {
+                rpc.Party.Privacy = Party.PrivacySetting.Public;
+                if (MultiplayerSession.PlayerCount < MultiplayerSession.MaxPlayers)
+                {
+                }
+            }
+       else     rpc.Party.Privacy = Party.PrivacySetting.Private;
+        }
+
+        rpc.Details = "details";
+        rpc.State = "state";
+        return rpc;
     }
 
     public void Initialize()
