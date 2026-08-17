@@ -566,7 +566,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return true;
     }
 
-    private static void RecordEnvironmentalDeathCause(BodyScript body, PlayerDeathCause cause)
+    public static void RecordEnvironmentalDeathCause(BodyScript body, PlayerDeathCause cause)
     {
         if (body == null) return;
         var id = body.GetInstanceID();

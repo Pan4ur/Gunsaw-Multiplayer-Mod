@@ -12,7 +12,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, initialScaleInput, serverInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
@@ -56,6 +56,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         cheatsToggle.isOn = plugin.createCheats;
         allowSwapToggle.isOn = plugin.createAllowSwap;
         allowScaleChangingToggle.isOn = plugin.createAllowScaleChanging;
+        allowObserverToggle.isOn = plugin.createAllowObserver;
         SetInput(initialScaleInput, plugin.createInitialScale);
         respawnInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
@@ -137,6 +138,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(allowSwapToggle.gameObject, "ALLOW SWAP: Allows players to use /swap to choose a different character for their next respawn.");
         allowScaleChangingToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW SCALE CHANGING", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowScaleChanging = value);
         AddTooltip(allowScaleChangingToggle.gameObject, "ALLOW SCALE CHANGING: Allows players to use /scale between 0.25 and 2.0.");
+        allowObserverToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW OBSERVER", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowObserver = value);
+        AddTooltip(allowObserverToggle.gameObject, "ALLOW OBSERVER: Allows the OBSERVER keyboard easter egg.");
         var initialScaleRow = CreateSettingsRow(settings);
         CreateText(initialScaleRow, "INITIAL SCALE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         initialScaleInput = CreateInput(initialScaleRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createInitialScale = value);

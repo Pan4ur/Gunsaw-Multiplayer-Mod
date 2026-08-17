@@ -102,6 +102,15 @@
       ]
     },
     {
+      "name": "observer",
+      "messages": [
+        "%player% was killed by observer.",
+        "%player% was bad at hiding.",
+        "%player% was destroyed by observer.",
+        "%player% is torn apart by observer." 
+      ]
+    },
+    {
       "name": "player_kill",
       "messages": [
         "%player% was destroyed by %killer% with an %weapon%.",

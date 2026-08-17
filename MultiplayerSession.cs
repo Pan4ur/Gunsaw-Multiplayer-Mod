@@ -79,6 +79,8 @@ internal static partial class MultiplayerSession
     private static readonly byte[] vehicleEjectHeader = PacketHeader.Create(PacketType.VehicleEject);
     private static readonly byte[] vehicleImpactHeader = PacketHeader.Create(PacketType.VehicleImpact);
     private static readonly byte[] missionFinishedHeader = PacketHeader.Create(PacketType.MissionFinished);
+    private static readonly byte[] observerHeader = PacketHeader.Create(PacketType.Observer);
+    private static readonly byte[] observerKillHeader = PacketHeader.Create(PacketType.ObserverKill);
     private static readonly byte[] playerPerformanceHeader = PacketHeader.Create(PacketType.PlayerPerformance);
     
     private static string hostScene = "";
@@ -163,7 +165,7 @@ internal static partial class MultiplayerSession
 
     internal static void StartHost(string lobbyId, string relayKey, string relayAddress, bool pvpEnabled,
         bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
         ConnectionMode mode, ManualLogSource logger)
     {
         CloseSocket();
@@ -208,6 +210,7 @@ internal static partial class MultiplayerSession
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
         InitialScale = CharacterScaleRules.Clamp(initialScale);
+        AllowObserver = allowObserver;
         RefreshHostBrutalMode();
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
@@ -260,6 +263,7 @@ internal static partial class MultiplayerSession
             AllowScaleChanging = true;
             InitialScale = 1f;
             BrutalModeEnabled = false;
+            AllowObserver = true;
             ResetPing();
             socket = ConnectRelay(relayAddress, lobbyId, relayKey);
             if (connectionMode == ConnectionMode.Relay) SendInitialHello();
@@ -326,6 +330,7 @@ internal static partial class MultiplayerSession
     internal static void NotifyHostSceneReload(string scene)
     {
         if (!isHost || string.IsNullOrEmpty(scene)) return;
+        ObserverSystem.BroadcastResetForLevelChange();
         hostScene = scene;
         Send(new ScenePacket(scene + "\n" + (hostSceneEpoch + 1) + "\nR"), 0, false);
     }
@@ -347,7 +352,7 @@ internal static partial class MultiplayerSession
         hostScene = "LevelLoader";
         QueueCustomLevelTransfer(levelJson);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver));
         Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);
     }
 
@@ -410,6 +415,7 @@ internal static partial class MultiplayerSession
     internal static bool AllowScaleChanging { get; private set; } = true;
     internal static float InitialScale { get; private set; } = 1f;
     internal static bool BrutalModeEnabled { get; private set; }
+    internal static bool AllowObserver { get; private set; } = true;
 
     internal static void SyncBrutalMode()
     {
@@ -436,6 +442,7 @@ internal static partial class MultiplayerSession
             return "";
         } } }
     internal static ushort LocalPeerId { get { lock (statusLock) return localPeerId; } }
+    internal static ushort HostPeerId { get { lock (statusLock) return hostPeerId; } }
     internal static int MaxPlayers { get { lock (statusLock) return maxPlayers; } }
     internal static int PlayerCount { get { lock (statusLock) return 1 + peers.Count; } }
     internal static int PeerListRevision { get { lock (statusLock) return peerListRevision; } }
@@ -664,6 +671,7 @@ internal static partial class MultiplayerSession
         AllowScaleChanging = true;
         InitialScale = 1f;
         BrutalModeEnabled = false;
+        AllowObserver = true;
         lock (statusLock)
         {
             peers.Clear();
@@ -682,7 +690,7 @@ internal static partial class MultiplayerSession
 
     internal static bool UpdateHostSettings(bool pvpEnabled, bool canGrabPlayers,
         bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, int lobbyMaxPlayers)
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, int lobbyMaxPlayers)
     {
         if (!IsHosting) return false;
         PvpEnabled = pvpEnabled;
@@ -696,10 +704,11 @@ internal static partial class MultiplayerSession
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
         InitialScale = CharacterScaleRules.Clamp(initialScale);
+        AllowObserver = allowObserver;
         RefreshHostBrutalMode();
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver));
         return true;
     }
 

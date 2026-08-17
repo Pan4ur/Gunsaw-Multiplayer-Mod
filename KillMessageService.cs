@@ -5,9 +5,8 @@ internal static class KillMessageService
 {
     private const string Red = "#9F0928";
     private const string Blue = "#218C83";
-    private static readonly Dictionary<string, List<string>> messages =
-        new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-    private static readonly System.Random random = new System.Random();
+    private static readonly Dictionary<string, List<string>> messages = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly System.Random random = new();
     private static bool loaded;
 
     internal static string Create(PlayerDeathCause cause, string player, string killer, string weapon)
@@ -16,7 +15,7 @@ internal static class KillMessageService
         var category = Category(cause, !string.IsNullOrEmpty(killer));
         List<string> variants;
         if (!messages.TryGetValue(category, out variants) || variants.Count == 0)
-            return Render(Fallback(cause, !string.IsNullOrEmpty(killer)), player, killer, weapon);
+            return Render("%player% died.", player, killer, weapon);
         return Render(variants[random.Next(variants.Count)], player, killer, weapon);
     }
 
@@ -43,22 +42,11 @@ internal static class KillMessageService
         if (cause == PlayerDeathCause.HotPlate) return "hot_plate";
         if (cause == PlayerDeathCause.Saw) return "saw";
         if (cause == PlayerDeathCause.Acid) return "acid";
+        if (cause == PlayerDeathCause.Observer) return "observer";
         if (cause == PlayerDeathCause.Drowning || cause == PlayerDeathCause.Suffocation) return "drowning";
         return hasKiller ? "player_kill" : "";
     }
-
-    private static string Fallback(PlayerDeathCause cause, bool hasKiller)
-    {
-        if (cause == PlayerDeathCause.Restart) return "%player% restarted the level.";
-        if (cause == PlayerDeathCause.SelfKill) return "%player% used /kill.";
-        if (cause == PlayerDeathCause.Explosion)
-            return hasKiller ? "%killer% blew up %player% with %weapon%." : "%player% was killed in an explosion.";
-        if (hasKiller) return "%killer% killed %player% with %weapon%.";
-        if (cause == PlayerDeathCause.Saw) return "%player% was cut down by a saw.";
-        if (cause == PlayerDeathCause.Acid) return "%player% dissolved in acid.";
-        return "%player% died.";
-    }
-
+    
     private static void Load()
     {
         if (loaded) return;

@@ -33,6 +33,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<bool> savedCreateCheats;
     private ConfigEntry<bool> savedCreateAllowSwap;
     private ConfigEntry<bool> savedCreateAllowScaleChanging;
+    private ConfigEntry<bool> savedCreateAllowObserver;
     private ConfigEntry<string> savedCreateInitialScale;
     private ConfigEntry<string> savedCreateRespawnTime;
     private ConfigEntry<string> savedCreateMaxPlayers;
@@ -51,6 +52,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool createCheats;
     internal bool createAllowSwap = true;
     internal bool createAllowScaleChanging = true;
+    internal bool createAllowObserver = true;
     internal string createInitialScale = "1.0";
     internal string createRespawnTime = "5";
     internal string createMaxPlayers = "4";
@@ -120,6 +122,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             "Allow changing character with /swap while playing.");
         savedCreateAllowScaleChanging = Config.Bind("Lobby", "AllowScaleChanging", createAllowScaleChanging,
             "Allow players to change their character scale.");
+        savedCreateAllowObserver = Config.Bind("Lobby", "AllowObserver", createAllowObserver,
+            "Allow players to activate Observer.");
         savedCreateInitialScale = Config.Bind("Lobby", "InitialScale", createInitialScale,
             "Character scale assigned when a player joins or respawns.");
         savedCreateRespawnTime = Config.Bind("Lobby", "RespawnTime", createRespawnTime,
@@ -137,6 +141,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createCheats = savedCreateCheats.Value;
         createAllowSwap = savedCreateAllowSwap.Value;
         createAllowScaleChanging = savedCreateAllowScaleChanging.Value;
+        createAllowObserver = savedCreateAllowObserver.Value;
         createInitialScale = savedCreateInitialScale.Value;
         createRespawnTime = savedCreateRespawnTime.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
@@ -222,6 +227,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
         MultiplayerSession.SyncBrutalMode();
+        ObserverSystem.Tick();
         if (MultiplayerSession.IsHosting)
         {
             ushort disconnectedPeer;
@@ -313,6 +319,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 return;
             }
             requestedHostScene = sceneToLoad;
+            ObserverSystem.ResetForLevelChange(mustReload);
             if (sceneToLoad == "LevelLoader")
             {
                 if (!string.IsNullOrEmpty(receivedCustomLevelJson))
@@ -410,6 +417,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (savedCreateCheats.Value != createCheats) { savedCreateCheats.Value = createCheats; changed = true; }
         if (savedCreateAllowSwap.Value != createAllowSwap) { savedCreateAllowSwap.Value = createAllowSwap; changed = true; }
         if (savedCreateAllowScaleChanging.Value != createAllowScaleChanging) { savedCreateAllowScaleChanging.Value = createAllowScaleChanging; changed = true; }
+        if (savedCreateAllowObserver.Value != createAllowObserver) { savedCreateAllowObserver.Value = createAllowObserver; changed = true; }
         if (savedCreateInitialScale.Value != createInitialScale) { savedCreateInitialScale.Value = createInitialScale; changed = true; }
         if (savedCreateRespawnTime.Value != createRespawnTime) { savedCreateRespawnTime.Value = createRespawnTime; changed = true; }
         if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
@@ -532,6 +540,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 respawnAtStart = createRespawnAtStart,
                 playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
                 allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(),
+                allowObserver = createAllowObserver,
                 brutalMode = GameManager.main != null && GameManager.main.hardMode,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(), modVersion = PluginVersion });
@@ -557,7 +566,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createMaxPlayers = maxPlayers.ToString();
         if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
             createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-            createAllowScaleChanging, ParseInitialScale(), maxPlayers))
+            createAllowScaleChanging, ParseInitialScale(), createAllowObserver, maxPlayers))
         {
             status = "Could not update lobby settings.";
             return;
@@ -718,7 +727,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
                     createGrabOnlyUnconscious, createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-                    createAllowScaleChanging, ParseInitialScale(),
+                    createAllowScaleChanging, ParseInitialScale(), createAllowObserver,
                     playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
                 if (headlessMode) StartHeadlessKeepAlive(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
@@ -1327,6 +1336,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowSwap = createAllowSwap,
                 allowScaleChanging = createAllowScaleChanging,
                 initialScale = ParseInitialScale(),
+                allowObserver = createAllowObserver,
                 brutalMode = MultiplayerSession.BrutalModeEnabled,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(),
@@ -1479,6 +1489,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool cheats;
         public bool allowSwap = true;
         public bool allowScaleChanging = true;
+        public bool allowObserver = true;
         public float initialScale = 1f;
         public bool hostP2P;
         public ConnectionMode connectionMode = ConnectionMode.Relay;
@@ -1518,6 +1529,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool brutalMode;
         public bool allowSwap = true;
         public bool allowScaleChanging = true;
+        public bool allowObserver = true;
         public float initialScale = 1f;
         public bool hostP2P;
         public string connectionMode = "Relay";
