@@ -2,8 +2,8 @@ using UnityEngine;
 using DiscordRPC;
 
 internal sealed class RPCManager : MonoBehaviour
-{   // Stole that code from CU, and dll you also need to steal from CU and you need all 3 dlls
-    // Would need TODO cleanup TODO option to disable TODO fallback if dll is missing TODO actual rpc TODO fix the logo
+{   // Stole that code from CU, and dll
+    // Would need TODO cleanup TODO option to disable TODO actual rpc
     private static RPCManager instance;
     private DiscordRpcClient client;
     private float timer = 5f;
@@ -45,28 +45,6 @@ internal sealed class RPCManager : MonoBehaviour
     {
         string state = "";
         string details = "";
-        /*if ((bool)PreRunScript.instance)
-        {
-            details = "Preparing for an expedition";
-        }
-        else if ((bool)WorldGeneration.world)
-        {
-            details = ((!PlayerCamera.main.body.alive) ? "Deceased" : ((WorldGeneration.world.biomeOverride != WorldGeneration.OverrideSceneType.None) ? "In the labs" : ("Descending layer " + (WorldGeneration.world.biomeDepth + 1))));
-        }
-        if ((bool)PlayerCamera.main)
-        {
-            Body body = PlayerCamera.main.body;
-            if (body.alive)
-            {
-                float totalHappiness = body.totalHappiness;
-                string text = (body.brainDying ? "In cardiac arrest" : (body.isCriticallyDying ? "On death's door" : (body.isDying ? "Dying" : ((totalHappiness > 90f) ? "Ecstatic" : ((totalHappiness > 70f) ? "Overjoyed" : ((totalHappiness > 50f) ? "Happy" : ((totalHappiness > 30f) ? "Excited" : ((totalHappiness > 10f) ? "Satisfied" : ((totalHappiness > -10f) ? "Steady" : ((totalHappiness > -30f) ? "Uneasy" : ((totalHappiness > -50f) ? "Scared" : ((totalHappiness > -70f) ? "Depressed" : ((!(totalHappiness > -90f)) ? "Suicidal" : "Miserable")))))))))))));
-                state = ((!body.brainDying) ? (text + $" ({totalHappiness:0.0} mood)") : (text + " (" + WorldGeneration.world.TotalDepthString() + ")"));
-            }
-            else
-            {
-                state = WorldGeneration.world.TotalDepthString();
-            }
-        }*/
         state = "Gunsaw";
         details = "Testing testing testing";
         return new RichPresence
@@ -75,6 +53,10 @@ internal sealed class RPCManager : MonoBehaviour
             State = state,
             Assets = new Assets
             {
+                /*
+                 https://img.itch.zone/aW1nLzEyMTkxNTgyLnBuZw==/315x250%23c/DAf0%2F%2F.png
+                 11:30 at 17 aug TODO come back later and see if image is still there
+                */
                 LargeImageKey = "",
                 LargeImageText = ""
             }
@@ -83,7 +65,8 @@ internal sealed class RPCManager : MonoBehaviour
 
     public void Initialize()
     {
-        client = new DiscordRpcClient("424087019149328395");
+        // Refer to rushellxyz regarding app
+        client = new DiscordRpcClient("1538837414515052575");
         client.Initialize();
         client.SetPresence(GetCurrentRichPresence());
     }
