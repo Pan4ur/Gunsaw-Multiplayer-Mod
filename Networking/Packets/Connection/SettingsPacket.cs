@@ -12,8 +12,9 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly bool AllowSwap;
     internal readonly bool AllowScaleChanging;
     internal readonly float InitialScale;
+    internal readonly bool BrutalModeEnabled;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled)
     {
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -27,6 +28,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
         InitialScale = CharacterScaleRules.Clamp(initialScale);
+        BrutalModeEnabled = brutalModeEnabled;
     }
 
     public PacketType Type => PacketType.Settings;
@@ -45,7 +47,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteByte(AllowSwap ? (byte)1 : (byte)0);
         writer.WriteByte(AllowScaleChanging ? (byte)1 : (byte)0);
         writer.WriteSingle(InitialScale);
+        writer.WriteByte(BrutalModeEnabled ? (byte)1 : (byte)0);
     }
 
-    internal static SettingsPacket Read(ref PacketReader reader) => new SettingsPacket(reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadUInt16(), reader.ReadByte(), reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.Remaining >= 1 ? reader.ReadByte() != 0 : true, reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f);
+    internal static SettingsPacket Read(ref PacketReader reader) => new SettingsPacket(reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadUInt16(), reader.ReadByte(), reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.Remaining >= 1 ? reader.ReadByte() != 0 : true, reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f, reader.Remaining >= 1 && reader.ReadByte() != 0);
 }

@@ -208,6 +208,7 @@ internal static partial class MultiplayerSession
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
         InitialScale = CharacterScaleRules.Clamp(initialScale);
+        RefreshHostBrutalMode();
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
         logger.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
@@ -258,6 +259,7 @@ internal static partial class MultiplayerSession
             AllowSwap = true;
             AllowScaleChanging = true;
             InitialScale = 1f;
+            BrutalModeEnabled = false;
             ResetPing();
             socket = ConnectRelay(relayAddress, lobbyId, relayKey);
             if (connectionMode == ConnectionMode.Relay) SendInitialHello();
@@ -345,7 +347,7 @@ internal static partial class MultiplayerSession
         hostScene = "LevelLoader";
         QueueCustomLevelTransfer(levelJson);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled));
         Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);
     }
 
@@ -407,6 +409,21 @@ internal static partial class MultiplayerSession
     internal static bool AllowSwap { get; private set; } = true;
     internal static bool AllowScaleChanging { get; private set; } = true;
     internal static float InitialScale { get; private set; } = 1f;
+    internal static bool BrutalModeEnabled { get; private set; }
+
+    internal static void SyncBrutalMode()
+    {
+        var manager = GameManager.main;
+        if (manager == null) return;
+        if (isHost) BrutalModeEnabled = manager.hardMode;
+        else if (IsConnected) manager.hardMode = BrutalModeEnabled;
+    }
+
+    private static void RefreshHostBrutalMode()
+    {
+        if (GameManager.main != null) BrutalModeEnabled = GameManager.main.hardMode;
+    }
+    
     internal static int PingMs { get { lock (statusLock)
         {
             foreach (var peer in peers.All) return peer.PingMs;
@@ -646,6 +663,7 @@ internal static partial class MultiplayerSession
         AllowSwap = true;
         AllowScaleChanging = true;
         InitialScale = 1f;
+        BrutalModeEnabled = false;
         lock (statusLock)
         {
             peers.Clear();
@@ -678,9 +696,10 @@ internal static partial class MultiplayerSession
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
         InitialScale = CharacterScaleRules.Clamp(initialScale);
+        RefreshHostBrutalMode();
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled));
         return true;
     }
 

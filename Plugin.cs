@@ -221,6 +221,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lock (mainThreadActionsLock)
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
+        MultiplayerSession.SyncBrutalMode();
         if (MultiplayerSession.IsHosting)
         {
             ushort disconnectedPeer;
@@ -531,6 +532,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 respawnAtStart = createRespawnAtStart,
                 playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
                 allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(),
+                brutalMode = GameManager.main != null && GameManager.main.hardMode,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(), modVersion = PluginVersion });
             ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, maxPlayers));
@@ -1311,6 +1313,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 name = lobbyName,
                 hostName = playerName,
                 map = SceneManager.GetActiveScene().name,
+                players = MultiplayerSession.PlayerCount,
                 maxPlayers = MultiplayerSession.MaxPlayers,
                 hostPort = 27016,
                 pvp = createPvp,
@@ -1324,6 +1327,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowSwap = createAllowSwap,
                 allowScaleChanging = createAllowScaleChanging,
                 initialScale = ParseInitialScale(),
+                brutalMode = MultiplayerSession.BrutalModeEnabled,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(),
                 modVersion = PluginVersion
@@ -1500,6 +1504,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public string name = "";
         public string hostName = "";
         public string map = "";
+        public int players;
         public int maxPlayers;
         public int hostPort;
         public bool pvp;
@@ -1510,6 +1515,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool respawnAtStart;
         public bool playerCollisions = true;
         public bool cheats;
+        public bool brutalMode;
         public bool allowSwap = true;
         public bool allowScaleChanging = true;
         public float initialScale = 1f;

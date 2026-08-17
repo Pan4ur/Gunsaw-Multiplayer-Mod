@@ -40,7 +40,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled), senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
                 if (joined) BroadcastSystemChat(connectedName + " joined the game.");
             }
@@ -248,13 +248,15 @@ internal static partial class MultiplayerSession
                 AllowSwap = settings.AllowSwap;
                 AllowScaleChanging = settings.AllowScaleChanging;
                 InitialScale = settings.InitialScale;
+                BrutalModeEnabled = settings.BrutalModeEnabled;
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(16, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings received. PVP " + (PvpEnabled ? "enabled" : "disabled") +
                     "; player grab " + (CanGrabPlayers ? (GrabOnlyUnconscious ? "unconscious only" : "enabled") : "disabled") +
                     "; respawn " + (AllowRespawn ? RespawnTimeSeconds + "s" : "disabled") +
                     "; collisions " + (PlayerCollisions ? "enabled" : "disabled") +
-                    "; cheats " + (CheatsEnabled ? "enabled." : "disabled."));
+                    "; cheats " + (CheatsEnabled ? "enabled" : "disabled") +
+                    "; brutal mode " + (BrutalModeEnabled ? "enabled." : "disabled."));
             }
             else if (decodedPacket.Type == PacketType.ShotVisual)
             {
