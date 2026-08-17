@@ -2,7 +2,7 @@ using UnityEngine.UI;
 using UnityEngine;
 using HarmonyLib;
 using TMPro;
-using DiscordRPC;
+using DiscordIPC;
 
 // Creates RPC toggle button in setting
 [HarmonyPatch(typeof(ControlBinder), "Start")]
@@ -40,12 +40,12 @@ internal static class RPCSettings
 }
 
 internal sealed class RPCManager : MonoBehaviour
-{   // Stole that code from CU, and dll
+{
     // Would need TODO cleanup TODO actual rpc
     public bool enable;
     public string lobbyId;
     public static RPCManager instance;
-    private DiscordRpcClient client;
+    private bool _enable;
     private float timer = 5f;
 
     public static void CheckInstance()
@@ -68,66 +68,70 @@ internal sealed class RPCManager : MonoBehaviour
         timer -= Time.unscaledDeltaTime;
         if (timer < 0f)
         {
-            timer = 5f;
-            client?.SetPresence(GetCurrentRichPresence());
-            if (enable && client == null)
+            timer = 1f;
+            if (enable)
             {
-                Initialize();
-            }
-            if (!enable && client != null)
-            {
-                DestroyClient();
-            }
-        }
-    }
-
-    public RichPresence GetCurrentRichPresence()
-    {
-        RichPresence rpc = new RichPresence
-        {
-            Assets = new Assets
-            {
-                LargeImageKey = "",
-                LargeImageText = ""
-            },
-        };
-        /*if (null != MissionManager.main) // It is kinda broken
-            rpc.Timestamps = Timestamps.FromTimeSpan(MissionManager.main.curSeeTime);*/
-        if (MultiplayerSession.IsActive)
-        {
-            rpc.Party = new Party
-            {
-                Size = MultiplayerSession.PlayerCount,
-                Max = MultiplayerSession.MaxPlayers,
-                ID = lobbyId,
-            };
-            if ("gunsawudp.e621.su" == GunsawMultiplayerPlugin.Instance.lobbyServerAddress)
-            {
-                rpc.Party.Privacy = Party.PrivacySetting.Public;
-                if (MultiplayerSession.PlayerCount < MultiplayerSession.MaxPlayers)
+                UpdateRichPresence();
+                if (!_enable)
                 {
+                    Initialize();
+                    _enable = true;
                 }
             }
-       else     rpc.Party.Privacy = Party.PrivacySetting.Private;
+            if (!enable && _enable)
+            {
+                DestroyClient();
+                _enable = false;
+            }
+        }
+    }
+
+    internal void UpdateRichPresence()
+    {
+        if (MultiplayerSession.IsActive)
+        {
+            RichPresence.Party = new PresenceParty(lobbyId, MultiplayerSession.PlayerCount, MultiplayerSession.MaxPlayers);
+            if ("gunsawudp.e621.su" == GunsawMultiplayerPlugin.Instance.lobbyServerAddress && MultiplayerSession.PlayerCount < MultiplayerSession.MaxPlayers)
+                RichPresence.JoinSecret = lobbyId + ":";// Idk, discord refuses to show RPC if party ID and join secret are the same
         }
 
-        rpc.Details = "details";
-        rpc.State = "state";
-        return rpc;
+        RichPresence.Details = "details";
+        RichPresence.State = "state";
     }
 
-    public void Initialize()
+    private void Initialize()
     {
         // Refer to rushellxyz regarding app
-        client = new DiscordRpcClient("1538837414515052575");
+        RichPresence.AppId = 1538837414515052575L;
+        /*client.RegisterUriScheme(null, "/home/rushell/Desktop/gunsaw-demo-win/Gunsaw.exe");
+        client.Subscribe(DiscordRPC.EventType.JoinRequest);
+        client.OnJoinRequested += async delegate(object sender, JoinRequestMessage args)
+        {
+            client.Respond(args, acceptRequest: true);
+        };
+        client.Subscribe(DiscordRPC.EventType.Join);
+        client.OnJoin += delegate(object sender, JoinMessage e)
+        {
+
+        };
+        client.OnReady += delegate(object sender, ReadyMessage e)
+        {
+
+        };
+        client.OnError += delegate(object sender, ErrorMessage e)
+        {
+            Debug.LogError("Discord RPC Error: " + e.Message);
+        };
         client.Initialize();
-        client.SetPresence(GetCurrentRichPresence());
+        client.SetPresence(GetCurrentRichPresence());*/
+        RichPresence.StartRolling();
     }
 
-    public void DestroyClient()
+   // private void OnJoinRequested()
+
+    private void DestroyClient()
     {
-        client?.Dispose();
-        client = null;
+        RichPresence.StopRolling();
     }
 
     private void OnDestroy()
