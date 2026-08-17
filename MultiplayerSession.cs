@@ -210,6 +210,8 @@ internal static partial class MultiplayerSession
         InitialScale = CharacterScaleRules.Clamp(initialScale);
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
+        RPCManager.CheckInstance();
+        RPCManager.instance.lobbyId = lobbyId;
         logger.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
     }
 
@@ -263,6 +265,8 @@ internal static partial class MultiplayerSession
             if (connectionMode == ConnectionMode.Relay) SendInitialHello();
             else EnableP2P();
             ThreadPool.QueueUserWorkItem(_ => Receive(null));
+            RPCManager.CheckInstance();
+            RPCManager.instance.lobbyId = lobbyId;
             logger.LogInfo("UDP relay handshake sent to " + relayAddress + ".");
             return true;
         }
@@ -373,6 +377,7 @@ internal static partial class MultiplayerSession
         }
     }
 
+    // Is connected and more then 1 players
     internal static bool IsConnected { get { lock (statusLock) return socket != null &&
         relayConnected && peers.Count > 0; } }
 
