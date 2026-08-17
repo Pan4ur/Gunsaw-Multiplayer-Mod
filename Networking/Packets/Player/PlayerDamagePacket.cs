@@ -26,13 +26,16 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
     internal readonly float ExplosionY;
     internal readonly float ExplosionRange;
     internal readonly float ExplosionForce;
-
+    internal readonly float BaseDamage;
+    internal readonly bool BodyColliderHit;
+    
     private PlayerDamagePacket(float amount, bool critical, PlayerDamageEffect effect, bool hasPlayerSource = false,
         short limbIndex = 0,
         float localPointX = 0f, float localPointY = 0f, float directionX = 0f, float directionY = 0f,
         string weaponSprite = "", string woundSprite = "", bool hasSplash = false,
         bool createScreenCrack = false, float explosionX = 0f, float explosionY = 0f,
-        float explosionRange = 0f, float explosionForce = 0f, string sourceName = "", string sourceWeapon = "")
+        float explosionRange = 0f, float explosionForce = 0f, string sourceName = "", string sourceWeapon = "",
+        float baseDamage = 0f, bool bodyColliderHit = false)
     {
         Amount = amount;
         Critical = critical;
@@ -53,6 +56,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         ExplosionY = explosionY;
         ExplosionRange = explosionRange;
         ExplosionForce = explosionForce;
+        BaseDamage = baseDamage;
+        BodyColliderHit = bodyColliderHit;
     }
 
     internal static PlayerDamagePacket Damage(float amount, bool critical, bool hasPlayerSource = false,
@@ -60,11 +65,35 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         => new PlayerDamagePacket(amount, critical, PlayerDamageEffect.Damage, hasPlayerSource,
             sourceName: sourceName, sourceWeapon: sourceWeapon);
 
-    internal static PlayerDamagePacket Wound(short limbIndex, float localPointX, float localPointY,
-        float directionX, float directionY, string weaponSprite, string woundSprite, bool hasSplash,
-        bool createScreenCrack)
-        => new PlayerDamagePacket(0f, false, PlayerDamageEffect.Wound, false, limbIndex, localPointX, localPointY,
-            directionX, directionY, weaponSprite, woundSprite, hasSplash, createScreenCrack);
+    internal static PlayerDamagePacket Wound(
+        short limbIndex,
+        float localPointX,
+        float localPointY,
+        float directionX,
+        float directionY,
+        string weaponSprite,
+        string woundSprite,
+        bool hasSplash,
+        bool createScreenCrack,
+        float baseDamage,
+        bool bodyColliderHit)
+        => new(
+            0f,
+            false,
+            PlayerDamageEffect.Wound,
+            false,
+            limbIndex,
+            localPointX,
+            localPointY,
+            directionX,
+            directionY,
+            weaponSprite,
+            woundSprite,
+            hasSplash,
+            createScreenCrack,
+            baseDamage: baseDamage,
+            bodyColliderHit: bodyColliderHit
+        );
 
     internal static PlayerDamagePacket Explosion(float positionX, float positionY, float range, float force)
         => new PlayerDamagePacket(0f, false, PlayerDamageEffect.Explosion, false, explosionX: positionX,
@@ -114,9 +143,33 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         {
             case PlayerDamageEffect.Damage: return Damage(amount, critical, hasPlayerSource, sourceName, sourceWeapon);
             case PlayerDamageEffect.Wound:
-                return Wound(reader.ReadInt16(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
-                    reader.ReadSingle(), reader.ReadBinaryString(), reader.ReadBinaryString(), reader.ReadBoolean(),
-                    reader.ReadBoolean());
+            {
+                var limbIndex = reader.ReadInt16();
+                var localPointX = reader.ReadSingle();
+                var localPointY = reader.ReadSingle();
+                var directionX = reader.ReadSingle();
+                var directionY = reader.ReadSingle();
+                var weaponSprite = reader.ReadBinaryString();
+                var woundSprite = reader.ReadBinaryString();
+                var hasSplash = reader.ReadBoolean();
+                var createScreenCrack = reader.ReadBoolean();
+                var baseDamage = reader.ReadSingle();
+                var bodyColliderHit = reader.ReadBoolean();
+                
+                return Wound(
+                    limbIndex,
+                    localPointX,
+                    localPointY,
+                    directionX,
+                    directionY,
+                    weaponSprite,
+                    woundSprite,
+                    hasSplash,
+                    createScreenCrack,
+                    baseDamage,
+                    bodyColliderHit
+                );
+            }
             case PlayerDamageEffect.Explosion:
                 return Explosion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
             default: throw new System.IO.InvalidDataException("Unknown player damage effect.");

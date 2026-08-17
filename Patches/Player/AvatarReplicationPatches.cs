@@ -59,3 +59,12 @@ internal static class WeaponReloadStateGuardPatch
         return !MultiplayerSession.IsConnected || NetworkAvatarReplication.PrepareWeaponReload(__instance);
     }
 }
+
+[HarmonyPatch(typeof(BodyScript), nameof(BodyScript.GetClosestLimb))]
+internal static class MultiplayerBodyClosestLimbPatch
+{
+    private static void Postfix(BodyScript __instance, LimbScript __result)
+    {
+        NetworkAvatarReplication.RecordBodyColliderHit(__instance, __result);
+    }
+}

@@ -378,6 +378,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (weaponBack != null) weaponBack.active = true;
 
         player.bodyScript = newBody;
+        if (player.bloodBars != null) player.bloodBars.body = newBody;
         player.levit = levitator;
         player.enabled = true;
         localPlayerInstance = player;
@@ -2109,6 +2110,27 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         var amount = Mathf.Clamp(replica.lastRemoteHealth - body.health, 0f, 1000f);
+        if (amount > 0.001f &&
+            activeShotState != null &&
+            activeShotState.Weapon != null &&
+            activeShotState.Weapon.stats != null)
+        {
+            float baseDamage = amount;
+
+            if (critical)
+            {
+                float critMultiplier = activeShotState.Weapon.stats.critDamage;
+
+                float divisor = 1f + critMultiplier;
+
+                if (Mathf.Abs(divisor) > 0.0001f)
+                    baseDamage = amount / divisor;
+            }
+
+            baseDamage = Mathf.Clamp(baseDamage, 0f, 1000f);
+            QueueBaseDamage(activeShotState, replica.remotePeerId, baseDamage);
+        }
+        
         var lethal = amount >= Mathf.Max(0f, replica.lastRemoteHealth) - 0.001f;
         body.health = replica.lastRemoteHealth;
         body.isAlive = replica.lastRemoteAlive;
@@ -2126,6 +2148,44 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         body.isAlive = replica.lastRemoteAlive;
         RouteRemotePlayerDamage(replica, Mathf.Max(1f, replica.lastRemoteHealth + 1f), true);
         return true;
+    }
+    
+    private static void QueueBaseDamage(
+        ShotState state,
+        ushort targetPeerId,
+        float baseDamage)
+    {
+        if (state == null || targetPeerId == 0)
+            return;
+
+        if (!state.PendingBaseDamage.TryGetValue(targetPeerId, out var queue))
+        {
+            queue = new Queue<float>();
+            state.PendingBaseDamage[targetPeerId] = queue;
+        }
+
+        queue.Enqueue(baseDamage);
+    }
+
+    private static float TakeBaseDamage(
+        ShotState state,
+        ushort targetPeerId)
+    {
+        if (state == null || targetPeerId == 0)
+            return 0f;
+
+        if (!state.PendingBaseDamage.TryGetValue(targetPeerId, out var queue))
+            return 0f;
+
+        if (queue.Count == 0)
+            return 0f;
+
+        var damage = queue.Dequeue();
+
+        if (queue.Count == 0)
+            state.PendingBaseDamage.Remove(targetPeerId);
+
+        return damage;
     }
 
     private static void RouteRemotePlayerDamage(NetworkAvatarReplication replica, float amount, bool critical)
@@ -2193,11 +2253,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (CameraFollow.cam != null)
         {
             CameraFollow.cam.AddOffset(new Vector2(
-                UnityEngine.Random.Range(-playerDamage.Amount, playerDamage.Amount) * 0.3f,
-                UnityEngine.Random.Range(-playerDamage.Amount, playerDamage.Amount) * 0.3f
+                UnityEngine.Random.Range(-amount, amount) * 0.3f,
+                UnityEngine.Random.Range(-amount, amount) * 0.3f
             ));
 
-            CameraFollow.cam.AddRot(UnityEngine.Random.Range(-playerDamage.Amount, playerDamage.Amount) * 0.2f);
+            CameraFollow.cam.AddRot(UnityEngine.Random.Range(-amount, amount) * 0.2f);
         }
         
         if (effectType == PlayerDamageEffect.Explosion)
@@ -2286,6 +2346,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var hasSplash = packet.HasSplash;
         var createScreenCrack = packet.CreateScreenCrack;
         var limbs = GetList(body, "limbs");
+        float baseDamage = Mathf.Clamp(packet.BaseDamage, 0f, 1000f);
         
         if (limbIndex >= 0 && limbIndex < limbs.Count)
         {
@@ -2294,37 +2355,77 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             
             if (limb != null && preset != null)
             {
-                GameObject sourceObject = null;
-                try
+                float staminaDamage = baseDamage * 1.38f;
+                if (limb.isCritical)
+                    staminaDamage += baseDamage * preset.critDamage;
+
+                body.stamina -= staminaDamage;
+                
+                body.DoGrunt();
+
+                if (limb.passer != null && limb.passer.relevantDismember != null)
+                    limb.passer.relevantDismember.currentDamage += baseDamage;
+                
+                if (limb.limbType == 1) // arm (not ARM) (shake aim)
                 {
-                    sourceObject = new GameObject("MP Wound Source");
-                    sourceObject.SetActive(false);
-                    var sourceWeapon = sourceObject.AddComponent<WeaponScript>();
-                    sourceWeapon.stats = preset;
-                    sourceWeapon.body = body;
-                    var hitPoint = (Vector2)limb.transform.TransformPoint(localPoint);
-                    sourceWeapon.DoWound(limb, hitPoint, direction, hasSplash ? preset.bloodSplash : null);
-                    if (!string.IsNullOrEmpty(woundSprite))
+                    if (packet.BodyColliderHit)
                     {
-                        var wound = FindLatestWound(limb, hitPoint);
-                        var sprite = FindSprite(woundSprite);
-                        if (wound != null && sprite != null) wound.sprite = sprite;
+                        if (Mathf.Abs(body.currentRecoil) < 250f)
+                        {
+                            float recoilMult = 1f;
+                            if (body.crouchAmount > 0.5f) recoilMult = 0.5f;
+                            body.currentRecoil += localPlayer.aimPunchAmount * recoilMult;
+                            localPlayer.aimPunchAmount *= -1f;
+                        }
+                    }
+                    else
+                    {
+                        body.currentRecoil += localPlayer.aimPunchAmount;
+                        localPlayer.aimPunchAmount *= -1f;
                     }
                 }
-                catch (Exception exception)
+                
+                else if (limb.limbType == 2) // leg (reduce jump height)
+                    body.temporarySlowdown += baseDamage * 0.065f;
+                
+                if (packet.BodyColliderHit && body.crouchAmount < 0.4f)
                 {
-                    Debug.LogWarning("[Gunsaw MP] Could not replay player wound: " +
-                        (exception.InnerException == null ? exception.Message : exception.InnerException.Message));
+                    body.crouchAmount += 0.15f;
                 }
-                finally
+                
+                GameObject sourceObject = new GameObject("MP Wound Source");
+                sourceObject.SetActive(false);
+                var sourceWeapon = sourceObject.AddComponent<WeaponScript>();
+                sourceWeapon.stats = preset;
+                sourceWeapon.body = body;
+                var hitPoint = (Vector2)limb.transform.TransformPoint(localPoint);
+                
+                if (direction.sqrMagnitude > 0.001f) // hit velocity
                 {
-                    if (sourceObject != null) Destroy(sourceObject);
+                    Vector2 hitDir = direction.normalized;
+                    Rigidbody2D hitRb = packet.BodyColliderHit ? body.rb : limb.rb;
+
+                    if (hitRb != null)
+                        hitRb.AddForceAtPosition(hitDir * preset.knockback * 1.6f, hitPoint, ForceMode2D.Impulse);
+                    
+                    if (packet.BodyColliderHit && body.controlState != BodyScript.RagdollState.FullControl && limb.rb != null)
+                        limb.rb.AddForceAtPosition(hitDir * preset.knockback * 1.65f, hitPoint, ForceMode2D.Impulse);
                 }
+                
+                sourceWeapon.DoWound(limb, hitPoint, direction, hasSplash ? preset.bloodSplash : null);
+                if (!string.IsNullOrEmpty(woundSprite))
+                {
+                    var wound = FindLatestWound(limb, hitPoint);
+                    var sprite = FindSprite(woundSprite);
+                    if (wound != null && sprite != null) wound.sprite = sprite;
+                }
+                
+                if (sourceObject != null) Destroy(sourceObject);
+                
+                if (createScreenCrack && CameraFollow.cam != null)
+                    CameraFollow.cam.CreateScreenCrack();
             }
         }
-        
-        if (createScreenCrack && CameraFollow.cam != null)
-            CameraFollow.cam.CreateScreenCrack();
     }
 
     private static SpriteRenderer FindLatestWound(LimbScript limb, Vector2 hitPoint)
@@ -2622,6 +2723,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             localPlayerInstance.UnDie();
             if (CameraFollow.cam != null) CameraFollow.cam.target = newBody.transform;
             localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
+            if (localPlayerInstance.bloodBars != null)
+                localPlayerInstance.bloodBars.body = newBody;
+            
             Debug.Log("[Gunsaw MP] Local player respawned at " +
                 (MultiplayerSession.RespawnAtStart ? "level start." : "death position."));
         }
@@ -3593,7 +3697,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 targetPeers.ToArray(), state.SpreadSeed, exactDirections,
                 state.NewlyDestroyedLampIds.ToArray()));
             foreach (var wound in state.Wounds)
-                SendRemotePlayerWound(wound, wound.Critical);
+                SendRemotePlayerWound(wound, wound.BaseDamage > 20f || wound.Critical);
         }
         finally { EndWeaponShot(state); }
     }
@@ -3617,16 +3721,37 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             WeaponSprite = SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite),
             WoundSprite = SpriteId(woundRenderer == null ? null : woundRenderer.sprite),
             HasSplash = splash != null,
-            Critical = limb.isCritical
+            Critical = limb.isCritical,
+            BaseDamage = TakeBaseDamage(activeShotState, replica.remotePeerId),
+            BodyColliderHit = TakeBodyColliderHit(activeShotState, replica.remotePeerId, limb)
         });
     }
 
-    private static void SendRemotePlayerWound(PlayerWound wound, bool createScreenCrack)
+    private static void SendRemotePlayerWound(
+        PlayerWound wound,
+        bool createScreenCrack)
     {
-        var type = MultiplayerSession.IsHost ? PacketType.PlayerDamage : PacketType.PvpDamage;
-        MultiplayerSession.Send(new PlayerWoundPacket(type, wound.LimbIndex,
-            wound.LocalPoint.x, wound.LocalPoint.y, wound.Direction.x, wound.Direction.y,
-            wound.WeaponSprite, wound.WoundSprite, wound.HasSplash, createScreenCrack), wound.TargetPeerId);
+        var type = MultiplayerSession.IsHost
+            ? PacketType.PlayerDamage
+            : PacketType.PvpDamage;
+
+        MultiplayerSession.Send(
+            new PlayerWoundPacket(
+                type,
+                wound.LimbIndex,
+                wound.LocalPoint.x,
+                wound.LocalPoint.y,
+                wound.Direction.x,
+                wound.Direction.y,
+                wound.WeaponSprite,
+                wound.WoundSprite,
+                wound.HasSplash,
+                createScreenCrack,
+                wound.BaseDamage,
+                wound.BodyColliderHit
+            ),
+            wound.TargetPeerId
+        );
     }
 
     private void PlayRemoteShot(ShotVisualPacket packet)
@@ -4040,6 +4165,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         internal string WeaponSprite = "";
         internal readonly List<PlayerWound> Wounds = new();
         internal readonly List<Collider2D> DisabledColliders = new();
+        internal readonly Dictionary<ushort, Queue<float>> PendingBaseDamage = new();
+        internal readonly Dictionary<ushort, Queue<LimbScript>> PendingBodyColliderHits = new();
     }
 
     internal sealed class TargetScreenEffectState
@@ -4058,6 +4185,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         internal string WoundSprite;
         internal bool HasSplash;
         internal bool Critical;
+        internal float BaseDamage;
+        internal bool BodyColliderHit;
     }
 
     private sealed class GrabCommand
@@ -5424,6 +5553,55 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 result,
                 added);
         }
+    }
+    
+    internal static void RecordBodyColliderHit(BodyScript body, LimbScript limb)
+    {
+        if (!MultiplayerSession.IsConnected ||
+            activeShotState == null ||
+            activeShotState.Weapon == null ||
+            body == null ||
+            limb == null)
+            return;
+
+        var replica = NetworkAvatarRegistry.ReplicaForBody(body);
+
+        if (replica == null || replica.remotePeerId == 0)
+            return;
+
+        if (!activeShotState.PendingBodyColliderHits.TryGetValue(replica.remotePeerId, out var queue))
+        {
+            queue = new Queue<LimbScript>();
+            activeShotState.PendingBodyColliderHits[replica.remotePeerId] = queue;
+        }
+
+        queue.Enqueue(limb);
+    }
+    
+    private static bool TakeBodyColliderHit(ShotState state, ushort targetPeerId, LimbScript limb)
+    {
+        if (state == null ||
+            targetPeerId == 0 ||
+            limb == null)
+            return false;
+
+        if (!state.PendingBodyColliderHits.TryGetValue(
+                targetPeerId,
+                out var queue))
+            return false;
+
+        if (queue.Count == 0)
+            return false;
+
+        if (queue.Peek() != limb)
+            return false;
+
+        queue.Dequeue();
+
+        if (queue.Count == 0)
+            state.PendingBodyColliderHits.Remove(targetPeerId);
+
+        return true;
     }
     
     private struct VehicleTailTarget
