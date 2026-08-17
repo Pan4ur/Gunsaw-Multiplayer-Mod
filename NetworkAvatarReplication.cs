@@ -2186,10 +2186,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         
-        
         var amount = Mathf.Clamp(playerDamage.Amount, 0f, 1000f);
         var critical = playerDamage.Critical;
         var effectType = playerDamage.Effect;
+        
+        if (CameraFollow.cam != null)
+        {
+            CameraFollow.cam.AddOffset(new Vector2(
+                UnityEngine.Random.Range(-playerDamage.Amount, playerDamage.Amount) * 0.3f,
+                UnityEngine.Random.Range(-playerDamage.Amount, playerDamage.Amount) * 0.3f
+            ));
+
+            CameraFollow.cam.AddRot(UnityEngine.Random.Range(-playerDamage.Amount, playerDamage.Amount) * 0.2f);
+        }
         
         if (effectType == PlayerDamageEffect.Explosion)
         {
@@ -2282,6 +2291,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var limb = limbs[limbIndex] as LimbScript;
             var preset = FindWeaponPreset(weaponSprite);
+            
             if (limb != null && preset != null)
             {
                 GameObject sourceObject = null;
@@ -2293,8 +2303,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     sourceWeapon.stats = preset;
                     sourceWeapon.body = body;
                     var hitPoint = (Vector2)limb.transform.TransformPoint(localPoint);
-                    sourceWeapon.DoWound(limb, hitPoint, direction,
-                        hasSplash ? preset.bloodSplash : null);
+                    sourceWeapon.DoWound(limb, hitPoint, direction, hasSplash ? preset.bloodSplash : null);
                     if (!string.IsNullOrEmpty(woundSprite))
                     {
                         var wound = FindLatestWound(limb, hitPoint);
@@ -2313,6 +2322,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 }
             }
         }
+        
         if (createScreenCrack && CameraFollow.cam != null)
             CameraFollow.cam.CreateScreenCrack();
     }
