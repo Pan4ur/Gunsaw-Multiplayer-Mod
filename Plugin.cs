@@ -70,7 +70,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private MultiplayerReplicationDebugMode replicationDebugMode;
     private int debugWeaponSequence;
     private bool gameplayTypesLogged;
-    private string hostedLobbyId = "";
+    public string hostedLobbyId = "";
     private string hostedLobbyDisplayName = "";
     private string hostRelayKey = "";
     private float nextHeartbeat;
@@ -171,12 +171,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         World = worldReplication;
         Logger.LogInfo("Gunsaw Multiplayer " + PluginVersion + " loaded.");
         CheckForUpdates(false);
+        RPCManager.CheckInstance();
     }
 
     private void Start()
     {
         KeepMultiplayerRunningInBackground();
-        RPCManager.CheckInstance();
         if (headlessMode)
         {
             if (string.IsNullOrEmpty(customLevelJson)) { Logger.LogError("Headless lobby disabled: no valid map."); return; }

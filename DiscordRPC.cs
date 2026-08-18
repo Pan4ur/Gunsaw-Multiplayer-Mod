@@ -10,12 +10,12 @@ internal static class RPCSettings
 {
     private static void Postfix(ControlBinder __instance)
     {
-        RPCManager.CheckInstance();
         GameObject crossToggle = GameObject.Find("Canvas/Settings/CrosshairSettings/CrossToggle");
         GameObject rpcToggle = UnityEngine.Object.Instantiate(crossToggle);
         rpcToggle.transform.SetParent(crossToggle.transform.parent);
         rpcToggle.transform.localScale = crossToggle.transform.localScale;
-        rpcToggle.transform.localPosition = new Vector3(crossToggle.transform.localPosition.x, crossToggle.transform.localPosition.y - 125f, crossToggle.transform.localPosition.z);
+        rpcToggle.transform.localPosition = new Vector3(crossToggle.transform.localPosition.x,
+            crossToggle.transform.localPosition.y - 125f, crossToggle.transform.localPosition.z);
         Toggle rpcToggleToggle = rpcToggle.GetComponent<Toggle>();
         rpcToggleToggle.isOn = 0 == PlayerPrefs.GetInt("rpcdisable");
         rpcToggleToggle.onValueChanged = new Toggle.ToggleEvent();
@@ -25,17 +25,18 @@ internal static class RPCSettings
         GameObject rpcName = UnityEngine.Object.Instantiate(mainName);
         rpcName.transform.SetParent(mainName.transform.parent);
         rpcName.transform.localScale = mainName.transform.localScale;
-        rpcName.transform.localPosition = new Vector3(mainName.transform.localPosition.x, mainName.transform.localPosition.y - 125f, mainName.transform.localPosition.z);
+        rpcName.transform.localPosition = new Vector3(mainName.transform.localPosition.x,
+            mainName.transform.localPosition.y - 125f, mainName.transform.localPosition.z);
         rpcName.GetComponent<TextMeshProUGUI>().text = "Discord RPC";
     }
 
     private static void ToggleRPC(bool isOn)
     {
-        UnityEngine.Debug.Log(isOn);
         RPCManager.instance.enable = isOn;
         if (isOn)
             PlayerPrefs.SetInt("rpcdisable", 0);
-   else     PlayerPrefs.SetInt("rpcdisable", 1);
+        else 
+            PlayerPrefs.SetInt("rpcdisable", 1);
     }
 }
 
@@ -78,6 +79,7 @@ internal sealed class RPCManager : MonoBehaviour
                     _enable = true;
                 }
             }
+
             if (!enable && _enable)
             {
                 DestroyClient();
@@ -88,12 +90,28 @@ internal sealed class RPCManager : MonoBehaviour
 
     internal void UpdateRichPresence()
     {
-        if (MultiplayerSession.IsActive)
+        UnityEngine.Debug.Log("lol");
+        bool shouldResetJoinSecret = true;
+        if (MultiplayerSession.IsConnected || MultiplayerSession.IsHosting)
         {
-            RichPresence.Party = new PresenceParty(lobbyId, MultiplayerSession.PlayerCount, MultiplayerSession.MaxPlayers);
-            if ("gunsawudp.e621.su" == GunsawMultiplayerPlugin.Instance.lobbyServerAddress && MultiplayerSession.PlayerCount < MultiplayerSession.MaxPlayers)
-                RichPresence.JoinSecret = lobbyId + ":";// Idk, discord refuses to show RPC if party ID and join secret are the same
+            bool defaultServer = GunsawMultiplayerPlugin.Instance.lobbyServerAddress.Contains("e621.su");
+            RichPresence.Party = new PresenceParty(GunsawMultiplayerPlugin.Instance.hostedLobbyId,
+                MultiplayerSession.PlayerCount, MultiplayerSession.MaxPlayers, defaultServer);
+            if (defaultServer)
+            {
+                RichPresence.JoinSecret = GunsawMultiplayerPlugin.Instance.hostedLobbyId + ":" +
+                                          GunsawMultiplayerPlugin.PluginVersion;
+                shouldResetJoinSecret = false;
+            }
+            // It is supposed to be encrypted, wooah
+            // But uhh, we dont have privacy settings to begins with, lol
+            // Also, ipc 5005 we must provide different key
         }
+   else {
+            RichPresence.Party = null;
+        }
+        if (shouldResetJoinSecret)
+            RichPresence.JoinSecret = null;
 
         RichPresence.Details = "details";
         RichPresence.State = "state";
@@ -101,42 +119,61 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Initialize()
     {
+        Console.WriteLine("Initalize()");
         // Refer to rushellxyz regarding app
         RichPresence.AppId = 1538837414515052575L;
-        /*client.RegisterUriScheme(null, "/home/rushell/Desktop/gunsaw-demo-win/Gunsaw.exe");
-        client.Subscribe(DiscordRPC.EventType.JoinRequest);
-        client.OnJoinRequested += async delegate(object sender, JoinRequestMessage args)
-        {
-            client.Respond(args, acceptRequest: true);
-        };
-        client.Subscribe(DiscordRPC.EventType.Join);
-        client.OnJoin += delegate(object sender, JoinMessage e)
-        {
-
-        };
-        client.OnReady += delegate(object sender, ReadyMessage e)
-        {
-
-        };
-        client.OnError += delegate(object sender, ErrorMessage e)
-        {
-            Debug.LogError("Discord RPC Error: " + e.Message);
-        };
-        client.Initialize();
-        client.SetPresence(GetCurrentRichPresence());*/
-        RichPresence.StartRolling();
+        RichPresence.AutoRegister = true;
+        RichPresence.OnJoin += OnJoin;
+        RichPresence.OnJoinRequest += OnJoinRequest;
     }
 
-   // private void OnJoinRequested()
+    private void OnJoin(string secret)
+    {
+        Console.WriteLine($"OnJoin - {secret}");
+        if (MultiplayerSession.IsConnected || MultiplayerSession.IsHosting)
+        {
+            Console.WriteLine("You cant join discord invite while already in game");
+            GunsawMultiplayerPlugin.Instance.status = "You cant join discord invite while already in game";
+            return;
+        }
+
+        string[] decode = secret.Split(':');
+        if (1 > decode.Length)
+        {
+            Console.WriteLine("The invite is invalid.");
+            GunsawMultiplayerPlugin.Instance.status = "The invite is invalid.";
+            return;
+        }
+
+        if (GunsawMultiplayerPlugin.PluginVersion != decode[1])
+        {
+            Console.WriteLine("Mismatching game version.");
+            GunsawMultiplayerPlugin.Instance.status = "Mismatching game version.";
+            return;
+        }
+
+        GunsawMultiplayerPlugin.Instance.JoinLobby(decode[0]);
+    }
+
+    private void OnJoinRequest(IPCUser user)
+    {
+        // What it does?
+        Console.WriteLine("OnJoinRequest");
+        if (MultiplayerSession.IsActive && MultiplayerSession.PlayerCount < MultiplayerSession.MaxPlayers)
+            RichPresence.AcceptJoinRequest(user);
+        else 
+            RichPresence.RejectJoinRequest(user);
+    }
 
     private void DestroyClient()
     {
-        RichPresence.StopRolling();
+        Console.WriteLine("DestroyClient()");
+        RichPresence.OnJoin -= OnJoin;
+        RichPresence.OnJoinRequest -= OnJoinRequest;
     }
 
     private void OnDestroy()
     {
         DestroyClient();
     }
-
 }

@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace DiscordIPC
 {
     public sealed class PresencePair
@@ -17,12 +20,19 @@ namespace DiscordIPC
         public string Id { get; set; }
         public int Size { get; set; }
         public int MaxSize { get; set; }
+        public bool Public { get; set; }
 
         public PresenceParty(string id, int size, int maxSize)
+            : this(id, size, maxSize, false)
+        {
+        }
+
+        public PresenceParty(string id, int size, int maxSize, bool isPublic)
         {
             Id = id;
             Size = size;
             MaxSize = maxSize;
+            Public = isPublic;
         }
     }
 

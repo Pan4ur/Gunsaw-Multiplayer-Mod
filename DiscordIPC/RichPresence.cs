@@ -1,10 +1,13 @@
+using System;
+using System.Collections.Generic;
+
 namespace DiscordIPC
 {
     public static class RichPresence
     {
-        private static readonly object Sync = new();
-        private static readonly Internal.DiscordIpcClient Client = new();
-        private static readonly DraftService Drafts = new();
+        private static readonly object Sync = new object();
+        private static readonly Internal.DiscordIpcClient Client = new Internal.DiscordIpcClient();
+        private static readonly DraftService Drafts = new DraftService();
         private static readonly long InitTime = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
 
         private static long? _appId;
@@ -18,6 +21,8 @@ namespace DiscordIPC
         private static string _joinSecret;
         private static Action<string> _onJoin;
         private static Action<IPCUser> _onJoinRequest;
+        private static bool _autoRegister = true;
+        private static string _launchCommand;
 
         static RichPresence()
         {
@@ -34,6 +39,18 @@ namespace DiscordIPC
 
         public static bool IsConnected { get { return Client.IsConnected; } }
         public static IPCUser User { get { return Client.User; } }
+
+        public static bool AutoRegister
+        {
+            get { lock (Sync) return _autoRegister; }
+            set { lock (Sync) _autoRegister = value; }
+        }
+
+        public static string LaunchCommand
+        {
+            get { lock (Sync) return _launchCommand; }
+            set { lock (Sync) _launchCommand = value; }
+        }
 
         public static event Action<string> OnJoin
         {
@@ -59,7 +76,18 @@ namespace DiscordIPC
                     _appId = value;
                 }
                 if (!changed && !(value.HasValue && !Client.IsConnected)) return;
-                if (value.HasValue) Client.Start(value.Value);
+                if (value.HasValue)
+                {
+                    bool autoRegister;
+                    string launchCommand;
+                    lock (Sync)
+                    {
+                        autoRegister = _autoRegister;
+                        launchCommand = _launchCommand;
+                    }
+                    if (autoRegister) RegisterGame(value.Value, launchCommand);
+                    Client.Start(value.Value);
+                }
                 else Client.Stop();
             }
         }
@@ -110,6 +138,25 @@ namespace DiscordIPC
         {
             get { lock (Sync) return _joinSecret; }
             set { lock (Sync) { if (_joinSecret == value) return; _joinSecret = value; } QueueCurrentActivity(); }
+        }
+
+        public static bool RegisterGame()
+        {
+            long? appId;
+            string launchCommand;
+            lock (Sync)
+            {
+                appId = _appId;
+                launchCommand = _launchCommand;
+            }
+            return appId.HasValue && RegisterGame(appId.Value, launchCommand);
+        }
+
+        public static bool RegisterGame(string launchCommand)
+        {
+            long? appId;
+            lock (Sync) appId = _appId;
+            return appId.HasValue && RegisterGame(appId.Value, launchCommand);
         }
 
         public static bool AcceptJoinRequest(string userId)
@@ -243,7 +290,7 @@ namespace DiscordIPC
                     State = _state,
                     Assets = assets,
                     Buttons = buttons,
-                    Party = _party == null ? null : new PresenceParty(_party.Id, _party.Size, _party.MaxSize),
+                    Party = _party == null ? null : new PresenceParty(_party.Id, _party.Size, _party.MaxSize, _party.Public),
                     JoinSecret = _joinSecret,
                     Instance = !string.IsNullOrEmpty(_joinSecret),
                     Timestamps = new ActivityTimestamp { Start = InitTime }
@@ -258,11 +305,27 @@ namespace DiscordIPC
             return a.First == b.First && a.Second == b.Second;
         }
 
+
+        private static bool RegisterGame(long appId, string launchCommand)
+        {
+            try
+            {
+                bool result = Internal.GameRegistration.Register(appId, launchCommand);
+                if (result) Log("Discord IPC: registered discord-" + appId + " launch handler");
+                else Log("Discord IPC: failed to register discord-" + appId + " launch handler");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Log("Discord IPC: launch handler registration failed: " + ex.Message);
+                return false;
+            }
+        }
         private static bool Same(PresenceParty a, PresenceParty b)
         {
             if (ReferenceEquals(a, b)) return true;
             if (a == null || b == null) return false;
-            return a.Id == b.Id && a.Size == b.Size && a.MaxSize == b.MaxSize;
+            return a.Id == b.Id && a.Size == b.Size && a.MaxSize == b.MaxSize && a.Public == b.Public;
         }
 
         private static void Log(string message)

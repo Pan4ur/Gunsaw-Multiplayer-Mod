@@ -1,12 +1,16 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Threading;
 
 namespace DiscordIPC.Internal
 {
     internal sealed class DiscordIpcClient
     {
         private static readonly string[] UnixTempVariables = { "XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP" };
-        private readonly object _sync = new();
+        private readonly object _sync = new object();
         private Connection _connection;
         private Activity _queuedActivity;
         private bool _ready;
@@ -244,6 +248,7 @@ namespace DiscordIPC.Internal
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["cmd"] = "SUBSCRIBE";
             payload["evt"] = eventName;
+            WriteLog("Discord IPC: subscribing to " + eventName);
             connection.Write(Opcode.Frame, payload);
         }
 
@@ -271,23 +276,16 @@ namespace DiscordIPC.Internal
                 obj["assets"] = assets;
             }
 
-            if (activity.Buttons != null &&
-                activity.Buttons.Count > 0 &&
-                string.IsNullOrEmpty(activity.JoinSecret))
+            if (activity.Buttons != null && activity.Buttons.Count > 0 && string.IsNullOrEmpty(activity.JoinSecret))
             {
                 List<object> buttons = new List<object>();
-
                 for (int i = 0; i < activity.Buttons.Count; i++)
                 {
-                    Dictionary<string, object> button =
-                        new Dictionary<string, object>();
-
+                    Dictionary<string, object> button = new Dictionary<string, object>();
                     button["label"] = activity.Buttons[i].Label;
                     button["url"] = activity.Buttons[i].Url;
-
                     buttons.Add(button);
                 }
-
                 obj["buttons"] = buttons;
             }
 
@@ -296,6 +294,7 @@ namespace DiscordIPC.Internal
                 Dictionary<string, object> party = new Dictionary<string, object>();
                 party["id"] = activity.Party.Id;
                 party["size"] = new object[] { activity.Party.Size, activity.Party.MaxSize };
+                if (activity.Party.Public) party["privacy"] = 1;
                 obj["party"] = party;
             }
 
@@ -338,7 +337,18 @@ namespace DiscordIPC.Internal
                 return;
             }
 
+            if (string.Equals(cmd, "SUBSCRIBE", StringComparison.OrdinalIgnoreCase))
+            {
+                Dictionary<string, object> subscribeData = GetObject(packet.Data, "data");
+                string subscribedEvent = GetString(subscribeData, "evt");
+                WriteLog("Discord IPC: subscribed to " + (subscribedEvent ?? "unknown"));
+                return;
+            }
+
             if (!string.Equals(cmd, "DISPATCH", StringComparison.OrdinalIgnoreCase)) return;
+
+            if (!string.IsNullOrEmpty(evt) && evt.StartsWith("ACTIVITY_", StringComparison.OrdinalIgnoreCase))
+                WriteLog("Discord IPC: received " + evt);
 
             if (string.Equals(evt, "READY", StringComparison.OrdinalIgnoreCase))
             {
