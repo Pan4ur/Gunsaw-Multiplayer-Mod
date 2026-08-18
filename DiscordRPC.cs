@@ -43,7 +43,6 @@ internal static class RPCSettings
 
 internal sealed class RPCManager : MonoBehaviour
 {
-    // Would need TODO cleanup TODO actual rpc
     public bool enable;
     public string lobbyId;
     public static RPCManager instance;
@@ -52,6 +51,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     private static readonly Dictionary<string, string> levels = new Dictionary<string, string>
     {
+        {"tutorial1", "Basic Training"},
         {"actualLevel1", "Lock Break"},
         {"actualLevel2", "Boc Check"},
         {"beautyLevel", "Belt Dropdown"},
@@ -70,8 +70,9 @@ internal sealed class RPCManager : MonoBehaviour
         {"campaign13", "Vanished Forts"},
         {"campaign14", "Acid Plants"},
         {"SampleScene", "Trash Containment"},
-        {"LevelEditor", "Map editor"},
-        // I wiould love to somehow display which custom level
+        {"LevelSelect", "Chooses level"},
+        {"LevelEditor", "Level editor"},
+        // I would love to somehow display which custom level
         {"LevelLoader", "Custom level"},
         // Two secret levels, yep theres secret levels
         // try them with unity explorer
@@ -135,14 +136,36 @@ internal sealed class RPCManager : MonoBehaviour
             // It is supposed to be encrypted, wooah
             // But uhh, we dont have privacy settings to begins with, lol
             // Also, ipc 5005 we must provide different key
+            if (MultiplayerSession.PvpEnabled)
+                RichPresence.Details = "PVP";
+       else     RichPresence.Details = "CO-OP";
         }
    else {
             RichPresence.Party = null;
+            if (null == PlayerScript.player || null == PlayerScript.player.bodyScript || string.IsNullOrEmpty(PlayerScript.player.bodyScript.speciesName))
+                RichPresence.Details = "In main menu";
+       else {
+                string playerSpecie = PlayerScript.player.bodyScript.speciesName;
+                // Detect albino, rabomination, ename g4a to G-4A and else capialize first letter
+                if ("experiment" == playerSpecie)
+                {   // why albino and abomination are named expie
+                    // im not sure how руссификатор works, but it might break, not only this, everything in here actually
+                    if ("Cannon fodder...?" == PlayerScript.player.bodyScript.afterSwapTip)
+                        RichPresence.Details = "Albino";
+               else if ("An abomination\nLow stats" == PlayerScript.player.bodyScript.afterSwapTip)
+                        RichPresence.Details = "Abomination";
+               else     RichPresence.Details = "Experiment";
+                }
+            else if ("g4a" == playerSpecie)
+                    RichPresence.Details = "G4-A";
+            else    RichPresence.Details = char.ToUpper(playerSpecie[0]) + playerSpecie.Substring(1);
+            }
         }
+        if (null != GameManager.main && GameManager.main.hardMode)
+            RichPresence.Details += " |BRUTAL";
         if (shouldResetJoinSecret)
             RichPresence.JoinSecret = null;
 
-        RichPresence.Details = "details";
 
         string scene = SceneManager.GetActiveScene().name;
         if (levels.TryGetValue(scene, out string level))
@@ -152,7 +175,6 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Initialize()
     {
-        Console.WriteLine("Initalize()");
         // Refer to rushellxyz regarding app
         RichPresence.AppId = 1538837414515052575L;
         RichPresence.AutoRegister = true;
@@ -191,7 +213,7 @@ internal sealed class RPCManager : MonoBehaviour
     private void OnJoinRequest(IPCUser user)
     {
         // What it does?
-        Console.WriteLine("OnJoinRequest");
+        Console.WriteLine($"OnJoinRequest - {user.Id}");
         if (MultiplayerSession.IsActive && MultiplayerSession.PlayerCount < MultiplayerSession.MaxPlayers)
             RichPresence.AcceptJoinRequest(user);
         else 
@@ -200,7 +222,6 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void DestroyClient()
     {
-        Console.WriteLine("DestroyClient()");
         RichPresence.OnJoin -= OnJoin;
         RichPresence.OnJoinRequest -= OnJoinRequest;
     }
