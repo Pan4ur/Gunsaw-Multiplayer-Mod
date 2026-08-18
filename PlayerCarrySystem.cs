@@ -89,12 +89,13 @@ internal static class PlayerCarrySystem
 
         if (localTargetActive) ReleaseLocalTarget();
         RestoreCarrierPose();
-        Prompt = !carrying && FindCarryTarget(local) != 0 ? "Press C to carry player" : "";
-        if (!carrying && Input.GetKeyDown(KeyCode.C))
-        {
-            var peer = FindCarryTarget(local);
-            if (peer != 0) RequestStart(peer);
-        }
+
+        var carryTarget = FindCarryTarget(local);
+        
+        Prompt = !carrying && carryTarget != 0 ? "Press C to carry player" : "";
+        
+        if (!carrying && Input.GetKeyDown(KeyCode.C) && carryTarget != 0)
+            RequestStart(carryTarget);
     }
 
     internal static void PostBodyUpdate(BodyScript body)

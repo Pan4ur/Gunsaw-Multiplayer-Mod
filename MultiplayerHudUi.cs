@@ -28,8 +28,13 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             if (root != null) root.SetActive(false);
             return;
         }
-        if (root == null) Create();
-        if (root == null) return;
+
+        if (root == null)
+        {
+            Create();
+            return;
+        }
+        
         root.SetActive(true);
         hostPanel.SetActive(MultiplayerSession.IsHosting);
         playersPanel.SetActive(Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
@@ -42,12 +47,13 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateChatBubbles(hud);
         UpdateSpectator();
         UpdateStatusPrompts();
-        if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) &&
-            !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
+        
+        if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) && !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
         {
             activationText.text = PlayerCarrySystem.Prompt;
             activationText.gameObject.SetActive(true);
         }
+        
         UpdateFinalLeaderboard();
         statsText.gameObject.SetActive(hud.NetworkStatsVisible && !string.IsNullOrEmpty(hud.NetworkStatsText));
         if (statsText.gameObject.activeSelf) statsText.text = hud.NetworkStatsText;
@@ -216,6 +222,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var countdown = NetworkAvatarReplication.RespawnCountdownText();
         respawnText.gameObject.SetActive(!string.IsNullOrEmpty(countdown));
         if (!string.IsNullOrEmpty(countdown)) respawnText.text = countdown;
+        activationText.text = "PRESS [USE] TO ACTIVATE";
         activationText.gameObject.SetActive(WorldReplication.Instance != null && WorldReplication.Instance.HasActivationPrompt);
     }
 
