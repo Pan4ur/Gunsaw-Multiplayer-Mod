@@ -1,3 +1,4 @@
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine;
 using HarmonyLib;
@@ -49,6 +50,35 @@ internal sealed class RPCManager : MonoBehaviour
     private bool _enable;
     private float timer = 5f;
 
+    private static readonly Dictionary<string, string> levels = new Dictionary<string, string>
+    {
+        {"actualLevel1", "Lock Break"},
+        {"actualLevel2", "Boc Check"},
+        {"beautyLevel", "Belt Dropdown"},
+        {"campaign3", "Box Check"},
+        // Green skies is the only level with second word starting from small letter
+        // You will never unsee this
+        {"campaign4", "Green skies"},
+        {"campaign5", "Zigzag"},
+        {"campaign6", "Downdrops"},
+        {"campaign7", "Crush Forces"},
+        {"campaign8", "Mount Basins"},
+        {"campaign9", "Blue Sewers"},
+        {"campaign10", "Weird Technology"},
+        {"campaign11", "Foggy Whites"},
+        {"campaign12", "Rooftops"},
+        {"campaign13", "Vanished Forts"},
+        {"campaign14", "Acid Plants"},
+        {"SampleScene", "Trash Containment"},
+        {"LevelEditor", "Map editor"},
+        // I wiould love to somehow display which custom level
+        {"LevelLoader", "Custom level"},
+        // Two secret levels, yep theres secret levels
+        // try them with unity explorer
+        {"level1", "Secret level"},
+        {"level2", "Secret level"},
+    };
+
     public static void CheckInstance()
     {
         if (!instance)
@@ -90,7 +120,6 @@ internal sealed class RPCManager : MonoBehaviour
 
     internal void UpdateRichPresence()
     {
-        UnityEngine.Debug.Log("lol");
         bool shouldResetJoinSecret = true;
         if (MultiplayerSession.IsConnected || MultiplayerSession.IsHosting)
         {
@@ -114,7 +143,11 @@ internal sealed class RPCManager : MonoBehaviour
             RichPresence.JoinSecret = null;
 
         RichPresence.Details = "details";
-        RichPresence.State = "state";
+
+        string scene = SceneManager.GetActiveScene().name;
+        if (levels.TryGetValue(scene, out string level))
+            RichPresence.State = level;
+   else     RichPresence.State = scene;
     }
 
     private void Initialize()
