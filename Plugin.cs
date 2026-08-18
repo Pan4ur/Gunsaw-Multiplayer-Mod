@@ -70,7 +70,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private MultiplayerReplicationDebugMode replicationDebugMode;
     private int debugWeaponSequence;
     private bool gameplayTypesLogged;
-    public string hostedLobbyId = "";
+    private string hostedLobbyId = "";
     private string hostedLobbyDisplayName = "";
     private string hostRelayKey = "";
     private float nextHeartbeat;
@@ -956,6 +956,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         foreach (var character in source)
             if (char.IsLetterOrDigit(character)) builder.Append(char.ToLowerInvariant(character));
         return builder.ToString();
+    }
+
+    public string GetCurrentLobbyId()
+    {
+        if (string.IsNullOrEmpty(joinedLobbyId))
+            return hostedLobbyId;
+   else     return joinedLobbyId;
     }
 
     private static List<HeadlessLevelEntry> ParseHeadlessCatalog(string catalog)

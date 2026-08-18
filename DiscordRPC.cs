@@ -95,12 +95,12 @@ internal sealed class RPCManager : MonoBehaviour
         if (MultiplayerSession.IsConnected || MultiplayerSession.IsHosting)
         {
             bool defaultServer = GunsawMultiplayerPlugin.Instance.lobbyServerAddress.Contains("e621.su");
-            RichPresence.Party = new PresenceParty(GunsawMultiplayerPlugin.Instance.hostedLobbyId,
+            string lobbyId = GunsawMultiplayerPlugin.Instance.GetCurrentLobbyId();
+            RichPresence.Party = new PresenceParty(lobbyId,
                 MultiplayerSession.PlayerCount, MultiplayerSession.MaxPlayers, defaultServer);
             if (defaultServer)
             {
-                RichPresence.JoinSecret = GunsawMultiplayerPlugin.Instance.hostedLobbyId + ":" +
-                                          GunsawMultiplayerPlugin.PluginVersion;
+                RichPresence.JoinSecret = lobbyId + ":" + GunsawMultiplayerPlugin.PluginVersion;
                 shouldResetJoinSecret = false;
             }
             // It is supposed to be encrypted, wooah
