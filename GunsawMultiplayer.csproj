@@ -11,6 +11,7 @@
   <ItemGroup>
     <EmbeddedResource Include="killmessages.json" />
     <EmbeddedResource Include="CustomProps\Assets\npc-spawner.png" />
+    <EmbeddedResource Include="CustomProps\Assets\rnd.png" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
     <Reference Include="BepInEx">
       <HintPath>$(GameDirectory)/BepInEx/core/BepInEx.dll</HintPath>

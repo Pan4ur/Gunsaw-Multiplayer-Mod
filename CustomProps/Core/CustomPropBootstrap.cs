@@ -8,5 +8,6 @@ internal static class CustomPropBootstrap
         inited = true;
 
         CustomPropRegistry.Register(new NpcSpawnerPropDefinition());
+        CustomPropRegistry.Register(new RandomIdRouterPropDefinition());
     }
 }
