@@ -51,9 +51,10 @@ internal sealed class RPCManager : MonoBehaviour
 
     private static readonly Dictionary<string, string> levels = new Dictionary<string, string>
     {
+        {"ViolenceWarning", "Just started"},
         {"tutorial1", "Basic Training"},
         {"actualLevel1", "Lock Break"},
-        {"actualLevel2", "Boc Check"},
+        {"actualLevel2", "Box Check"},
         {"beautyLevel", "Belt Dropdown"},
         {"campaign3", "Box Check"},
         // Green skies is the only level with second word starting from small letter
