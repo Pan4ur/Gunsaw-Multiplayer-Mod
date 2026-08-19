@@ -32,6 +32,7 @@ MP Features:
 - Custom levels are automatically transferred from the Host to clients
 - A new NPC Spawner object is available in the level editor
 - P2P and Relay connection modes
+- Discord RPC
 
 ## Installation
 

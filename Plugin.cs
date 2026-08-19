@@ -176,6 +176,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         World = worldReplication;
         Logger.LogInfo("Gunsaw Multiplayer " + PluginVersion + " loaded.");
         CheckForUpdates(false);
+        RPCManager.CheckInstance();
     }
 
     private void Start()
@@ -966,6 +967,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         foreach (var character in source)
             if (char.IsLetterOrDigit(character)) builder.Append(char.ToLowerInvariant(character));
         return builder.ToString();
+    }
+
+    public string GetCurrentLobbyId()
+    {
+        if (string.IsNullOrEmpty(joinedLobbyId))
+            return hostedLobbyId;
+   else     return joinedLobbyId;
     }
 
     private static List<HeadlessLevelEntry> ParseHeadlessCatalog(string catalog)
