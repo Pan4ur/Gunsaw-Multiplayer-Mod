@@ -2710,7 +2710,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             ReviveRespawnBody(newBody);
             newBody.isPlayer = true;
             newBody.team = "goodguys";
-            newBody.EnterFullControl();
+           
+            if (newBody.isInWater)
+                newBody.EnterHalfControl();
+            else
+                newBody.EnterFullControl();
+            
             if (oldBody != null)
             {
                 oldBody.OnWeaponChanged.RemoveListener(localPlayerInstance.BodyWeaponChanged);
@@ -2855,7 +2860,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (body.maxHealth <= 0f) body.maxHealth = 100f;
         body.health = body.maxHealth;
         body.CurrentState = 0;
-        body.controlState = 0;
+        body.controlState = BodyScript.RagdollState.FullControl;
         body.isAlive = true;
         body.WakeUp();
         body.health = body.maxHealth;
