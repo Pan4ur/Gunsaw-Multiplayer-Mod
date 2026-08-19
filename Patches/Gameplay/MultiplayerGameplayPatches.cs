@@ -155,13 +155,13 @@ internal static class MultiplayerGameManagerFocusPatch
 {
     private static void Prefix()
     {
-        MultiplayerLoadDistance.Apply();
+        LoadDistanceSystem.Apply();
         MultiplayerTimeControl.KeepMultiplayerActive();
     }
 
     private static void Postfix()
     {
-        MultiplayerLoadDistance.Apply();
+        LoadDistanceSystem.Apply();
     }
 }
 
@@ -308,7 +308,7 @@ internal static class MultiplayerResourceLoadDistancePatch
 {
     private static void Postfix()
     {
-        MultiplayerLoadDistance.Apply();
+        LoadDistanceSystem.Apply();
     }
 }
 
@@ -664,7 +664,7 @@ internal static class ClientNpcDeathPatch
             (!allowRemoteReplica && NetworkAvatarRegistry.IsRemoteReplicaBody(__instance)) ||
             (!__instance.isPlayer && !NpcReplication.IsHostNpc(__instance)) ||
             !NetworkAvatarReplication.BeginDeathAnnouncement(__instance)) return;
-        MultiplayerScoreboard.RecordHostNpcKill(__instance);
+        ScoreboardSystem.RecordHostNpcKill(__instance);
         var localPlayer = PlayerScript.player;
         if (!MultiplayerSession.IsHosting && (localPlayer == null || localPlayer.bodyScript != __instance)) return;
         var victimName = DeathDisplayName(__instance);
@@ -1056,7 +1056,7 @@ internal static class MultiplayerNpcTargetPatch
 {
     private static bool Prefix(AIScript __instance)
     {
-        if (__instance == null || !MultiplayerLoadDistance.ShouldTickNpc(__instance.body)) return false;
+        if (__instance == null || !LoadDistanceSystem.ShouldTickNpc(__instance.body)) return false;
         NetworkAvatarReplication.PrepareNpcTarget(__instance);
         return true;
     }

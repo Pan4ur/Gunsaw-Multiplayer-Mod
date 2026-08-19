@@ -1,11 +1,13 @@
 using UnityEngine;
 
-internal static class CharacterScaleRules
+internal static class AvatarScaleHandler
 {
-    internal const float Minimum = 0.25f;
-    internal const float Maximum = 2f;
+    private const float Minimum = 0.25f;
+    private const float Maximum = 2f;
 
     internal static float Clamp(float value) => Mathf.Clamp(value, Minimum, Maximum);
+    
+    internal static bool Incorrect(float value) => float.IsNaN(value) || float.IsInfinity(value) || value < Minimum || value > Maximum;
 
     internal static bool TrySet(BodyScript body, float value)
     {

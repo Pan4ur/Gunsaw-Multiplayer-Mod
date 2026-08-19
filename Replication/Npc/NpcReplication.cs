@@ -250,8 +250,8 @@ internal sealed class NpcReplication : MonoBehaviour
         culledNpcCount = 0;
         foreach (var body in hostNpcs.Values)
         {
-            MultiplayerLoadDistance.ApplyNpc(body);
-            if (MultiplayerLoadDistance.IsNpcSimulationCulled(body)) culledNpcCount++;
+            LoadDistanceSystem.ApplyNpc(body);
+            if (LoadDistanceSystem.IsNpcSimulationCulled(body)) culledNpcCount++;
         }
     }
 
@@ -406,7 +406,7 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         foreach (var body in hostNpcs.Values)
         {
-            if (body == null || !body.gameObject.activeInHierarchy || !MultiplayerLoadDistance.IsNpcNearAnyPlayer(body)) continue;
+            if (body == null || !body.gameObject.activeInHierarchy || !LoadDistanceSystem.IsNpcNearAnyPlayer(body)) continue;
             var layout = HostLayout(body);
             IsEvaluatingAuthoritativePose = true;
             try
@@ -483,7 +483,7 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             if (pair.Value == null) continue;
             liveIds.Add(pair.Key);
-            if (!MultiplayerLoadDistance.IsNpcNearAnyPlayer(pair.Value)) continue;
+            if (!LoadDistanceSystem.IsNpcNearAnyPlayer(pair.Value)) continue;
             NpcStateScratch scratch;
             if (!stateScratch.TryGetValue(pair.Key, out scratch))
             {
@@ -667,7 +667,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
                 sectionStarted = writer.BaseStream.Position;
                 var limbs = layout.Limbs;
-                var sendLimbPose = includeIdentity || MultiplayerLoadDistance.ShouldSendNpcLimbPose(body);
+                var sendLimbPose = includeIdentity || LoadDistanceSystem.ShouldSendNpcLimbPose(body);
                 writer.Write((ushort)(sendLimbPose ? limbs.Length : 0));
                 for (var limbIndex = 0; sendLimbPose && limbIndex < limbs.Length; limbIndex++)
                 {
@@ -681,7 +681,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
                 sectionStarted = writer.BaseStream.Position;
                 var tailBases = layout.TailBases;
-                var sendTailPose = includeIdentity || MultiplayerLoadDistance.ShouldTickNpcTails(body);
+                var sendTailPose = includeIdentity || LoadDistanceSystem.ShouldTickNpcTails(body);
                 writer.Write((ushort)(sendTailPose ? tailBases.Length : 0));
                 if (sendTailPose)
                     foreach (Rigidbody2D tailBase in tailBases) WritePose(writer, tailBase);
@@ -905,7 +905,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 clientSkippedPoseWindow++;
                 continue;
             }
-            if (!MultiplayerLoadDistance.IsNpcNearLocalPlayer(state.Body.Position))
+            if (!LoadDistanceSystem.IsNpcNearLocalPlayer(state.Body.Position))
             {
                 clientPoseCulledWindow++;
                 ApplyDistantState(proxy, state);
@@ -1473,7 +1473,7 @@ internal sealed class NpcReplication : MonoBehaviour
         body.isAlive = proxy.LastHostAlive;
         if (amount > 0.001f)
         {
-            MultiplayerScoreboard.RecordLocalDamageDealt(amount);
+            ScoreboardSystem.RecordLocalDamageDealt(amount);
             Instance.SendClientDamage(proxy.NetworkId, amount, critical);
         }
         return true;
@@ -1750,7 +1750,7 @@ internal sealed class NpcReplication : MonoBehaviour
         foreach (var proxy in clientProxies)
         {
             if (proxy == null || proxy.Root == null || !proxy.Root.activeInHierarchy) continue;
-            if (!MultiplayerLoadDistance.IsNpcNearLocalPlayer(proxy.Body.transform.position)) continue;
+            if (!LoadDistanceSystem.IsNpcNearLocalPlayer(proxy.Body.transform.position)) continue;
             if (proxy.LocalPhysics)
             {
                 if (Time.unscaledTime <= proxy.LocalPhysicsUntil) continue;

@@ -116,13 +116,13 @@ internal sealed class MultiplayerReplicationDebugMode : MonoBehaviour
 
     private void UpdateCircles()
     {
-        MultiplayerLoadDistance.CopyPlayerPositions(playerPositions);
+        LoadDistanceSystem.CopyPlayerPositions(playerPositions);
         SetCircleCount(worldCircles, playerPositions.Count, new Color(0.15f, 0.75f, 1f, 0.8f));
         SetCircleCount(npcCircles, playerPositions.Count, new Color(1f, 0.75f, 0.15f, 0.8f));
         SetCircleCount(mechanismCircles, playerPositions.Count, new Color(0.85f, 0.25f, 1f, 0.8f));
-        var worldRadius = Mathf.Sqrt(MultiplayerLoadDistance.WorldDistanceSqr);
-        var npcRadius = Mathf.Sqrt(MultiplayerLoadDistance.NpcPoseDistanceSqr);
-        var mechanismRadius = Mathf.Sqrt(MultiplayerLoadDistance.MechanismSleepDistanceSqr);
+        var worldRadius = Mathf.Sqrt(LoadDistanceSystem.WorldDistanceSqr);
+        var npcRadius = Mathf.Sqrt(LoadDistanceSystem.NpcPoseDistanceSqr);
+        var mechanismRadius = Mathf.Sqrt(LoadDistanceSystem.MechanismSleepDistanceSqr);
         for (var index = 0; index < playerPositions.Count; index++)
         {
             DrawCircle(worldCircles[index], playerPositions[index], worldRadius);

@@ -209,7 +209,7 @@ internal static partial class MultiplayerSession
         CheatsEnabled = cheatsEnabled;
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
-        InitialScale = CharacterScaleRules.Clamp(initialScale);
+        InitialScale = AvatarScaleHandler.Clamp(initialScale);
         AllowObserver = allowObserver;
         RefreshHostBrutalMode();
         ResetPing();
@@ -706,7 +706,7 @@ internal static partial class MultiplayerSession
         CheatsEnabled = cheatsEnabled;
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
-        InitialScale = CharacterScaleRules.Clamp(initialScale);
+        InitialScale = AvatarScaleHandler.Clamp(initialScale);
         AllowObserver = allowObserver;
         RefreshHostBrutalMode();
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));

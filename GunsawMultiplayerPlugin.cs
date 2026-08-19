@@ -67,7 +67,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private WorldReplication worldReplication;
     private NpcReplication npcReplication;
     private MultiplayerHud multiplayerHud;
-    private ChatCommandHandler chatCommandHandler;
+    private ChatCommandSystem _chatCommandSystem;
     private MultiplayerLobbyUi multiplayerLobbyUi;
     private MultiplayerReplicationDebugMode replicationDebugMode;
     private int debugWeaponSequence;
@@ -101,7 +101,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         KeepMultiplayerRunningInBackground();
         Instance = this;
-        chatCommandHandler = new ChatCommandHandler(this);
+        _chatCommandSystem = new ChatCommandSystem(this);
         masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsaw.e621.su", "Lobby directory URL.");
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
         savedPlayerName = Config.Bind("Lobby", "PlayerName", playerName, "Name shown to other players.");
@@ -235,7 +235,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             while (MultiplayerSession.TryTakePeerDisconnected(out disconnectedPeer))
                 RemoveHostedPeer(disconnectedPeer);
         }
-        MultiplayerLoadDistance.Apply();
+        LoadDistanceSystem.Apply();
         MultiplayerSession.NoteHostSceneHandle(SceneManager.GetActiveScene().handle);
         MultiplayerSession.SetHostScene(SceneManager.GetActiveScene().name);
         SendHeadlessHelpToNewPlayers();
@@ -681,7 +681,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal bool TryHandleHostCommand(string message)
     {
-        return chatCommandHandler != null && chatCommandHandler.TryHandle(message);
+        return _chatCommandSystem != null && _chatCommandSystem.TryHandle(message);
     }
 
     internal bool CanBanPlayers => MultiplayerSession.IsHosting &&
@@ -1284,7 +1284,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         float scale;
         if (!float.TryParse(createInitialScale, NumberStyles.Float, CultureInfo.InvariantCulture, out scale)) scale = 1f;
-        scale = CharacterScaleRules.Clamp(scale);
+        scale = AvatarScaleHandler.Clamp(scale);
         createInitialScale = scale.ToString("0.##", CultureInfo.InvariantCulture);
         return scale;
     }

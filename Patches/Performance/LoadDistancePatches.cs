@@ -6,7 +6,7 @@ internal static class MultiplayerObjectUnloaderPatch
 {
     private static bool Prefix(ObjectUnloader __instance)
     {
-        return !MultiplayerLoadDistance.TryApplyObjectUnloader(__instance);
+        return !LoadDistanceSystem.TryApplyObjectUnloader(__instance);
     }
 }
 
@@ -15,7 +15,7 @@ internal static class MultiplayerNpcBodyFixedUpdateCullPatch
 {
     private static bool Prefix(BodyScript __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickNpc(__instance);
+        return LoadDistanceSystem.ShouldTickNpc(__instance);
     }
 }
 
@@ -24,7 +24,7 @@ internal static class MultiplayerNpcBodyUpdateCullPatch
 {
     private static bool Prefix(BodyScript __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickNpc(__instance);
+        return LoadDistanceSystem.ShouldTickNpc(__instance);
     }
 }
 
@@ -33,7 +33,7 @@ internal static class MultiplayerNpcLimbFixedUpdateCullPatch
 {
     private static bool Prefix(LimbScript __instance)
     {
-        return __instance == null || MultiplayerLoadDistance.ShouldTickNpc(__instance.body);
+        return __instance == null || LoadDistanceSystem.ShouldTickNpc(__instance.body);
     }
 }
 
@@ -55,7 +55,7 @@ internal static class MultiplayerCrateTickCullPatch
 {
     private static bool Prefix(CrateScript __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
@@ -64,7 +64,7 @@ internal static class MultiplayerCrateSpawnerTickCullPatch
 {
     private static bool Prefix(MiniCrateSpawner __instance, ref float ___curSpawnCool)
     {
-        if (!MultiplayerLoadDistance.ShouldTickWorld(__instance)) return false;
+        if (!LoadDistanceSystem.ShouldTickWorld(__instance)) return false;
 
         ___curSpawnCool -= Time.deltaTime;
         if (___curSpawnCool >= 0f || __instance.spawnCool == 0f) return false;
@@ -93,7 +93,7 @@ internal static class MultiplayerDroppedWeaponTickCullPatch
 {
     private static bool Prefix(DroppedWeapon __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
@@ -102,7 +102,7 @@ internal static class MultiplayerDoorTickCullPatch
 {
     private static bool Prefix(DoorScript __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
@@ -111,7 +111,7 @@ internal static class MultiplayerBeltTickCullPatch
 {
     private static bool Prefix(MovingBelt __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
@@ -120,7 +120,7 @@ internal static class MultiplayerRbMoveTickCullPatch
 {
     private static bool Prefix(RbMoveToObj __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
@@ -129,7 +129,7 @@ internal static class MultiplayerSawTickCullPatch
 {
     private static bool Prefix(SawScript __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
@@ -138,7 +138,7 @@ internal static class MultiplayerJointTickCullPatch
 {
     private static bool Prefix(CustJoint __instance)
     {
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
@@ -149,7 +149,7 @@ internal static class MultiplayerFireTickCullPatch
     {
         if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHost)
             return WorldReplication.ShouldTickClientFire(__instance);
-        return MultiplayerLoadDistance.ShouldTickWorld(__instance);
+        return LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 

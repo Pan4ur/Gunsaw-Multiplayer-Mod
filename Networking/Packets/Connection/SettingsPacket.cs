@@ -28,7 +28,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         CheatsEnabled = cheatsEnabled;
         AllowSwap = allowSwap;
         AllowScaleChanging = allowScaleChanging;
-        InitialScale = CharacterScaleRules.Clamp(initialScale);
+        InitialScale = AvatarScaleHandler.Clamp(initialScale);
         BrutalModeEnabled = brutalModeEnabled;
         AllowObserver = allowObserver;
     }

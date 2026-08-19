@@ -106,7 +106,7 @@ internal static class CsExperienceMode
         body.weaponAmmos[slot] = sniper.magSize;
         if (sniper.ammoType >= 0)
         {
-            if (body.ammoAmount == null) body.ammoAmount = new System.Collections.Generic.List<int>();
+            if (body.ammoAmount == null) body.ammoAmount = new List<int>();
             while (body.ammoAmount.Count <= sniper.ammoType) body.ammoAmount.Add(0);
             body.ammoAmount[sniper.ammoType] = Mathf.Max(body.ammoAmount[sniper.ammoType], sniper.magSize * 20);
         }

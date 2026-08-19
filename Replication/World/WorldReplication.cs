@@ -200,8 +200,8 @@ internal sealed class WorldReplication : MonoBehaviour
         culledOtherCount = 0;
         foreach (var body in bodies.Values)
         {
-            MultiplayerLoadDistance.ApplyWorldBody(body);
-            if (!MultiplayerLoadDistance.IsSimulationCulled(body)) continue;
+            LoadDistanceSystem.ApplyWorldBody(body);
+            if (!LoadDistanceSystem.IsSimulationCulled(body)) continue;
             if (IsInteractivePropBody(body)) culledPropCount++;
             else culledOtherCount++;
         }
@@ -445,7 +445,7 @@ internal sealed class WorldReplication : MonoBehaviour
         var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
         foreach (var body in interactivePropBodies)
         {
-            if (body == null || (body.position - localPosition).sqrMagnitude < MultiplayerLoadDistance.WorldDistanceSqr)
+            if (body == null || (body.position - localPosition).sqrMagnitude < LoadDistanceSystem.WorldDistanceSqr)
                 continue;
             body.velocity = Vector2.zero;
             body.angularVelocity = 0f;
@@ -475,7 +475,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         var id = Id(body);
         bodies[id] = body;
-        MultiplayerLoadDistance.RegisterWorldBody(body);
+        LoadDistanceSystem.RegisterWorldBody(body);
         WireId(id);
         if (!droppedWeapons.ContainsKey(body))
             droppedWeapons[body] = body.GetComponentInParent<DroppedWeapon>();
@@ -491,7 +491,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private void RemoveWorldBody(Rigidbody2D body)
     {
         if (body == null) return;
-        MultiplayerLoadDistance.UnregisterWorldBody(body);
+        LoadDistanceSystem.UnregisterWorldBody(body);
         string id;
         if (ids.TryGetValue(body, out id))
         {
@@ -963,7 +963,7 @@ internal sealed class WorldReplication : MonoBehaviour
             foreach (var pair in bodies)
             {
                 var body = pair.Value;
-                if (!fullSnapshot && body != null && !MultiplayerLoadDistance.IsWorldNearAnyPlayer(body)) continue;
+                if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
                 var awake = body != null && body.IsAwake();
                 if (!fullSnapshot && body != null && !awake) continue;
                 byte[] state;
@@ -1492,7 +1492,7 @@ internal sealed class WorldReplication : MonoBehaviour
         if (state.safetyRailing && !state.safetyRailingAttached)
             DetachSafetyRailing(body);
         ApplyVehicleState(body, state);
-        if (!MultiplayerSession.IsHost && !state.vehiclePart && !MultiplayerLoadDistance.IsWorldNearLocalPlayer(body))
+        if (!MultiplayerSession.IsHost && !state.vehiclePart && !LoadDistanceSystem.IsWorldNearLocalPlayer(body))
         {
             body.simulated = false;
             return;

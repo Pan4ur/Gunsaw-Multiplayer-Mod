@@ -1686,7 +1686,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         var target = MultiplayerSession.InitialScale;
         if (body == initialScaleAppliedBody && Mathf.Abs(appliedInitialScale - target) < 0.001f) return;
-        if (!CharacterScaleRules.TrySet(body, target)) return;
+        if (!AvatarScaleHandler.TrySet(body, target)) return;
         initialScaleAppliedBody = body;
         appliedInitialScale = target;
     }
@@ -1694,7 +1694,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void ApplyRemoteCharacterScale(float characterScale)
     {
         if (remoteBody == null || float.IsNaN(characterScale) || float.IsInfinity(characterScale)) return;
-        CharacterScaleRules.TrySet(remoteBody, characterScale);
+        AvatarScaleHandler.TrySet(remoteBody, characterScale);
     }
 
     private bool SynchronizeRemoteVehicle(bool inVehicle, ulong vehicleId, bool driver, BodyScript.EntityState state)
@@ -2135,7 +2135,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         body.health = replica.lastRemoteHealth;
         body.isAlive = replica.lastRemoteAlive;
         if (lethal && MultiplayerSession.PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
-            MultiplayerScoreboard.RecordLocalPvpKill();
+            ScoreboardSystem.RecordLocalPvpKill();
         if (amount > 0.001f) RouteRemotePlayerDamage(replica, amount, critical);
         return true;
     }
@@ -2195,7 +2195,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         if (MultiplayerSession.PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
-            MultiplayerScoreboard.RecordLocalPvpHit(amount, critical);
+            ScoreboardSystem.RecordLocalPvpHit(amount, critical);
         if (MultiplayerSession.IsHost)
         {
             if (currentShooter == null || !currentShooter.isPlayer || MultiplayerSession.PvpEnabled)
@@ -2273,7 +2273,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var appliedAmount = Mathf.Min(amount, Mathf.Max(0f, body.health));
             body.health -= amount;
             if (body == PlayerScript.player?.bodyScript)
-                MultiplayerScoreboard.RecordLocalDamageReceived(appliedAmount);
+                ScoreboardSystem.RecordLocalDamageReceived(appliedAmount);
             applyingNetworkPlayerDamage = true;
             try { body.Damaged(critical); }
             finally { applyingNetworkPlayerDamage = false; }

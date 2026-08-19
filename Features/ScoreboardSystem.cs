@@ -13,7 +13,7 @@ internal readonly struct PlayerPerformance
     private static float Ratio(int hits, int misses) { var total = hits + misses; return total <= 0 ? 0f : (hits > misses ? 1f - (float)misses / total : (float)hits / total); }
 }
 
-internal static class MultiplayerScoreboard
+internal static class ScoreboardSystem
 {
     private static readonly Dictionary<ushort, PlayerPerformance> scores = [];
     private static readonly Dictionary<ushort, int> hostKills = [];

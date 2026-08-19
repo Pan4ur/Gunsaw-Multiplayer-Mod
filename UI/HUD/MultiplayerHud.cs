@@ -113,7 +113,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         MissionEndReplication.Tick();
         PlayerCarrySystem.Tick();
-        MultiplayerScoreboard.Tick();
+        ScoreboardSystem.Tick();
         UpdateHostFpsWarning();
         MultiplayerPerformance.AdvancedEnabled = networkStatsVisible;
         MultiplayerPerformance.Sample();

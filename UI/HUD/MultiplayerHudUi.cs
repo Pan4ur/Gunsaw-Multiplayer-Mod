@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -14,11 +13,11 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private float nextChatRefresh;
     private int renderedChatEntryCount = -1;
     private bool chatWasOpen;
-    private readonly List<TMP_Text> debugMarkers = new List<TMP_Text>();
-    private readonly Dictionary<BodyScript, TMP_Text> nameTags = new Dictionary<BodyScript, TMP_Text>();
-    private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new Dictionary<BodyScript, TMP_Text>();
-    private readonly Dictionary<BodyScript, CoopMarker> coopMarkers = new Dictionary<BodyScript, CoopMarker>();
-    private readonly Dictionary<ushort, FinalLeaderboardRow> finalLeaderboardRows = new Dictionary<ushort, FinalLeaderboardRow>();
+    private readonly List<TMP_Text> debugMarkers = new();
+    private readonly Dictionary<BodyScript, TMP_Text> nameTags = new();
+    private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new();
+    private readonly Dictionary<BodyScript, CoopMarker> coopMarkers = new();
+    private readonly Dictionary<ushort, FinalLeaderboardRow> finalLeaderboardRows = new();
     private bool coopMarkersVisible = true;
 
     internal void Configure(MultiplayerHud hud)
@@ -238,14 +237,14 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private static string PlayerScoreLine(ushort peerId, string name, int ping, bool host)
     {
-        var score = MultiplayerScoreboard.ForPlayer(peerId);
-        var rank = MultiplayerScoreboard.Rank(score);
+        var score = ScoreboardSystem.ForPlayer(peerId);
+        var rank = ScoreboardSystem.Rank(score);
         var displayName = (host ? "[HOST] " : "") + name;
         if (displayName.Length > 21) displayName = displayName.Substring(0, 21);
         return Monospace(displayName.PadRight(22) + (ping >= 0 ? ping.ToString().PadLeft(4) : "   -") + "  " +
             score.Kills.ToString().PadLeft(3) + "  " + score.Deaths.ToString().PadLeft(3) + "  " +
             score.Accuracy.ToString("0.00").PadLeft(6) + "  " + score.HeadshotRatio.ToString("0.00").PadLeft(6) + "  " +
-            score.DamageRatio.ToString("0.00").PadLeft(6) + "     <color=" + MultiplayerScoreboard.RankColor(rank) + ">" + rank + "</color>");
+            score.DamageRatio.ToString("0.00").PadLeft(6) + "     <color=" + ScoreboardSystem.RankColor(rank) + ">" + rank + "</color>");
     }
 
     private static string Monospace(string value) => "<mspace=0.72em>" + value + "</mspace>";
@@ -267,8 +266,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             entries.Add(new FinalLeaderboardEntry(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1, remote.Body));
         entries.Sort((left, right) =>
         {
-            var result = MultiplayerScoreboard.PerformanceValue(MultiplayerScoreboard.ForPlayer(right.PeerId)).CompareTo(
-                MultiplayerScoreboard.PerformanceValue(MultiplayerScoreboard.ForPlayer(left.PeerId)));
+            var result = ScoreboardSystem.PerformanceValue(ScoreboardSystem.ForPlayer(right.PeerId)).CompareTo(
+                ScoreboardSystem.PerformanceValue(ScoreboardSystem.ForPlayer(left.PeerId)));
             return result != 0 ? result : left.PeerId.CompareTo(right.PeerId);
         });
 
@@ -287,18 +286,18 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var rowRect = row.Root.GetComponent<RectTransform>();
             if (rowRect == null) continue;
             rowRect.anchoredPosition = new Vector2(0f, 230f - index * 70f);
-            var score = MultiplayerScoreboard.ForPlayer(entry.PeerId);
-            var rank = MultiplayerScoreboard.Rank(score);
+            var score = ScoreboardSystem.ForPlayer(entry.PeerId);
+            var rank = ScoreboardSystem.Rank(score);
             var name = (entry.Host ? "[HOST] " : "") + entry.Name;
-            if (MultiplayerScoreboard.IsMvp(entry.PeerId)) name = "[MVP] " + name;
+            if (ScoreboardSystem.IsMvp(entry.PeerId)) name = "[MVP] " + name;
             if (name.Length > 21) name = name.Substring(0, 21);
             var line = name.PadRight(22) + (entry.Ping >= 0 ? entry.Ping.ToString().PadLeft(4) : "   -") + "  " +
                 score.Kills.ToString().PadLeft(3) + "  " + score.Deaths.ToString().PadLeft(3) + "  " +
                 score.Accuracy.ToString("0.00").PadLeft(6) + "  " + score.HeadshotRatio.ToString("0.00").PadLeft(6) + "  " +
                 score.DamageRatio.ToString("0.00").PadLeft(6) + "     " + rank;
-            var mvp = MultiplayerScoreboard.IsMvp(entry.PeerId);
+            var mvp = ScoreboardSystem.IsMvp(entry.PeerId);
             row.Background.color = mvp ? new Color(0.75f, 0.55f, 0.08f, 0.84f) : Color.clear;
-            row.Stats.text = "<color=" + MultiplayerScoreboard.RankColor(rank) + ">" + Monospace(line) + "</color>";
+            row.Stats.text = "<color=" + ScoreboardSystem.RankColor(rank) + ">" + Monospace(line) + "</color>";
             row.Visual.localScale = entry.Body != null && !entry.Body.isRight ? new Vector3(-1f, 1f, 1f) : Vector3.one;
             UpdateHeadVisual(row.HeadParts, row.Visual, entry.Body, 58f);
             row.Root.SetActive(true);
@@ -350,7 +349,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 nameTags[body] = tag;
             }
             var name = NetworkAvatarReplication.RemoteNameTag(body);
-            tag.text = MultiplayerScoreboard.IsMvp(remote.PeerId) ? "[MVP] " + name : name;
+            tag.text = ScoreboardSystem.IsMvp(remote.PeerId) ? "[MVP] " + name : name;
             tag.color = !body.isAlive ? new Color(1f, 0.28f, 0.28f, visibility) :
                 !body.IsConsc() ? new Color(1f, 0.72f, 0.22f, visibility) : new Color(1f, 1f, 1f, visibility);
             tag.rectTransform.anchoredPosition = CanvasPosition(screen + new Vector3(0f, 12f, 0f));

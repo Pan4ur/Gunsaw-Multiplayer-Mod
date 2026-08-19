@@ -1,11 +1,11 @@
 using System.Globalization;
 using UnityEngine;
 
-internal sealed class ChatCommandHandler
+internal sealed class ChatCommandSystem
 {
     private readonly GunsawMultiplayerPlugin plugin;
 
-    internal ChatCommandHandler(GunsawMultiplayerPlugin plugin)
+    internal ChatCommandSystem(GunsawMultiplayerPlugin plugin)
     {
         this.plugin = plugin;
     }
@@ -163,8 +163,7 @@ internal sealed class ChatCommandHandler
         }
         var value = message.Length > 6 ? message.Substring(6).Trim() : "";
         float scale;
-        if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out scale) ||
-            float.IsNaN(scale) || float.IsInfinity(scale) || scale < CharacterScaleRules.Minimum || scale > CharacterScaleRules.Maximum)
+        if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out scale) || AvatarScaleHandler.Incorrect(scale))
         {
             plugin.status = "Usage: /scale <0.25-2.0>";
             return true;
@@ -176,7 +175,7 @@ internal sealed class ChatCommandHandler
             plugin.status = "You cannot use /scale while dead.";
             return true;
         }
-        if (!CharacterScaleRules.TrySet(body, scale))
+        if (!AvatarScaleHandler.TrySet(body, scale))
         {
             plugin.status = "Character scale is unavailable right now.";
             return true;

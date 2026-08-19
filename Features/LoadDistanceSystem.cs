@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // https://youtu.be/-jC1soxzOYg
-internal static class MultiplayerLoadDistance
+internal static class LoadDistanceSystem
 {
     // Mechs now tick at the default distance specified in the settings - 1800 (sqr m)
     // I think most custom maps are designed around this distance
