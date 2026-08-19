@@ -44,7 +44,6 @@ internal static class RPCSettings
 internal sealed class RPCManager : MonoBehaviour
 {
     public bool enable;
-    public string lobbyId;
     public static RPCManager instance;
     private bool _enable;
     private float timer = 5f;
