@@ -83,7 +83,7 @@ internal static class MultiplayerCrateSpawnerTickCullPatch
         var spawned = UnityEngine.Object.Instantiate(__instance.spawnPrefab, __instance.transform.position,
             __instance.transform.rotation);
         if (spawned != null) spawned.AddComponent<RuntimeSpawnedCrate>();
-        GunsawMultiplayerPlugin.World.RegisterRuntimeWorldBodies(spawned);
+        GunsawMultiplayerPlugin.World.bodies.RegisterRuntimeWorldBodies(spawned);
         return false;
     }
 }

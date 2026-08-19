@@ -5,94 +5,80 @@ using UnityEngine.SceneManagement;
 internal sealed class WorldReplication : MonoBehaviour
 {
     internal static WorldReplication Instance;
-
-    // пиздец почему это не енам
-    internal const byte WeaponPickup = 1;
-    internal const byte WeaponAmmoGet = 2;
-    private const byte ButtonActivate = 3;
-    private const byte DoorActivate = 4;
-    private const byte ZoneActivate = 5;
-    private const byte GlassDamage = 6;
-    private const byte VehicleDamage = 7;
-    private const byte DroneDamage = 8;
-    private const byte WeaponDrop = 9;
+    
+    internal enum WorldInteraction : byte
+    {
+        WeaponPickup = 1,
+        WeaponAmmoGet = 2,
+        ButtonActivate = 3,
+        DoorActivate = 4,
+        ZoneActivate = 5,
+        GlassDamage = 6,
+        VehicleDamage = 7,
+        DroneDamage = 8,
+        WeaponDrop = 9
+    }
 
     // Ill just leave it like this for now (It's becoming painful to drive the karts)
     private const float SnapshotInterval = 1f / 50f;
 
     private const float FullSnapshotInterval = 1f;
-    private const float ClientAuthorityGrace = 0.35f;
-    private const float ContactStateInterval = 0.1f;
+    internal const float ClientAuthorityGrace = 0.35f;
     
-    private readonly Dictionary<string, Rigidbody2D> bodies = new();
-    private readonly Dictionary<Rigidbody2D, string> ids = new();
-    private readonly Dictionary<string, ulong> wireIds = new();
-    private readonly Dictionary<ulong, string> idsByWire = new();
-    private readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons = new ();
-    private readonly Dictionary<Rigidbody2D, BodyLayout> bodyLayouts = new();
-    private readonly HashSet<Rigidbody2D> interactivePropBodies = new();
-    private readonly Dictionary<string, float> pendingDestroyedWeaponPickups = new();
+    internal readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons = new ();
+    internal readonly Dictionary<Rigidbody2D, BodyLayout> bodyLayouts = new();
+    internal readonly Dictionary<string, float> pendingDestroyedWeaponPickups = new();
     private readonly HashSet<string> clientDestroyedBodyIds = new();
-    private readonly Dictionary<Rigidbody2D, State> received = new();
-    private readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
-    private readonly List<Rigidbody2D> staleVehiclePaths = new();
-    private readonly Dictionary<string, ClientBodyState> pushes = new();
-    private readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
-    private readonly Dictionary<string, PropAuthority> propAuthorities = new();
-    private readonly ContactPoint2D[] contactBuffer = new ContactPoint2D[32];
-    private readonly Dictionary<Rigidbody2D, float> nextContactStateAt = new();
+    internal readonly Dictionary<Rigidbody2D, float> nextContactStateAt = new();
     private readonly Dictionary<string, float> damage = new();
     private readonly Dictionary<string, float> nextDamage = new();
     private int nextRuntimeId;
     private int worldSnapshotSequence;
     private int lastReceivedWorldSnapshotSequence;
     private bool hasReceivedWorldSnapshotSequence;
-    private readonly Dictionary<Rigidbody2D, LocalSettings> localSettings = new();
-    private readonly HashSet<Rigidbody2D> clientCreatedBodies = [];
-    private readonly HashSet<Rigidbody2D> clientBoundDroppedWeapons = [];
+    internal readonly HashSet<Rigidbody2D> clientCreatedBodies = [];
+    internal readonly HashSet<Rigidbody2D> clientBoundDroppedWeapons = [];
     private readonly HashSet<Rigidbody2D> networkCrateDebrisBodies = [];
     private readonly Dictionary<CrateScript, float> networkCrateDebrisDamageUntil = new();
     private readonly Dictionary<GameObject, bool> clientHiddenObjects = new();
     private readonly Dictionary<MonoBehaviour, bool> clientControllers = new();
-    private readonly HashSet<Rigidbody2D> initializedBodies = [];
-    private readonly Dictionary<string, ButtonScript> buttons = new();
-    private readonly Dictionary<ButtonScript, string> buttonIds = new();
-    private readonly Dictionary<string, uint> buttonActivations = new();
-    private readonly Dictionary<string, uint> receivedButtonActivations = new();
-    private readonly Dictionary<string, float> nextButtonActivation = new();
-    private readonly Dictionary<string, QDoorOpen> proximityDoors = new();
-    private readonly Dictionary<QDoorOpen, string> proximityDoorIds = new();
-    private readonly Dictionary<string, float> nextDoorActivation = new();
-    private readonly Dictionary<string, ActivateZoneScript> activationZones = new();
-    private readonly Dictionary<ActivateZoneScript, string> activationZoneIds = new();
-    private readonly Dictionary<string, float> nextZoneActivation = new();
-    private readonly HashSet<string> activatedZoneIds = [];
-    private readonly HashSet<string> localZonePrompts = [];
-    private ActivateZoneScript promptZone;
+    internal readonly HashSet<Rigidbody2D> initializedBodies = [];
+    internal readonly Dictionary<string, ButtonScript> buttons = new();
+    internal readonly Dictionary<ButtonScript, string> buttonIds = new();
+    internal readonly Dictionary<string, uint> buttonActivations = new();
+    internal readonly Dictionary<string, uint> receivedButtonActivations = new();
+    internal readonly Dictionary<string, float> nextButtonActivation = new();
+    internal readonly Dictionary<string, QDoorOpen> proximityDoors = new();
+    internal readonly Dictionary<QDoorOpen, string> proximityDoorIds = new();
+    internal readonly Dictionary<string, float> nextDoorActivation = new();
+    internal readonly Dictionary<string, ActivateZoneScript> activationZones = new();
+    internal readonly Dictionary<ActivateZoneScript, string> activationZoneIds = new();
+    internal readonly Dictionary<string, float> nextZoneActivation = new();
+    internal readonly HashSet<string> activatedZoneIds = [];
+    internal readonly HashSet<string> localZonePrompts = [];
+    internal ActivateZoneScript promptZone;
     internal bool HasActivationPrompt => promptZone != null && MultiplayerSession.IsConnected;
-    private readonly Dictionary<string, GlassScript> glasses = new();
-    private readonly Dictionary<GlassScript, string> glassIds = new();
-    private readonly HashSet<string> destroyedGlass = [];
-    private readonly Dictionary<string, LampState> lamps = [];
-    private readonly Dictionary<Collider2D, string> lampIds = new();
-    private readonly HashSet<string> destroyedLamps = [];
-    private readonly Dictionary<string, DroneScript> drones = new();
-    private readonly Dictionary<DroneScript, string> droneIds = new();
-    private readonly HashSet<string> destroyedDrones = [];
-    private readonly HashSet<Rigidbody2D> droneBodies = [];
-    private readonly Dictionary<FireScript, string> fireIds = new();
-    private readonly Dictionary<string, FireScript> fires = new();
-    private readonly Dictionary<FireScript, int> pendingRuntimeFires = new();
-    private int nextRuntimeFireId;
-    private readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new();
-    private readonly HashSet<FireScript> clientCreatedFires = [];
-    private readonly Dictionary<string, AudioSource> mechanismAudio = new();
-    private readonly Dictionary<AudioSource, string> mechanismAudioIds = new();
-    private readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new();
-    private readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new();
-    private readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new();
-    private readonly HashSet<string> seenSnapshotFires = [];
-    private readonly HashSet<string> seenSnapshotAudio = [];
+    internal readonly Dictionary<string, GlassScript> glasses = new();
+    internal readonly Dictionary<GlassScript, string> glassIds = new();
+    internal readonly HashSet<string> destroyedGlass = [];
+    internal readonly Dictionary<string, LampState> lamps = [];
+    internal readonly Dictionary<Collider2D, string> lampIds = new();
+    internal readonly HashSet<string> destroyedLamps = [];
+    internal readonly Dictionary<string, DroneScript> drones = new();
+    internal readonly Dictionary<DroneScript, string> droneIds = new();
+    internal readonly HashSet<string> destroyedDrones = [];
+    internal readonly HashSet<Rigidbody2D> droneBodies = [];
+    internal readonly Dictionary<FireScript, string> fireIds = new();
+    internal readonly Dictionary<string, FireScript> fires = new();
+    internal readonly Dictionary<FireScript, int> pendingRuntimeFires = new();
+    internal int nextRuntimeFireId;
+    internal readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new();
+    internal readonly HashSet<FireScript> clientCreatedFires = [];
+    internal readonly Dictionary<string, AudioSource> mechanismAudio = new();
+    internal readonly Dictionary<AudioSource, string> mechanismAudioIds = new();
+    internal readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new();
+    internal readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new();
+    internal readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new();
     private readonly HashSet<SawScript> clientSaws = [];
     private byte[] lastSerializedWorld;
     private byte[] lastSerializedEnvironment;
@@ -100,10 +86,9 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, byte[]> lastSerializedBodyStates = new();
     private readonly Dictionary<string, BodyStateScratch> bodyStateScratch = new();
     private readonly Dictionary<string, float> lastChangedBodyAt = new();
-    private float nextSnapshot;
+    internal float nextSnapshot;
     private float nextReliableEnvironment;
     private float nextFireRefresh;
-    private float nextDroppedWeaponIndicatorUpdate;
     private float nextFullWorldSnapshot;
     private bool wasConnected;
     private bool wasHost;
@@ -122,17 +107,16 @@ internal sealed class WorldReplication : MonoBehaviour
     private int sentStatesPerSecond;
     private int receivedPacketsPerSecond;
     private int receivedStatesPerSecond;
-    private float clientFastSerializeState = 0f;
-    private Transform localContactRoot;
-    private Rigidbody2D[] localContactBodies = new Rigidbody2D[0];
+    internal float clientFastSerializeState = 0f;
+    internal Transform localContactRoot;
 
     internal int TotalPropCount
     {
         get
         {
             var count = 0;
-            foreach (var body in bodies.Values)
-                if (body != null && IsInteractivePropBody(body)) count++;
+            foreach (var body in bodies.bodies.Values)
+                if (body != null && bodies.IsInteractivePropBody(body)) count++;
             return count;
         }
     }
@@ -143,8 +127,8 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             var count = buttons.Count + mechanismAudio.Count;
             foreach (var fire in fires.Values) if (fire != null) count++;
-            foreach (var body in bodies.Values)
-                if (body != null && !IsInteractivePropBody(body)) count++;
+            foreach (var body in bodies.bodies.Values)
+                if (body != null && !bodies.IsInteractivePropBody(body)) count++;
             return count;
         }
     }
@@ -157,30 +141,18 @@ internal sealed class WorldReplication : MonoBehaviour
     internal int SentStatesPerSecond => sentStatesPerSecond;
     internal int ReceivedPacketsPerSecond => receivedPacketsPerSecond;
     internal int ReceivedStatesPerSecond => receivedStatesPerSecond;
+    
+    internal WorldBodyReplication bodies;
+    internal WorldEnvironmentReplication enviroment;
+    internal DroppedWeaponReplication weapons;
+
 
     private void Awake()
     {
         Instance = this;
-    }
-
-    internal static void TrackDroppedWeapons()
-    {
-        var current = Instance;
-        if (current == null || !MultiplayerSession.IsHost) return;
-        foreach (var dropped in FindObjectsOfType<DroppedWeapon>())
-            RegisterDroppedWeapon(dropped);
-    }
-    
-    internal static void RegisterDroppedWeapon(DroppedWeapon dropped)
-    {
-        var current = Instance;
-        if (current == null || !MultiplayerSession.IsHost || dropped == null) return;
-        foreach (var body in dropped.GetComponentsInChildren<Rigidbody2D>(true))
-        {
-            if (body == null) continue;
-            current.RegisterWorldBody(body);
-            current.droppedWeapons[body] = dropped;
-        }
+        bodies = new WorldBodyReplication();
+        enviroment = new WorldEnvironmentReplication();
+        weapons = new DroppedWeaponReplication();
     }
 
     internal void RegisterDestroyedCrateDebris(CrateScript crate, Rigidbody2D[] debrisBodies)
@@ -198,11 +170,11 @@ internal sealed class WorldReplication : MonoBehaviour
         if (!MultiplayerSession.IsHost) return;
         culledPropCount = 0;
         culledOtherCount = 0;
-        foreach (var body in bodies.Values)
+        foreach (var body in bodies.bodies.Values)
         {
             LoadDistanceSystem.ApplyWorldBody(body);
             if (!LoadDistanceSystem.IsSimulationCulled(body)) continue;
-            if (IsInteractivePropBody(body)) culledPropCount++;
+            if (bodies.IsInteractivePropBody(body)) culledPropCount++;
             else culledOtherCount++;
         }
     }
@@ -212,117 +184,124 @@ internal sealed class WorldReplication : MonoBehaviour
         var performanceStarted = MultiplayerPerformance.Start();
         try
         {
-        SampleActivity();
-        var scene = SceneManager.GetActiveScene();
-        var isHost = MultiplayerSession.IsHost;
-        var sceneChanged = activeSceneHandle != scene.handle;
-        var roleChanged = wasConnected && wasHost != isHost;
-        if (sceneChanged || roleChanged)
-        {
-            if (wasConnected) RestoreClientWorld();
-            activeSceneHandle = scene.handle;
-            nextSnapshot = 0f;
-            discoveredScene = false;
-        }
-
-        if (!MultiplayerSession.IsConnected)
-        {
-            if (wasConnected) RestoreClientWorld();
-            wasConnected = false;
-            wasHost = isHost;
-            return;
-        }
-
-        if (!wasConnected)
-        {
-            nextSnapshot = 0f;
-            discoveredScene = false;
-        }
-        wasConnected = true;
-        wasHost = isHost;
-        if (!discoveredScene)
-        {
-            var discoveryStarted = MultiplayerPerformance.StartPhase();
-            discoveredScene = true;
-            RefreshWorldBodies();
-            RefreshButtons();
-            RefreshProximityDoors();
-            RefreshActivationZones();
-            RefreshGlasses();
-            RefreshDrones();
-            DiscoverWorldFires();
-            RefreshClientSaws();
-            RefreshWorldControllers();
-            RefreshMechanismAudio();
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDiscovery, discoveryStarted);
-        }
-        if (Time.unscaledTime >= nextFireRefresh)
-        {
-            nextFireRefresh = Time.unscaledTime + 0.1f;
-            var fireRefreshStarted = MultiplayerPerformance.StartPhase();
-            RefreshKnownWorldFires();
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldFireRefresh, fireRefreshStarted);
-        }
-        ProcessPendingRuntimeFires();
-        if (isHost)
-        {
-            var zonePromptStarted = MultiplayerPerformance.StartPhase();
-            UpdateZonePrompt();
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, zonePromptStarted);
-            var inputStarted = MultiplayerPerformance.StartPhase();
-            byte[] interaction;
-            ushort interactionPeer;
-            while (MultiplayerSession.TryTakeWorldInteraction(out interactionPeer, out interaction))
-                ApplyWeaponInteraction(interactionPeer, interaction);
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
-            return;
-        }
-
-        var clientZonePromptStarted = MultiplayerPerformance.StartPhase();
-        UpdateZonePrompt();
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, clientZonePromptStarted);
-
-        byte[] snapshot;
-        byte[] latestSnapshot = null;
-        var latestSnapshotSequence = lastReceivedWorldSnapshotSequence;
-        var queueStarted = MultiplayerPerformance.StartPhase();
-        while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot))
-        {
-            if (!TryReadWorldSnapshotSequence(snapshot, out var sequence)) continue;
-            if (latestSnapshot == null || IsNewerWorldSnapshotSequence(sequence, latestSnapshotSequence))
+            SampleActivity();
+            var scene = SceneManager.GetActiveScene();
+            var isHost = MultiplayerSession.IsHost;
+            var sceneChanged = activeSceneHandle != scene.handle;
+            var roleChanged = wasConnected && wasHost != isHost;
+            if (sceneChanged || roleChanged)
             {
-                latestSnapshot = snapshot;
-                latestSnapshotSequence = sequence;
+                if (wasConnected) RestoreClientWorld();
+                activeSceneHandle = scene.handle;
+                nextSnapshot = 0f;
+                discoveredScene = false;
             }
-        }
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
-        if (latestSnapshot != null)
-        {
-            var readStarted = MultiplayerPerformance.StartPhase();
-            ReadSnapshot(latestSnapshot);
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
-        }
-        byte[] environment;
-        byte[] latestEnvironment = null;
-        queueStarted = MultiplayerPerformance.StartPhase();
-        while (MultiplayerSession.TryTakeWorldEnvironment(out environment)) latestEnvironment = environment;
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
-        if (latestEnvironment != null)
-        {
-            var readStarted = MultiplayerPerformance.StartPhase();
-            ApplyEnvironment(latestEnvironment);
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
-        }
-        var lodFreezeStarted = MultiplayerPerformance.StartPhase();
-        FreezeFarClientProps();
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientLodFreeze, lodFreezeStarted);
-        var sawsStarted = MultiplayerPerformance.StartPhase();
-        AnimateClientSaws();
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSaws, sawsStarted);
-        var weaponIndicatorsStarted = MultiplayerPerformance.StartPhase();
-        AnimateClientDroppedWeaponIndicators();
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators, weaponIndicatorsStarted);
-        StopSettledClientDoorAudio();
+
+            if (!MultiplayerSession.IsConnected)
+            {
+                if (wasConnected) RestoreClientWorld();
+                wasConnected = false;
+                wasHost = isHost;
+                return;
+            }
+
+            if (!wasConnected)
+            {
+                nextSnapshot = 0f;
+                discoveredScene = false;
+            }
+
+            wasConnected = true;
+            wasHost = isHost;
+            if (!discoveredScene)
+            {
+                var discoveryStarted = MultiplayerPerformance.StartPhase();
+                discoveredScene = true;
+                bodies.RefreshWorldBodies();
+                enviroment.RefreshButtons();
+                enviroment.RefreshProximityDoors();
+                enviroment.RefreshActivationZones();
+                enviroment.RefreshGlasses();
+                enviroment.RefreshDrones();
+                enviroment.DiscoverWorldFires();
+                RefreshClientSaws();
+                RefreshWorldControllers();
+                enviroment.RefreshMechanismAudio();
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDiscovery, discoveryStarted);
+            }
+
+            if (Time.unscaledTime >= nextFireRefresh)
+            {
+                nextFireRefresh = Time.unscaledTime + 0.1f;
+                var fireRefreshStarted = MultiplayerPerformance.StartPhase();
+                enviroment.RefreshKnownWorldFires();
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldFireRefresh, fireRefreshStarted);
+            }
+
+            enviroment.ProcessPendingRuntimeFires();
+            if (isHost)
+            {
+                var zonePromptStarted = MultiplayerPerformance.StartPhase();
+                enviroment.UpdateZonePrompt();
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, zonePromptStarted);
+                var inputStarted = MultiplayerPerformance.StartPhase();
+                byte[] interaction;
+                ushort interactionPeer;
+                while (MultiplayerSession.TryTakeWorldInteraction(out interactionPeer, out interaction))
+                    ApplyWeaponInteraction(interactionPeer, interaction);
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
+                return;
+            }
+
+            var clientZonePromptStarted = MultiplayerPerformance.StartPhase();
+            enviroment.UpdateZonePrompt();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, clientZonePromptStarted);
+
+            byte[] snapshot;
+            byte[] latestSnapshot = null;
+            var latestSnapshotSequence = lastReceivedWorldSnapshotSequence;
+            var queueStarted = MultiplayerPerformance.StartPhase();
+            while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot))
+            {
+                if (!TryReadWorldSnapshotSequence(snapshot, out var sequence)) continue;
+                if (latestSnapshot == null || IsNewerWorldSnapshotSequence(sequence, latestSnapshotSequence))
+                {
+                    latestSnapshot = snapshot;
+                    latestSnapshotSequence = sequence;
+                }
+            }
+
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
+            if (latestSnapshot != null)
+            {
+                var readStarted = MultiplayerPerformance.StartPhase();
+                ReadSnapshot(latestSnapshot);
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
+            }
+
+            byte[] environment;
+            byte[] latestEnvironment = null;
+            queueStarted = MultiplayerPerformance.StartPhase();
+            while (MultiplayerSession.TryTakeWorldEnvironment(out environment)) latestEnvironment = environment;
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
+            if (latestEnvironment != null)
+            {
+                var readStarted = MultiplayerPerformance.StartPhase();
+                enviroment.ApplyEnvironment(latestEnvironment);
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
+            }
+
+            var lodFreezeStarted = MultiplayerPerformance.StartPhase();
+            bodies.FreezeFarClientProps();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientLodFreeze, lodFreezeStarted);
+            var sawsStarted = MultiplayerPerformance.StartPhase();
+            AnimateClientSaws();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSaws, sawsStarted);
+            var weaponIndicatorsStarted = MultiplayerPerformance.StartPhase();
+            weapons.AnimateClientDroppedWeaponIndicators();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators,
+                weaponIndicatorsStarted);
+            enviroment.StopSettledClientDoorAudio();
         }
         finally
         {
@@ -335,233 +314,83 @@ internal sealed class WorldReplication : MonoBehaviour
         var performanceStarted = MultiplayerPerformance.Start();
         try
         {
-        if (!MultiplayerSession.IsConnected) return;
-        if (MultiplayerSession.IsHost)
-        {
-            var inputStarted = MultiplayerPerformance.StartPhase();
-            ushort inputPeer;
-            WorldInputPacket input;
-            while (MultiplayerSession.TryTakeWorldInput(out inputPeer, out input)) ApplyPushes(inputPeer, input);
-            WorldDamagePacket damagePacket;
-            while (MultiplayerSession.TryTakeWorldDamage(out damagePacket)) ApplyDamage(damagePacket);
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
-            if (Time.unscaledTime >= nextSnapshot)
+            if (!MultiplayerSession.IsConnected) return;
+            
+            if (MultiplayerSession.IsHost)
             {
-                nextSnapshot = Time.unscaledTime + SnapshotInterval;
-                var serializeStarted = MultiplayerPerformance.StartPhase();
-                var snapshot = SerializeWorld();
-                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerialize, serializeStarted);
-                if (snapshot != null)
-                { var snapshotReader = new PacketReader(snapshot); MultiplayerSession.Send(WorldSnapshotPacket.Read(ref snapshotReader)); }
-                if (lastSerializedEnvironment != null &&
-                    Time.unscaledTime >= nextReliableEnvironment &&
-                    !BytesEqual(lastReliableEnvironment, lastSerializedEnvironment))
+                var inputStarted = MultiplayerPerformance.StartPhase();
+                ushort inputPeer;
+                WorldInputPacket input;
+                while (MultiplayerSession.TryTakeWorldInput(out inputPeer, out input)) ApplyPushes(inputPeer, input);
+                WorldDamagePacket damagePacket;
+                while (MultiplayerSession.TryTakeWorldDamage(out damagePacket)) ApplyDamage(damagePacket);
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
+                if (Time.unscaledTime >= nextSnapshot)
                 {
-                    nextReliableEnvironment = Time.unscaledTime + 0.1f;
-                    MultiplayerSession.Send(new WorldEnvironmentPacket(lastSerializedEnvironment));
-                    lastReliableEnvironment = lastSerializedEnvironment;
+                    nextSnapshot = Time.unscaledTime + SnapshotInterval;
+                    var serializeStarted = MultiplayerPerformance.StartPhase();
+                    var snapshot = SerializeWorld();
+                    MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerialize, serializeStarted);
+                    if (snapshot != null)
+                    {
+                        var snapshotReader = new PacketReader(snapshot);
+                        MultiplayerSession.Send(WorldSnapshotPacket.Read(ref snapshotReader));
+                    }
+
+                    if (lastSerializedEnvironment != null &&
+                        Time.unscaledTime >= nextReliableEnvironment &&
+                        !BytesEqual(lastReliableEnvironment, lastSerializedEnvironment))
+                    {
+                        nextReliableEnvironment = Time.unscaledTime + 0.1f;
+                        MultiplayerSession.Send(new WorldEnvironmentPacket(lastSerializedEnvironment));
+                        lastReliableEnvironment = lastSerializedEnvironment;
+                    }
                 }
+
+                return;
             }
-            return;
-        }
-        var contactsStarted = MultiplayerPerformance.StartPhase();
-        CaptureLocalContacts();
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldContacts, contactsStarted);
-        var authorityStarted = MultiplayerPerformance.StartPhase();
-        MaintainMovingLocalAuthorities();
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldAuthorityMaintenance, authorityStarted);
-        if (received.Count > 0)
-        {
-            var applyStarted = MultiplayerPerformance.StartPhase();
-            foreach (var pair in received)
+
+            var contactsStarted = MultiplayerPerformance.StartPhase();
+            bodies.CaptureLocalContacts();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldContacts, contactsStarted);
+            var authorityStarted = MultiplayerPerformance.StartPhase();
+            bodies.MaintainMovingLocalAuthorities();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldAuthorityMaintenance, authorityStarted);
+            if (bodies.received.Count > 0)
             {
-                var body = pair.Key;
-                if (body == null) continue;
-                ApplyAuthoritativeState(body, pair.Value);
+                var applyStarted = MultiplayerPerformance.StartPhase();
+                foreach (var pair in bodies.received)
+                {
+                    var body = pair.Key;
+                    if (body == null) continue;
+                    bodies.ApplyAuthoritativeState(body, pair.Value);
+                }
+
+                bodies.received.Clear();
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldStateApply, applyStarted);
             }
-            received.Clear();
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldStateApply, applyStarted);
-        }
-        TickVehiclePaths();
-        if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
-        {
-            var clientSendStarted = MultiplayerPerformance.StartPhase();
-            clientFastSerializeState -= Time.fixedDeltaTime;
-            nextSnapshot = Time.unscaledTime + SnapshotInterval;
-            MultiplayerSession.Send(SerializePushes(), 1);
-            MultiplayerSession.Send(SerializeDamage(), 1);
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSend, clientSendStarted);
-        }
+
+            bodies.TickVehiclePaths();
+            if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
+            {
+                var clientSendStarted = MultiplayerPerformance.StartPhase();
+                clientFastSerializeState -= Time.fixedDeltaTime;
+                nextSnapshot = Time.unscaledTime + SnapshotInterval;
+                MultiplayerSession.Send(SerializePushes(), 1);
+                MultiplayerSession.Send(SerializeDamage(), 1);
+                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSend, clientSendStarted);
+            }
         }
         finally
         {
             MultiplayerPerformance.AddWorld(performanceStarted);
         }
     }
-
-    private void CaptureLocalContacts()
-    {
-        var player = PlayerScript.player;
-        if (player == null || player.bodyScript == null) return;
-        var localBody = player.bodyScript;
-        var root = localBody.transform.root;
-        if (root != localContactRoot)
-        {
-            localContactRoot = root;
-            localContactBodies = root.GetComponentsInChildren<Rigidbody2D>();
-            nextContactStateAt.Clear();
-        }
-        var now = Time.unscaledTime;
-        foreach (var localRigidbody in localContactBodies)
-        {
-            if (localRigidbody == null || !localRigidbody.simulated) continue;
-            var count = localRigidbody.GetContacts(contactBuffer);
-            for (var index = 0; index < count; index++)
-            {
-                var contact = contactBuffer[index];
-                var other = IsLocalPlayerCollider(contact.collider, localBody)
-                    ? contact.otherCollider : contact.collider;
-                if (other == null || IsLocalPlayerCollider(other, localBody)) continue;
-                var body = other.attachedRigidbody;
-                if (body == null || body.bodyType != RigidbodyType2D.Dynamic || !body.simulated ||
-                    !ids.ContainsKey(body)) continue;
-
-                QueueContactBodyState(body, now);
-            }
-        }
-    }
-
-    private static bool IsLocalPlayerCollider(Collider2D collider, BodyScript localBody)
-    {
-        return collider != null && collider.transform.root == localBody.transform.root;
-    }
-
-    private void FreezeFarClientProps()
-    {
-        if (MultiplayerSession.IsHost) return;
-        var player = PlayerScript.player;
-        var localBody = player == null ? null : player.bodyScript;
-        if (localBody == null) return;
-        var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
-        foreach (var body in interactivePropBodies)
-        {
-            if (body == null || (body.position - localPosition).sqrMagnitude < LoadDistanceSystem.WorldDistanceSqr)
-                continue;
-            body.velocity = Vector2.zero;
-            body.angularVelocity = 0f;
-            body.simulated = false;
-        }
-    }
-
-    private void RefreshWorldBodies()
-    {
-        foreach (var body in FindObjectsOfType<Rigidbody2D>())
-            RegisterWorldBody(body);
-    }
-
-    internal void RegisterRuntimeWorldBodies(GameObject runtimeObject)
-    {
-        if (!MultiplayerSession.IsHost || runtimeObject == null) return;
-        foreach (var body in runtimeObject.GetComponentsInChildren<Rigidbody2D>(true))
-            RegisterWorldBody(body);
-    }
-
-    private void RegisterWorldBody(Rigidbody2D body)
-    {
-        if (!IsWorldBody(body))
-        {
-            RemoveWorldBody(body);
-            return;
-        }
-        var id = Id(body);
-        bodies[id] = body;
-        LoadDistanceSystem.RegisterWorldBody(body);
-        WireId(id);
-        if (!droppedWeapons.ContainsKey(body))
-            droppedWeapons[body] = body.GetComponentInParent<DroppedWeapon>();
-        if (!bodyLayouts.ContainsKey(body)) bodyLayouts[body] = CreateBodyLayout(body);
-        var interactiveProp = IsInteractivePropBodyUncached(body);
-        if (interactiveProp) interactivePropBodies.Add(body);
-        else interactivePropBodies.Remove(body);
-        if (MultiplayerSession.IsHost && interactiveProp)
-            NetworkAvatarReplication.IgnoreRemotePlayerPropCollisions(body);
-        if (!MultiplayerSession.IsHost) MakeClientControlled(body);
-    }
-
-    private void RemoveWorldBody(Rigidbody2D body)
-    {
-        if (body == null) return;
-        LoadDistanceSystem.UnregisterWorldBody(body);
-        string id;
-        if (ids.TryGetValue(body, out id))
-        {
-            bodies.Remove(id);
-            ids.Remove(body);
-            propAuthorities.Remove(id);
-        }
-        droppedWeapons.Remove(body);
-        bodyLayouts.Remove(body);
-        interactivePropBodies.Remove(body);
-        received.Remove(body);
-        locallyControlledUntil.Remove(body);
-        nextContactStateAt.Remove(body);
-        localSettings.Remove(body);
-        initializedBodies.Remove(body);
-    }
-
-    private static bool IsWorldBody(Rigidbody2D body)
-    {
-        if (body == null || !body.gameObject.scene.isLoaded) return false;
-        if (body.GetComponentInParent<BodyScript>() != null ||
-            body.GetComponentInParent<PlayerScript>() != null ||
-            body.GetComponentInParent<NetworkReplica>() != null ||
-            NpcReplication.IsNpcRigBody(body)) return false;
-
-
-        var localPlayer = PlayerScript.player;
-        if (localPlayer != null && localPlayer.bodyScript != null &&
-            body.transform.root == localPlayer.bodyScript.transform.root) return false;
-
-        if (IsInteractivePropBodyUncached(body)) return true;
-        if (IsDroneBody(body)) return true;
-        return !IsGameplayOwned(body) && IsMechanismBody(body);
-    }
-
-    private bool IsInteractivePropBody(Rigidbody2D body)
-    {
-        if (body == null) return false;
-        if (interactivePropBodies.Contains(body)) return true;
-        return !ids.ContainsKey(body) && IsInteractivePropBodyUncached(body);
-    }
-
-    private static bool IsInteractivePropBodyUncached(Rigidbody2D body)
+    
+    internal static bool IsInteractivePropBodyUncached(Rigidbody2D body)
     {
         return body != null && (body.GetComponentInParent<CrateScript>() != null ||
             body.GetComponentInParent<DroppedWeapon>() != null);
-    }
-
-    private static bool IsMechanismBody(Rigidbody2D body)
-    {
-        return body != null && (body.GetComponentInParent<DoorScript>() != null ||
-            body.GetComponentInParent<MovingBelt>() != null ||
-            body.GetComponentInParent<RbMoveToObj>() != null ||
-            body.GetComponentInParent<SawScript>() != null ||
-            body.GetComponentInParent<CustJoint>() != null ||
-            body.GetComponentInParent<VehiclePart>() != null ||
-            IsSafetyRailingBody(body));
-    }
-
-    private static bool IsDroneBody(Rigidbody2D body)
-    {
-        return body != null && body.GetComponentInParent<DroneScript>() != null;
-    }
-
-    private static bool IsSafetyRailingBody(Rigidbody2D body)
-    {
-        if (body == null) return false;
-        for (var current = body.transform; current != null; current = current.parent)
-            if (current.name.StartsWith("SafetyRailing", StringComparison.Ordinal)) return true;
-        return false;
     }
 
     private static bool IsSafetyRailingAttached(BodyLayout layout)
@@ -572,39 +401,7 @@ internal sealed class WorldReplication : MonoBehaviour
         return false;
     }
 
-    private BodyLayout BodyLayoutFor(Rigidbody2D body)
-    {
-        BodyLayout layout;
-        if (bodyLayouts.TryGetValue(body, out layout)) return layout;
-        layout = CreateBodyLayout(body);
-        bodyLayouts[body] = layout;
-        return layout;
-    }
-
-    private static BodyLayout CreateBodyLayout(Rigidbody2D body)
-    {
-        var crate = body.GetComponentInParent<CrateScript>();
-        var vehiclePart = body.GetComponent<VehiclePart>();
-        return new BodyLayout
-        {
-            Crate = crate,
-            CratePrefabName = crate == null ? "" : CleanCloneName(crate.transform.root.name),
-            SafetyRailing = IsSafetyRailingBody(body),
-            Joints = body.GetComponents<Joint2D>(),
-            VehiclePart = vehiclePart,
-            Vehicle = vehiclePart == null ? null : vehiclePart.vehicle ?? vehiclePart.GetComponentInParent<VehicleBase>(),
-            VehicleJoint = body.GetComponent<Joint2D>()
-        };
-    }
-
-    private static void DetachSafetyRailing(Rigidbody2D body)
-    {
-        if (!IsSafetyRailingBody(body)) return;
-        foreach (var joint in body.GetComponents<Joint2D>())
-            if (joint != null) Destroy(joint);
-    }
-
-    private static bool IsGameplayOwned(Component component)
+    internal static bool IsGameplayOwned(Component component)
     {
         if (component == null) return false;
         if (component.GetComponentInParent<BodyScript>() != null ||
@@ -617,30 +414,6 @@ internal sealed class WorldReplication : MonoBehaviour
         var localPlayer = PlayerScript.player;
         return localPlayer != null && localPlayer.bodyScript != null &&
             component.transform.root == localPlayer.bodyScript.transform.root;
-    }
-
-    private void MakeClientControlled(Rigidbody2D body)
-    {
-        if (!localSettings.ContainsKey(body))
-        {
-            var crate = body.GetComponentInParent<CrateScript>();
-            localSettings.Add(body, new LocalSettings
-            {
-                bodyType = body.bodyType,
-                simulated = body.simulated,
-                crate = crate,
-                crateEnabled = crate != null && crate.enabled,
-                droppedWeapon = body.GetComponentInParent<DroppedWeapon>(),
-                droppedWeaponEnabled = body.GetComponentInParent<DroppedWeapon>() != null && body.GetComponentInParent<DroppedWeapon>().enabled
-            });
-        }
-
-        var crateScript = body.GetComponentInParent<CrateScript>();
-        if (crateScript != null) crateScript.enabled = false;
-        var droppedWeapon = body.GetComponentInParent<DroppedWeapon>();
-        if (droppedWeapon != null) droppedWeapon.enabled = false;
-        if (IsMechanismBody(body) && !IsInteractivePropBody(body) && body.simulated)
-            body.bodyType = RigidbodyType2D.Kinematic;
     }
 
     internal ulong VehicleWireId(VehicleBase vehicle)
@@ -668,7 +441,7 @@ internal sealed class WorldReplication : MonoBehaviour
         DisableControllers(FindObjectsOfType<RbMoveToObj>());
         foreach (var joint in FindObjectsOfType<CustJoint>())
             if (joint != null && !IsGameplayOwned(joint) &&
-                !IsInteractivePropBody(joint.GetComponentInParent<Rigidbody2D>()))
+                !bodies.IsInteractivePropBody(joint.GetComponentInParent<Rigidbody2D>()))
                 DisableController(joint);
         DisableControllers(FindObjectsOfType<DelayedTrigger>());
         DisableControllers(FindObjectsOfType<TimedTrigger>());
@@ -691,23 +464,6 @@ internal sealed class WorldReplication : MonoBehaviour
             var angles = saw.transform.eulerAngles;
             angles.z += saw.rotSpeed * Time.deltaTime;
             saw.transform.eulerAngles = angles;
-        }
-    }
-
-    private void AnimateClientDroppedWeaponIndicators()
-    {
-        if (Time.unscaledTime < nextDroppedWeaponIndicatorUpdate) return;
-        nextDroppedWeaponIndicatorUpdate = Time.unscaledTime + 0.1f;
-        var player = PlayerScript.player;
-        var localBody = player == null ? null : player.bodyScript;
-        var localPosition = localBody == null ? Vector2.zero :
-            (localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position);
-        foreach (var dropped in droppedWeapons.Values)
-        {
-            if (dropped == null) continue;
-            if (localBody != null && ((Vector2)dropped.transform.position - localPosition).sqrMagnitude > 256f)
-                continue;
-            SynchronizeDroppedWeaponAmmoIndicator(dropped);
         }
     }
 
@@ -739,106 +495,11 @@ internal sealed class WorldReplication : MonoBehaviour
             clientControllers.Remove(controller);
         }
     }
-
-    private void RefreshMechanismAudio()
-    {
-        if (MultiplayerSession.IsHost) mechanismAudio.Clear();
-        CollectMechanismAudio(FindObjectsOfType<DoorScript>());
-        CollectMechanismAudio(FindObjectsOfType<MovingBelt>());
-        CollectMechanismAudio(FindObjectsOfType<RbMoveToObj>());
-        CollectMechanismAudio(FindObjectsOfType<SawScript>());
-        CollectMechanismAudio(FindObjectsOfType<CustJoint>());
-    }
-
-    private void CollectMechanismAudio<T>(T[] controllers) where T : MonoBehaviour
-    {
-        foreach (var controller in controllers)
-        {
-            if (controller == null || IsGameplayOwned(controller)) continue;
-            var door = controller as DoorScript;
-            foreach (var source in controller.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source, door);
-            var parentSource = controller.GetComponentInParent<AudioSource>();
-            RegisterMechanismAudio(parentSource, door);
-            var body = controller.GetComponentInParent<Rigidbody2D>();
-            if (body == null) continue;
-            foreach (var source in body.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source, door);
-        }
-    }
-
-    private void RegisterMechanismAudio(AudioSource source, DoorScript door = null)
-    {
-        if (source == null || IsGameplayOwned(source)) return;
-        string id;
-        if (!mechanismAudioIds.TryGetValue(source, out id))
-        {
-            id = ComponentId(source);
-            mechanismAudioIds[source] = id;
-        }
-        mechanismAudio[id] = source;
-        if (door != null) doorAudioSources[source] = door;
-        if (MultiplayerSession.IsHost || clientAudioWasPlaying.ContainsKey(source)) return;
-        clientAudioWasPlaying[source] = source.isPlaying;
-        source.Stop();
-    }
-
-    private void ApplyMechanismAudio(string id, bool playing, bool loop, float volume, float pitch)
-    {
-        AudioSource source;
-        if (!mechanismAudio.TryGetValue(id, out source) || source == null) return;
-        source.loop = loop;
-        source.volume = Mathf.Clamp01(volume);
-        source.pitch = Mathf.Clamp(pitch, -3f, 3f);
-        if (playing)
-        {
-            if (!source.isPlaying && source.clip != null)
-            {
-                source.Play();
-                if (doorAudioSources.ContainsKey(source)) clientDoorAudioStartedAt[source] = Time.unscaledTime;
-            }
-        }
-        else if (source.isPlaying)
-        {
-            source.Stop();
-            clientDoorAudioStartedAt.Remove(source);
-        }
-    }
-
-    private void StopSettledClientDoorAudio()
-    {
-        if (MultiplayerSession.IsHost) return;
-        foreach (var pair in doorAudioSources)
-        {
-            var source = pair.Key;
-            var door = pair.Value;
-            if (source == null || door == null || !source.isPlaying) continue;
-            float startedAt;
-            if (!clientDoorAudioStartedAt.TryGetValue(source, out startedAt) ||
-                Time.unscaledTime - startedAt < 0.2f) continue;
-            var body = door.GetComponent<Rigidbody2D>();
-            if (body == null || body.velocity.sqrMagnitude > 0.0001f || door.point1 == null || door.point2 == null) continue;
-            var closeEnough = Mathf.Min(Vector2.Distance(door.transform.position, door.point1.position),
-                Vector2.Distance(door.transform.position, door.point2.position)) < door.speed * 0.05f;
-            if (!closeEnough) continue;
-            source.Stop();
-            clientDoorAudioStartedAt.Remove(source);
-        }
-    }
-
-    private void StopMissingMechanismAudio(HashSet<string> seen)
-    {
-        foreach (var pair in mechanismAudio)
-        {
-            if (pair.Value != null && !seen.Contains(pair.Key) && pair.Value.isPlaying)
-                pair.Value.Stop();
-        }
-    }
-
+    
     private void RestoreClientWorld()
     {
         nextRuntimeId = 0;
-        foreach (var pair in localSettings)
+        foreach (var pair in bodies.localSettings)
         {
             if (pair.Key == null) continue;
             pair.Key.bodyType = pair.Value.bodyType;
@@ -846,26 +507,26 @@ internal sealed class WorldReplication : MonoBehaviour
             if (pair.Value.crate != null) pair.Value.crate.enabled = pair.Value.crateEnabled;
             if (pair.Value.droppedWeapon != null) pair.Value.droppedWeapon.enabled = pair.Value.droppedWeaponEnabled;
         }
-        localSettings.Clear();
+        bodies. localSettings.Clear();
         foreach (var pair in clientControllers)
             if (pair.Key != null) pair.Key.enabled = pair.Value;
         clientControllers.Clear();
-        bodies.Clear();
+        bodies.bodies.Clear();
         droppedWeapons.Clear();
         bodyLayouts.Clear();
-        interactivePropBodies.Clear();
+        bodies.interactivePropBodies.Clear();
         pendingDestroyedWeaponPickups.Clear();
         clientDestroyedBodyIds.Clear();
-        received.Clear();
-        vehiclePaths.Clear();
-        pushes.Clear();
-        locallyControlledUntil.Clear();
+        bodies.received.Clear();
+        bodies.vehiclePaths.Clear();
+        bodies.pushes.Clear();
+        bodies.locallyControlledUntil.Clear();
         nextContactStateAt.Clear();
         localContactRoot = null;
-        localContactBodies = new Rigidbody2D[0];
-        propAuthorities.Clear();
+        bodies.localContactBodies = new Rigidbody2D[0];
+        bodies.propAuthorities.Clear();
         damage.Clear();
-        ids.Clear();
+        bodies.ids.Clear();
         initializedBodies.Clear();
         buttons.Clear();
         buttonIds.Clear();
@@ -926,8 +587,8 @@ internal sealed class WorldReplication : MonoBehaviour
         mechanismAudioIds.Clear();
         mechanismAudio.Clear();
         clientSaws.Clear();
-        wireIds.Clear();
-        idsByWire.Clear();
+        bodies.wireIds.Clear();
+        bodies.idsByWire.Clear();
         lastSerializedWorld = null;
         worldSnapshotSequence = 0;
         lastReceivedWorldSnapshotSequence = 0;
@@ -941,7 +602,7 @@ internal sealed class WorldReplication : MonoBehaviour
         nextFullWorldSnapshot = 0f;
         nextReliableEnvironment = 0f;
         nextFireRefresh = 0f;
-        nextDroppedWeaponIndicatorUpdate = 0f;
+        weapons.nextDroppedWeaponIndicatorUpdate = 0f;
         nextActivitySample = 0f;
         sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
         sentPacketsPerSecond = sentStatesPerSecond = receivedPacketsPerSecond = receivedStatesPerSecond = 0;
@@ -960,7 +621,7 @@ internal sealed class WorldReplication : MonoBehaviour
             var changedPropCount = 0;
             var changedOtherBodyCount = 0;
             var bodySerializeStarted = MultiplayerPerformance.StartPhase();
-            foreach (var pair in bodies)
+            foreach (var pair in bodies.bodies)
             {
                 var body = pair.Value;
                 if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
@@ -972,7 +633,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 {
                     changedStates.Add(state);
                     if (stateChanged) lastChangedBodyAt[pair.Key] = Time.unscaledTime;
-                    if (body != null && IsInteractivePropBody(body)) changedPropCount++;
+                    if (body != null && bodies.IsInteractivePropBody(body)) changedPropCount++;
                     else changedOtherBodyCount++;
                 }
             }
@@ -980,7 +641,7 @@ internal sealed class WorldReplication : MonoBehaviour
             writer.Write((ushort)changedStates.Count);
             foreach (var state in changedStates) writer.Write(state);
             var environmentSerializeStarted = MultiplayerPerformance.StartPhase();
-            var environment = SerializeEnvironment();
+            var environment = enviroment.SerializeEnvironment();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeEnvironment, environmentSerializeStarted);
             var includeEnvironment = fullSnapshot || !BytesEqual(lastSerializedEnvironment, environment);
             writer.Write(includeEnvironment);
@@ -997,83 +658,9 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private byte[] SerializeEnvironment()
-    {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(MultiplayerSession.SnapshotEpoch);
-            BinaryWriterRaw.WriteSingle(writer, Physics2D.gravity.x); BinaryWriterRaw.WriteSingle(writer, Physics2D.gravity.y);
-            writer.Write((ushort)buttons.Count);
-            foreach (var pair in buttons)
-            {
-                writer.Write(WireId(pair.Key)); writer.Write(pair.Value != null);
-                uint activations; buttonActivations.TryGetValue(pair.Key, out activations); writer.Write(activations);
-            }
-            CaptureDestroyedGlass();
-            writer.Write((ushort)Math.Min(ushort.MaxValue, destroyedGlass.Count));
-            var writtenGlass = 0;
-            foreach (var id in destroyedGlass)
-            {
-                if (writtenGlass++ >= ushort.MaxValue) break;
-                writer.Write(WireId(id));
-            }
-            CaptureDestroyedLamps();
-            writer.Write((ushort)Math.Min(ushort.MaxValue, destroyedLamps.Count));
-            var writtenLamps = 0;
-            foreach (var id in destroyedLamps)
-            {
-                if (writtenLamps++ >= ushort.MaxValue) break;
-                writer.Write(WireId(id));
-            }
-            var fireCount = 0;
-            foreach (var pair in fires) if (pair.Value != null && fireCount < ushort.MaxValue) fireCount++;
-            writer.Write((ushort)fireCount);
-            var writtenFires = 0;
-            foreach (var pair in fires)
-            {
-                var fire = pair.Value;
-                if (fire == null || writtenFires >= fireCount) continue;
-                writer.Write(WireId(pair.Key)); BinaryWriterRaw.WriteSingle(writer, fire.transform.position.x);
-                BinaryWriterRaw.WriteSingle(writer, fire.transform.position.y);
-                BinaryWriterRaw.WriteSingle(writer, fire.transform.eulerAngles.z);
-                BinaryWriterRaw.WriteSingle(writer, fire.fuel); writer.Write(fire.canIgnite);
-                BinaryWriterRaw.WriteSingle(writer, fire.damageMult);
-                BinaryWriterRaw.WriteSingle(writer, fire.fuelConsMult); writtenFires++;
-            }
-            var audioCount = 0;
-            foreach (var pair in mechanismAudio) if (pair.Value != null && audioCount < ushort.MaxValue) audioCount++;
-            writer.Write((ushort)audioCount);
-            var writtenAudio = 0;
-            foreach (var pair in mechanismAudio)
-            {
-                if (pair.Value == null || writtenAudio >= audioCount) continue;
-                writer.Write(WireId(pair.Key)); writer.Write(pair.Value.isPlaying); writer.Write(pair.Value.loop);
-                BinaryWriterRaw.WriteSingle(writer, pair.Value.volume);
-                BinaryWriterRaw.WriteSingle(writer, pair.Value.pitch); writtenAudio++;
-            }
-            CaptureDestroyedDrones();
-            writer.Write((ushort)Math.Min(ushort.MaxValue, destroyedDrones.Count));
-            var writtenDrones = 0;
-            foreach (var id in destroyedDrones)
-            {
-                if (writtenDrones++ >= ushort.MaxValue) break;
-                writer.Write(WireId(id));
-            }
-            var manager = GameManager.main;
-            BinaryWriterRaw.WriteSingle(writer, manager == null ? 0f : manager.rainIntensity);
-            BinaryWriterRaw.WriteSingle(writer, manager == null ? 0f : manager.snowIntensity);
-            BinaryWriterRaw.WriteSingle(writer, manager == null ? 0f : manager.fogIntensity);
-            var mission = MissionManager.main;
-            writer.Write(mission == null ? -1 : mission.killAmount);
-            writer.Write(mission == null ? -1 : mission.totalEnemyCount);
-            return stream.ToArray();
-        }
-    }
-
     internal void DrawReplicationDebugOverlay()
     {
-        foreach (var pair in bodies)
+        foreach (var pair in bodies.bodies)
         {
             var body = pair.Value;
             if (body == null) continue;
@@ -1103,7 +690,7 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             DroppedWeapon dropped;
             droppedWeapons.TryGetValue(body, out dropped);
-            var layout = BodyLayoutFor(body);
+            var layout = bodies.BodyLayoutFor(body);
             var crate = layout.Crate;
             writer.Write(dropped != null); writer.Write(crate != null);
             if (crate != null)
@@ -1154,29 +741,29 @@ internal sealed class WorldReplication : MonoBehaviour
         return true;
     }
 
-    private ulong WireId(string id)
+    internal ulong WireId(string id)
     {
         if (string.IsNullOrEmpty(id)) return 0UL;
         ulong wire;
-        if (wireIds.TryGetValue(id, out wire)) return wire;
+        if (bodies.wireIds.TryGetValue(id, out wire)) return wire;
         wire = NetworkWireId.FromString(id);
-        wireIds[id] = wire;
-        idsByWire[wire] = id;
+        bodies.wireIds[id] = wire;
+        bodies.idsByWire[wire] = id;
         return wire;
     }
 
-    private string ResolveWireId(ulong wire)
+    internal string ResolveWireId(ulong wire)
     {
         var started = MultiplayerPerformance.StartPhase();
         try
         {
             if (wire == 0UL) return "";
             string id;
-            if (idsByWire.TryGetValue(wire, out id)) return id;
+            if (bodies.idsByWire.TryGetValue(wire, out id)) return id;
             id = FindKnownWireId(wire);
             if (id == null) id = "net/" + wire.ToString("X16");
-            wireIds[id] = wire;
-            idsByWire[wire] = id;
+            bodies.wireIds[id] = wire;
+            bodies.idsByWire[wire] = id;
             return id;
         }
         finally
@@ -1187,7 +774,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private string FindKnownWireId(ulong wire)
     {
-        foreach (var id in bodies.Keys) if (NetworkWireId.FromString(id) == wire) return id;
+        foreach (var id in bodies.bodies.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in buttons.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in fires.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in mechanismAudio.Keys) if (NetworkWireId.FromString(id) == wire) return id;
@@ -1270,12 +857,12 @@ internal sealed class WorldReplication : MonoBehaviour
                         if (pendingDestroyedWeaponPickups.TryGetValue(id, out pendingUntil) &&
                             Time.unscaledTime >= pendingUntil)
                             pendingDestroyedWeaponPickups.Remove(id);
-                        if (bodies.TryGetValue(id, out body) && body != null)
+                        if (bodies.bodies.TryGetValue(id, out body) && body != null)
                         {
                             if (IsGameplayOwned(body))
                             {
-                                bodies.Remove(id);
-                                ids.Remove(body);
+                                bodies.bodies.Remove(id);
+                                bodies.ids.Remove(body);
                                 continue;
                             }
 
@@ -1299,10 +886,10 @@ internal sealed class WorldReplication : MonoBehaviour
                                 HideClientObjectHierarchy(objectToRemove);
                             }
 
-                            ids.Remove(body);
+                            bodies.ids.Remove(body);
                         }
 
-                        bodies.Remove(id);
+                        bodies.bodies.Remove(id);
                     }
                     finally
                     {
@@ -1355,13 +942,13 @@ internal sealed class WorldReplication : MonoBehaviour
                             pendingDestroyedWeaponPickups.Remove(id);
                         }
 
-                        if (!bodies.TryGetValue(id, out body) || body == null)
+                        if (!bodies.bodies.TryGetValue(id, out body) || body == null)
                         {
-                            body = FindExistingDroppedWeapon(id, weaponId, state.position);
+                            body = weapons.FindExistingDroppedWeapon(id, weaponId, state.position);
                             if (body == null)
                             {
                                 var objectStarted = MultiplayerPerformance.StartPhase();
-                                body = CreateDroppedWeapon(id, weaponId, ammo, state.position, state.rotation);
+                                body = weapons.CreateDroppedWeapon(id, weaponId, ammo, state.position, state.rotation);
                                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects,
                                     objectStarted);
                             }
@@ -1370,10 +957,10 @@ internal sealed class WorldReplication : MonoBehaviour
                         {
                             DroppedWeapon dropped;
                             droppedWeapons.TryGetValue(body, out dropped);
-                            SynchronizeDroppedWeapon(dropped, weaponId, ammo);
+                            weapons.SynchronizeDroppedWeapon(dropped, weaponId, ammo);
                         }
                     }
-                    else if (isCrate && (!bodies.TryGetValue(id, out body) || body == null))
+                    else if (isCrate && (!bodies.bodies.TryGetValue(id, out body) || body == null))
                     {
                         var objectStarted = MultiplayerPerformance.StartPhase();
                         body = CreateRuntimeCrate(id, cratePrefabName, state.position, state.rotation);
@@ -1381,9 +968,9 @@ internal sealed class WorldReplication : MonoBehaviour
                             objectStarted);
                     }
 
-                    if (bodies.TryGetValue(id, out body) && body != null)
+                    if (bodies.bodies.TryGetValue(id, out body) && body != null)
                     {
-                        received[body] = state;
+                        bodies.received[body] = state;
                     }
                 }
                 finally
@@ -1397,7 +984,7 @@ internal sealed class WorldReplication : MonoBehaviour
             if (reader.ReadBoolean())
             {
                 var environmentStarted = MultiplayerPerformance.StartPhase();
-                ApplyEnvironment(reader.ReadBytes(reader.ReadInt32()));
+                enviroment.ApplyEnvironment(reader.ReadBytes(reader.ReadInt32()));
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldEnvironmentApply, environmentStarted);
             }
         }
@@ -1406,296 +993,28 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private void ApplyEnvironment(byte[] data)
-    {
-        using (var reader = new BinaryReader(new MemoryStream(data)))
-        {
-            var sceneEpoch = reader.ReadInt32();
-            if (!MultiplayerSession.IsSnapshotEpochCurrent(sceneEpoch)) return;
-            Physics2D.gravity = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-            var buttonCount = reader.ReadUInt16();
-            for (var index = 0; index < buttonCount; index++)
-                ApplyButtonState(ResolveWireId(reader.ReadUInt64()), reader.ReadBoolean(), reader.ReadUInt32());
-            var glassCount = reader.ReadUInt16();
-            for (var index = 0; index < glassCount; index++)
-                ApplyGlassState(ResolveWireId(reader.ReadUInt64()));
-            var lampCount = reader.ReadUInt16();
-            for (var index = 0; index < lampCount; index++)
-                ApplyLampState(ResolveWireId(reader.ReadUInt64()));
-            seenSnapshotFires.Clear();
-            var fireCount = reader.ReadUInt16();
-            for (var index = 0; index < fireCount; index++)
-            {
-                var id = ResolveWireId(reader.ReadUInt64());
-                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var rotation = reader.ReadSingle(); var fuel = reader.ReadSingle(); var canIgnite = reader.ReadBoolean();
-                var damageMult = reader.ReadSingle(); var fuelConsMult = reader.ReadSingle();
-                seenSnapshotFires.Add(id); ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
-            }
-            RemoveMissingFires(seenSnapshotFires);
-            seenSnapshotAudio.Clear();
-            var audioCount = reader.ReadUInt16();
-            for (var index = 0; index < audioCount; index++)
-            {
-                var id = ResolveWireId(reader.ReadUInt64());
-                var playing = reader.ReadBoolean(); var loop = reader.ReadBoolean();
-                var volume = reader.ReadSingle(); var pitch = reader.ReadSingle();
-                seenSnapshotAudio.Add(id); ApplyMechanismAudio(id, playing, loop, volume, pitch);
-            }
-            StopMissingMechanismAudio(seenSnapshotAudio);
-            var droneCount = reader.ReadUInt16();
-            for (var index = 0; index < droneCount; index++)
-                ApplyDroneState(ResolveWireId(reader.ReadUInt64()));
-            var rain = reader.ReadSingle();
-            var snow = reader.ReadSingle();
-            var fog = reader.ReadSingle();
-            ApplyWeather(rain, snow, fog);
-            if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(int) * 2)
-                ApplyMissionEnemyCount(reader.ReadInt32(), reader.ReadInt32());
-        }
-    }
-
-    private static void ApplyMissionEnemyCount(int killed, int total)
-    {
-        if (killed < 0 || total < 0) return;
-        var mission = MissionManager.main;
-        if (mission == null) return;
-        mission.killAmount = killed;
-        mission.totalEnemyCount = total;
-        if (mission.killsText != null)
-            mission.killsText.text = "Enemies: " + Mathf.Max(0, total - killed) + "/" + total;
-    }
-
-    private static void ApplyWeather(float rain, float snow, float fog)
-    {
-        var manager = GameManager.main;
-        if (manager == null) return;
-        if (!Mathf.Approximately(manager.rainIntensity, rain))
-        {
-            manager.rainIntensity = rain;
-            manager.UpdateRain();
-        }
-        if (!Mathf.Approximately(manager.snowIntensity, snow))
-        {
-            manager.snowIntensity = snow;
-            manager.UpdateSnow();
-        }
-        if (!Mathf.Approximately(manager.fogIntensity, fog))
-        {
-            manager.fogIntensity = fog;
-            manager.UpdateFog();
-        }
-    }
-
-    private void ApplyAuthoritativeState(Rigidbody2D body, State state)
-    {
-        if (state.safetyRailing && !state.safetyRailingAttached)
-            DetachSafetyRailing(body);
-        ApplyVehicleState(body, state);
-        if (!MultiplayerSession.IsHost && !state.vehiclePart && !LoadDistanceSystem.IsWorldNearLocalPlayer(body))
-        {
-            body.simulated = false;
-            return;
-        }
-
-        var mechanism = IsMechanismBody(body) && !IsInteractivePropBody(body);
-        float controlUntil;
-        if (!mechanism && locallyControlledUntil.TryGetValue(body, out controlUntil))
-        {
-            if (Time.unscaledTime < controlUntil)
-            {
-                body.simulated = true;
-                body.bodyType = RigidbodyType2D.Dynamic;
-                body.WakeUp();
-                return;
-            }
-            locallyControlledUntil.Remove(body);
-        }
-        body.gravityScale = state.gravityScale;
-        body.constraints = state.constraints;
-        body.simulated = state.simulated;
-        body.bodyType = mechanism && state.simulated ? RigidbodyType2D.Kinematic : state.bodyType;
-        if (!state.simulated) return;
-
-        if (mechanism)
-        {
-            // TODO This is more of a temporary fix
-            // it would be better to simply signal to clients when the door is about to open or close,
-            // but I'm not sure if that would break some of the custom level features
-
-            if (!state.vehiclePart)
-            {
-                body.position = state.position;
-                body.rotation = state.rotation;
-                if (!initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
-                {
-                    initializedBodies.Add(body);
-                }
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
-                return;
-            }
-            if (!initializedBodies.Contains(body) ||
-                (state.position - body.position).sqrMagnitude > 256f)
-            {
-                initializedBodies.Add(body);
-                vehiclePaths.Remove(body);
-                body.position = state.position;
-                body.rotation = state.rotation;
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
-                return;
-            }
-
-            body.interpolation = RigidbodyInterpolation2D.Interpolate;
-            List<VehiclePathState> path;
-            if (!vehiclePaths.TryGetValue(body, out path))
-                vehiclePaths[body] = path = new List<VehiclePathState>(12);
-            var now = Time.unscaledTime;
-            path.Add(new VehiclePathState
-            {
-                position = state.position,
-                rotation = state.rotation,
-                velocity = state.velocity,
-                angularVelocity = state.angularVelocity,
-                arrivedAt = now
-            });
-            while (path.Count > 2 && path[0].arrivedAt < now - 0.3f) path.RemoveAt(0);
-            if (path.Count < 2)
-            {
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
-            }
-            return;
-        }
-
-        if (state.bodyType != RigidbodyType2D.Dynamic || !initializedBodies.Contains(body))
-        {
-            body.position = state.position;
-            body.rotation = state.rotation;
-            body.velocity = state.velocity;
-            body.angularVelocity = state.angularVelocity;
-            initializedBodies.Add(body);
-        }
-        else
-        {
-            body.position = state.position;
-            body.rotation = state.rotation;
-            body.velocity = state.velocity;
-            body.angularVelocity = state.angularVelocity;
-        }
-        if (state.awake) body.WakeUp();
-        else if (state.bodyType != RigidbodyType2D.Dynamic) body.Sleep();
-    }
-
-    private void TickVehiclePaths()
-    {
-        if (vehiclePaths.Count == 0) return;
-        var renderTime = Time.unscaledTime - 0.1f;
-        staleVehiclePaths.Clear();
-        foreach (var pair in vehiclePaths)
-        {
-            var body = pair.Key;
-            if (body == null) { staleVehiclePaths.Add(body); continue; }
-            var path = pair.Value;
-            if (path.Count < 2 || !body.simulated ||
-                body.bodyType != RigidbodyType2D.Kinematic) continue;
-            var segment = path.Count - 2;
-            while (segment > 0 && path[segment].arrivedAt > renderTime) segment--;
-            var from = path[segment];
-            var to = path[segment + 1];
-            var span = Mathf.Max(0.001f, to.arrivedAt - from.arrivedAt);
-            var alpha = Mathf.Clamp01((renderTime - from.arrivedAt) / span);
-            var targetPosition = Vector2.Lerp(from.position, to.position, alpha);
-            var targetRotation = from.rotation +
-                Mathf.DeltaAngle(from.rotation, to.rotation) * alpha;
-            const float correctionGain = 5f;
-            var correction = (targetPosition - body.position) * correctionGain;
-            if (correction.sqrMagnitude > 25f) correction = correction.normalized * 5f;
-            body.velocity = Vector2.Lerp(body.velocity, to.velocity + correction, 0.35f);
-            var angularCorrection = Mathf.DeltaAngle(body.rotation, targetRotation) * correctionGain;
-            body.angularVelocity = Mathf.Lerp(body.angularVelocity,
-                to.angularVelocity + angularCorrection, 0.35f);
-        }
-        foreach (var body in staleVehiclePaths) vehiclePaths.Remove(body);
-    }
-
-    private static void ApplyVehicleState(Rigidbody2D body, State state)
-    {
-        if (!state.vehiclePart || body == null) return;
-        var part = body.GetComponent<VehiclePart>();
-        if (part == null) return;
-        part.health = state.vehiclePartHealth;
-        var vehicle = part.vehicle ?? part.GetComponentInParent<VehicleBase>();
-        if (vehicle != null)
-        {
-            vehicle.health = state.vehicleHealth;
-            vehicle.engineDisabled = state.vehicleEngineDisabled;
-        }
-        var joint = body.GetComponent<Joint2D>();
-        if (joint != null) joint.enabled = state.vehicleJointAttached;
-    }
-
     internal void QueuePush(LimbScript limb, Collision2D collision)
     {
         if (MultiplayerSession.IsHost || limb == null || limb.body == null || !limb.body.isPlayer || collision == null) return;
         var localPlayer = PlayerScript.player;
         if (localPlayer == null || limb.body != localPlayer.bodyScript) return;
         var body = collision.rigidbody ?? collision.gameObject.GetComponentInParent<Rigidbody2D>();
-        if (!(IsInteractivePropBody(body) || droneBodies.Contains(body)) || limb.rb == null) return;
-        QueueContactBodyState(body, Time.unscaledTime);
+        if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body)) || limb.rb == null) return;
+        bodies.QueueContactBodyState(body, Time.unscaledTime);
         var crate = body.GetComponentInParent<CrateScript>();
         if (crate != null && collision.relativeVelocity.magnitude >= crate.minDamageSpeed)
             QueueDamage(crate, collision.relativeVelocity.magnitude * crate.impactDamageMult);
     }
 
-    private void QueueBodyState(Rigidbody2D body)
+    internal void QueueBodyState(Rigidbody2D body)
     {
-        locallyControlledUntil[body] = Time.unscaledTime + ClientAuthorityGrace;
+        bodies.locallyControlledUntil[body] = Time.unscaledTime + ClientAuthorityGrace;
         clientFastSerializeState = ClientAuthorityGrace;
         body.simulated = true;
         body.bodyType = RigidbodyType2D.Dynamic;
         body.WakeUp();
         var id = Id(body);
-        pushes[id] = CaptureBodyState(body);
-    }
-
-    private void QueueContactBodyState(Rigidbody2D body, float now)
-    {
-        float nextAt;
-        if (nextContactStateAt.TryGetValue(body, out nextAt) && now < nextAt) return;
-        nextContactStateAt[body] = now + ContactStateInterval;
-        QueueBodyState(body);
-    }
-
-
-    private void MaintainMovingLocalAuthorities()
-    {
-        if (locallyControlledUntil.Count == 0) return;
-        var now = Time.unscaledTime;
-        var renew = new List<Rigidbody2D>();
-        foreach (var pair in locallyControlledUntil)
-        {
-            var body = pair.Key;
-            if (body == null || pair.Value >= now ||
-                !(IsInteractivePropBody(body) || droneBodies.Contains(body))) continue;
-            if (body.velocity.sqrMagnitude > 0.0004f || Mathf.Abs(body.angularVelocity) > 1f)
-                renew.Add(body);
-        }
-        foreach (var body in renew)
-            locallyControlledUntil[body] = now + ClientAuthorityGrace;
-        clientFastSerializeState = ClientAuthorityGrace;
-    }
-
-    private static ClientBodyState CaptureBodyState(Rigidbody2D body)
-    {
-        return new ClientBodyState
-        {
-            position = body.position,
-            rotation = body.rotation,
-            velocity = body.velocity,
-            angularVelocity = body.angularVelocity
-        };
+        bodies.pushes[id] = WorldBodyReplication.CaptureBodyState(body);
     }
 
     internal void QueueDamage(CrateScript crate, float amount)
@@ -1714,65 +1033,10 @@ internal sealed class WorldReplication : MonoBehaviour
     internal void QueueLevitated(Rigidbody2D body)
     {
         if (MultiplayerSession.IsHost || body == null ||
-            !(IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
+            !(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
         QueueBodyState(body);
     }
-
-    internal void QueueWeaponInteraction(DroppedWeapon dropped, BodyScript body, byte operation)
-    {
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || dropped == null || body == null ||
-            PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
-        var rigidbody = dropped.GetComponent<Rigidbody2D>();
-        if (rigidbody == null) rigidbody = dropped.GetComponentInChildren<Rigidbody2D>(true);
-        if (rigidbody == null || !IsWorldBody(rigidbody)) return;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            var id = Id(rigidbody);
-            writer.Write(operation);
-            writer.Write(WireId(id));
-            var slot = dropped.stats == null ? -1 : dropped.stats.slot;
-            var oldWeapon = slot >= 0 && slot < body.weapons.Count ? body.weapons[slot] : null;
-            var oldAmmo = slot >= 0 && slot < body.weaponAmmos.Count ? body.weaponAmmos[slot] : 0;
-            if (operation == WeaponPickup && oldWeapon == null)
-                pendingDestroyedWeaponPickups[id] = Time.unscaledTime + 1.5f;
-            writer.Write(slot);
-            writer.Write(NetworkWireId.FromString(oldWeapon == null ? "" : oldWeapon.name));
-            writer.Write(oldAmmo);
-            writer.Write(dropped.stats != null && body.weapons.Contains(dropped.stats));
-            writer.Write(body.transform.position.x);
-            writer.Write(body.transform.position.y);
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
-    }
-
-    internal static bool QueueLocalWeaponDrop(BodyScript body)
-    {
-        var current = Instance;
-        var player = PlayerScript.player;
-        if (current == null || !MultiplayerSession.IsConnected || MultiplayerSession.IsHost || body == null || player == null ||
-            body != player.bodyScript || !body.isAlive || body.unarmed || body.weapons == null ||
-            body.weaponAmmos == null) return false;
-
-        var slot = body.currentWeapon;
-        if (slot < 0 || slot >= body.weapons.Count || slot >= body.weaponAmmos.Count ||
-            body.weapons[slot] == null) return false;
-
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write(WeaponDrop);
-            writer.Write(0UL);
-            writer.Write(slot);
-            writer.Write(NetworkWireId.FromString(body.weapons[slot].name));
-            writer.Write(body.weaponAmmos[slot]);
-            writer.Write(false);
-            writer.Write(body.transform.position.x);
-            writer.Write(body.transform.position.y);
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
-        return true;
-    }
+    
 
     internal void QueueButtonActivation(ButtonScript button)
     {
@@ -1781,7 +1045,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(ButtonActivate);
+            writer.Write((byte) WorldInteraction.ButtonActivate);
             writer.Write(WireId(id));
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
@@ -1793,7 +1057,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(DoorActivate);
+            writer.Write((byte) WorldInteraction.DoorActivate);
             writer.Write(WireId(ProximityDoorId(opener)));
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
@@ -1808,7 +1072,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(ZoneActivate);
+            writer.Write((byte) WorldInteraction.ZoneActivate);
             writer.Write(WireId(id));
             writer.Write(manual);
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
@@ -1831,7 +1095,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(GlassDamage);
+            writer.Write((byte) WorldInteraction.GlassDamage);
             writer.Write(WireId(id));
             writer.Write(damage);
             writer.Write(bulletPosition.x); writer.Write(bulletPosition.y); writer.Write(bulletPosition.z);
@@ -1845,7 +1109,7 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(VehicleDamage);
+            writer.Write((byte) WorldInteraction.VehicleDamage);
             writer.Write(WireId(Id(part.rb)));
             writer.Write(Mathf.Min(100f, amount));
             writer.Write(collision);
@@ -1856,23 +1120,23 @@ internal sealed class WorldReplication : MonoBehaviour
     private WorldInputPacket SerializePushes()
     {
         var now = Time.unscaledTime;
-        foreach (var pair in locallyControlledUntil)
+        foreach (var pair in bodies.locallyControlledUntil)
         {
             var body = pair.Key;
             if (body == null || pair.Value < now) continue;
-            pushes[Id(body)] = CaptureBodyState(body);
+            bodies.pushes[Id(body)] = WorldBodyReplication.CaptureBodyState(body);
         }
 
-        var states = new WorldInputState[pushes.Count];
+        var states = new WorldInputState[bodies.pushes.Count];
         var index = 0;
-        foreach (var pair in pushes)
+        foreach (var pair in bodies.pushes)
         {
             var state = pair.Value;
             states[index++] = new WorldInputState(WireId(pair.Key), state.position.x, state.position.y,
                 state.rotation, state.velocity.x, state.velocity.y, state.angularVelocity);
         }
 
-        pushes.Clear();
+        bodies.pushes.Clear();
         return new WorldInputPacket(states);
     }
 
@@ -1913,16 +1177,16 @@ internal sealed class WorldReplication : MonoBehaviour
                         angularVelocity = reader.ReadSingle()
                     };
                     Rigidbody2D body;
-                    if (!bodies.TryGetValue(id, out body) || body == null)
+                    if (!bodies.bodies.TryGetValue(id, out body) || body == null)
                     {
                         continue;
                     }
-                    if (!IsInteractivePropBody(body) && !droneBodies.Contains(body))
+                    if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body))
                     {
                         continue;
                     }
                     PropAuthority authority;
-                    if (propAuthorities.TryGetValue(id, out authority) &&
+                    if (bodies.propAuthorities.TryGetValue(id, out authority) &&
                         authority.expiresAt >= Time.unscaledTime && authority.peerId != peerId)
                     {
                         continue;
@@ -1931,7 +1195,7 @@ internal sealed class WorldReplication : MonoBehaviour
                     {
                         continue;
                     }
-                    propAuthorities[id] = new PropAuthority
+                    bodies.propAuthorities[id] = new PropAuthority
                     {
                         peerId = peerId,
                         expiresAt = Time.unscaledTime + ClientAuthorityGrace
@@ -1956,7 +1220,7 @@ internal sealed class WorldReplication : MonoBehaviour
             var id = ResolveWireId(entry.TargetId);
             var amount = Mathf.Clamp(entry.Amount, 0f, 100f);
             Rigidbody2D body;
-            if (!bodies.TryGetValue(id, out body) || body == null) continue;
+            if (!bodies.bodies.TryGetValue(id, out body) || body == null) continue;
             var crate = body.GetComponentInParent<CrateScript>();
             if (crate != null && crate.enabled) crate.Damage(amount);
         }
@@ -1968,37 +1232,37 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             using (var reader = new BinaryReader(new MemoryStream(data)))
             {
-                var operation = reader.ReadByte();
+                var operation = (WorldInteraction) reader.ReadByte();
                 var id = ResolveWireId(reader.ReadUInt64());
-                if (operation == ButtonActivate)
+                if (operation == WorldInteraction.ButtonActivate)
                 {
-                    ApplyButtonActivation(id, peerId);
+                    enviroment.ApplyButtonActivation(id, peerId);
                     return;
                 }
-                if (operation == DoorActivate)
+                if (operation == WorldInteraction.DoorActivate)
                 {
-                    ApplyDoorActivation(id, peerId);
+                    enviroment.ApplyDoorActivation(id, peerId);
                     return;
                 }
-                if (operation == ZoneActivate)
+                if (operation == WorldInteraction.ZoneActivate)
                 {
-                    ApplyZoneActivation(id, peerId, reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean());
+                    enviroment.ApplyZoneActivation(id, peerId, reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean());
                     return;
                 }
-                if (operation == GlassDamage)
+                if (operation == WorldInteraction.GlassDamage)
                 {
-                    ApplyGlassDamage(id, peerId, reader.ReadSingle(),
+                    enviroment.ApplyGlassDamage(id, peerId, reader.ReadSingle(),
                         new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
                     return;
                 }
-                if (operation == VehicleDamage)
+                if (operation == WorldInteraction.VehicleDamage)
                 {
                     ApplyVehicleDamage(id, peerId, reader.ReadSingle(), reader.ReadBoolean());
                     return;
                 }
-                if (operation == DroneDamage)
+                if (operation == WorldInteraction.DroneDamage)
                 {
-                    ApplyDroneDamage(id, reader.ReadSingle());
+                    enviroment.ApplyDroneDamage(id, reader.ReadSingle());
                     return;
                 }
                 var slot = reader.ReadInt32();
@@ -2008,9 +1272,9 @@ internal sealed class WorldReplication : MonoBehaviour
                 var requestedPosition = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 Rigidbody2D rigidbody;
                 var remoteBody = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
-                if (operation == WeaponDrop)
+                if (operation == WorldInteraction.WeaponDrop)
                 {
-                    var requestedWeapon = FindWeaponPreset(oldWeaponId);
+                    var requestedWeapon = weapons.FindWeaponPreset(oldWeaponId);
                     if (remoteBody == null || !remoteBody.isAlive || requestedWeapon == null || slot < 0 ||
                         slot >= remoteBody.weapons.Count || slot >= remoteBody.weaponAmmos.Count ||
                         (requestedPosition - (Vector2)remoteBody.transform.position).sqrMagnitude > 25f)
@@ -2029,8 +1293,8 @@ internal sealed class WorldReplication : MonoBehaviour
                     remoteBody.DropWeaponSingle();
                     return;
                 }
-                if ((operation != WeaponPickup && operation != WeaponAmmoGet) || remoteBody == null ||
-                    !remoteBody.isAlive || !bodies.TryGetValue(id, out rigidbody) || rigidbody == null)
+                if ((operation != WorldInteraction.WeaponPickup && operation != WorldInteraction.WeaponAmmoGet) || remoteBody == null ||
+                    !remoteBody.isAlive || !bodies.bodies.TryGetValue(id, out rigidbody) || rigidbody == null)
                 {
                     return;
                 }
@@ -2039,12 +1303,12 @@ internal sealed class WorldReplication : MonoBehaviour
                 {
                     return;
                 }
-                if (operation == WeaponPickup && (slot < 0 || slot >= remoteBody.weapons.Count ||
-                    slot >= remoteBody.weaponAmmos.Count || dropped.stats == null))
+                if (operation == WorldInteraction.WeaponPickup && (slot < 0 || slot >= remoteBody.weapons.Count ||
+                                                                   slot >= remoteBody.weaponAmmos.Count || dropped.stats == null))
                 {
                     return;
                 }
-                if (operation == WeaponAmmoGet && clientOwnsWeapon && dropped.stats != null &&
+                if (operation == WorldInteraction.WeaponAmmoGet && clientOwnsWeapon && dropped.stats != null &&
                     slot >= 0 && slot < remoteBody.weapons.Count)
                 {
                     remoteBody.weapons[slot] = dropped.stats;
@@ -2053,22 +1317,22 @@ internal sealed class WorldReplication : MonoBehaviour
                 remoteBody.isPlayer = false;
                 try
                 {
-                    if (operation == WeaponPickup)
+                    if (operation == WorldInteraction.WeaponPickup)
                     {
                         var pickedWeapon = dropped.stats;
                         var previousWeapon = slot >= 0 && slot < remoteBody.weapons.Count
                             ? remoteBody.weapons[slot] : null;
-                        remoteBody.weapons[slot] = FindWeaponPreset(oldWeaponId);
+                        remoteBody.weapons[slot] = weapons.FindWeaponPreset(oldWeaponId);
                         remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
-                        ReplaceDroppedWeaponWithPrevious(dropped, remoteBody, pickedWeapon);
+                        weapons.ReplaceDroppedWeaponWithPrevious(dropped, remoteBody, pickedWeapon);
                         remoteBody.weapons[slot] = pickedWeapon;
                         remoteBody.weaponAmmos[slot] = 0;
                         remoteBody.ChangeWeapon(slot);
                         if (previousWeapon == null)
-                            UnityEngine.Object.Destroy(dropped.gameObject);
+                            Destroy(dropped.gameObject);
                     }
                     else if (clientOwnsWeapon) dropped.AmmoGet(remoteBody);
-                    else UnloadDroppedWeapon(dropped);
+                    else weapons.UnloadDroppedWeapon(dropped);
                 }
                 finally { remoteBody.isPlayer = wasPlayer; }
             }
@@ -2080,7 +1344,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         Rigidbody2D body;
         var remoteBody = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
-        if (remoteBody == null || !remoteBody.isAlive || !bodies.TryGetValue(id, out body) || body == null)
+        if (remoteBody == null || !remoteBody.isAlive || !bodies.bodies.TryGetValue(id, out body) || body == null)
             return;
         var part = body.GetComponent<VehiclePart>();
         if (part == null || (remoteBody.transform.position - part.transform.position).sqrMagnitude > 36f)
@@ -2090,100 +1354,12 @@ internal sealed class WorldReplication : MonoBehaviour
         part.Damage(amount);
     }
 
-
-    private void RefreshButtons()
-    {
-        foreach (var button in FindObjectsOfType<ButtonScript>())
-        {
-            if (button == null || buttonIds.ContainsKey(button)) continue;
-            var id = ButtonId(button);
-            buttonIds[button] = id;
-            buttons[id] = button;
-            if (!buttonActivations.ContainsKey(id)) buttonActivations[id] = 0;
-        }
-    }
-
-    private void RefreshProximityDoors()
-    {
-        foreach (var opener in FindObjectsOfType<QDoorOpen>())
-        {
-            if (opener == null || proximityDoorIds.ContainsKey(opener)) continue;
-            var id = ProximityDoorId(opener);
-            proximityDoorIds[opener] = id;
-            proximityDoors[id] = opener;
-        }
-    }
-
-    private void RefreshActivationZones()
-    {
-        foreach (var zone in FindObjectsOfType<ActivateZoneScript>())
-        {
-            if (zone == null || activationZoneIds.ContainsKey(zone)) continue;
-            var id = ActivationZoneId(zone);
-            activationZoneIds[zone] = id;
-            activationZones[id] = zone;
-        }
-    }
-
-    private void DiscoverWorldFires()
-    {
-        if (MultiplayerSession.IsHost) fires.Clear();
-        foreach (var fire in FindObjectsOfType<FireScript>())
-            RegisterWorldFireInternal(fire);
-    }
-
-    private void RegisterWorldFireInternal(FireScript fire)
-    {
-        if (fire == null || IsGameplayOwned(fire)) return;
-        string id;
-        if (!fireIds.TryGetValue(fire, out id))
-        {
-            id = ComponentId(fire);
-            fireIds[fire] = id;
-        }
-        fires[id] = fire;
-    }
-
     internal static void RegisterRuntimeWorldFire(FireScript fire)
     {
         if (fire == null || !MultiplayerSession.IsHost) return;
         var instance = Instance;
         if (instance == null || !instance.discoveredScene || instance.fireIds.ContainsKey(fire)) return;
         instance.pendingRuntimeFires[fire] = Time.frameCount;
-    }
-
-    private void ProcessPendingRuntimeFires()
-    {
-        if (!MultiplayerSession.IsHost || pendingRuntimeFires.Count == 0) return;
-        var ready = new List<FireScript>();
-        foreach (var pair in pendingRuntimeFires)
-        {
-            var fire = pair.Key;
-            if (Time.frameCount <= pair.Value) continue;
-            ready.Add(fire);
-            if (fire == null || IsGameplayOwned(fire) || fireIds.ContainsKey(fire)) continue;
-            var id = "runtime-fire/" + (++nextRuntimeFireId).ToString();
-            fireIds[fire] = id;
-            fires[id] = fire;
-        }
-        foreach (var fire in ready) pendingRuntimeFires.Remove(fire);
-    }
-
-    private void RefreshKnownWorldFires()
-    {
-        if (MultiplayerSession.IsHost) return;
-        foreach (var pair in fires)
-        {
-            var fire = pair.Value;
-            if (fire == null) continue;
-            if (!clientFireSettings.ContainsKey(fire)) clientFireSettings[fire] = new FireLocalSettings
-            {
-                enabled = fire.enabled,
-                active = fire.gameObject.activeSelf
-            };
-
-            fire.enabled = ShouldTickClientFire(fire);
-        }
     }
 
     internal static bool ShouldTickClientFire(FireScript fire)
@@ -2208,126 +1384,11 @@ internal sealed class WorldReplication : MonoBehaviour
             .sqrMagnitude <= activationDistanceSqr;
     }
 
-    private void RefreshGlasses()
-    {
-        foreach (var glass in FindObjectsOfType<GlassScript>())
-        {
-            if (glass == null || glassIds.ContainsKey(glass)) continue;
-            var id = GlassId(glass);
-            glassIds[glass] = id;
-            glasses[id] = glass;
-        }
-        RefreshLamps();
-    }
-
     internal void RegisterLevelLoaderWorldObjects()
     {
         if (!MultiplayerSession.IsConnected) return;
-        RefreshGlasses();
+        enviroment.RefreshGlasses();
         nextSnapshot = 0f;
-    }
-
-    private void RefreshLamps()
-    {
-        foreach (var collider in FindObjectsOfType<Collider2D>())
-        {
-            if (collider == null || lampIds.ContainsKey(collider)) continue;
-            var light = collider.GetComponentInParent<UnityEngine.Experimental.Rendering.Universal.Light2D>();
-            if (light == null) continue;
-            if (!collider.CompareTag("Lamp") &&
-                !collider.gameObject.name.StartsWith("Lamp (") &&
-                !light.CompareTag("Lamp") &&
-                !light.gameObject.name.StartsWith("Lamp (")) continue;
-            var id = ComponentId(collider);
-            lampIds[collider] = id;
-            lamps[id] = new LampState { Object = light.gameObject, Light = light, Collider = collider };
-        }
-    }
-
-    private void CaptureDestroyedLamps()
-    {
-        foreach (var pair in lamps)
-            if (LampIsDestroyed(pair.Value)) destroyedLamps.Add(pair.Key);
-    }
-
-    internal void CaptureDestroyedLampIds(ISet<string> ids)
-    {
-        if (ids == null) return;
-        foreach (var pair in lamps)
-            if (LampIsDestroyed(pair.Value)) ids.Add(pair.Key);
-    }
-
-    internal void CollectNewDestroyedLampIds(ISet<string> before, List<string> result)
-    {
-        if (before == null || result == null) return;
-        foreach (var pair in lamps)
-            if (LampIsDestroyed(pair.Value) && !before.Contains(pair.Key)) result.Add(pair.Key);
-    }
-
-    private static bool LampIsDestroyed(LampState lamp)
-    {
-        return lamp == null || lamp.Object == null || !lamp.Object.activeSelf ||
-            lamp.Light == null || !lamp.Light.enabled || lamp.Collider == null || !lamp.Collider.enabled;
-    }
-
-    internal void ApplyRemoteDestroyedLamps(IList<string> ids)
-    {
-        if (ids == null) return;
-        foreach (var id in ids)
-            if (!string.IsNullOrEmpty(id)) ApplyLampState(id);
-    }
-
-    private void ApplyLampState(string id)
-    {
-        LampState lamp;
-        if (!lamps.TryGetValue(id, out lamp))
-        {
-            RefreshLamps();
-            if (!lamps.TryGetValue(id, out lamp)) return;
-        }
-        BreakLamp(id, lamp, lamp.Object == null ? Vector2.zero : lamp.Object.transform.position);
-    }
-
-    private void BreakLamp(string id, LampState lamp, Vector2 hitPoint)
-    {
-        if (lamp == null) return;
-        var lampObject = lamp.Object;
-        if (lampObject != null)
-        {
-            var position = (Vector2)lampObject.transform.position;
-            Destroy(lampObject);
-            Sound.Play(Resources.Load<AudioClip>("Sounds/LightBreak"), hitPoint);
-            Instantiate(Resources.Load("Spawnables/LampShards"), hitPoint, Quaternion.identity);
-            Destroy(Instantiate(Resources.Load("Spawnables/Shock"), position, Quaternion.identity), 15f);
-        }
-        destroyedLamps.Add(id);
-    }
-
-    private sealed class LampState
-    {
-        internal GameObject Object;
-        internal Behaviour Light;
-        internal Collider2D Collider;
-    }
-
-    private void RefreshDrones()
-    {
-        foreach (var drone in FindObjectsOfType<DroneScript>())
-        {
-            if (drone == null || droneIds.ContainsKey(drone)) continue;
-            var body = drone.GetComponent<Rigidbody2D>();
-            if (body == null) continue;
-            var id = Id(body);
-            droneIds[drone] = id;
-            drones[id] = drone;
-            droneBodies.Add(body);
-        }
-    }
-
-    private void CaptureDestroyedDrones()
-    {
-        foreach (var pair in drones)
-            if (pair.Value == null) destroyedDrones.Add(pair.Key);
     }
 
     internal void QueueDroneDamage(DroneScript drone, float amount)
@@ -2338,40 +1399,14 @@ internal sealed class WorldReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(DroneDamage);
+            writer.Write((byte) WorldInteraction.DroneDamage);
             writer.Write(WireId(Id(body)));
             writer.Write(Mathf.Min(100f, amount));
             MultiplayerSession.SendWorldInteraction(stream.ToArray());
         }
     }
 
-    private void ApplyDroneDamage(string id, float amount)
-    {
-        DroneScript drone;
-        if (!drones.TryGetValue(id, out drone) || drone == null) return;
-        drone.Damage(amount);
-    }
-
-    private void ApplyDroneState(string id)
-    {
-        DroneScript drone;
-        if (!drones.TryGetValue(id, out drone) || drone == null) return;
-        var renderer = drone.GetComponent<SpriteRenderer>();
-        if (renderer != null && drone.deadSprite != null) renderer.sprite = drone.deadSprite;
-        if (drone.deactiveOnDeath != null)
-            foreach (var child in drone.deactiveOnDeath)
-                if (child != null) child.SetActive(false);
-        var source = drone.GetComponent<AudioSource>();
-        if (source != null) source.Stop();
-        if (drone.breakSound != null) Sound.Play(drone.breakSound, drone.transform.position);
-        var shock = Resources.Load<GameObject>("Spawnables/Shock");
-        if (shock != null) Destroy(Instantiate(shock, drone.transform), 20f);
-        drones.Remove(id);
-        droneIds.Remove(drone);
-        Destroy(drone);
-    }
-
-    private string GlassId(GlassScript glass)
+    internal string GlassId(GlassScript glass)
     {
         string id;
         if (glassIds.TryGetValue(glass, out id)) return id;
@@ -2380,111 +1415,8 @@ internal sealed class WorldReplication : MonoBehaviour
         glasses[id] = glass;
         return id;
     }
-
-    private void CaptureDestroyedGlass()
-    {
-        foreach (var pair in glasses)
-            if (IsGlassBroken(pair.Value)) destroyedGlass.Add(pair.Key);
-    }
-
-    private static bool IsGlassBroken(GlassScript glass)
-    {
-        if (glass == null) return true;
-        return glass.health <= 0f;
-    }
-
-    private void ApplyGlassDamage(string id, ushort peerId, float damage, Vector3 bulletPosition)
-    {
-        GlassScript glass;
-        var remoteBody = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
-        if (!glasses.TryGetValue(id, out glass) || glass == null || remoteBody == null ||
-            !remoteBody.isAlive || ((Vector2)remoteBody.transform.position - (Vector2)glass.transform.position).sqrMagnitude > 10000f)
-            return;
-        glass.Damage(Mathf.Max(0f, damage), bulletPosition);
-        if (IsGlassBroken(glass)) destroyedGlass.Add(id);
-    }
-
-    private void ApplyGlassState(string id)
-    {
-        GlassScript glass;
-        if (!glasses.TryGetValue(id, out glass) || glass == null)
-        {
-            RefreshGlasses();
-            if (!glasses.TryGetValue(id, out glass) || glass == null) return;
-        }
-        if (IsGlassBroken(glass)) return;
-        MultiplayerGlassDamagePatch.ApplyingNetworkState = true;
-        try { glass.Damage(float.MaxValue, glass.transform.position); }
-        finally { MultiplayerGlassDamagePatch.ApplyingNetworkState = false; }
-    }
-
-    private void ApplyFireState(string id, Vector2 position, float rotation, float fuel,
-        bool canIgnite, float damageMult, float fuelConsMult)
-    {
-        FireScript fire;
-        if (!fires.TryGetValue(id, out fire) || fire == null)
-        {
-            foreach (var candidate in FindObjectsOfType<FireScript>())
-            {
-                if (candidate == null || candidate.GetComponentInParent<BodyScript>() != null ||
-                    fireIds.ContainsKey(candidate) ||
-                    ((Vector2)candidate.transform.position - position).sqrMagnitude > 0.25f) continue;
-                fire = candidate;
-                break;
-            }
-            if (fire == null)
-            {
-                var prefab = Resources.Load<GameObject>("Spawnables/FireParticle");
-                var created = prefab == null ? null : Instantiate(prefab, position,
-                    Quaternion.Euler(0f, 0f, rotation));
-                fire = created == null ? null : created.GetComponent<FireScript>();
-                if (fire == null)
-                {
-                    if (created != null) Destroy(created);
-                    return;
-                }
-                clientCreatedFires.Add(fire);
-            }
-            else if (!clientFireSettings.ContainsKey(fire))
-            {
-                clientFireSettings[fire] = new FireLocalSettings
-                {
-                    enabled = fire.enabled,
-                    active = fire.gameObject.activeSelf
-                };
-            }
-            fireIds[fire] = id;
-            fires[id] = fire;
-        }
-        fire.gameObject.SetActive(true);
-        fire.transform.position = position;
-        fire.transform.rotation = Quaternion.Euler(0f, 0f, rotation);
-        fire.fuel = fuel;
-        fire.canIgnite = canIgnite;
-        fire.damageMult = damageMult;
-        fire.fuelConsMult = fuelConsMult;
-        fire.enabled = ShouldTickClientFire(fire);
-        var particles = fire.GetComponent<ParticleSystem>();
-        if (particles != null && !particles.isPlaying) particles.Play();
-    }
-
-    private void RemoveMissingFires(HashSet<string> seen)
-    {
-        var missing = new List<string>();
-        foreach (var pair in fires)
-            if (!seen.Contains(pair.Key)) missing.Add(pair.Key);
-        foreach (var id in missing)
-        {
-            var fire = fires[id];
-            fires.Remove(id);
-            if (fire == null) continue;
-            fireIds.Remove(fire);
-            if (clientCreatedFires.Remove(fire)) Destroy(fire.gameObject);
-            else fire.gameObject.SetActive(false);
-        }
-    }
-
-    private string ButtonId(ButtonScript button)
+    
+    internal string ButtonId(ButtonScript button)
     {
         string id;
         if (buttonIds.TryGetValue(button, out id)) return id;
@@ -2494,7 +1426,7 @@ internal sealed class WorldReplication : MonoBehaviour
         return id;
     }
 
-    private string ProximityDoorId(QDoorOpen opener)
+    internal string ProximityDoorId(QDoorOpen opener)
     {
         string id;
         if (proximityDoorIds.TryGetValue(opener, out id)) return id;
@@ -2504,23 +1436,7 @@ internal sealed class WorldReplication : MonoBehaviour
         return id;
     }
 
-    private void ApplyDoorActivation(string id, ushort peerId)
-    {
-        QDoorOpen opener;
-        var remotePlayer = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
-        float allowedAt;
-        if (!proximityDoors.TryGetValue(id, out opener) || opener == null || remotePlayer == null ||
-            !remotePlayer.isAlive ||
-            ((Vector2)remotePlayer.transform.position - (Vector2)opener.transform.position).sqrMagnitude >= 784f ||
-            (nextDoorActivation.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt)) return;
-        var door = opener.GetComponent<DoorScript>();
-        if (door == null) return;
-        nextDoorActivation[id] = Time.unscaledTime + 0.2f;
-        Destroy(opener);
-        door.Activate(69);
-    }
-
-    private string ActivationZoneId(ActivateZoneScript zone)
+    internal string ActivationZoneId(ActivateZoneScript zone)
     {
         string id;
         if (activationZoneIds.TryGetValue(zone, out id)) return id;
@@ -2535,96 +1451,15 @@ internal sealed class WorldReplication : MonoBehaviour
         if (zone == null || !MultiplayerSession.IsHost) return;
         var id = ActivationZoneId(zone);
         if (!manual && activatedZoneIds.Contains(id)) localZonePrompts.Add(id);
-        ApplyZoneActivation(id, MultiplayerSession.LocalPeerId, manual);
+        enviroment.ApplyZoneActivation(id, MultiplayerSession.LocalPeerId, manual);
     }
 
-    private void ApplyZoneActivation(string id, ushort peerId, bool manual)
-    {
-        ActivateZoneScript zone;
-        var localPlayer = PlayerScript.player;
-        var remotePlayer = peerId == MultiplayerSession.LocalPeerId
-            ? (localPlayer == null ? null : localPlayer.bodyScript)
-            : NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
-        float allowedAt;
-        if (!activationZones.TryGetValue(id, out zone) || zone == null || remotePlayer == null ||
-            !remotePlayer.isAlive || (!manual && activatedZoneIds.Contains(id)) ||
-            (nextZoneActivation.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt)) return;
-        var zoneCollider = zone.GetComponent<Collider2D>();
-        if (zoneCollider == null || zoneCollider.bounds.SqrDistance(remotePlayer.transform.position) > 4f) return;
-        var hostPlayer = PlayerScript.player;
-        var hostBody = hostPlayer == null ? null : hostPlayer.bodyScript;
-        if (!string.IsNullOrEmpty(zone.team) && (hostBody == null || zone.team != hostBody.team)) return;
-        nextZoneActivation[id] = Time.unscaledTime + 0.2f;
-        activatedZoneIds.Add(id);
-        foreach (var target in GameObject.FindGameObjectsWithTag("Activateable"))
-            target.SendMessage("Activate", zone.id, SendMessageOptions.DontRequireReceiver);
-    }
-
-    // hacky fix but i hope it doesnt fuckup the level logic
-    private void UpdateZonePrompt()
-    {
-        promptZone = null;
-        var player = PlayerScript.player;
-        var body = player == null ? null : player.bodyScript;
-        if (body == null || !body.isAlive) return;
-        foreach (var pair in activationZones)
-        {
-            var zone = pair.Value;
-            var collider = zone == null ? null : zone.GetComponent<Collider2D>();
-            if (collider == null || !localZonePrompts.Contains(pair.Key) || collider.bounds.SqrDistance(body.transform.position) > 4f) continue;
-            promptZone = zone;
-            break;
-        }
-        if (promptZone == null || !Input.GetKeyDown(player.keys["Use"])) return;
-        if (MultiplayerSession.IsHost) ActivateLocalZone(promptZone, true);
-        else QueueZoneActivation(promptZone, true);
-    }
-
-    private void ApplyButtonActivation(string id, ushort peerId)
-    {
-        ButtonScript button;
-        var remotePlayer = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
-        float allowedAt;
-        if (!buttons.TryGetValue(id, out button) || button == null || remotePlayer == null ||
-            !remotePlayer.isAlive || (remotePlayer.transform.position - button.transform.position).sqrMagnitude > 25f ||
-            (nextButtonActivation.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt)) return;
-        nextButtonActivation[id] = Time.unscaledTime + 0.15f;
-        button.Activated();
-        nextSnapshot = 0f; // Sending new world state
-    }
-
-    private void ApplyButtonState(string id, bool exists, uint activations)
-    {
-        ButtonScript button;
-        buttons.TryGetValue(id, out button);
-        uint previous;
-        var hadPrevious = receivedButtonActivations.TryGetValue(id, out previous);
-        receivedButtonActivations[id] = activations;
-        if (hadPrevious && activations > previous && button != null && button.activateSound != null)
-            Sound.Play(button.activateSound, button.transform.position, false, false, null, 1f, 1f);
-        if (!exists && button != null) SetButtonInactive(button);
-    }
-
-    private static void SetButtonInactive(ButtonScript button)
-    {
-        if (button.transform.childCount > 0)
-        {
-            var child = button.transform.GetChild(0);
-            var renderer = child.GetComponent<SpriteRenderer>();
-            var inactive = Resources.Load<Sprite>("Spawnables/buttonInactive");
-            if (renderer != null && inactive != null) renderer.sprite = inactive;
-            foreach (var light in child.GetComponents<UnityEngine.Experimental.Rendering.Universal.Light2D>())
-                light.color = Color.red;
-        }
-        Destroy(button);
-    }
-
-    private static string CleanCloneName(string name)
+    internal static string CleanCloneName(string name)
     {
         return string.IsNullOrEmpty(name) ? "" : name.Replace("(Clone)", "").Trim();
     }
 
-    private static string ComponentId(Component component)
+    internal string ComponentId(Component component)
     {
         var path = new StringBuilder(component.gameObject.scene.name);
         var hierarchy = new List<Transform>();
@@ -2650,13 +1485,13 @@ internal sealed class WorldReplication : MonoBehaviour
             var body = debrisBodies[index];
             if (body == null) continue;
             var id = crateId + "/debris#" + index;
-            bodies[id] = body;
-            ids[body] = id;
+            bodies.bodies[id] = body;
+            bodies.ids[body] = id;
             var wire = NetworkWireId.FromString(id);
-            wireIds[id] = wire;
-            idsByWire[wire] = id;
+            bodies.wireIds[id] = wire;
+            bodies.idsByWire[wire] = id;
             droppedWeapons[body] = null;
-            if (IsInteractivePropBodyUncached(body)) interactivePropBodies.Add(body);
+            if (IsInteractivePropBodyUncached(body)) bodies.interactivePropBodies.Add(body);
             networkCrateDebrisBodies.Add(body);
             var debrisCrate = body.GetComponentInParent<CrateScript>();
             if (debrisCrate != null)
@@ -2712,17 +1547,17 @@ internal sealed class WorldReplication : MonoBehaviour
             if (transforms[index] != null) transforms[index].gameObject.SetActive(false);
     }
 
-    private string Id(Rigidbody2D body)
+    internal string Id(Rigidbody2D body)
     {
         string id;
-        if (ids.TryGetValue(body, out id)) return id;
+        if (bodies.ids.TryGetValue(body, out id)) return id;
         var dropped = body.GetComponentInParent<DroppedWeapon>();
         var crate = body.GetComponentInParent<CrateScript>();
-        if ((dropped != null && IsRuntimeDroppedWeapon(dropped)) ||
+        if ((dropped != null && weapons.IsRuntimeDroppedWeapon(dropped)) ||
             (crate != null && crate.GetComponentInParent<RuntimeSpawnedCrate>() != null))
         {
             id = "runtime/" + (++nextRuntimeId);
-            ids[body] = id;
+            bodies.ids[body] = id;
             return id;
         }
         var path = new StringBuilder(body.gameObject.scene.name);
@@ -2738,16 +1573,8 @@ internal sealed class WorldReplication : MonoBehaviour
         for (var index = 0; index < components.Length; index++)
             if (components[index] == body) { path.Append(":rb#").Append(index); break; }
         id = path.ToString();
-        ids[body] = id;
+        bodies.ids[body] = id;
         return id;
-    }
-
-    private static bool IsRuntimeDroppedWeapon(DroppedWeapon dropped)
-    {
-        if (dropped == null) return false;
-        var root = dropped.transform.root;
-        return (root != null && root.name.Contains("(Clone)")) ||
-            dropped.gameObject.name.Contains("(Clone)");
     }
 
     private static int SameNameSiblingIndex(Transform transform)
@@ -2766,56 +1593,6 @@ internal sealed class WorldReplication : MonoBehaviour
             if (root.name == transform.name) ordinal++;
         }
         return ordinal;
-    }
-
-    private Rigidbody2D CreateDroppedWeapon(string id, ulong weaponId, int ammo, Vector2 position, float rotation)
-    {
-        var prefab = Resources.Load<GameObject>("Spawnables/PickupWeapon");
-        if (prefab == null) return null;
-        var weapon = FindWeaponPreset(weaponId);
-        if (weapon == null) return null;
-        var dropped = Instantiate(prefab, position, Quaternion.Euler(0f, 0f, rotation)).GetComponent<DroppedWeapon>();
-        if (dropped == null) return null;
-        dropped.ChangeWeapon(weapon, ammo);
-        var body = dropped.GetComponent<Rigidbody2D>();
-        if (body == null) { Destroy(dropped.gameObject); return null; }
-        bodies[id] = body;
-        ids[body] = id;
-        clientCreatedBodies.Add(body);
-        clientBoundDroppedWeapons.Add(body);
-        droppedWeapons[body] = dropped;
-        interactivePropBodies.Add(body);
-        MakeClientControlled(body);
-        return body;
-    }
-
-    private Rigidbody2D FindExistingDroppedWeapon(string id, ulong weaponId, Vector2 position)
-    {
-        Rigidbody2D best = null;
-        var bestDistance = 4f;
-        foreach (var pair in droppedWeapons)
-        {
-            var body = pair.Key;
-            var dropped = pair.Value;
-            if (body == null || dropped == null || clientCreatedBodies.Contains(body) ||
-                clientBoundDroppedWeapons.Contains(body) || dropped.stats == null ||
-                NetworkWireId.FromString(dropped.stats.name) != weaponId) continue;
-            var distance = (body.position - position).sqrMagnitude;
-            if (distance > bestDistance) continue;
-            bestDistance = distance;
-            best = body;
-        }
-        if (best == null) return null;
-        string previousId;
-        if (ids.TryGetValue(best, out previousId)) bodies.Remove(previousId);
-        bodies[id] = best;
-        ids[best] = id;
-        var wire = NetworkWireId.FromString(id);
-        wireIds[id] = wire;
-        idsByWire[wire] = id;
-        clientBoundDroppedWeapons.Add(best);
-        interactivePropBodies.Add(best);
-        return best;
     }
 
     private Rigidbody2D CreateRuntimeCrate(string id, string prefabName, Vector2 position, float rotation)
@@ -2843,125 +1620,13 @@ internal sealed class WorldReplication : MonoBehaviour
             Destroy(created);
             return null;
         }
-        bodies[id] = body;
-        ids[body] = id;
+        bodies.bodies[id] = body;
+        bodies.ids[body] = id;
         clientCreatedBodies.Add(body);
         droppedWeapons[body] = null;
-        interactivePropBodies.Add(body);
-        MakeClientControlled(body);
+        bodies.interactivePropBodies.Add(body);
+        bodies.MakeClientControlled(body);
         return body;
-    }
-
-    private static void SynchronizeDroppedWeapon(DroppedWeapon dropped, ulong weaponId, int ammo)
-    {
-        if (dropped == null) return;
-        var weapon = dropped.stats;
-        var changed = weapon == null || NetworkWireId.FromString(weapon.name) != weaponId;
-        if (changed)
-        {
-            weapon = FindWeaponPreset(weaponId);
-            if (weapon == null) return;
-            dropped.ChangeWeapon(weapon, ammo);
-        }
-        if (dropped.ammoAmount != ammo)
-        {
-            dropped.ammoAmount = ammo;
-            changed = true;
-        }
-        if (!changed) return;
-        SynchronizeDroppedWeaponAmmoIndicator(dropped);
-        if (ammo <= 0 && weapon.magExtractedSprite != null)
-        {
-            var renderer = dropped.GetComponent<SpriteRenderer>();
-            if (renderer != null) renderer.sprite = weapon.magExtractedSprite;
-        }
-    }
-
-    private static void UnloadDroppedWeapon(DroppedWeapon dropped)
-    {
-        if (dropped == null || dropped.stats == null || dropped.ammoAmount <= 0) return;
-        dropped.ammoAmount = 0;
-        var renderer = dropped.GetComponent<SpriteRenderer>();
-        if (renderer != null && dropped.stats.magExtractedSprite != null)
-            renderer.sprite = dropped.stats.magExtractedSprite;
-        SynchronizeDroppedWeaponAmmoIndicator(dropped);
-        var rigidbody = dropped.GetComponent<Rigidbody2D>();
-        if (rigidbody != null)
-        {
-            rigidbody.AddForce(new Vector2(UnityEngine.Random.Range(-1.5f, 1.5f),
-                UnityEngine.Random.Range(-1.5f, 1.5f)), ForceMode2D.Impulse);
-            rigidbody.AddTorque(UnityEngine.Random.Range(-1.5f, 1.5f), ForceMode2D.Impulse);
-        }
-    }
-
-    private static void ReplaceDroppedWeaponWithPrevious(DroppedWeapon dropped, BodyScript body,
-        WeaponPreset pickedWeapon)
-    {
-        if (dropped == null || body == null || pickedWeapon == null) return;
-        if (body.currentWeapon == pickedWeapon.slot && body.weapon != null && body.weapon.isReloading)
-            body.weapon.CancelReload();
-        var previousWeapon = body.weapons[pickedWeapon.slot];
-        var previousAmmo = body.weaponAmmos[pickedWeapon.slot];
-        dropped.pickupCool = 0.5f;
-        dropped.ChangeWeapon(previousWeapon, previousAmmo);
-        if (previousWeapon == null) return;
-        dropped.ammoAmount = previousAmmo;
-        var rigidbody = dropped.GetComponent<Rigidbody2D>();
-        if (rigidbody == null) return;
-        if (body.currentWeapon == pickedWeapon.slot && body.weapon != null)
-        {
-            dropped.transform.position = body.weapon.transform.position;
-            dropped.transform.rotation = body.weapon.transform.rotation;
-            if (body.isRight)
-            {
-                rigidbody.velocity = body.weapon.transform.right * 6f;
-                dropped.transform.localScale = Vector2.one;
-            }
-            else
-            {
-                rigidbody.velocity = -body.weapon.transform.right * 6f;
-                dropped.transform.localScale = new Vector2(-1f, 1f);
-            }
-            rigidbody.angularVelocity = UnityEngine.Random.Range(-50f, 50f);
-        }
-        else if (body.mainTorso != null)
-        {
-            if (body.isRight)
-            {
-                dropped.transform.position = body.mainTorso.transform.position - body.mainTorso.transform.right * 0.3f;
-                dropped.transform.localScale = Vector2.one;
-                dropped.transform.eulerAngles = body.mainTorso.transform.eulerAngles - new Vector3(0f, 0f, 90f);
-            }
-            else
-            {
-                dropped.transform.position = body.mainTorso.transform.position + body.mainTorso.transform.right * 0.3f;
-                dropped.transform.localScale = new Vector2(-1f, 1f);
-                dropped.transform.eulerAngles = body.mainTorso.transform.eulerAngles + new Vector3(0f, 0f, 90f);
-            }
-        }
-    }
-
-    internal static void SynchronizeDroppedWeaponAmmoIndicator(DroppedWeapon dropped)
-    {
-        if (dropped == null) return;
-        var ammoSprite = dropped.ammoSprite;
-        if (ammoSprite == null) return;
-        var weapon = dropped.stats;
-        var player = PlayerScript.player;
-        if (weapon != null && player != null && player.ammoImages != null &&
-            weapon.ammoType >= 0 && weapon.ammoType < player.ammoImages.Length)
-            ammoSprite.sprite = player.ammoImages[weapon.ammoType];
-        ammoSprite.transform.position = dropped.transform.position + Vector3.up * 0.6f;
-        ammoSprite.transform.rotation = Quaternion.identity;
-        ammoSprite.enabled = dropped.ammoAmount > 0 && Mathf.PingPong(Time.time, 0.3f) > 0.15f;
-    }
-
-    private static WeaponPreset FindWeaponPreset(ulong weaponId)
-    {
-        if (weaponId == 0UL) return null;
-        foreach (var candidate in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId) return candidate;
-        return null;
     }
 
     private sealed class BodyStateScratch : IDisposable
@@ -2984,7 +1649,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private struct State
+    internal struct State
     {
         public Vector2 position;
         public float rotation;
@@ -3002,15 +1667,6 @@ internal sealed class WorldReplication : MonoBehaviour
         public float vehicleHealth;
         public bool vehicleEngineDisabled;
         public bool vehicleJointAttached;
-    }
-
-    private class VehiclePathState
-    {
-        public Vector2 position;
-        public float rotation;
-        public Vector2 velocity;
-        public float angularVelocity;
-        public float arrivedAt;
     }
 
     private struct SnapshotReader
@@ -3103,7 +1759,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private sealed class BodyLayout
+    internal sealed class BodyLayout
     {
         public CrateScript Crate;
         public string CratePrefabName = "";
@@ -3113,18 +1769,15 @@ internal sealed class WorldReplication : MonoBehaviour
         public VehicleBase Vehicle;
         public Joint2D VehicleJoint;
     }
-
-    private struct LocalSettings
+    
+    internal sealed class LampState
     {
-        public RigidbodyType2D bodyType;
-        public bool simulated;
-        public CrateScript crate;
-        public bool crateEnabled;
-        public DroppedWeapon droppedWeapon;
-        public bool droppedWeaponEnabled;
+        internal GameObject Object;
+        internal Behaviour Light;
+        internal Collider2D Collider;
     }
 
-    private struct ClientBodyState
+    internal struct ClientBodyState
     {
         public Vector2 position;
         public float rotation;
@@ -3132,13 +1785,13 @@ internal sealed class WorldReplication : MonoBehaviour
         public float angularVelocity;
     }
 
-    private struct PropAuthority
+    internal struct PropAuthority
     {
         public ushort peerId;
         public float expiresAt;
     }
 
-    private struct FireLocalSettings
+    internal struct FireLocalSettings
     {
         public bool enabled;
         public bool active;

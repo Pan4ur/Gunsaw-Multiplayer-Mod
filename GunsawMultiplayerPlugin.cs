@@ -1440,7 +1440,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (pickup == null) { status = "Pickup component not found."; return; }
         var weapon = choices[UnityEngine.Random.Range(0, choices.Count)];
         pickup.ChangeWeapon(weapon, weapon.magSize);
-        WorldReplication.TrackDroppedWeapons();
+        WorldReplication.Instance.weapons.RegisterDroppedWeapon(pickup);
         status = "Spawned " + weapon.name + ".";
     }
 
@@ -1474,7 +1474,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         var pickup = Instantiate(prefab, position, Quaternion.identity).GetComponent<DroppedWeapon>();
         if (pickup == null) { status = "Pickup component not found."; return; }
         pickup.ChangeWeapon(weapon, weapon.magSize);
-        WorldReplication.TrackDroppedWeapons();
+        WorldReplication.Instance.weapons.RegisterDroppedWeapon(pickup);
         status = "Spawned " + weapon.name + ".";
     }
     // holy inliners

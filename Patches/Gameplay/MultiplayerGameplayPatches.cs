@@ -570,7 +570,7 @@ internal static class HostDroppedWeaponRegistrationPatch
     private static void Postfix(DroppedWeapon __instance)
     {
         if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
-            WorldReplication.RegisterDroppedWeapon(__instance);
+            WorldReplication.Instance.weapons.RegisterDroppedWeapon(__instance);
     }
 }
 
@@ -721,7 +721,7 @@ internal static class ClientNpcDropWeaponSinglePatch
 {
     private static bool Prefix(BodyScript __instance)
     {
-        if (WorldReplication.QueueLocalWeaponDrop(__instance))
+        if (WorldReplication.Instance.weapons.QueueLocalWeaponDrop(__instance))
         {
             NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, false);
             return false;
@@ -816,7 +816,7 @@ internal static class ClientDroppedWeaponPickupPatch
     private static void Prefix(DroppedWeapon __instance, BodyScript body)
     {
         if (GunsawMultiplayerPlugin.World != null)
-            GunsawMultiplayerPlugin.World.QueueWeaponInteraction(__instance, body, WorldReplication.WeaponPickup);
+            GunsawMultiplayerPlugin.World.weapons.QueueWeaponInteraction(__instance, body, (byte) WorldReplication.WorldInteraction.WeaponPickup);
     }
 }
 
@@ -860,7 +860,7 @@ internal static class ClientDroppedWeaponAmmoPatch
         pendingWeapons[weaponId] = now + 5f;
 
         __instance.pickupCool = -1f;
-        world.QueueWeaponInteraction(__instance, body, WorldReplication.WeaponAmmoGet);
+        world.weapons.QueueWeaponInteraction(__instance, body, (byte) WorldReplication.WorldInteraction.WeaponAmmoGet);
 
         return true;
     }
