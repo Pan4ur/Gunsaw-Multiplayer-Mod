@@ -12,6 +12,8 @@
     <EmbeddedResource Include="Assets\killmessages.json" />
     <EmbeddedResource Include="CustomProps\Assets\npc-spawner.png" />
     <EmbeddedResource Include="CustomProps\Assets\rnd.png" />
+    <EmbeddedResource Include="Assets\Sounds\respawn.ogg"
+                      LogicalName="GunsawMultiplayer.Assets.Sounds.respawn.ogg" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
     <Reference Include="BepInEx">
       <HintPath>$(GameDirectory)/BepInEx/core/BepInEx.dll</HintPath>
@@ -87,6 +89,14 @@
     </Reference>
     <Reference Include="Assembly-CSharp" Publicize="true">
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestAudioModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.UnityWebRequestAudioModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

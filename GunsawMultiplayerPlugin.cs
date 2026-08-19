@@ -177,6 +177,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         Logger.LogInfo("Gunsaw Multiplayer " + PluginVersion + " loaded.");
         CheckForUpdates(false);
         RPCManager.CheckInstance();
+        EmbeddedAudioLoader.Init();
     }
 
     private void Start()

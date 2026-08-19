@@ -2663,6 +2663,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             Debug.LogError("[Gunsaw MP] Could not respawn player: character has no initialized limbs.");
             return;
         }
+        
         EnsureRespawnWeaponSlots(newBody);
         RestoreRespawnScarf(newBody);
         var levitator = newBody.gameObject.AddComponent<LevitatorScript>();
@@ -2682,7 +2683,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         StartCoroutine(FinalizeLocalRespawn(newBody, oldBody, generation));
         
         if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
-        // TODO DEFIB SOUND
+        
+        Sound.Play(EmbeddedAudioLoader.RespawnSound, position, pitchShift: false);
     }
 
     private IEnumerator FinalizeLocalRespawn(BodyScript newBody, BodyScript oldBody, int generation)
