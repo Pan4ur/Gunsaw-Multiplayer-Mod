@@ -121,56 +121,50 @@ internal sealed class RPCManager : MonoBehaviour
 
     internal void UpdateRichPresence()
     {
+        string playerSpecie = GetCharacterName();
+
         bool shouldResetJoinSecret = true;
         if (MultiplayerSession.IsConnected || MultiplayerSession.IsHosting)
         {
             bool defaultServer = GunsawMultiplayerPlugin.Instance.lobbyServerAddress.Contains("e621.su");
             string lobbyId = GunsawMultiplayerPlugin.Instance.GetCurrentLobbyId();
-            RichPresence.Party = new PresenceParty(lobbyId,
-                MultiplayerSession.PlayerCount, MultiplayerSession.MaxPlayers, defaultServer);
+            RichPresence.Party = new PresenceParty(lobbyId, MultiplayerSession.PlayerCount, MultiplayerSession.MaxPlayers, defaultServer);
             if (defaultServer)
             {
                 RichPresence.JoinSecret = lobbyId + ":" + GunsawMultiplayerPlugin.PluginVersion;
                 shouldResetJoinSecret = false;
             }
+
             // It is supposed to be encrypted, wooah
             // But uhh, we dont have privacy settings to begins with, lol
             // Also, ipc 5005 we must provide different key
             if (MultiplayerSession.PvpEnabled)
                 RichPresence.Details = "PVP";
-       else     RichPresence.Details = "CO-OP";
+            else 
+                RichPresence.Details = "CO-OP";
         }
-   else {
+        else
+        {
             RichPresence.Party = null;
             if (null == PlayerScript.player || null == PlayerScript.player.bodyScript || string.IsNullOrEmpty(PlayerScript.player.bodyScript.speciesName))
                 RichPresence.Details = "In main menu";
-       else {
-                string playerSpecie = PlayerScript.player.bodyScript.speciesName;
-                // Detect albino, rabomination, ename g4a to G-4A and else capialize first letter
-                if ("experiment" == playerSpecie)
-                {   // why albino and abomination are named expie
-                    // im not sure how руссификатор works, but it might break, not only this, everything in here actually
-                    if ("Cannon fodder...?" == PlayerScript.player.bodyScript.afterSwapTip)
-                        RichPresence.Details = "Albino";
-               else if ("An abomination\nLow stats" == PlayerScript.player.bodyScript.afterSwapTip)
-                        RichPresence.Details = "Abomination";
-               else     RichPresence.Details = "Experiment";
-                }
-            else if ("g4a" == playerSpecie)
-                    RichPresence.Details = "G4-A";
-            else    RichPresence.Details = char.ToUpper(playerSpecie[0]) + playerSpecie.Substring(1);
-            }
+            else
+                RichPresence.Details = playerSpecie; // mb utilize it on stats?
+            
+            RichPresence.SmallImage = new PresencePair("https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/refs/heads/main/Assets/Heads/" + playerSpecie + ".png", playerSpecie);
         }
+
         if (null != GameManager.main && GameManager.main.hardMode)
             RichPresence.Details += " |BRUTAL";
+        
         if (shouldResetJoinSecret)
             RichPresence.JoinSecret = null;
-
-
+        
         string scene = SceneManager.GetActiveScene().name;
         if (levels.TryGetValue(scene, out string level))
             RichPresence.State = level;
-   else     RichPresence.State = scene;
+        else 
+            RichPresence.State = scene;
     }
 
     private void Initialize()
@@ -218,6 +212,28 @@ internal sealed class RPCManager : MonoBehaviour
             RichPresence.AcceptJoinRequest(user);
         else 
             RichPresence.RejectJoinRequest(user);
+    }
+    
+    private static string GetCharacterName()
+    {
+        var player = PlayerScript.player;
+        
+        if (player == null || player.bodyScript == null) return "Unknown";
+
+        string rootName = player.bodyScript.transform.root.name;
+
+        if (rootName.EndsWith("(Clone)", StringComparison.Ordinal))
+            rootName = rootName.Substring(0, rootName.Length - "(Clone)".Length);
+
+        switch (rootName)
+        {
+            case "AlbinoEnemy": return "Albino";
+            case "Abomination": return "Abomination";
+            case "RobotEnemy": return "G4-A";
+        }
+
+        string species = player.bodyScript.speciesName ?? "";
+        return char.ToUpperInvariant(species[0]) + species.Substring(1);
     }
 
     private void DestroyClient()
