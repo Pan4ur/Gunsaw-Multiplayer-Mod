@@ -211,7 +211,6 @@ internal static partial class MultiplayerSession
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
         RPCManager.CheckInstance();
-        RPCManager.instance.lobbyId = lobbyId;
         logger.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
     }
 
@@ -266,7 +265,6 @@ internal static partial class MultiplayerSession
             else EnableP2P();
             ThreadPool.QueueUserWorkItem(_ => Receive(null));
             RPCManager.CheckInstance();
-            RPCManager.instance.lobbyId = lobbyId;
             logger.LogInfo("UDP relay handshake sent to " + relayAddress + ".");
             return true;
         }
