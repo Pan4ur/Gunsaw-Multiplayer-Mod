@@ -2680,6 +2680,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         RestoreLocalPlayerSingleton();
         localWasAlive = true;
         StartCoroutine(FinalizeLocalRespawn(newBody, oldBody, generation));
+        
+        if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
+        // TODO DEFIB SOUND
     }
 
     private IEnumerator FinalizeLocalRespawn(BodyScript newBody, BodyScript oldBody, int generation)
@@ -5602,6 +5605,30 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             state.PendingBodyColliderHits.Remove(targetPeerId);
 
         return true;
+    }
+    
+    internal static void AddForceAtPositionWithPropAuthority(Rigidbody2D rb, Vector2 force, Vector2 position, ForceMode2D mode) 
+    {
+        rb.AddForceAtPosition(force, position, mode);
+        TryTakePropAuthority(rb);
+    }
+
+    internal static void AddForceWithPropAuthority(Rigidbody2D rb, Vector2 force, ForceMode2D mode)
+    {
+        rb.AddForce(force, mode);
+        TryTakePropAuthority(rb);
+    }
+
+    private static void TryTakePropAuthority(Rigidbody2D rb)
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || rb == null)
+            return;
+
+        var player = PlayerScript.player;
+        if (player == null || currentShooter != player.bodyScript)
+            return;
+
+        GunsawMultiplayerPlugin.World?.QueueLevitated(rb);
     }
     
     private struct VehicleTailTarget

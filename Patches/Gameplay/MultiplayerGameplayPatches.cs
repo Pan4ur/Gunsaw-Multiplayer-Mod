@@ -1,3 +1,4 @@
+using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -517,8 +518,10 @@ internal static class ClientCrateDamagePatch
     {
         __state = null;
         if (!MultiplayerSession.IsConnected) return true;
+        
         if (GunsawMultiplayerPlugin.World != null &&
             GunsawMultiplayerPlugin.World.TryProtectNetworkCrateDebrisDamage(__instance, dmg)) return false;
+        
         if (MultiplayerSession.IsHost)
         {
             if (__instance != null && __instance.breakType == CrateScript.BreakType.None &&
@@ -530,8 +533,12 @@ internal static class ClientCrateDamagePatch
             }
             return true;
         }
+
         if (GunsawMultiplayerPlugin.World != null)
+        {
+            GunsawMultiplayerPlugin.World.QueueLevitated(__instance.GetComponent<Rigidbody2D>());
             GunsawMultiplayerPlugin.World.QueueDamage(__instance, dmg);
+        }
         return false;
     }
 
@@ -909,6 +916,74 @@ internal static class MultiplayerWeaponShotPatch
         NetworkAvatarReplication.CompleteWeaponShot(__state, __exception == null);
         return __exception;
     }
+    
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var original = AccessTools.Method(
+            typeof(Rigidbody2D),
+            nameof(Rigidbody2D.AddForceAtPosition),
+            new[]
+            {
+                typeof(Vector2),
+                typeof(Vector2),
+                typeof(ForceMode2D)
+            });
+
+        var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceAtPositionWithPropAuthority));
+
+        foreach (var instruction in instructions)
+        {
+            if (instruction.Calls(original))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = replacement;
+            }
+
+            yield return instruction;
+        }
+    }
+}
+
+[HarmonyPatch(typeof(BodyScript), "KickDelayed")]
+internal static class MultiplayerPlayerKickDelayedPatch
+{
+    private static void Prefix(BodyScript __instance, out NetworkAvatarReplication.ShotState __state)
+    {
+        __state = NetworkAvatarReplication.BeginMeleeAttack(__instance);
+    }
+
+    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)
+    {
+        NetworkAvatarReplication.EndMeleeAttack(__state);
+        return __exception;
+    }
+
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var original = AccessTools.Method(
+            typeof(Rigidbody2D),
+            nameof(Rigidbody2D.AddForce),
+            new[]
+            {
+                typeof(Vector2),
+                typeof(ForceMode2D)
+            });
+
+        var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceWithPropAuthority));
+
+        foreach (var instruction in instructions)
+        {
+            if (instruction.Calls(original))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = replacement;
+            }
+
+            yield return instruction;
+        }
+    }
 }
 
 [HarmonyPatch(typeof(VelvetScript), "Shoot")]
@@ -947,6 +1022,32 @@ internal static class MultiplayerPlayerKickPatch
     {
         NetworkAvatarReplication.EndMeleeAttack(__state);
         return __exception;
+    }
+    
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var original = AccessTools.Method(
+            typeof(Rigidbody2D),
+            nameof(Rigidbody2D.AddForce),
+            new[]
+            {
+                typeof(Vector2),
+                typeof(ForceMode2D)
+            });
+
+        var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceWithPropAuthority));
+
+        foreach (var instruction in instructions)
+        {
+            if (instruction.Calls(original))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = replacement;
+            }
+
+            yield return instruction;
+        }
     }
 }
 
