@@ -8,8 +8,16 @@ internal static class LimbCrateCollisionPatch
 {
     private static void Postfix(LimbScript __instance, Collision2D collision)
     {
-        if (GunsawMultiplayerPlugin.World != null)
-            GunsawMultiplayerPlugin.World.QueuePush(__instance, collision);
+       GunsawMultiplayerPlugin.World?.QueuePush(__instance, collision);
+    }
+}
+
+[HarmonyPatch(typeof(GameObject), MethodType.Constructor, new[] { typeof(string), typeof(Type[]) })]
+internal static class BloodPropCreationPatch
+{
+    private static void Postfix(GameObject __instance)
+    {
+        BloodCleanupSystem.Register(__instance);
     }
 }
 

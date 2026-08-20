@@ -1,0 +1,39 @@
+using UnityEngine;
+
+internal static class BloodCleanupSystem
+{
+    private const float Lifetime = 120f;
+    private static readonly HashSet<GameObject> bloodProps = [];
+
+    internal static void Register(GameObject gameObject)
+    {
+        if (gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop")) return;
+        if (!bloodProps.Add(gameObject)) return;
+        gameObject.AddComponent<BloodPropLifetime>();
+        UnityEngine.Object.Destroy(gameObject, Lifetime);
+    }
+
+    internal static void Unregister(GameObject gameObject)
+    {
+        bloodProps.Remove(gameObject);
+    }
+
+    internal static bool Clear()
+    {
+        foreach (var gameObject in bloodProps)
+        {
+            if (gameObject == null) continue;
+            UnityEngine.Object.Destroy(gameObject);
+        }
+        bloodProps.Clear();
+        return true;
+    }
+}
+
+internal sealed class BloodPropLifetime : MonoBehaviour
+{
+    private void OnDestroy()
+    {
+        BloodCleanupSystem.Unregister(gameObject);
+    }
+}
