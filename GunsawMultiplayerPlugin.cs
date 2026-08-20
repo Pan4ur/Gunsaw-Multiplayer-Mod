@@ -306,6 +306,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         string incomingCustomLevel;
         if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel))
         {
+            RPCManager.CheckInstance();
+            RPCManager.instance.UpdateCustomLevel(incomingCustomLevel);
             CustomLevelProgress.SetActive(incomingCustomLevel);
             receivedCustomLevelJson = Compression.Decompress(incomingCustomLevel);
             if (waitingForCustomLevel)
