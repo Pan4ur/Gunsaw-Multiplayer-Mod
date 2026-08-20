@@ -2309,7 +2309,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (body == PlayerScript.player?.bodyScript)
                 ScoreboardSystem.RecordLocalDamageReceived(appliedAmount);
             applyingNetworkPlayerDamage = true;
-            try { body.Damaged(critical); }
+            try // TODO Debug exception handling
+            {
+                body.Damaged(critical);
+                body.DoGrunt();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+            }
             finally { applyingNetworkPlayerDamage = false; }
         }
         
