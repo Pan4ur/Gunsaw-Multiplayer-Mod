@@ -995,11 +995,17 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal void QueuePush(LimbScript limb, Collision2D collision)
     {
-        if (MultiplayerSession.IsHost || limb == null || limb.body == null || !limb.body.isPlayer || collision == null) return;
+        if (limb == null || limb.rb == null) return;
+        QueueBodyPush(limb.body, collision);
+    }
+
+    internal void QueueBodyPush(BodyScript pushingBody, Collision2D collision)
+    {
+        if (MultiplayerSession.IsHost || pushingBody == null || !pushingBody.isPlayer || collision == null) return;
         var localPlayer = PlayerScript.player;
-        if (localPlayer == null || limb.body != localPlayer.bodyScript) return;
+        if (localPlayer == null || pushingBody != localPlayer.bodyScript) return;
         var body = collision.rigidbody ?? collision.gameObject.GetComponentInParent<Rigidbody2D>();
-        if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body)) || limb.rb == null) return;
+        if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
         bodies.QueueContactBodyState(body, Time.unscaledTime);
         var crate = body.GetComponentInParent<CrateScript>();
         if (crate != null && collision.relativeVelocity.magnitude >= crate.minDamageSpeed)

@@ -13,6 +13,16 @@ internal static class LimbCrateCollisionPatch
     }
 }
 
+[HarmonyPatch(typeof(BodyScript), "OnCollisionEnter2D")]
+internal static class BodyCrateCollisionPatch
+{
+    private static void Postfix(BodyScript __instance, Collision2D collision)
+    {
+        if (GunsawMultiplayerPlugin.World != null)
+            GunsawMultiplayerPlugin.World.QueueBodyPush(__instance, collision);
+    }
+}
+
 [HarmonyPatch(typeof(LevitatorScript), "FixedUpdate")]
 internal static class ClientLevitatorPropPatch
 {
