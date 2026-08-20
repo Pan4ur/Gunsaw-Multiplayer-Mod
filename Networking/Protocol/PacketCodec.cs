@@ -42,6 +42,7 @@ internal static class PacketCodec
             case PacketType.PlayerDamage: return Encode(new PayloadPacket(type, payload));
             case PacketType.PvpDamage: return Encode(new PayloadPacket(type, payload));
             case PacketType.Settings: return Encode(new PayloadPacket(type, payload));
+            case PacketType.Team: return Encode(new PayloadPacket(type, payload));
             case PacketType.ShotVisual: return Encode(new PayloadPacket(type, payload));
             case PacketType.PlayerGrab:
                 var grabReader = new PacketReader(payload);

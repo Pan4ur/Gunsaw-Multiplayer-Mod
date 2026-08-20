@@ -227,12 +227,26 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdatePlayers()
     {
-        var text = Monospace("PLAYER                 PING    K    D     AIM      HS     DMG     RANK") + "\n\n" +
-            PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
-            MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
-            text += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
-        playersText.text = text;
+        var header = Monospace("PLAYER                 PING    K    D     AIM      HS     DMG     RANK");
+        if (!TeamSystem.Enabled)
+        {
+            var text = header + "\n\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
+                MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
+            foreach (var remote in NetworkAvatarRegistry.RemotePlayers()) text += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
+            playersText.text = text;
+            return;
+        }
+        var grouped = header;
+        foreach (var team in TeamSystem.Names())
+        {
+            grouped += "\n\n<color=#" + TeamSystem.Hex(team) + ">" + team.ToUpperInvariant() + "</color>";
+            if (TeamSystem.Name(MultiplayerSession.LocalPeerId) == team)
+                grouped += "\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
+                    MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
+            foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+                if (TeamSystem.Name(remote.PeerId) == team) grouped += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
+        }
+        playersText.text = grouped;
     }
 
     private static string PlayerScoreLine(ushort peerId, string name, int ping, bool host)
@@ -350,8 +364,10 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             }
             var name = NetworkAvatarReplication.RemoteNameTag(body);
             tag.text = ScoreboardSystem.IsMvp(remote.PeerId) ? "[MVP] " + name : name;
-            tag.color = !body.isAlive ? new Color(1f, 0.28f, 0.28f, visibility) :
-                !body.IsConsc() ? new Color(1f, 0.72f, 0.22f, visibility) : new Color(1f, 1f, 1f, visibility);
+            var color = TeamSystem.Enabled ? TeamSystem.Color(remote.PeerId) :
+                !body.isAlive ? new Color(1f, 0.28f, 0.28f) : !body.IsConsc() ? new Color(1f, 0.72f, 0.22f) : Color.white;
+            color.a = visibility;
+            tag.color = color;
             tag.rectTransform.anchoredPosition = CanvasPosition(screen + new Vector3(0f, 12f, 0f));
             tag.gameObject.SetActive(true);
         }

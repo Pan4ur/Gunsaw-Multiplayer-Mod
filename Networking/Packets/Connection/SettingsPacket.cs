@@ -14,8 +14,10 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly float InitialScale;
     internal readonly bool BrutalModeEnabled;
     internal readonly bool AllowObserver;
+    internal readonly bool Teams;
+    internal readonly string TeamsCfg;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "")
     {
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -31,6 +33,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         InitialScale = AvatarScaleHandler.Clamp(initialScale);
         BrutalModeEnabled = brutalModeEnabled;
         AllowObserver = allowObserver;
+        Teams = teams;
+        TeamsCfg = teamsCfg ?? "";
     }
 
     public PacketType Type => PacketType.Settings;
@@ -51,7 +55,18 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteSingle(InitialScale);
         writer.WriteByte(BrutalModeEnabled ? (byte)1 : (byte)0);
         writer.WriteByte(AllowObserver ? (byte)1 : (byte)0);
+        writer.WriteByte(Teams ? (byte)1 : (byte)0);
+        writer.WriteBinaryString(TeamsCfg);
     }
 
-    internal static SettingsPacket Read(ref PacketReader reader) => new SettingsPacket(reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadUInt16(), reader.ReadByte(), reader.ReadByte() != 0, reader.ReadByte() != 0, reader.ReadByte() != 0, reader.Remaining >= 1 ? reader.ReadByte() != 0 : true, reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f, reader.Remaining >= 1 && reader.ReadByte() != 0, reader.Remaining >= 1 ? reader.ReadByte() != 0 : true);
+    internal static SettingsPacket Read(ref PacketReader reader)
+    {
+        var pvp = reader.ReadByte() != 0; var grab = reader.ReadByte() != 0; var unconscious = reader.ReadByte() != 0;
+        var respawn = reader.ReadByte() != 0; var atStart = reader.ReadByte() != 0; var time = reader.ReadUInt16(); var max = reader.ReadByte();
+        var collisions = reader.ReadByte() != 0; var cheats = reader.ReadByte() != 0; var swap = reader.ReadByte() != 0;
+        var scaleChanging = reader.Remaining >= 1 ? reader.ReadByte() != 0 : true; var scale = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
+        var brutal = reader.Remaining >= 1 && reader.ReadByte() != 0; var observer = reader.Remaining >= 1 ? reader.ReadByte() != 0 : true;
+        var teams = reader.Remaining >= 1 && reader.ReadByte() != 0; var cfg = reader.Remaining > 0 ? reader.ReadBinaryString() : "";
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg);
+    }
 }

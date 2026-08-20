@@ -11,8 +11,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GameObject panel;
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, initialScaleInput, serverInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, initialScaleInput, serverInput, teamsCfgInput;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
@@ -66,6 +66,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         allowSwapToggle.isOn = plugin.createAllowSwap;
         allowScaleChangingToggle.isOn = plugin.createAllowScaleChanging;
         allowObserverToggle.isOn = plugin.createAllowObserver;
+        teamsToggle.isOn = plugin.createTeams;
+        SetInput(teamsCfgInput, plugin.createTeamsCfg);
         SetInput(initialScaleInput, plugin.createInitialScale);
         respawnInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
@@ -82,7 +84,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void Create(MainMenuManager menu)
     {
         template = menu.startText != null ? menu.startText : menu.curName;
-        templateButton = menu.GetComponentInChildren<Button>(true);
+        templateButton = FindNativeMenuButton(menu);
         if (template == null || templateButton == null) return;
 
         root = new GameObject("GunsawMultiplayerNativeMenu", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -96,9 +98,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
         scaler.matchWidthOrHeight = 0.5f;
 
-        var open = CreateButton(root.transform, "MULTIPLAYER", new Vector2(-780f, -464f), new Vector2(250f, 52f));
-        ScreenAnchor(open.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 20f));
-        open.onClick.AddListener(() => { plugin.visible = true; plugin.RefreshLobbies(); });
+        CreateNativeOpenButton(menu, templateButton);
 
         panel = CreatePanel(root.transform, Vector2.zero, new Vector2(1320f, 920f));
         CreateText(panel.transform, "GUNSAW MULTIPLAYER v" + GunsawMultiplayerPlugin.PluginVersion, new Vector2(0f, 412f), new Vector2(1160f, 48f), 28, TextAlignmentOptions.Center, FontStyles.UpperCase);
@@ -149,6 +149,10 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(allowScaleChangingToggle.gameObject, "ALLOW SCALE CHANGING: Allows players to use /scale between 0.25 and 2.0.");
         allowObserverToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW OBSERVER", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowObserver = value);
         AddTooltip(allowObserverToggle.gameObject, "ALLOW OBSERVER: Allows the OBSERVER keyboard easter egg.");
+        teamsToggle = CreateToggle(CreateSettingsRow(settings), "TEAMS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createTeams = value);
+        var teamsCfgRow = CreateSettingsRow(settings);
+        CreateText(teamsCfgRow, "TEAMS CFG", new Vector2(-185f, 0f), new Vector2(140f, 32f), 14);
+        teamsCfgInput = CreateInput(teamsCfgRow, new Vector2(80f, 0f), new Vector2(330f, 36f), 512, value => plugin.createTeamsCfg = value);
         var initialScaleRow = CreateSettingsRow(settings);
         CreateText(initialScaleRow, "INITIAL SCALE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         initialScaleInput = CreateInput(initialScaleRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createInitialScale = value);
@@ -236,6 +240,47 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var rect = (RectTransform)go.transform;
         rect.anchoredPosition = position; rect.sizeDelta = size;
         return go;
+    }
+
+    private Button FindNativeMenuButton(MainMenuManager menu)
+    {
+        var fallback = menu.GetComponentInChildren<Button>(true);
+        foreach (var candidate in menu.GetComponentsInChildren<Button>(true))
+        {
+            var text = candidate.GetComponentInChildren<TMP_Text>(true);
+            if (text != null && string.Equals(text.text.Trim(), "PLAY", StringComparison.OrdinalIgnoreCase)) return candidate;
+        }
+        return fallback;
+    }
+
+    private void CreateNativeOpenButton(MainMenuManager menu, Button source)
+    {
+        var clone = Instantiate(source.gameObject, source.transform.parent);
+        clone.name = "Multiplayer Button";
+        var button = clone.GetComponent<Button>();
+        button.onClick = new Button.ButtonClickedEvent();
+        button.onClick.AddListener(() => { plugin.visible = true; plugin.RefreshLobbies(); });
+        var text = clone.GetComponentInChildren<TMP_Text>(true);
+        if (text != null) text.text = "MULTIPLAYER";
+        var rect = clone.GetComponent<RectTransform>();
+        var sourceRect = source.GetComponent<RectTransform>();
+        var gap = 12f;
+        var extension = sourceRect.rect.height + gap;
+        rect.position = sourceRect.position + Vector3.up * extension;
+        StartCoroutine(ExpandNativeButtonFrame(sourceRect, extension));
+    }
+
+    private System.Collections.IEnumerator ExpandNativeButtonFrame(RectTransform source, float extension)
+    {
+        yield return new WaitForEndOfFrame();
+        var frame = FindNativeButtonFrame(source);
+        if (frame != null) frame.offsetMax += Vector2.up * (extension + 14f);
+    }
+
+    private static RectTransform FindNativeButtonFrame(RectTransform source)
+    {
+        var title = source.root.Find("Title");
+        return title != null && title.childCount > 3 ? title.GetChild(3) as RectTransform : null;
     }
 
     private GameObject CreateGroup(Transform parent, string title, Vector2 position, Vector2 size)
@@ -438,7 +483,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         foreach (var lobby in plugin.lobbies)
         {
             var row = new GameObject("Lobby", typeof(RectTransform), typeof(LayoutElement)); row.transform.SetParent(lobbyRows, false); row.GetComponent<LayoutElement>().preferredHeight = 46f;
-            var info = CreateText(row.transform, lobby.name + "  |  " + lobby.hostName + "  |  " + lobby.map + "  |  " + (lobby.pvp ? "PVP" : "CO-OP") + "  |  " + lobby.players + "/" + lobby.maxPlayers, new Vector2(-135f, 0f), new Vector2(810f, 42f), 14); info.enableWordWrapping = false;
+            var info = CreateText(row.transform, lobby.name + "  |  " + lobby.hostName + "  |  " + lobby.map + "  |  " + (lobby.teams ? "TEAMS" : lobby.pvp ? "PVP" : "CO-OP") + "  |  " + lobby.players + "/" + lobby.maxPlayers, new Vector2(-135f, 0f), new Vector2(810f, 42f), 14); info.enableWordWrapping = false;
             var id = lobby.id;
             var joined = plugin.IsJoinedLobby(id);
             var join = CreateButton(row.transform, joined ? "LEAVE" : "JOIN", new Vector2(450f, 0f), new Vector2(140f, 40f));

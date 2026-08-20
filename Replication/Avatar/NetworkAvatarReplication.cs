@@ -2190,6 +2190,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static void RouteRemotePlayerDamage(NetworkAvatarReplication replica, float amount, bool critical)
     {
+        if (replica != null && TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId)) return;
         if (replica != null && KartPassengers.IsProtectedPassenger(replica.remoteBody))
         {
             return;
@@ -2952,7 +2953,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static void ApplyPvpDamage(BodyScript body, ushort senderId, PlayerDamagePacket packet)
     {
-        if (!MultiplayerSession.PvpEnabled || body == null) return;
+        if (!MultiplayerSession.PvpEnabled || body == null || TeamSystem.Same(MultiplayerSession.LocalPeerId, senderId)) return;
         var source = senderId == MultiplayerSession.LocalPeerId ? body : NetworkAvatarRegistry.RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
         ApplyPlayerDamage(body, packet);

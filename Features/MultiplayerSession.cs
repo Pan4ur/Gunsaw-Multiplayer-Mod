@@ -165,7 +165,7 @@ internal static partial class MultiplayerSession
 
     internal static void StartHost(string lobbyId, string relayKey, string relayAddress, bool pvpEnabled,
         bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, bool teams, string teamsCfg, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
         ConnectionMode mode, ManualLogSource logger)
     {
         CloseSocket();
@@ -211,6 +211,9 @@ internal static partial class MultiplayerSession
         AllowScaleChanging = allowScaleChanging;
         InitialScale = AvatarScaleHandler.Clamp(initialScale);
         AllowObserver = allowObserver;
+        TeamsEnabled = teams;
+        TeamsCfg = teamsCfg ?? "";
+        TeamSystem.Configure(TeamsEnabled, TeamsCfg);
         RefreshHostBrutalMode();
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
@@ -356,7 +359,7 @@ internal static partial class MultiplayerSession
         hostScene = "LevelLoader";
         QueueCustomLevelTransfer(levelCode);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg));
         Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);
     }
 
@@ -409,6 +412,8 @@ internal static partial class MultiplayerSession
         }
     }
     internal static bool PvpEnabled { get; private set; }
+    internal static bool TeamsEnabled { get; private set; }
+    internal static string TeamsCfg { get; private set; } = "";
     internal static bool CanGrabPlayers { get; private set; }
     internal static bool GrabOnlyUnconscious { get; private set; }
     internal static bool AllowRespawn { get; private set; }
@@ -695,7 +700,7 @@ internal static partial class MultiplayerSession
 
     internal static bool UpdateHostSettings(bool pvpEnabled, bool canGrabPlayers,
         bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, int lobbyMaxPlayers)
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, bool teams, string teamsCfg, int lobbyMaxPlayers)
     {
         if (!IsHosting) return false;
         PvpEnabled = pvpEnabled;
@@ -710,10 +715,13 @@ internal static partial class MultiplayerSession
         AllowScaleChanging = allowScaleChanging;
         InitialScale = AvatarScaleHandler.Clamp(initialScale);
         AllowObserver = allowObserver;
+        TeamsEnabled = teams;
+        TeamsCfg = teamsCfg ?? "";
+        TeamSystem.Configure(TeamsEnabled, TeamsCfg);
         RefreshHostBrutalMode();
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg));
         return true;
     }
 

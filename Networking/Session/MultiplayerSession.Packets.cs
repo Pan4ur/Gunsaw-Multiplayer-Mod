@@ -40,7 +40,8 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg), senderId);
+                TeamSystem.SendAll(senderId);
                 ObserverSystem.SendCurrentState(senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
                 if (joined) BroadcastSystemChat(connectedName + " joined the game.");
@@ -251,6 +252,9 @@ internal static partial class MultiplayerSession
                 InitialScale = settings.InitialScale;
                 BrutalModeEnabled = settings.BrutalModeEnabled;
                 AllowObserver = settings.AllowObserver;
+                TeamsEnabled = settings.Teams;
+                TeamsCfg = settings.TeamsCfg;
+                TeamSystem.Configure(TeamsEnabled, TeamsCfg);
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(16, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings received. PVP " + (PvpEnabled ? "enabled" : "disabled") +
@@ -260,6 +264,15 @@ internal static partial class MultiplayerSession
                     "; cheats " + (CheatsEnabled ? "enabled" : "disabled") +
                     "; brutal mode " + (BrutalModeEnabled ? "enabled" : "disabled") +
                     "; observer " + (AllowObserver ? "enabled." : "disabled."));
+            }
+            else if (decodedPacket.Type == PacketType.Team)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    TeamSystem.Receive(senderId, TeamPacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
             }
             else if (decodedPacket.Type == PacketType.Observer)
             {
