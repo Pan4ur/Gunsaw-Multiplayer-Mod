@@ -18,6 +18,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text lobbyActionText;
     private Button closeLobbyButton;
     private Transform lobbyRows;
+    private CustomLevelBrowserUi customLevelBrowser;
     private int renderedLobbyHash;
     private MainMenuManager menu;
 
@@ -39,8 +40,16 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (root == null) return;
         if (!root.activeSelf) root.SetActive(true);
         if (panel.activeSelf != plugin.visible) panel.SetActive(plugin.visible);
-        if (!plugin.visible) return;
+        if (!plugin.visible)
+        {
+            customLevelBrowser?.SetOpen(false);
+            return;
+        }
+        var panelRect = panel.GetComponent<RectTransform>();
+        var targetPanelX = customLevelBrowser != null && customLevelBrowser.IsOpen ? -300f : 0f;
+        panelRect.anchoredPosition = new Vector2(Mathf.Lerp(panelRect.anchoredPosition.x, targetPanelX, 1f - Mathf.Exp(-12f * Time.unscaledDeltaTime)), panelRect.anchoredPosition.y);
         FitPanelToScreen();
+        customLevelBrowser?.Tick();
 
         SetInput(nameInput, plugin.playerName);
         SetInput(lobbyInput, plugin.lobbyName);
@@ -170,15 +179,18 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
         // CUSTOM LEVEL
         var customGroup = CreateGroup(panel.transform, "CUSTOM LEVEL", new Vector2(-325f, 145f), new Vector2(620f, 150f));
-        var paste = CreateButton(customGroup.transform, "PASTE CUSTOM LEVEL", new Vector2(-152.5f, -42f), new Vector2(295f, 46f));
+        var paste = CreateButton(customGroup.transform, "PASTE", new Vector2(-190f, -42f), new Vector2(180f, 46f));
         paste.onClick.AddListener(() => plugin.PasteCustomLevel());
-        var startCustom = CreateButton(customGroup.transform, "START CUSTOM LEVEL", new Vector2(152.5f, -42f), new Vector2(295f, 46f));
+        var startCustom = CreateButton(customGroup.transform, "START", new Vector2(0f, -42f), new Vector2(180f, 46f));
         startCustom.onClick.AddListener(() =>
         {
             if (MultiplayerSession.IsHosting && !string.IsNullOrEmpty(plugin.customLevelJson))
                 plugin.StartCustomLevel();
         });
+        var openBrowser = CreateButton(customGroup.transform, "OPEN BROWSER", new Vector2(190f, -42f), new Vector2(180f, 46f));
+        openBrowser.onClick.AddListener(() => customLevelBrowser?.Toggle());
         customLevelText = CreateText(customGroup.transform, "", new Vector2(0f, 17f), new Vector2(570f, 28f), 13, TextAlignmentOptions.Center);
+        customLevelBrowser = new CustomLevelBrowserUi(plugin, root.transform, template, templateButton);
         //
 
 

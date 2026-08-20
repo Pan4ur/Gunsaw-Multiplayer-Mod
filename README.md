@@ -144,6 +144,7 @@ Pull requests are very welcome
 - [BepInEx team](https://github.com/BepInEx) for [BepInEx](https://github.com/BepInEx/BepInEx), [HarmonyX](https://github.com/BepInEx/HarmonyX) and [AssemblyPublicizer](https://github.com/BepInEx/BepInEx.AssemblyPublicizer)
 - [OpenAI](https://github.com/OPENAI) for **GPT 5.6 Sol**
 - [Rushell](https://github.com/rushellxyz) & Sturnn - for contributions to testing and development
+- [Jimmyking](https://github.com/jimmyking9999999) for [gunsaw-level-codes](https://gunsaw-level-codes.jimmyking.dev/)
 
 ## Disclaimer
 

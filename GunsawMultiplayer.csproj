@@ -12,6 +12,7 @@
     <EmbeddedResource Include="Assets\killmessages.json" />
     <EmbeddedResource Include="CustomProps\Assets\npc-spawner.png" />
     <EmbeddedResource Include="CustomProps\Assets\rnd.png" />
+    <EmbeddedResource Include="Assets\play.png" />
     <EmbeddedResource Include="Assets\Sounds\respawn.ogg"
                       LogicalName="GunsawMultiplayer.Assets.Sounds.respawn.ogg" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />

@@ -511,6 +511,27 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
     }
 
+    internal void StartCatalogCustomLevel(string code, string levelName)
+    {
+        if (!MultiplayerSession.IsHosting)
+        {
+            status = "Create a lobby before starting a custom level.";
+            return;
+        }
+        try
+        {
+            var levelJson = DecodeCatalogLevelCode(code);
+            if (JsonUtility.FromJson<Level>(levelJson) == null || string.IsNullOrWhiteSpace(levelJson))
+                throw new InvalidDataException("The level JSON is invalid.");
+            if (Encoding.UTF8.GetByteCount(levelJson) > 4 * 1024 * 1024)
+                throw new InvalidDataException("The level is larger than 4 MB.");
+            customLevelJson = levelJson;
+            status = "Starting custom level: " + levelName;
+            StartCustomLevel();
+        }
+        catch (Exception exception) { status = "Could not load custom level: " + exception.Message; }
+    }
+
     private void StartCustomLevelLocally(string levelJson)
     {
         if (string.IsNullOrWhiteSpace(levelJson)) return;
