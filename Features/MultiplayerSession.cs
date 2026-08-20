@@ -121,6 +121,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<NpcPossessionPacket>> npcPossessions = new Queue<PeerPacket<NpcPossessionPacket>>();
     private static readonly Queue<PeerPacket<MissionFinishedPacket>> missionFinished = new Queue<PeerPacket<MissionFinishedPacket>>();
     private static readonly Queue<PeerPacket<PlayerPerformancePacket>> playerPerformance = new Queue<PeerPacket<PlayerPerformancePacket>>();
+    private static readonly Queue<PeerPacket<PlayerKillPacket>> playerKills = new Queue<PeerPacket<PlayerKillPacket>>();
     private static readonly Queue<PeerPacket<PlayerCarryPacket>> playerCarries = new Queue<PeerPacket<PlayerCarryPacket>>();
     private static readonly Queue<PeerPacket<HostFpsPacket>> hostFpsPackets = new Queue<PeerPacket<HostFpsPacket>>();
     private static readonly Queue<ChatMessage> chatMessages = new Queue<ChatMessage>();

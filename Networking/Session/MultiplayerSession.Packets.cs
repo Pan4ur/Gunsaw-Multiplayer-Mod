@@ -365,6 +365,11 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
+            else if (isHost && decodedPacket.Type == PacketType.PlayerKill)
+            {
+                try { var reader = new PacketReader(decodedPacket.Payload); EnqueuePlayerKill(senderId, PlayerKillPacket.Read(ref reader)); }
+                catch (System.Exception) { }
+            }
             else if (decodedPacket.Type == PacketType.PlayerCarry && (isHost || senderId == 1))
             {
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueuePlayerCarry(senderId, PlayerCarryPacket.Read(ref reader)); }
@@ -634,6 +639,7 @@ internal static partial class MultiplayerSession
         npcPossessions.Clear();
         missionFinished.Clear();
         playerPerformance.Clear();
+        playerKills.Clear();
         hostFpsPackets.Clear();
         chatMessages.Clear();
         receivedChatIds.Clear();
@@ -738,6 +744,9 @@ internal static partial class MultiplayerSession
 
     private static void EnqueuePlayerPerformance(ushort peerId, PlayerPerformancePacket packet)
         => EnqueueEvent(playerPerformance, peerId, packet);
+
+    private static void EnqueuePlayerKill(ushort peerId, PlayerKillPacket packet)
+        => EnqueueEvent(playerKills, peerId, packet);
 
     private static void EnqueuePlayerCarry(ushort peerId, PlayerCarryPacket packet)
         => EnqueueEvent(playerCarries, peerId, packet);

@@ -11,6 +11,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
     internal readonly bool Critical;
     internal readonly PlayerDamageEffect Effect;
     internal readonly bool HasPlayerSource;
+    internal readonly ushort SourcePeerId;
     internal readonly string SourceName;
     internal readonly string SourceWeapon;
     internal readonly short LimbIndex;
@@ -30,6 +31,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
     internal readonly bool BodyColliderHit;
     
     private PlayerDamagePacket(float amount, bool critical, PlayerDamageEffect effect, bool hasPlayerSource = false,
+        ushort sourcePeerId = 0,
         short limbIndex = 0,
         float localPointX = 0f, float localPointY = 0f, float directionX = 0f, float directionY = 0f,
         string weaponSprite = "", string woundSprite = "", bool hasSplash = false,
@@ -41,6 +43,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         Critical = critical;
         Effect = effect;
         HasPlayerSource = hasPlayerSource;
+        SourcePeerId = sourcePeerId;
         SourceName = sourceName ?? "";
         SourceWeapon = sourceWeapon ?? "";
         LimbIndex = limbIndex;
@@ -61,8 +64,9 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
     }
 
     internal static PlayerDamagePacket Damage(float amount, bool critical, bool hasPlayerSource = false,
+        ushort sourcePeerId = 0,
         string sourceName = "", string sourceWeapon = "")
-        => new PlayerDamagePacket(amount, critical, PlayerDamageEffect.Damage, hasPlayerSource,
+        => new PlayerDamagePacket(amount, critical, PlayerDamageEffect.Damage, hasPlayerSource, sourcePeerId,
             sourceName: sourceName, sourceWeapon: sourceWeapon);
 
     internal static PlayerDamagePacket Wound(
@@ -78,19 +82,19 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         float baseDamage,
         bool bodyColliderHit)
         => new(
-            0f,
-            false,
-            PlayerDamageEffect.Wound,
-            false,
-            limbIndex,
-            localPointX,
-            localPointY,
-            directionX,
-            directionY,
-            weaponSprite,
-            woundSprite,
-            hasSplash,
-            createScreenCrack,
+            amount: 0f,
+            critical: false,
+            effect: PlayerDamageEffect.Wound,
+            hasPlayerSource: false,
+            limbIndex: limbIndex,
+            localPointX: localPointX,
+            localPointY: localPointY,
+            directionX: directionX,
+            directionY: directionY,
+            weaponSprite: weaponSprite,
+            woundSprite: woundSprite,
+            hasSplash: hasSplash,
+            createScreenCrack: createScreenCrack,
             baseDamage: baseDamage,
             bodyColliderHit: bodyColliderHit
         );
@@ -107,6 +111,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         writer.WriteBoolean(Critical);
         writer.WriteByte((byte)Effect);
         writer.WriteBoolean(HasPlayerSource);
+        writer.WriteUInt16(SourcePeerId);
         writer.WriteBinaryString(SourceName);
         writer.WriteBinaryString(SourceWeapon);
         switch (Effect)
@@ -137,11 +142,12 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         var critical = reader.ReadBoolean();
         var effect = reader.Remaining > 0 ? (PlayerDamageEffect)reader.ReadByte() : PlayerDamageEffect.Damage;
         var hasPlayerSource = reader.Remaining > 0 && reader.ReadBoolean();
+        var sourcePeerId = reader.Remaining >= 2 ? reader.ReadUInt16() : (ushort)0;
         var sourceName = reader.Remaining > 0 ? reader.ReadBinaryString() : "";
         var sourceWeapon = reader.Remaining > 0 ? reader.ReadBinaryString() : "";
         switch (effect)
         {
-            case PlayerDamageEffect.Damage: return Damage(amount, critical, hasPlayerSource, sourceName, sourceWeapon);
+            case PlayerDamageEffect.Damage: return Damage(amount, critical, hasPlayerSource, sourcePeerId, sourceName, sourceWeapon);
             case PlayerDamageEffect.Wound:
             {
                 var limbIndex = reader.ReadInt16();

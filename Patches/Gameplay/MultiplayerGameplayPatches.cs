@@ -679,6 +679,14 @@ internal static class ClientNpcDeathPatch
         if (!MultiplayerSession.IsHosting && (localPlayer == null || localPlayer.bodyScript != __instance)) return;
         var victimName = DeathDisplayName(__instance);
         var killer = NetworkAvatarReplication.DamageSourceFor(__instance);
+        var killerPeerId = killer == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId :
+            NetworkAvatarRegistry.ReplicaForBody(killer)?.remotePeerId ?? 0;
+        if (killerPeerId == 0) killerPeerId = NetworkAvatarReplication.DamageSourcePeerIdFor(__instance);
+        if (MultiplayerSession.IsHosting && __instance.isPlayer && localPlayer != null &&
+            localPlayer.bodyScript == __instance && killerPeerId != 0)
+            ScoreboardSystem.RecordHostPvpKill(killerPeerId, MultiplayerSession.LocalPeerId);
+        if (!MultiplayerSession.IsHosting && __instance.isPlayer && killerPeerId != 0)
+            MultiplayerSession.Send(new PlayerKillPacket(killerPeerId), 1);
         if (deathCause == PlayerDeathCause.Unknown)
             deathCause = NetworkAvatarReplication.DeathCauseFor(__instance);
         var weaponName = NetworkAvatarReplication.DamageWeaponFor(__instance);

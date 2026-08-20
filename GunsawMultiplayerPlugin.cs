@@ -242,6 +242,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
         TeamSystem.Tick();
+        ScoreboardSystem.Tick();
         MultiplayerSession.SyncBrutalMode();
         ObserverSystem.Tick();
         if (MultiplayerSession.IsHosting)

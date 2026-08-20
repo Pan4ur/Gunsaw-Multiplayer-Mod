@@ -194,6 +194,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakePlayerPerformance(out ushort peerId, out PlayerPerformancePacket packet)
         => TryTakePacket(playerPerformance, out peerId, out packet);
 
+    internal static bool TryTakePlayerKill(out ushort peerId, out PlayerKillPacket packet)
+        => TryTakePacket(playerKills, out peerId, out packet);
+
     internal static bool TryTakePlayerCarry(out ushort peerId, out PlayerCarryPacket packet)
         => TryTakePacket(playerCarries, out peerId, out packet);
 

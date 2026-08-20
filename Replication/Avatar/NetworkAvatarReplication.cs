@@ -103,6 +103,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static NetworkAvatarReplication Instance => instance;
     private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
     private static readonly Dictionary<int, string> lastDamageSourceNames = new();
+    private static readonly Dictionary<int, ushort> lastDamageSourcePeerIds = new();
     private static readonly Dictionary<int, string> lastDamageWeapons = new();
     private static readonly Dictionary<int, float> lastDamageSourceTimes = new();
     private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses = new();
@@ -448,11 +449,23 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return lastDamageSourceNames.TryGetValue(victim.GetInstanceID(), out name) ? name : "";
     }
 
+    internal static ushort DamageSourcePeerIdFor(BodyScript victim)
+    {
+        if (victim == null) return 0;
+        ushort peerId;
+        return lastDamageSourcePeerIds.TryGetValue(victim.GetInstanceID(), out peerId) ? peerId : (ushort)0;
+    }
+
     private static void SetDamageSource(BodyScript victim, BodyScript source, string weaponName)
     {
         var id = victim.GetInstanceID();
         lastDamageSources[id] = source;
         lastDamageSourceNames.Remove(id);
+        var player = PlayerScript.player;
+        var peerId = source == player?.bodyScript ? MultiplayerSession.LocalPeerId :
+            NetworkAvatarRegistry.ReplicaForBody(source)?.remotePeerId ?? 0;
+        if (peerId == 0) lastDamageSourcePeerIds.Remove(id);
+        else lastDamageSourcePeerIds[id] = peerId;
         lastDamageSourceTimes[id] = Time.unscaledTime;
         if (string.IsNullOrEmpty(weaponName)) lastDamageWeapons.Remove(id);
         else lastDamageWeapons[id] = weaponName;
@@ -463,6 +476,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (victim == null) return;
         var id = victim.GetInstanceID();
         lastDamageSources.Remove(id);
+        lastDamageSourcePeerIds.Remove(id);
         if (string.IsNullOrWhiteSpace(sourceName)) lastDamageSourceNames.Remove(id);
         else lastDamageSourceNames[id] = sourceName.Trim();
         lastDamageSourceTimes[id] = Time.unscaledTime;
@@ -476,6 +490,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var id = victim.GetInstanceID();
         lastDamageSources.Remove(id);
         lastDamageSourceNames.Remove(id);
+        lastDamageSourcePeerIds.Remove(id);
         lastDamageWeapons.Remove(id);
         lastDamageSourceTimes.Remove(id);
     }
@@ -502,6 +517,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             lastDamageSources.Remove(id);
             lastDamageSourceNames.Remove(id);
+            lastDamageSourcePeerIds.Remove(id);
             lastDamageWeapons.Remove(id);
             lastDamageSourceTimes.Remove(id);
         }
@@ -755,7 +771,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
         {
             if (playerDamage.HasPlayerSource)
-                RecordDamageSource(player.bodyScript, NetworkAvatarRegistry.RemoteBodyForPeer(senderId));
+                RecordNetworkPlayerDamageSource(player.bodyScript, playerDamage);
             else
                 SetDamageSourceName(player.bodyScript, playerDamage.SourceName, playerDamage.SourceWeapon);
             ApplyPlayerDamage(player.bodyScript, playerDamage);
@@ -1612,6 +1628,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     remoteBody.DropAllWeapons();
                 if (lastRemoteAlive && !wasRemoteAlive)
                 {
+                    if (MultiplayerSession.IsHost) ScoreboardSystem.NoteHostPlayerRespawn(remotePeerId);
                     remoteDeathDropSpawned = false;
                     pendingRemoteDamage = 0f;
                 }
@@ -2131,11 +2148,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             QueueBaseDamage(activeShotState, replica.remotePeerId, baseDamage);
         }
         
-        var lethal = amount >= Mathf.Max(0f, replica.lastRemoteHealth) - 0.001f;
         body.health = replica.lastRemoteHealth;
         body.isAlive = replica.lastRemoteAlive;
-        if (lethal && MultiplayerSession.PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
-            ScoreboardSystem.RecordLocalPvpKill();
         if (amount > 0.001f) RouteRemotePlayerDamage(replica, amount, critical);
         return true;
     }
@@ -2217,7 +2231,25 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (MultiplayerSession.IsHost)
             MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical, source != null && source.isPlayer,
-                DamageSourceName(source), DamageWeapon(source)), targetPeerId);
+                DamageSourcePeerId(source), DamageSourceName(source), DamageWeapon(source)), targetPeerId);
+    }
+
+    private static ushort DamageSourcePeerId(BodyScript source)
+    {
+        if (source == null || !source.isPlayer) return 0;
+        var player = PlayerScript.player;
+        return source == player?.bodyScript ? MultiplayerSession.LocalPeerId :
+            NetworkAvatarRegistry.ReplicaForBody(source)?.remotePeerId ?? 0;
+    }
+
+    private static void RecordNetworkPlayerDamageSource(BodyScript victim, PlayerDamagePacket packet)
+    {
+        if (victim == null) return;
+        var source = packet.SourcePeerId == MultiplayerSession.LocalPeerId ? PlayerScript.player?.bodyScript :
+            NetworkAvatarRegistry.RemoteBodyForPeer(packet.SourcePeerId);
+        if (source != null) SetDamageSource(victim, source, packet.SourceWeapon);
+        else SetDamageSourceName(victim, packet.SourceName, packet.SourceWeapon);
+        if (packet.SourcePeerId != 0) lastDamageSourcePeerIds[victim.GetInstanceID()] = packet.SourcePeerId;
     }
 
     private static string DamageSourceName(BodyScript source)

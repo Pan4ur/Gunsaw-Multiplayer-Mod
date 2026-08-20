@@ -40,5 +40,6 @@ internal enum PacketType : byte
     Observer = 0x26,
     ObserverKill = 0x27,
     ObserverState = 0x28,
-    Team = 0x29
+    Team = 0x29,
+    PlayerKill = 0x2A
 }

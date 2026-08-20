@@ -239,7 +239,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var grouped = header;
         foreach (var team in TeamSystem.Names())
         {
-            grouped += "\n\n<color=#" + TeamSystem.Hex(team) + ">" + team.ToUpperInvariant() + "</color>";
+            grouped += "\n\n<color=#" + TeamSystem.Hex(team) + ">" + team.ToUpperInvariant() + "  " + TeamKills(team) + "</color>";
             if (TeamSystem.Name(MultiplayerSession.LocalPeerId) == team)
                 grouped += "\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
                     MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
@@ -247,6 +247,16 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 if (TeamSystem.Name(remote.PeerId) == team) grouped += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
         }
         playersText.text = grouped;
+    }
+
+    private static int TeamKills(string team)
+    {
+        var kills = 0;
+        if (TeamSystem.Name(MultiplayerSession.LocalPeerId) == team)
+            kills += ScoreboardSystem.ForPlayer(MultiplayerSession.LocalPeerId).Kills;
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+            if (TeamSystem.Name(remote.PeerId) == team) kills += ScoreboardSystem.ForPlayer(remote.PeerId).Kills;
+        return kills;
     }
 
     private static string PlayerScoreLine(ushort peerId, string name, int ping, bool host)
