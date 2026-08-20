@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -433,7 +434,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             var reliableId = reliableChannel.NextSequenceId();
             var wrapped = PacketCodec.Encode(new ReliablePacket(reliableId, packet));
             var routedReliable = RoutePacket(wrapped, targetId);
-            reliableChannel.Track(reliableId, targetId, routedReliable, DateTime.UtcNow.Ticks);
+            reliableChannel.Track(reliableId, targetId, routedReliable, Stopwatch.GetTimestamp());
             if (sendImmediately) SendPacketImmediately(wrapped, targetId);
             else EnqueueRoutedPacket(routedReliable, true);
             return;
@@ -503,7 +504,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
     private static bool ProcessReliablePacket(ref byte[] packet, ushort senderId)
     {
         byte[] acknowledgement;
-        if (!reliableChannel.TryUnwrap(packet, senderId, out packet, out acknowledgement)) return false;
+        if (!reliableChannel.TryUnwrap(packet, senderId, Stopwatch.GetTimestamp(), out packet, out acknowledgement)) return false;
         if (acknowledgement != null) SendPacket(acknowledgement, senderId, true, false);
         return true;
     }
@@ -600,7 +601,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
 
     private static void ResendReliablePackets(UdpClient client, CancellationTokenSource cancellation)
     {
-        var due = reliableChannel.TakeDue(DateTime.UtcNow.Ticks);
+        var due = reliableChannel.TakeDue(Stopwatch.GetTimestamp());
         foreach (var packet in due) SendPacketBlocking(client, cancellation, packet);
     }
 

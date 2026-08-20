@@ -16,14 +16,18 @@ internal static class PlayerCarrySystem
     private static bool allowCarryDirectionChange;
     private static readonly Dictionary<BodyScript, List<CarryBodyPart>> targetPoses = new();
     private static readonly Dictionary<BodyScript, List<bool>> targetLimbAnimation = new();
-    private static readonly Dictionary<BodyScript, Vector3> targetScales = new();
+    private static readonly Dictionary<BodyScript, bool> targetOriginalDirections = new();
     private static readonly Dictionary<Rigidbody2D, RigidbodyInterpolation2D> targetInterpolation = new();
     private static readonly Dictionary<Rigidbody2D, CarryPhysicsState> targetPhysics = new();
     private static readonly Dictionary<BodyScript, float> remoteArmsRotation = new();
     private static readonly Dictionary<BodyScript, float> targetArmsBaseRotation = new();
     private static readonly Dictionary<BodyScript, Vector2> targetArmsOffset = new();
     private static readonly Dictionary<BodyScript, float> targetArmsBodyRotation = new();
+    private static readonly Dictionary<BodyScript, Vector3> targetArmsOriginalLocalPosition = new();
+    private static readonly Dictionary<BodyScript, Quaternion> targetArmsOriginalLocalRotation = new();
+    private static readonly Dictionary<BodyScript, Vector3> targetArmsOriginalLocalScale = new();
     private static readonly Dictionary<Collider2D, bool> remoteTargetColliders = new();
+    
     internal static string Prompt { get; private set; } = "";
     internal static bool IsLocalCarrier => carrying && carrierId == MultiplayerSession.LocalPeerId;
     internal static bool IsCarriedTarget(BodyScript body) => carrying && body != null && body == BodyForPeer(targetId);
@@ -121,6 +125,16 @@ internal static class PlayerCarrySystem
         var body = PlayerScript.player?.bodyScript;
         if (body != null && pickupCrouchUntil.TryGetValue(body, out var until) && Time.unscaledTime < until)
             body.isCrouching = true;
+    }
+
+    internal static void PreBodyFixedUpdate(BodyScript body)
+    {
+        if (!carrying || body == null || body != BodyForPeer(targetId)) return;
+        
+        body.shockTime = Mathf.Max(body.shockTime, 0.5f);
+
+        if (body.controlState == BodyScript.RagdollState.FullControl)
+            body.EnterHalfControl();
     }
 
     internal static void PostBodyFixedUpdate(BodyScript body)
@@ -242,15 +256,16 @@ internal static class PlayerCarrySystem
             return;
         }
 
-        if (!target.isRight)
-        {
-            allowCarryDirectionChange = true;
-            target.SwitchDir(true);
-            allowCarryDirectionChange = false;
-        }
-
         if (!targetPoses.TryGetValue(target, out var parts))
         {
+            targetOriginalDirections[target] = target.isRight;
+            if (target.Arms != null)
+            {
+                targetArmsOriginalLocalPosition[target] = target.Arms.localPosition;
+                targetArmsOriginalLocalRotation[target] = target.Arms.localRotation;
+                targetArmsOriginalLocalScale[target] = target.Arms.localScale;
+            }
+            if (!target.isRight) ForceSwitchDirectionPreservePose(target);
             if (localOwner)
             {
                 localTargetWasFullControl = target.controlState == BodyScript.RagdollState.FullControl;
@@ -258,11 +273,6 @@ internal static class PlayerCarrySystem
                 localTargetActive = true;
             }
             if (target.controlState == BodyScript.RagdollState.FullControl) target.EnterHalfControl();
-            targetScales[target] = target.transform.localScale;
-            var scale = target.transform.localScale;
-            scale.x = Mathf.Abs(scale.x);
-            target.transform.localScale = scale;
-            target.isRight = true;
             parts = CaptureTargetPose(target);
             targetPoses[target] = parts;
             targetArmsBaseRotation[target] = target.Arms == null ? target.mainTorso.rotation : target.Arms.rotation.eulerAngles.z;
@@ -288,7 +298,7 @@ internal static class PlayerCarrySystem
         var carrierTorso = carrier.mainTorso != null ? carrier.mainTorso : carrier.rb;
         if (carrierTorso == null) return;
         var anchor = carrierTorso.position + new Vector2(0f, 0.05f);
-        var rotation = target.isRight ? 80f : 100f;
+        var rotation = 80f;//target.isRight ? 80f : 100f;
         var poseRotation = Quaternion.Euler(0f, 0f, rotation);
         var armDelta = 0f;
         if (targetArmsBaseRotation.TryGetValue(target, out var armsBaseRotation) &&
@@ -329,20 +339,57 @@ internal static class PlayerCarrySystem
             ApplyRemoteArmPose(target, anchor, poseRotation, rotation, armDelta, physicsTick);
     }
 
-    private static void ApplyRemoteArmPose(BodyScript target, Vector2 anchor, Quaternion poseRotation,
-        float bodyRotation, float armDelta, bool physicsTick)
+    private static void ApplyRemoteArmPose(
+        BodyScript target,
+        Vector2 anchor,
+        Quaternion poseRotation,
+        float bodyRotation,
+        float armDelta,
+        bool physicsTick)
     {
-        if (target.Arms == null) return;
-        var offset = targetArmsOffset.TryGetValue(target, out var armsOffset) ? armsOffset : Vector2.zero;
-        var relativeRotation = targetArmsBodyRotation.TryGetValue(target, out var armsBodyRotation)
-            ? armsBodyRotation : 0f;
-        target.Arms.position = anchor + (Vector2)(poseRotation * offset);
-        target.Arms.rotation = Quaternion.Euler(0f, 0f, bodyRotation + relativeRotation + armDelta - 80f);
+        if (target.Arms == null)
+            return;
+
+        var offset =
+            targetArmsOffset.TryGetValue(target, out var armsOffset)
+                ? armsOffset
+                : Vector2.zero;
+
+        target.Arms.position =
+            anchor + (Vector2)(poseRotation * offset);
+
+        float armsWorldRotation;
+
+        if (remoteArmsRotation.TryGetValue(target, out var networkArmsRotation))
+        {
+            armsWorldRotation = networkArmsRotation;
+        }
+        else if (targetArmsBaseRotation.TryGetValue(target, out var baseArmsRotation))
+        {
+            armsWorldRotation = baseArmsRotation;
+        }
+        else
+        {
+            armsWorldRotation = target.Arms.eulerAngles.z;
+        }
+
+        target.Arms.rotation =
+            Quaternion.Euler(0f, 0f, armsWorldRotation);
+
         foreach (var limb in target.limbs)
         {
-            if (limb == null || limb.limbType != 1 || limb.rb == null || limb.transformToFollow == null) continue;
+            if (limb == null ||
+                limb.limbType != 1 ||
+                limb.rb == null ||
+                limb.transformToFollow == null)
+                continue;
+
             var follow = limb.transformToFollow;
-            if (follow != target.Arms && !follow.IsChildOf(target.Arms)) continue;
+
+            if (follow != target.Arms &&
+                !follow.IsChildOf(target.Arms))
+                continue;
+
             if (physicsTick)
             {
                 limb.rb.MovePosition(follow.position);
@@ -353,6 +400,7 @@ internal static class PlayerCarrySystem
                 limb.rb.position = follow.position;
                 limb.rb.rotation = follow.eulerAngles.z;
             }
+
             limb.rb.velocity = Vector2.zero;
             limb.rb.angularVelocity = 0f;
         }
@@ -448,6 +496,62 @@ internal static class PlayerCarrySystem
             foreach (var right in collisionTarget.GetComponentsInChildren<Collider2D>(true))
                 if (left != null && right != null) Physics2D.IgnoreCollision(left, right, ignored || !MultiplayerSession.PlayerCollisions);
         if (!ignored) collisionCarrier = collisionTarget = null;
+    }
+
+    private static void ForceSwitchDirectionPreservePose(BodyScript body)
+    {
+        if (body == null) return;
+        
+        var rigidbodies = body.GetComponentsInChildren<Rigidbody2D>(true);
+        var positions = new Vector2[rigidbodies.Length];
+        var rotations = new float[rigidbodies.Length];
+        for (var i = 0; i < rigidbodies.Length; i++)
+        {
+            var rb = rigidbodies[i];
+            if (rb == null) continue;
+            positions[i] = rb.position;
+            rotations[i] = rb.rotation;
+        }
+
+        var armsPosition = body.Arms == null ? Vector3.zero : body.Arms.position;
+        var armsRotation = body.Arms == null ? Quaternion.identity : body.Arms.rotation;
+
+        if (body.weapon != null) body.weapon.animFollowMult = 1f;
+        if (body.limbs != null && body.limbs.Count > 0 && body.limbs[0] != null)
+            body.limbs[0].bonusRot = -body.limbs[0].bonusRot;
+
+        body.isRight = !body.isRight;
+
+        if (body.limbs != null)
+            foreach (var limb in body.limbs)
+            {
+                if (limb == null) continue;
+                var hinge = limb.GetComponent<HingeJoint2D>();
+                if (hinge == null || !hinge.useLimits) continue;
+                var limits = hinge.limits;
+                var oldMin = limits.min;
+                limits.min = -limits.max;
+                limits.max = -oldMin;
+                hinge.limits = limits;
+            }
+
+        var scale = body.transform.localScale;
+        scale.x = -scale.x;
+        body.transform.localScale = scale;
+        
+        for (var i = 0; i < rigidbodies.Length; i++)
+        {
+            var rb = rigidbodies[i];
+            if (rb == null) continue;
+            rb.position = positions[i];
+            rb.rotation = rotations[i];
+        }
+
+        if (body.Arms != null)
+        {
+            body.Arms.position = armsPosition;
+            body.Arms.rotation = armsRotation;
+        }
     }
 
     private static List<CarryBodyPart> CaptureTargetPose(BodyScript target)
@@ -548,9 +652,45 @@ internal static class PlayerCarrySystem
                 if (body.limbs[index] != null) body.limbs[index].animated = states[index];
         }
         targetLimbAnimation.Clear();
-        foreach (var pair in targetScales)
-            if (pair.Key != null) pair.Key.transform.localScale = pair.Value;
-        targetScales.Clear();
+        foreach (var pair in targetOriginalDirections)
+            if (pair.Key != null && pair.Key.isRight != pair.Value)
+                ForceSwitchDirectionPreservePose(pair.Key);
+        targetOriginalDirections.Clear();
+        
+        foreach (var pair in targetArmsOriginalLocalPosition)
+        {
+            var body = pair.Key;
+            if (body == null || body.Arms == null) continue;
+
+            body.Arms.localPosition = pair.Value;
+            if (targetArmsOriginalLocalRotation.TryGetValue(body, out var localRotation))
+                body.Arms.localRotation = localRotation;
+            if (targetArmsOriginalLocalScale.TryGetValue(body, out var localScale))
+                body.Arms.localScale = localScale;
+            
+            if (body.limbs == null) continue;
+            foreach (var limb in body.limbs)
+            {
+                if (limb == null || limb.limbType != 1 || limb.rb == null ||
+                    limb.transformToFollow == null || limb.dismembered) continue;
+
+                var follow = limb.transformToFollow;
+                var localTarget = (Vector2)follow.localPosition;
+                if (limb.transform.parent == body.Arms)
+                    localTarget -= (Vector2)body.armsOffset;
+                if (limb.reverseXPosWhenFlipped && !body.isRight)
+                    localTarget = -localTarget;
+
+                limb.transform.localPosition = localTarget;
+                limb.transform.localEulerAngles = new Vector3(0f, 0f, follow.localEulerAngles.z);
+                limb.rb.velocity = Vector2.zero;
+                limb.rb.angularVelocity = 0f;
+            }
+        }
+        targetArmsOriginalLocalPosition.Clear();
+        targetArmsOriginalLocalRotation.Clear();
+        targetArmsOriginalLocalScale.Clear();
+
         foreach (var pair in targetInterpolation)
             if (pair.Key != null) pair.Key.interpolation = pair.Value;
         targetInterpolation.Clear();
@@ -649,5 +789,7 @@ internal static class PlayerCarryPickupCrouchPatch
 [HarmonyPatch(typeof(BodyScript), "FixedUpdate")]
 internal static class PlayerCarryBodyPhysicsPatch
 {
+    private static void Prefix(BodyScript __instance) => PlayerCarrySystem.PreBodyFixedUpdate(__instance);
+
     private static void Postfix(BodyScript __instance) => PlayerCarrySystem.PostBodyFixedUpdate(__instance);
 }
