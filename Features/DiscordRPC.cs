@@ -1,3 +1,8 @@
+using System;
+using System.Security.Cryptography;
+using System.Text;
+using System.Net.Http;
+using System.IO;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine;
@@ -36,7 +41,7 @@ internal static class RPCSettings
         RPCManager.instance.enable = isOn;
         if (isOn)
             PlayerPrefs.SetInt("rpcdisable", 0);
-        else 
+        else
             PlayerPrefs.SetInt("rpcdisable", 1);
     }
 }
@@ -47,6 +52,9 @@ internal sealed class RPCManager : MonoBehaviour
     public static RPCManager instance;
     private bool _enable;
     private float timer = 5f;
+
+    private const string HASHES_URL = "https://raw.githubusercontent.com/rushellxyz/gunsaw-level-hashes/refs/heads/main/hashes.txt";
+    private const string HASHES_PATH = "hashes-to-name.txt";
 
     private static readonly Dictionary<string, string> levels = new Dictionary<string, string>
     {
@@ -72,13 +80,16 @@ internal sealed class RPCManager : MonoBehaviour
         {"SampleScene", "Trash Containment"},
         {"LevelSelect", "Chooses level"},
         {"LevelEditor", "Level editor"},
-        // I would love to somehow display which custom level
         {"LevelLoader", "Custom level"},
         // Two secret levels, yep theres secret levels
         // try them with unity explorer
         {"level1", "Secret level"},
         {"level2", "Secret level"},
     };
+
+    private Dictionary<string, string> hashesToName;
+    private string customLevel;
+    private bool alreadyDownloading;
 
     public static void CheckInstance()
     {
@@ -140,7 +151,7 @@ internal sealed class RPCManager : MonoBehaviour
             // Also, ipc 5005 we must provide different key
             if (MultiplayerSession.PvpEnabled)
                 RichPresence.Details = "PVP";
-            else 
+            else
                 RichPresence.Details = "CO-OP";
         }
         else
@@ -150,20 +161,22 @@ internal sealed class RPCManager : MonoBehaviour
                 RichPresence.Details = "In main menu";
             else
                 RichPresence.Details = playerSpecie; // mb utilize it on stats?
-            
+
             RichPresence.SmallImage = new PresencePair("https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/refs/heads/main/Assets/Heads/" + playerSpecie + ".png", playerSpecie);
         }
 
         if (null != GameManager.main && GameManager.main.hardMode)
             RichPresence.Details += " |BRUTAL";
-        
+
         if (shouldResetJoinSecret)
             RichPresence.JoinSecret = null;
-        
+
         string scene = SceneManager.GetActiveScene().name;
-        if (levels.TryGetValue(scene, out string level))
+        if ("LevelLoader" == scene)
+            RichPresence.State = customLevel;
+   else if (levels.TryGetValue(scene, out string level))
             RichPresence.State = level;
-        else 
+        else
             RichPresence.State = scene;
     }
 
@@ -210,14 +223,82 @@ internal sealed class RPCManager : MonoBehaviour
         Console.WriteLine($"OnJoinRequest - {user.Id}");
         if (MultiplayerSession.IsActive && MultiplayerSession.PlayerCount < MultiplayerSession.MaxPlayers)
             RichPresence.AcceptJoinRequest(user);
-        else 
+        else
             RichPresence.RejectJoinRequest(user);
     }
-    
+
+    public void UpdateCustomLevel(string level)
+    {
+        if (!enable)
+            return;
+        string levelHash;
+        using (SHA256 sha256 = SHA256.Create())
+        {
+            byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(level));
+
+            StringBuilder sb = new StringBuilder();
+            foreach (byte b in hashBytes)
+            {
+                sb.Append(b.ToString("x2"));
+            }
+            levelHash = sb.ToString();
+        }
+
+        if (null != hashesToName)
+        {
+            if (hashesToName.TryGetValue(levelHash, out string name))
+                customLevel = name;
+       else     customLevel = "Custom level";
+            return;
+        }
+
+        if (alreadyDownloading)
+            return;
+
+        alreadyDownloading = true;
+        customLevel = "Custom level";
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                bool exists = File.Exists(HASHES_PATH);
+                bool onlyOlder = exists && File.GetLastWriteTimeUtc(HASHES_PATH) < DateTime.UtcNow.AddDays(-1.0);
+                if (exists || onlyOlder)
+                {
+                    try
+                    {
+                        File.WriteAllBytes(HASHES_PATH, new HttpClient().GetByteArrayAsync(HASHES_URL).Result);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Hashes to level name download failed: " + ex.Message);
+                        if (!onlyOlder)
+                            return;
+                    }
+                }
+
+                // It is not a json, since we dont have a json lib, i might as well make it not a json
+                string[] entries = File.ReadAllText(HASHES_PATH).Split(',');
+                hashesToName = new Dictionary<string, string>();
+                for (int i = 0; i < entries.Length; i += 2)
+                {
+                    hashesToName.Add(entries[i], entries[i+1]);
+                }
+
+                if (hashesToName.TryGetValue(levelHash, out string name))
+                    customLevel = name;
+            }
+            finally
+            {
+                alreadyDownloading = false;
+            }
+        });
+    }
+
     private static string GetCharacterName()
     {
         var player = PlayerScript.player;
-        
+
         if (player == null || player.bodyScript == null) return "Unknown";
 
         string rootName = player.bodyScript.transform.root.name;
