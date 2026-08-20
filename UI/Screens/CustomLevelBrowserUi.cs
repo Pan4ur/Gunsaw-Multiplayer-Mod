@@ -9,7 +9,6 @@ using UnityEngine.UI;
 
 internal sealed class CustomLevelBrowserUi
 {
-    private const string CatalogUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string CoversUrl = "https://raw.githubusercontent.com/jimmyking9999999/gunsaw-level-editor-plus/main/Images/";
     private readonly GunsawMultiplayerPlugin plugin;
     private readonly TMP_Text template;
@@ -23,6 +22,7 @@ internal sealed class CustomLevelBrowserUi
     private readonly Sprite playIcon;
     private readonly Dictionary<string, Sprite> covers = new Dictionary<string, Sprite>(System.StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> coverFiles = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+    private static CatalogEntry[] cachedLevels = new CatalogEntry[0];
     private CatalogEntry[] levels = new CatalogEntry[0];
     private SortMode sortMode;
     private bool open;
@@ -42,6 +42,13 @@ internal sealed class CustomLevelBrowserUi
         public string type;
         public string info;
         public string date;
+    }
+
+    internal static void CacheCatalog(string source)
+    {
+        var parsed = ParseCatalog(source);
+        if (parsed.Length == 0) throw new System.InvalidOperationException("The catalog contains no levels.");
+        cachedLevels = parsed;
     }
 
     internal CustomLevelBrowserUi(GunsawMultiplayerPlugin owner, Transform parent, TMP_Text textTemplate, Button sourceButton)
@@ -93,26 +100,14 @@ internal sealed class CustomLevelBrowserUi
     {
         loading = true;
         stateText.text = "Loading custom levels...";
-        using (var request = UnityWebRequest.Get(CatalogUrl))
+        while (!plugin.customLevelCatalogReady && string.IsNullOrEmpty(plugin.customLevelCatalogError)) yield return null;
+        if (!plugin.customLevelCatalogReady)
         {
-            yield return request.SendWebRequest();
-            if (request.isNetworkError || request.isHttpError)
-            {
-                stateText.text = "Could not load levels: " + request.error;
-                loading = false;
-                yield break;
-            }
-            try
-            {
-                levels = ParseCatalog(request.downloadHandler.text);
-            }
-            catch (System.Exception exception)
-            {
-                stateText.text = "Could not parse levels: " + exception.Message;
-                loading = false;
-                yield break;
-            }
+            stateText.text = "Could not load levels: " + plugin.customLevelCatalogError;
+            loading = false;
+            yield break;
         }
+        levels = cachedLevels;
         yield return LoadCoverManifest();
         stateText.text = levels.Length == 0 ? "No levels found." : levels.Length + " levels loaded.";
         Rebuild(true);
@@ -237,6 +232,12 @@ internal sealed class CustomLevelBrowserUi
         var details = CreateText(card.transform, data, new Vector2(-50f, -32f), new Vector2(390f, 42f), 12, TextAlignmentOptions.Left);
         details.margin = new Vector4(12f, 0f, 0f, 0f);
         details.enableWordWrapping = true;
+        var rank = CustomLevelProgress.Rank(entry.code);
+        if (!string.IsNullOrEmpty(rank))
+        {
+            var rankText = CreateText(card.transform, rank, new Vector2(145f, 0f), new Vector2(42f, 50f), 42, TextAlignmentOptions.Center, FontStyles.Bold);
+            rankText.color = CustomLevelProgress.RankColor(entry.code);
+        }
         var play = CreatePlayButton(card.transform, new Vector2(220f, 0f), new Vector2(50f, 50f));
         play.onClick.AddListener(() => plugin.StartCatalogCustomLevel(entry.code, entry.name ?? "Untitled"));
         plugin.StartCoroutine(LoadCover(entry.name, image));

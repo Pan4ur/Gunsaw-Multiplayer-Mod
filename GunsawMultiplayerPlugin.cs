@@ -16,11 +16,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     public const string PluginName = "Gunsaw Multiplayer";
     public const string PluginVersion = "0.4.4";
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
-    private const string CustomLevelsUrl = "https://gunsaw-level-codes.jimmyking.dev/Levels.json";
+    private const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
 
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
+    internal bool customLevelCatalogReady;
+    internal string customLevelCatalogError = "";
     private ConfigEntry<string> masterUrl;
     private ConfigEntry<string> savedPlayerName;
     private ConfigEntry<string> savedLobbyName;
@@ -175,6 +177,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         multiplayerLobbyUi = gameObject.AddComponent<MultiplayerLobbyUi>();
         World = worldReplication;
         Logger.LogInfo("Gunsaw Multiplayer " + PluginVersion + " loaded.");
+        LoadCustomLevelCatalog();
         CheckForUpdates(false);
         RPCManager.CheckInstance();
         EmbeddedAudioLoader.Init();
@@ -302,6 +305,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel))
         {
             receivedCustomLevelJson = incomingCustomLevel;
+            CustomLevelProgress.SetActiveJson(receivedCustomLevelJson);
             if (waitingForCustomLevel)
             {
                 waitingForCustomLevel = false;
@@ -481,6 +485,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 throw new InvalidDataException("The level JSON is invalid.");
             if (Encoding.UTF8.GetByteCount(levelJson) > 4 * 1024 * 1024)
                 throw new InvalidDataException("The level is larger than 4 MB.");
+            CustomLevelProgress.ClearActive();
             customLevelJson = levelJson;
             status = "Custom level loaded (" + Encoding.UTF8.GetByteCount(levelJson) / 1024 + " KiB).";
         }
@@ -511,6 +516,27 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
     }
 
+    private void LoadCustomLevelCatalog()
+    {
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                var catalog = new WebClient().DownloadString(CustomLevelsUrl);
+                RunOnMainThread(() =>
+                {
+                    try
+                    {
+                        CustomLevelBrowserUi.CacheCatalog(catalog);
+                        customLevelCatalogReady = true;
+                    }
+                    catch (Exception exception) { customLevelCatalogError = exception.Message; }
+                });
+            }
+            catch (Exception exception) { RunOnMainThread(() => customLevelCatalogError = exception.Message); }
+        });
+    }
+
     internal void StartCatalogCustomLevel(string code, string levelName)
     {
         if (!MultiplayerSession.IsHosting)
@@ -525,6 +551,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 throw new InvalidDataException("The level JSON is invalid.");
             if (Encoding.UTF8.GetByteCount(levelJson) > 4 * 1024 * 1024)
                 throw new InvalidDataException("The level is larger than 4 MB.");
+            CustomLevelProgress.SetActive(code);
             customLevelJson = levelJson;
             status = "Starting custom level: " + levelName;
             StartCustomLevel();
