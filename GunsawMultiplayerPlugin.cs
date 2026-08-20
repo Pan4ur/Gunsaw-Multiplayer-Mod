@@ -59,6 +59,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal string createRespawnTime = "5";
     internal string createMaxPlayers = "4";
     internal string customLevelJson = "";
+    private string customLevelCode = "";
     internal ConnectionMode createConnectionMode = ConnectionMode.Relay;
     private string receivedCustomLevelJson = "";
     private bool waitingForCustomLevel;
@@ -157,6 +158,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             {
                 var code = File.ReadAllText(mapPath).Trim();
                 customLevelJson = Compression.Decompress(code);
+                customLevelCode = code;
                 if (string.IsNullOrWhiteSpace(customLevelJson) || JsonUtility.FromJson<Level>(customLevelJson) == null)
                     throw new InvalidDataException("Invalid level code.");
                 headlessDefaultMapJson = customLevelJson;
@@ -249,7 +251,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             headlessStartPending = false;
             try
             {
-                MultiplayerSession.StartHostCustomLevel(customLevelJson);
+                MultiplayerSession.StartHostCustomLevel(customLevelJson, customLevelCode);
                 StartCustomLevelLocally(customLevelJson);
                 Logger.LogInfo("Headless lobby custom level started.");
             }
@@ -304,8 +306,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         string incomingCustomLevel;
         if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel))
         {
-            receivedCustomLevelJson = incomingCustomLevel;
-            CustomLevelProgress.SetActiveJson(receivedCustomLevelJson);
+            CustomLevelProgress.SetActive(incomingCustomLevel);
+            receivedCustomLevelJson = Compression.Decompress(incomingCustomLevel);
             if (waitingForCustomLevel)
             {
                 waitingForCustomLevel = false;
@@ -478,15 +480,15 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
         try
         {
-            var levelJson = clipboard.StartsWith("{", StringComparison.Ordinal)
-                ? clipboard : Compression.Decompress(clipboard);
+            var levelJson = Compression.Decompress(clipboard);
             var parsed = JsonUtility.FromJson<Level>(levelJson);
             if (parsed == null || string.IsNullOrWhiteSpace(levelJson))
                 throw new InvalidDataException("The level JSON is invalid.");
-            if (Encoding.UTF8.GetByteCount(levelJson) > 4 * 1024 * 1024)
-                throw new InvalidDataException("The level is larger than 4 MB.");
+            if (Encoding.UTF8.GetByteCount(levelJson) > 8 * 1024 * 1024)
+                throw new InvalidDataException("The level is larger than 8 MB.");
             CustomLevelProgress.ClearActive();
             customLevelJson = levelJson;
+            customLevelCode = Compression.Compress(levelJson);
             status = "Custom level loaded (" + Encoding.UTF8.GetByteCount(levelJson) / 1024 + " KiB).";
         }
         catch (Exception exception)
@@ -510,7 +512,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
         try
         {
-            MultiplayerSession.StartHostCustomLevel(customLevelJson);
+            MultiplayerSession.StartHostCustomLevel(customLevelJson, customLevelCode);
             StartCustomLevelLocally(customLevelJson);
         }
         catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
@@ -553,6 +555,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 throw new InvalidDataException("The level is larger than 4 MB.");
             CustomLevelProgress.SetActive(code);
             customLevelJson = levelJson;
+            customLevelCode = code;
             status = "Starting custom level: " + levelName;
             StartCustomLevel();
         }
@@ -969,7 +972,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             if (string.IsNullOrWhiteSpace(levelJson)) throw new InvalidDataException("no default map is loaded");
             customLevelJson = levelJson;
             MultiplayerSession.NotifyHostSceneReload("LevelLoader");
-            MultiplayerSession.StartHostCustomLevel(levelJson);
+            MultiplayerSession.StartHostCustomLevel(levelJson, Compression.Compress(levelJson));
             StartCustomLevelLocally(levelJson);
         }
         catch (Exception exception) { SendHeadlessChat("Could not load map: " + exception.Message); }
@@ -989,7 +992,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private static string DecodeCatalogLevelCode(string value)
     {
         var code = (value ?? "").Trim();
-        if (code.StartsWith("{", StringComparison.Ordinal)) return code;
         using (var compressed = new MemoryStream(Convert.FromBase64String(code)))
         using (var inflater = new DeflateStream(compressed, CompressionMode.Decompress))
         using (var output = new MemoryStream())

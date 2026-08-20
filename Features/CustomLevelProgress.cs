@@ -1,7 +1,5 @@
 using HarmonyLib;
-using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -9,22 +7,20 @@ using UnityEngine.SceneManagement;
 internal static class CustomLevelProgress
 {
     private static string activeKey = "";
-    private static readonly Dictionary<string, string> catalogKeys = new Dictionary<string, string>();
 
-    internal static void SetActive(string code) => activeKey = ScoreKeyForCatalogCode(code);
-    internal static void SetActiveJson(string levelJson) => activeKey = GetHash(levelJson);
+    internal static void SetActive(string code) => activeKey = ScoreKey(code);
     internal static void ClearActive() => activeKey = "";
     internal static bool HasActive => !string.IsNullOrEmpty(activeKey);
 
     internal static string Rank(string code)
     {
-        var score = PlayerPrefs.GetInt(ScoreKeyForCatalogCode(code));
+        var score = PlayerPrefs.GetInt(ScoreKey(code));
         return score > 0 && score <= 7 ? MissionManager.IntToRank(score - 1) : "";
     }
 
     internal static Color RankColor(string code)
     {
-        var score = PlayerPrefs.GetInt(ScoreKeyForCatalogCode(code));
+        var score = PlayerPrefs.GetInt(ScoreKey(code));
         return score switch
         {
             1 => new Color(0.8f, 0.25f, 0.25f),
@@ -47,33 +43,12 @@ internal static class CustomLevelProgress
         PlayerPrefs.Save();
     }
 
+    private static string ScoreKey(string code) => GetHash(code) + "score";
+
     private static string GetHash(string code)
     {
-        uint hash = 2166136261;
-        foreach (var character in code ?? "") { hash ^= character; hash *= 16777619; } // TODO compat with https://github.com/rushellxyz/gunsaw-level-hashes/blob/main/hashes.json
-        return "gunsawCustomLevel" + hash.ToString("X8") + "score";
-    }
-
-    private static string ScoreKeyForCatalogCode(string code)
-    {
-        string key;
-        if (catalogKeys.TryGetValue(code ?? "", out key)) return key;
-        try
-        {
-            var source = (code ?? "").Trim();
-            if (!source.StartsWith("{", System.StringComparison.Ordinal))
-            {
-                using var compressed = new MemoryStream(System.Convert.FromBase64String(source));
-                using var inflater = new DeflateStream(compressed, CompressionMode.Decompress);
-                using var output = new MemoryStream();
-                inflater.CopyTo(output);
-                source = Encoding.UTF8.GetString(output.ToArray()).Trim();
-            }
-            key = GetHash(source);
-        }
-        catch { key = GetHash(code); }
-        catalogKeys[code ?? ""] = key;
-        return key;
+        var bytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(code ?? ""));
+        return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
     }
 }
 

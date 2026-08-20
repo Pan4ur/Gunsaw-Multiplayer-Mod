@@ -345,14 +345,16 @@ internal static partial class MultiplayerSession
         Send(new ScenePacket(scene + "\n" + hostSceneEpoch), 0, false);
     }
 
-    internal static void StartHostCustomLevel(string levelJson)
+    internal static void StartHostCustomLevel(string levelJson, string levelCode)
     {
         if (!isHost) throw new InvalidOperationException("Only the host can start a custom level.");
-        if (string.IsNullOrWhiteSpace(levelJson) || Encoding.UTF8.GetByteCount(levelJson) > 4 * 1024 * 1024)
+        if (string.IsNullOrWhiteSpace(levelJson) || Encoding.UTF8.GetByteCount(levelJson) > 8 * 1024 * 1024)
             throw new InvalidOperationException("Custom level data is empty or too large.");
-        lock (statusLock) hostCustomLevel = levelJson;
+        if (string.IsNullOrWhiteSpace(levelCode)) throw new InvalidOperationException("Custom level code is empty.");
+        levelCode = levelCode.Trim();
+        lock (statusLock) hostCustomLevel = levelCode;
         hostScene = "LevelLoader";
-        QueueCustomLevelTransfer(levelJson);
+        QueueCustomLevelTransfer(levelCode);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver));
         Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);

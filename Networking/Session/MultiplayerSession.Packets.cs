@@ -827,7 +827,7 @@ internal static partial class MultiplayerSession
         var chunkCount = packet.ChunkCount;
         var totalLength = packet.TotalLength;
         var chunkLength = packet.Data.Length;
-        if (chunkCount < 1 || chunkIndex >= chunkCount || totalLength < 2 || totalLength > 4 * 1024 * 1024) return;
+        if (chunkCount < 1 || chunkIndex >= chunkCount || totalLength < 2 || totalLength > 8 * 1024 * 1024) return;
 
         lock (statusLock)
         {

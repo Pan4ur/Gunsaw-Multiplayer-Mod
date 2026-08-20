@@ -21,9 +21,9 @@ internal static partial class MultiplayerSession
         SendPacket(PacketCodec.Encode(new PingPacket(now)));
     }
 
-    private static void QueueCustomLevelTransfer(string levelJson, ushort targetId = 0)
+    private static void QueueCustomLevelTransfer(string levelCode, ushort targetId = 0)
     {
-        var data = Encoding.UTF8.GetBytes(levelJson);
+        var data = Encoding.UTF8.GetBytes(levelCode);
         const int chunkSize = 60 * 1024;
         var transferId = Interlocked.Increment(ref customLevelTransferId);
         var chunkCount = Math.Max(1, (data.Length + chunkSize - 1) / chunkSize);
