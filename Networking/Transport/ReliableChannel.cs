@@ -1,18 +1,20 @@
-using System;
-using System.Collections.Generic;
-using System.Threading;
+using System.Diagnostics;
 
 internal sealed class ReliableChannel
 {
-    private const long RetryTicks = TimeSpan.TicksPerMillisecond * 150;
+    private const int InitRetryMs = 250;
+    private const int MinRetryMs = 25;
+    private const int MaxRetryMs = 1000;
+    
     private const int MaxAttempts = 30;
     private const int MaxReceivedIds = 512;
     private const int MaxPendingPackets = 1024;
 
-    private readonly object sync = new object();
-    private readonly Dictionary<int, PendingPacket> pending = new Dictionary<int, PendingPacket>();
-    private readonly HashSet<long> received = new HashSet<long>();
-    private readonly Queue<long> receivedOrder = new Queue<long>();
+    private readonly object sync = new();
+    private readonly Dictionary<int, PendingPacket> pending = new();
+    private readonly Dictionary<ushort, RttEstimator> RTTByTarget = new();
+    private readonly HashSet<long> received = new();
+    private readonly Queue<long> receivedOrder = new();
     private int sequence;
 
     internal int NextSequenceId() => Interlocked.Increment(ref sequence);
@@ -33,7 +35,7 @@ internal sealed class ReliableChannel
         }
     }
 
-    internal bool TryUnwrap(byte[] packet, ushort senderId, out byte[] innerPacket, out byte[] acknowledgement)
+    internal bool TryUnwrap(byte[] packet, ushort senderId, long nowTimestamp, out byte[] innerPacket, out byte[] acknowledgement)
     {
         innerPacket = packet;
         acknowledgement = null;
@@ -49,7 +51,11 @@ internal sealed class ReliableChannel
                 PendingPacket pendingPacket;
                 if (pending.TryGetValue(acknowledgedId, out pendingPacket) &&
                     (pendingPacket.TargetId == 0 || pendingPacket.TargetId == senderId))
+                {
+                    if (pendingPacket.Attempts == 1)
+                        GetRTTEstimator(pendingPacket.TargetId).AddSample(ElapsedMilliseconds(pendingPacket.LastSentTimestamp, nowTimestamp));
                     pending.Remove(acknowledgedId);
+                }
             }
             return false;
         }
@@ -79,14 +85,14 @@ internal sealed class ReliableChannel
             foreach (var pair in pending)
             {
                 var packet = pair.Value;
-                if (nowTicks - packet.LastSentTicks < RetryTicks) continue;
+                if (ElapsedMilliseconds(packet.LastSentTimestamp, nowTicks) < GetRTTEstimator(packet.TargetId).RetryMs) continue;
                 if (packet.Attempts >= MaxAttempts)
                 {
                     remove.Add(pair.Key);
                     continue;
                 }
                 packet.Attempts++;
-                packet.LastSentTicks = nowTicks;
+                packet.LastSentTimestamp = nowTicks;
                 due.Add(packet.RoutedPacket);
             }
             foreach (var id in remove) pending.Remove(id);
@@ -99,6 +105,7 @@ internal sealed class ReliableChannel
         lock (sync)
         {
             pending.Clear();
+            RTTByTarget.Clear();
             received.Clear();
             receivedOrder.Clear();
             sequence = 0;
@@ -110,7 +117,7 @@ internal sealed class ReliableChannel
         internal readonly int SequenceId;
         internal readonly ushort TargetId;
         internal readonly byte[] RoutedPacket;
-        internal long LastSentTicks;
+        internal long LastSentTimestamp;
         internal int Attempts;
 
         internal PendingPacket(int sequenceId, ushort targetId, byte[] routedPacket, long nowTicks)
@@ -118,8 +125,52 @@ internal sealed class ReliableChannel
             SequenceId = sequenceId;
             TargetId = targetId;
             RoutedPacket = routedPacket;
-            LastSentTicks = nowTicks;
+            LastSentTimestamp = nowTicks;
             Attempts = 1;
+        }
+    }
+
+    private RttEstimator GetRTTEstimator(ushort targetId)
+    {
+        RttEstimator estimator;
+        if (!RTTByTarget.TryGetValue(targetId, out estimator))
+        {
+            estimator = new RttEstimator();
+            RTTByTarget[targetId] = estimator;
+        }
+        return estimator;
+    }
+
+    private static int ElapsedMilliseconds(long start, long end)
+    {
+        var elapsed = end - start;
+        if (elapsed <= 0) return 0;
+        var milliseconds = elapsed * 1000L / Stopwatch.Frequency;
+        return milliseconds > int.MaxValue ? int.MaxValue : (int) milliseconds;
+    }
+
+    private sealed class RttEstimator
+    {
+        private int smoothedRTT;
+        private int RTTVariance;
+
+        internal int RetryMs { get; private set; } = InitRetryMs;
+
+        internal void AddSample(int sampleMs)
+        {
+            sampleMs = Math.Max(1, sampleMs);
+            if (smoothedRTT == 0)
+            {
+                smoothedRTT = sampleMs;
+                RTTVariance = sampleMs / 2;
+            }
+            else
+            {
+                RTTVariance = (3 * RTTVariance + Math.Abs(smoothedRTT - sampleMs)) / 4;
+                smoothedRTT = (7 * smoothedRTT + sampleMs) / 8;
+            }
+
+            RetryMs = Math.Max(MinRetryMs, Math.Min(MaxRetryMs, smoothedRTT + 4 * RTTVariance));
         }
     }
 }
