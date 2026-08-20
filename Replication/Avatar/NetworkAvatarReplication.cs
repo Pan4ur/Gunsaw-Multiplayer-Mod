@@ -1629,6 +1629,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 if (lastRemoteAlive && !wasRemoteAlive)
                 {
                     if (MultiplayerSession.IsHost) ScoreboardSystem.NoteHostPlayerRespawn(remotePeerId);
+                    ClearReplicaBloodEffects(remoteBody);
                     remoteDeathDropSpawned = false;
                     pendingRemoteDamage = 0f;
                 }
@@ -2989,6 +2990,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var source = senderId == MultiplayerSession.LocalPeerId ? body : NetworkAvatarRegistry.RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
         ApplyPlayerDamage(body, packet);
+    }
+
+    private static void ClearReplicaBloodEffects(BodyScript body)
+    {
+        if (body == null) return;
+        foreach (var transform in body.GetComponentsInChildren<Transform>(true))
+        {
+            if (transform == null || transform == body.transform) continue;
+            var name = transform.name;
+            if (name != "gunshotwound" && !name.StartsWith("BloodSplash", StringComparison.Ordinal)) continue;
+            Destroy(transform.gameObject);
+        }
     }
 
     private void UpdateRemotePhysicsMode()
