@@ -306,6 +306,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         string incomingCustomLevel;
         if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel))
         {
+            RPCManager.CheckInstance();
+            RPCManager.instance.UpdateCustomLevel(incomingCustomLevel);
             CustomLevelProgress.SetActive(incomingCustomLevel);
             receivedCustomLevelJson = Compression.Decompress(incomingCustomLevel);
             if (waitingForCustomLevel)
@@ -514,6 +516,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             MultiplayerSession.StartHostCustomLevel(customLevelJson, customLevelCode);
             StartCustomLevelLocally(customLevelJson);
+            RPCManager.CheckInstance();
+            RPCManager.instance.UpdateCustomLevel(customLevelCode);
         }
         catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
     }
