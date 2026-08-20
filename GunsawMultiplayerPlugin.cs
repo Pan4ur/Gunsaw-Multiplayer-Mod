@@ -514,6 +514,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             MultiplayerSession.StartHostCustomLevel(customLevelJson, customLevelCode);
             StartCustomLevelLocally(customLevelJson);
+            RPCManager.CheckInstance();
+            RPCManager.instance.UpdateCustomLevel(customLevelCode);
         }
         catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
     }
