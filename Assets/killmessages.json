@@ -31,6 +31,14 @@
       ]
     },
     {
+      "name": "incinerator",
+      "messages": [
+        "%player% was incinerated.",
+        "%player% became furnace fuel.",
+        "%player% was reduced to ash by the incinerator."
+      ]
+    },
+    {
       "name": "hot_plate",
       "messages": [
         "%player% was cooked on a hot plate.",

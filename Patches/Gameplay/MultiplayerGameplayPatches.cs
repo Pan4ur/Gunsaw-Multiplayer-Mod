@@ -830,6 +830,15 @@ internal static class AcidDeathCausePatch
     }
 }
 
+[HarmonyPatch(typeof(Incinerator), "OnTriggerStay2D")]
+internal static class IncineratorDeathCausePatch
+{
+    private static void Prefix(Incinerator __instance, Collider2D collision)
+    {
+        NetworkAvatarReplication.RecordIncineratorDamage(__instance, collision);
+    }
+}
+
 [HarmonyPatch(typeof(BloodBars), "FixedUpdate")]
 internal static class MultiplayerDamageBarsPatch
 {

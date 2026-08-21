@@ -570,6 +570,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         RecordEnvironmentalDeathCause(limb == null ? null : limb.body, PlayerDeathCause.Acid);
     }
 
+    internal static void RecordIncineratorDamage(Incinerator incinerator, Collider2D collision)
+    {
+        if (incinerator == null || collision == null) return;
+        var body = collision.GetComponent<BodyScript>();
+        if (body == null)
+        {
+            var limb = collision.GetComponent<LimbScript>();
+            body = limb == null ? null : limb.body;
+        }
+        RecordEnvironmentalDeathCause(body, PlayerDeathCause.Incinerator);
+    }
+
     internal static bool HandleClientRestart()
     {
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
