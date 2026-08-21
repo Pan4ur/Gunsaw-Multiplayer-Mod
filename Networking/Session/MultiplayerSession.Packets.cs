@@ -40,7 +40,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo), senderId);
                 TeamSystem.SendAll(senderId);
                 ObserverSystem.SendCurrentState(senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
@@ -254,6 +254,11 @@ internal static partial class MultiplayerSession
                 AllowObserver = settings.AllowObserver;
                 TeamsEnabled = settings.Teams;
                 TeamsCfg = settings.TeamsCfg;
+                StartingWeapon = settings.StartingWeapon;
+                RespawnWeapon = settings.RespawnWeapon;
+                StartingAmmo = settings.StartingAmmo;
+                RespawnAmmo = settings.RespawnAmmo;
+                LobbySettingsReceived = true;
                 TeamSystem.Configure(TeamsEnabled, TeamsCfg);
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(16, (int)settings.MaxPlayers));

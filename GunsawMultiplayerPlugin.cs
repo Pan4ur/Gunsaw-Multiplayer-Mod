@@ -39,6 +39,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<bool> savedCreateTeams;
     private ConfigEntry<string> savedCreateTeamsCfg;
     private ConfigEntry<string> savedCreateInitialScale;
+    private ConfigEntry<string> savedCreateStartingWeapon;
+    private ConfigEntry<string> savedCreateRespawnWeapon;
+    private ConfigEntry<string> savedCreateStartingAmmo;
+    private ConfigEntry<string> savedCreateRespawnAmmo;
     private ConfigEntry<string> savedCreateRespawnTime;
     private ConfigEntry<string> savedCreateMaxPlayers;
     internal bool visible;
@@ -60,6 +64,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool createTeams;
     internal string createTeamsCfg = "Milkies:blue;Expies:red";
     internal string createInitialScale = "1.0";
+    internal string createStartingWeapon = "Default";
+    internal string createRespawnWeapon = "Default";
+    internal string createStartingAmmo = LobbyAmmoRules.StartingDefault;
+    internal string createRespawnAmmo = LobbyAmmoRules.RespawnDefault;
     internal string createRespawnTime = "5";
     internal string createMaxPlayers = "4";
     internal string customLevelJson = "";
@@ -135,6 +143,14 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         savedCreateTeamsCfg = Config.Bind("Lobby", "TeamsCfg", createTeamsCfg, "Teams in Name:color format.");
         savedCreateInitialScale = Config.Bind("Lobby", "InitialScale", createInitialScale,
             "Character scale assigned when a player joins or respawns.");
+        savedCreateStartingWeapon = Config.Bind("Lobby", "StartingWeapon", createStartingWeapon,
+            "Weapons assigned when a player joins, in Slot1;Slot2;Slot3 format.");
+        savedCreateRespawnWeapon = Config.Bind("Lobby", "RespawnWeapon", createRespawnWeapon,
+            "Weapons assigned when a player respawns, in Slot1;Slot2;Slot3 format.");
+        savedCreateStartingAmmo = Config.Bind("Lobby", "StartingAmmo", createStartingAmmo,
+            "Ammo assigned when a player joins, in Pistol;Rifle;Heavy;Grenade format.");
+        savedCreateRespawnAmmo = Config.Bind("Lobby", "RespawnAmmo", createRespawnAmmo,
+            "Ammo assigned when a player respawns, in Pistol;Rifle;Heavy;Grenade format.");
         savedCreateRespawnTime = Config.Bind("Lobby", "RespawnTime", createRespawnTime,
             "Default respawn delay in seconds.");
         savedCreateMaxPlayers = Config.Bind("Lobby", "MaxPlayers", createMaxPlayers,
@@ -154,6 +170,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createTeams = savedCreateTeams.Value;
         createTeamsCfg = savedCreateTeamsCfg.Value;
         createInitialScale = savedCreateInitialScale.Value;
+        createStartingWeapon = savedCreateStartingWeapon.Value;
+        createRespawnWeapon = savedCreateRespawnWeapon.Value;
+        createStartingAmmo = savedCreateStartingAmmo.Value;
+        createRespawnAmmo = savedCreateRespawnAmmo.Value;
         createRespawnTime = savedCreateRespawnTime.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
         headlessMode = HasCommandLineFlag("-headlessLobby");
@@ -441,6 +461,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (savedCreateTeams.Value != createTeams) { savedCreateTeams.Value = createTeams; changed = true; }
         if (savedCreateTeamsCfg.Value != createTeamsCfg) { savedCreateTeamsCfg.Value = createTeamsCfg; changed = true; }
         if (savedCreateInitialScale.Value != createInitialScale) { savedCreateInitialScale.Value = createInitialScale; changed = true; }
+        if (savedCreateStartingWeapon.Value != createStartingWeapon) { savedCreateStartingWeapon.Value = createStartingWeapon; changed = true; }
+        if (savedCreateRespawnWeapon.Value != createRespawnWeapon) { savedCreateRespawnWeapon.Value = createRespawnWeapon; changed = true; }
+        if (savedCreateStartingAmmo.Value != createStartingAmmo) { savedCreateStartingAmmo.Value = createStartingAmmo; changed = true; }
+        if (savedCreateRespawnAmmo.Value != createRespawnAmmo) { savedCreateRespawnAmmo.Value = createRespawnAmmo; changed = true; }
         if (savedCreateRespawnTime.Value != createRespawnTime) { savedCreateRespawnTime.Value = createRespawnTime; changed = true; }
         if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
         if (changed) Config.Save();
@@ -608,7 +632,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowRespawn = createAllowRespawn, respawnTime = respawnTime,
                 respawnAtStart = createRespawnAtStart,
                 playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
-                allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(),
+                allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(), startingWeapon = createStartingWeapon, respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
                 allowObserver = createAllowObserver,
                 teams = createTeams, teamsCfg = createTeamsCfg,
                 brutalMode = GameManager.main != null && GameManager.main.hardMode,
@@ -636,7 +660,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createMaxPlayers = maxPlayers.ToString();
         if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
             createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-            createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, maxPlayers))
+            createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, maxPlayers))
         {
             status = "Could not update lobby settings.";
             return;
@@ -797,7 +821,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
                     createGrabOnlyUnconscious, createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-                    createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg,
+                    createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo,
                     playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
                 if (headlessMode) StartHeadlessKeepAlive(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
@@ -1412,6 +1436,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowSwap = createAllowSwap,
                 allowScaleChanging = createAllowScaleChanging,
                 initialScale = ParseInitialScale(),
+                startingWeapon = createStartingWeapon,
+                respawnWeapon = createRespawnWeapon,
+                startingAmmo = createStartingAmmo,
+                respawnAmmo = createRespawnAmmo,
                 allowObserver = createAllowObserver,
                 teams = createTeams, teamsCfg = createTeamsCfg,
                 brutalMode = MultiplayerSession.BrutalModeEnabled,
@@ -1570,6 +1598,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool teams;
         public string teamsCfg = "";
         public float initialScale = 1f;
+        public string startingWeapon = "Default";
+        public string respawnWeapon = "Default";
+        public string startingAmmo = LobbyAmmoRules.StartingDefault;
+        public string respawnAmmo = LobbyAmmoRules.RespawnDefault;
         public bool hostP2P;
         public ConnectionMode connectionMode = ConnectionMode.Relay;
     }
@@ -1612,6 +1644,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool teams;
         public string teamsCfg = "";
         public float initialScale = 1f;
+        public string startingWeapon = "Default";
+        public string respawnWeapon = "Default";
+        public string startingAmmo = LobbyAmmoRules.StartingDefault;
+        public string respawnAmmo = LobbyAmmoRules.RespawnDefault;
         public bool hostP2P;
         public string connectionMode = "Relay";
         public string modVersion = "";

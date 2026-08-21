@@ -16,8 +16,12 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly bool AllowObserver;
     internal readonly bool Teams;
     internal readonly string TeamsCfg;
+    internal readonly string StartingWeapon;
+    internal readonly string RespawnWeapon;
+    internal readonly string StartingAmmo;
+    internal readonly string RespawnAmmo;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "")
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault)
     {
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -35,6 +39,10 @@ internal readonly struct SettingsPacket : INetworkPacket
         AllowObserver = allowObserver;
         Teams = teams;
         TeamsCfg = teamsCfg ?? "";
+        StartingWeapon = startingWeapon ?? "Default";
+        RespawnWeapon = respawnWeapon ?? "Default";
+        StartingAmmo = startingAmmo ?? LobbyAmmoRules.StartingDefault;
+        RespawnAmmo = respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
     }
 
     public PacketType Type => PacketType.Settings;
@@ -57,6 +65,10 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteByte(AllowObserver ? (byte)1 : (byte)0);
         writer.WriteByte(Teams ? (byte)1 : (byte)0);
         writer.WriteBinaryString(TeamsCfg);
+        writer.WriteBinaryString(StartingWeapon);
+        writer.WriteBinaryString(RespawnWeapon);
+        writer.WriteBinaryString(StartingAmmo);
+        writer.WriteBinaryString(RespawnAmmo);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -67,6 +79,10 @@ internal readonly struct SettingsPacket : INetworkPacket
         var scaleChanging = reader.Remaining >= 1 ? reader.ReadByte() != 0 : true; var scale = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
         var brutal = reader.Remaining >= 1 && reader.ReadByte() != 0; var observer = reader.Remaining >= 1 ? reader.ReadByte() != 0 : true;
         var teams = reader.Remaining >= 1 && reader.ReadByte() != 0; var cfg = reader.Remaining > 0 ? reader.ReadBinaryString() : "";
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg);
+        var startingWeapon = reader.Remaining > 0 ? reader.ReadBinaryString() : "Default";
+        var respawnWeapon = reader.Remaining > 0 ? reader.ReadBinaryString() : "Default";
+        var startingAmmo = reader.Remaining > 0 ? reader.ReadBinaryString() : LobbyAmmoRules.StartingDefault;
+        var respawnAmmo = reader.Remaining > 0 ? reader.ReadBinaryString() : LobbyAmmoRules.RespawnDefault;
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo);
     }
 }

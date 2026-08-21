@@ -166,7 +166,7 @@ internal static partial class MultiplayerSession
 
     internal static void StartHost(string lobbyId, string relayKey, string relayAddress, bool pvpEnabled,
         bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, bool teams, string teamsCfg, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, bool teams, string teamsCfg, string startingWeapon, string respawnWeapon, string startingAmmo, string respawnAmmo, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
         ConnectionMode mode, ManualLogSource logger)
     {
         CloseSocket();
@@ -214,6 +214,11 @@ internal static partial class MultiplayerSession
         AllowObserver = allowObserver;
         TeamsEnabled = teams;
         TeamsCfg = teamsCfg ?? "";
+        StartingWeapon = startingWeapon ?? "Default";
+        RespawnWeapon = respawnWeapon ?? "Default";
+        StartingAmmo = startingAmmo ?? LobbyAmmoRules.StartingDefault;
+        RespawnAmmo = respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
+        LobbySettingsReceived = true;
         TeamSystem.Configure(TeamsEnabled, TeamsCfg);
         RefreshHostBrutalMode();
         ResetPing();
@@ -267,6 +272,8 @@ internal static partial class MultiplayerSession
             AllowSwap = true;
             AllowScaleChanging = true;
             InitialScale = 1f;
+            StartingWeapon = "Default";
+            RespawnWeapon = "Default";
             BrutalModeEnabled = false;
             AllowObserver = true;
             ResetPing();
@@ -360,7 +367,7 @@ internal static partial class MultiplayerSession
         hostScene = "LevelLoader";
         QueueCustomLevelTransfer(levelCode);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo));
         Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);
     }
 
@@ -415,6 +422,11 @@ internal static partial class MultiplayerSession
     internal static bool PvpEnabled { get; private set; }
     internal static bool TeamsEnabled { get; private set; }
     internal static string TeamsCfg { get; private set; } = "";
+    internal static string StartingWeapon { get; private set; } = "Default";
+    internal static string RespawnWeapon { get; private set; } = "Default";
+    internal static string StartingAmmo { get; private set; } = LobbyAmmoRules.StartingDefault;
+    internal static string RespawnAmmo { get; private set; } = LobbyAmmoRules.RespawnDefault;
+    internal static bool LobbySettingsReceived { get; private set; }
     internal static bool CanGrabPlayers { get; private set; }
     internal static bool GrabOnlyUnconscious { get; private set; }
     internal static bool AllowRespawn { get; private set; }
@@ -681,6 +693,8 @@ internal static partial class MultiplayerSession
         AllowSwap = true;
         AllowScaleChanging = true;
         InitialScale = 1f;
+        StartingWeapon = "Default";
+        RespawnWeapon = "Default";
         BrutalModeEnabled = false;
         AllowObserver = true;
         lock (statusLock)
@@ -701,7 +715,7 @@ internal static partial class MultiplayerSession
 
     internal static bool UpdateHostSettings(bool pvpEnabled, bool canGrabPlayers,
         bool grabOnlyUnconscious, bool allowRespawn, int respawnTimeSeconds,
-        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, bool teams, string teamsCfg, int lobbyMaxPlayers)
+        bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, bool teams, string teamsCfg, string startingWeapon, string respawnWeapon, string startingAmmo, string respawnAmmo, int lobbyMaxPlayers)
     {
         if (!IsHosting) return false;
         PvpEnabled = pvpEnabled;
@@ -718,11 +732,15 @@ internal static partial class MultiplayerSession
         AllowObserver = allowObserver;
         TeamsEnabled = teams;
         TeamsCfg = teamsCfg ?? "";
+        StartingWeapon = startingWeapon ?? "Default";
+        RespawnWeapon = respawnWeapon ?? "Default";
+        StartingAmmo = startingAmmo ?? LobbyAmmoRules.StartingDefault;
+        RespawnAmmo = respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
         TeamSystem.Configure(TeamsEnabled, TeamsCfg);
         RefreshHostBrutalMode();
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg));
+            RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo));
         return true;
     }
 

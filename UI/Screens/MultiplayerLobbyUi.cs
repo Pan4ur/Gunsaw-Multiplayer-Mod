@@ -11,7 +11,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GameObject panel;
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, initialScaleInput, serverInput, teamsCfgInput;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
@@ -69,6 +69,10 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         teamsToggle.isOn = plugin.createTeams;
         SetInput(teamsCfgInput, plugin.createTeamsCfg);
         SetInput(initialScaleInput, plugin.createInitialScale);
+        SetInput(startingWeaponInput, plugin.createStartingWeapon);
+        SetInput(respawnWeaponInput, plugin.createRespawnWeapon);
+        SetInput(startingAmmoInput, plugin.createStartingAmmo);
+        SetInput(respawnAmmoInput, plugin.createRespawnAmmo);
         respawnInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
         connectionModeText.text = plugin.createConnectionMode.ToString();
@@ -157,6 +161,22 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         CreateText(initialScaleRow, "INITIAL SCALE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         initialScaleInput = CreateInput(initialScaleRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createInitialScale = value);
         AddTooltip(initialScaleRow.gameObject, "INITIAL SCALE: The character scale assigned when a player joins or respawns. Allowed range: 0.25 to 2.0.");
+        var startingWeaponRow = CreateSettingsRow(settings);
+        CreateText(startingWeaponRow, "STARTING WEAPON", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
+        startingWeaponInput = CreateInput(startingWeaponRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 512, value => plugin.createStartingWeapon = value);
+        AddTooltip(startingWeaponRow.gameObject, "STARTING WEAPON: Weapons assigned when a player joins. Use Default, None;None;None, or three names separated by semicolons.");
+        var respawnWeaponRow = CreateSettingsRow(settings);
+        CreateText(respawnWeaponRow, "RESPAWN WEAPON", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
+        respawnWeaponInput = CreateInput(respawnWeaponRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 512, value => plugin.createRespawnWeapon = value);
+        AddTooltip(respawnWeaponRow.gameObject, "RESPAWN WEAPON: Weapons assigned after respawn. Use Default, None;None;None, or three names separated by semicolons.");
+        var startingAmmoRow = CreateSettingsRow(settings);
+        CreateText(startingAmmoRow, "STARTING AMMO", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
+        startingAmmoInput = CreateInput(startingAmmoRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 32, value => plugin.createStartingAmmo = value);
+        AddTooltip(startingAmmoRow.gameObject, "STARTING AMMO: Pistol;Rifle;Heavy;Grenade ammo assigned when a player joins.");
+        var respawnAmmoRow = CreateSettingsRow(settings);
+        CreateText(respawnAmmoRow, "RESPAWN AMMO", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
+        respawnAmmoInput = CreateInput(respawnAmmoRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 32, value => plugin.createRespawnAmmo = value);
+        AddTooltip(respawnAmmoRow.gameObject, "RESPAWN AMMO: Pistol;Rifle;Heavy;Grenade ammo assigned after respawn.");
 
         CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -120f), new Vector2(125f, 32f), 14);
         connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -120f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);

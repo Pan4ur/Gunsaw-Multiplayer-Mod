@@ -129,6 +129,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static Transform localGlobalBody;
     private static BodyScript initialScaleAppliedBody;
     private static float appliedInitialScale = float.NaN;
+    private BodyScript startingLoadoutAppliedBody;
+    private BodyScript startingAmmoAppliedBody;
+    private BodyScript pendingRespawnLoadoutBody;
+    private BodyScript pendingRespawnLoadoutSource;
     private bool remoteDeathDropSpawned;
     private int appliedDismembermentHash = int.MinValue;
     private float pendingRemoteDamage;
@@ -746,6 +750,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         localGlobalBody = PlayerScript.globalBody == null
             ? player.bodyScript.transform : PlayerScript.globalBody;
         ApplyInitialLobbyScale(player.bodyScript);
+        ApplyPendingRespawnLobbyLoadout(player.bodyScript);
+        ApplyStartingLobbyLoadout(player.bodyScript);
+        ApplyStartingLobbyAmmo(player.bodyScript);
         UpdateLocalRespawn(player);
         player = PlayerScript.player;
         if (player == null || player.bodyScript == null) return;
@@ -2676,6 +2683,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         EnsureRespawnWeaponSlots(oldBody);
 
         var position = ResolveRespawnPosition(oldBody);
+        pendingRespawnLoadoutSource = prefab.GetComponentInChildren<BodyScript>(true);
         var avatar = Instantiate(prefab, position, Quaternion.identity);
 
         foreach (var prefabPlayer in avatar.GetComponentsInChildren<PlayerScript>(true))
@@ -2773,6 +2781,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             localPlayerInstance.BodyAmmoChanged();
             RebindLimbDamageIndicators(localPlayerInstance, newBody, oldBody);
             localPlayerInstance.UnDie();
+            pendingRespawnLoadoutBody = newBody;
             if (CameraFollow.cam != null) CameraFollow.cam.target = newBody.transform;
             localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
             if (localPlayerInstance.bloodBars != null)
@@ -2923,6 +2932,98 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
         if (body.currentWeapon < 0 || body.currentWeapon >= 3)
             body.currentWeapon = 0;
+    }
+
+    internal static void ApplyLobbyLoadout(BodyScript body, string rule)
+    {
+        if (body == null || string.Equals((rule ?? "").Trim(), "Default", StringComparison.OrdinalIgnoreCase)) return;
+        EnsureRespawnWeaponSlots(body);
+        var values = (rule ?? "").Split(';');
+        var firstWeapon = -1;
+        for (var slot = 0; slot < 3; slot++)
+        {
+            var value = slot < values.Length ? values[slot].Trim() : "None";
+            if (string.Equals(value, "Default", StringComparison.OrdinalIgnoreCase))
+            {
+                if (body.weapons[slot] != null && firstWeapon < 0) firstWeapon = slot;
+                continue;
+            }
+            if (string.Equals(value, "None", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(value))
+            {
+                body.weapons[slot] = null;
+                body.weaponAmmos[slot] = 0;
+                continue;
+            }
+            var preset = FindWeaponPresetByName(value);
+            body.weapons[slot] = preset;
+            body.weaponAmmos[slot] = preset == null ? 0 : preset.magSize;
+            if (preset != null && firstWeapon < 0) firstWeapon = slot;
+        }
+        if (firstWeapon >= 0)
+        {
+            body.currentWeapon = firstWeapon;
+            body.ChangeWeapon(firstWeapon);
+        }
+        else body.ChangeToUnarmed();
+    }
+
+    private void ApplyStartingLobbyLoadout(BodyScript body)
+    {
+        if (body == null || body == startingLoadoutAppliedBody || localRespawnPending) return;
+        var rule = MultiplayerSession.StartingWeapon;
+        if (string.Equals((rule ?? "").Trim(), "Default", StringComparison.OrdinalIgnoreCase)) return;
+        ApplyLobbyLoadout(body, rule);
+        startingLoadoutAppliedBody = body;
+    }
+
+    private void ApplyPendingRespawnLobbyLoadout(BodyScript body)
+    {
+        if (body == null || body != pendingRespawnLoadoutBody || !body.isAlive) return;
+        var rule = MultiplayerSession.RespawnWeapon;
+        if (string.Equals((rule ?? "").Trim(), "Default", StringComparison.OrdinalIgnoreCase))
+            ApplyDefaultLobbyLoadout(body, pendingRespawnLoadoutSource);
+        else ApplyLobbyLoadout(body, rule);
+        LobbyAmmoRules.Apply(body, MultiplayerSession.RespawnAmmo);
+        startingLoadoutAppliedBody = body;
+        startingAmmoAppliedBody = body;
+        pendingRespawnLoadoutBody = null;
+        pendingRespawnLoadoutSource = null;
+    }
+
+    private static void ApplyDefaultLobbyLoadout(BodyScript body, BodyScript source)
+    {
+        if (body == null) return;
+        EnsureRespawnWeaponSlots(body);
+        var preset = body.desiredStartWep ?? (source == null ? null : source.desiredStartWep);
+        if (preset != null && preset.slot >= 0 && preset.slot < 3)
+        {
+            for (var slot = 0; slot < 3; slot++)
+            {
+                body.weapons[slot] = null;
+                body.weaponAmmos[slot] = 0;
+            }
+            body.weapons[preset.slot] = preset;
+            body.weaponAmmos[preset.slot] = preset.magSize;
+            body.currentWeapon = preset.slot;
+            body.ChangeWeapon(preset.slot);
+            return;
+        }
+        ApplyLobbyLoadout(body, "None;None;None");
+    }
+
+    private void ApplyStartingLobbyAmmo(BodyScript body)
+    {
+        if (body == null || body == startingAmmoAppliedBody || !MultiplayerSession.LobbySettingsReceived) return;
+        LobbyAmmoRules.Apply(body, MultiplayerSession.StartingAmmo);
+        startingAmmoAppliedBody = body;
+    }
+
+    private static WeaponPreset FindWeaponPresetByName(string name)
+    {
+        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
+            if (preset != null && preset.sprite != null && string.Equals(preset.name, name, StringComparison.OrdinalIgnoreCase))
+                return preset;
+        return null;
     }
 
     internal static void EnsurePlayerAmmoDisplaySlots(PlayerScript player)

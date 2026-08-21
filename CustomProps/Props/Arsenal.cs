@@ -377,10 +377,12 @@ internal sealed class ArsenalMenu : MonoBehaviour
         if (body != null)
         {
             var amounts = arsenal == null ? new[] { 60, 60, 60, 60 } : arsenal.AmmoAmounts();
-            var ammoTypes = new[] { 0, 1, 2, 4 };
             for (var index = 0; index < amounts.Length; index++)
-                if (ammoTypes[index] < body.ammoAmount.Count)
-                    body.ammoAmount[ammoTypes[index]] += amounts[index];
+            {
+                var ammoType = LobbyAmmoRules.GetAmmoType(index);
+                if (ammoType >= 0 && ammoType < body.ammoAmount.Count)
+                    body.ammoAmount[ammoType] += amounts[index];
+            }
             PlayerScript.player.BodyAmmoChanged();
         }
 
