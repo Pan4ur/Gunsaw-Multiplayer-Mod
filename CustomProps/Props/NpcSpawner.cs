@@ -145,8 +145,10 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour
         yield return null;
         if (body == null) yield break;
         var weapon = data.weapon == null ? string.Empty : data.weapon.Trim();
-        if (string.IsNullOrEmpty(weapon) || string.Equals(weapon, "None", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(weapon) || string.Equals(weapon, "None", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(weapon, "Unarmed", StringComparison.OrdinalIgnoreCase))
         {
+            EnsureWeapon(body);
             body.ChangeToUnarmed();
             yield break;
         }
@@ -171,6 +173,7 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour
 
         if (selected == null)
         {
+            EnsureWeapon(body);
             body.ChangeToUnarmed();
             yield break;
         }
@@ -188,6 +191,15 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour
         body.weapons[selected.slot] = selected;
         body.weaponAmmos[selected.slot] = selected.magSize;
         body.ChangeWeapon(selected.slot);
+    }
+
+    private static void EnsureWeapon(BodyScript body)
+    {
+        if (body == null || body.weapon != null || body.gunTransform == null) return;
+        var weapon = body.gunTransform.GetComponent<WeaponScript>();
+        if (weapon == null) weapon = body.gunTransform.gameObject.AddComponent<WeaponScript>();
+        weapon.body = body;
+        body.weapon = weapon;
     }
 
     private static GameObject SelectNpcPrefab(string species)
