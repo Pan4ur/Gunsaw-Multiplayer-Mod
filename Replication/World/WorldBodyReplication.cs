@@ -111,7 +111,8 @@ public class WorldBodyReplication
                                 body.GetComponentInParent<SawScript>() != null ||
                                 body.GetComponentInParent<CustJoint>() != null ||
                                 body.GetComponentInParent<VehiclePart>() != null ||
-                                IsSafetyRailingBody(body));
+                                IsSafetyRailingBody(body) ||
+                                IsChainlinkFenceBody(body));
     }
     
     internal static bool IsDroneBody(Rigidbody2D body)
@@ -136,7 +137,7 @@ public class WorldBodyReplication
         {
             Crate = crate,
             CratePrefabName = crate == null ? "" : WorldReplication.CleanCloneName(crate.transform.root.name),
-            SafetyRailing = IsSafetyRailingBody(body),
+            SafetyRailing = IsSafetyRailingBody(body) || IsChainlinkFenceBody(body),
             Joints = body.GetComponents<Joint2D>(),
             VehiclePart = vehiclePart,
             Vehicle = vehiclePart == null ? null : vehiclePart.vehicle ?? vehiclePart.GetComponentInParent<VehicleBase>(),
@@ -164,7 +165,13 @@ public class WorldBodyReplication
         if (crateScript != null) crateScript.enabled = false;
         var droppedWeapon = body.GetComponentInParent<DroppedWeapon>();
         if (droppedWeapon != null) droppedWeapon.enabled = false;
-        if (IsMechanismBody(body) && !IsInteractivePropBody(body) && body.simulated)
+        if (IsSafetyRailingBody(body))
+            foreach (var joint in body.GetComponents<Joint2D>())
+            {
+                joint.breakForce = Mathf.Infinity;
+                joint.breakTorque = Mathf.Infinity;
+            }
+        if (IsMechanismBody(body) && !IsInteractivePropBody(body) && !IsClientPhysicsJointBody(body) && body.simulated)
             body.bodyType = RigidbodyType2D.Kinematic;
     }
     
@@ -222,7 +229,8 @@ public class WorldBodyReplication
         {
             var body = pair.Key;
             if (body == null || pair.Value >= now ||
-                !(IsInteractivePropBody(body) || WorldReplication.Instance.droneBodies.Contains(body))) continue;
+                !(IsInteractivePropBody(body) || WorldReplication.Instance.droneBodies.Contains(body) ||
+                  IsClientAuthorityJointBody(body))) continue;
             if (body.velocity.sqrMagnitude > 0.0004f || Mathf.Abs(body.angularVelocity) > 1f)
                 renew.Add(body);
         }
@@ -254,7 +262,7 @@ public class WorldBodyReplication
             return;
         }
 
-        var mechanism = IsMechanismBody(body) && !IsInteractivePropBody(body);
+        var mechanism = IsMechanismBody(body) && !IsInteractivePropBody(body) && !IsClientPhysicsJointBody(body);
         float controlUntil;
         if (!mechanism && locallyControlledUntil.TryGetValue(body, out controlUntil))
         {
@@ -362,19 +370,46 @@ public class WorldBodyReplication
     
     private void DetachSafetyRailing(Rigidbody2D body)
     {
-        if (!IsSafetyRailingBody(body)) return;
+        if (!IsSafetyRailingBody(body) && !IsChainlinkFenceBody(body)) return;
         foreach (var joint in body.GetComponents<Joint2D>())
             if (joint != null) WorldReplication.Destroy(joint);
     }
     
-    private static bool IsSafetyRailingBody(Rigidbody2D body)
+    internal static bool IsSafetyRailingBody(Rigidbody2D body)
     {
         if (body == null) return false;
         for (var current = body.transform; current != null; current = current.parent)
             if (current.name.StartsWith("SafetyRailing", StringComparison.Ordinal)) return true;
         return false;
     }
-    
+
+    internal static bool IsChainlinkFenceBody(Rigidbody2D body)
+    {
+        if (body == null || body.GetComponent<SoundOnJointBreak>() == null) return false;
+        for (var current = body.transform; current != null; current = current.parent)
+            if (current.name.IndexOf("chainlink", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+        return false;
+    }
+
+    internal static bool IsDetachedChainlinkFenceBody(Rigidbody2D body)
+    {
+        if (!IsChainlinkFenceBody(body)) return false;
+        foreach (var joint in body.GetComponents<Joint2D>())
+            if (joint != null && joint.enabled) return false;
+        return true;
+    }
+
+    internal static bool IsClientAuthorityJointBody(Rigidbody2D body)
+    {
+        return IsSafetyRailingBody(body) || IsChainlinkFenceBody(body);
+    }
+
+    private static bool IsClientPhysicsJointBody(Rigidbody2D body)
+    {
+        return IsSafetyRailingBody(body) || IsChainlinkFenceBody(body);
+    }
+
     internal void TickVehiclePaths()
     {
         if (vehiclePaths.Count == 0) return;
