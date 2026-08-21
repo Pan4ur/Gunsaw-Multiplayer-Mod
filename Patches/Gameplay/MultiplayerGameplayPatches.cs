@@ -152,6 +152,24 @@ internal static class MultiplayerPlayerSlowmoPatch
 
         MultiplayerTimeControl.KeepMultiplayerActive();
         __state = MultiplayerTimeControl.BeginPlayerUpdate(__instance);
+        if (MultiplayerHud.IsTyping)
+        {
+            var pl = __instance;
+            var body = pl == null ? null : pl.bodyScript;
+            if (pl != null && body != null && body.maxHealth > 0f)
+            {
+                pl.curHealthShow = Mathf.Lerp(pl.curHealthShow, body.health, 8f * Time.deltaTime);
+                pl.curStaminaShow = Mathf.Lerp(pl.curStaminaShow, body.stamina, 8f * Time.deltaTime);
+
+                if (pl.healthText != null)
+                    pl.healthText.text = pl.curHealthShow > 0f ? Mathf.Round(pl.curHealthShow / body.maxHealth * 100f) + "%" : "--";
+
+                if (pl.staminaText != null)
+                    pl.staminaText.text = pl.curStaminaShow > 0f ? Mathf.Round(pl.curStaminaShow / body.maxHealth * 100f) + "%" : "K/O";
+            }
+
+            return false;
+        }
         return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen;
     }
 
