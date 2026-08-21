@@ -62,6 +62,7 @@ internal static class ScoreboardSystem
         {
             if (!MultiplayerSession.IsHost || senderId == 0 || killPacket.KillerId == 0 || killPacket.KillerId == senderId) continue;
             hostKills[killPacket.KillerId] = KillsFor(killPacket.KillerId) + 1;
+            NetworkAvatarReplication.RoutePlayerKillScreenEffect(killPacket.KillerId);
         }
 
         if (Time.unscaledTime < nextSend) return;

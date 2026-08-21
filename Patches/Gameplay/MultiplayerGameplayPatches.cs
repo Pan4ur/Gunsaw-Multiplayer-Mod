@@ -711,6 +711,8 @@ internal static class ClientNpcDeathPatch
         if (MultiplayerSession.IsHosting && __instance.isPlayer && localPlayer != null &&
             localPlayer.bodyScript == __instance && killerPeerId != 0)
             ScoreboardSystem.RecordHostPvpKill(killerPeerId, MultiplayerSession.LocalPeerId);
+        if (MultiplayerSession.IsHosting && __instance.isPlayer && killerPeerId != 0)
+            NetworkAvatarReplication.RoutePlayerKillScreenEffect(killerPeerId);
         if (!MultiplayerSession.IsHosting && __instance.isPlayer && killerPeerId != 0)
             MultiplayerSession.Send(new PlayerKillPacket(killerPeerId), 1);
         if (deathCause == PlayerDeathCause.Unknown)

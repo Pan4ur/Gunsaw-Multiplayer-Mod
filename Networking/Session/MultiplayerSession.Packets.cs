@@ -289,6 +289,10 @@ internal static partial class MultiplayerSession
             {
                 ObserverSystem.QueueDeath();
             }
+            else if (!isHost && decodedPacket.Type == PacketType.KillScreenEffect && senderId == hostPeerId)
+            {
+                NetworkAvatarReplication.PlayKillScreenEffect();
+            }
             else if (!isHost && decodedPacket.Type == PacketType.ObserverState && senderId == hostPeerId)
             {
                 try

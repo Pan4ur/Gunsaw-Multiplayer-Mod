@@ -609,12 +609,29 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static void RouteNpcKillScreenEffect(BodyScript victim)
     {
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || victim == null ||
-            victim.isPlayer) return;
+            victim.isPlayer || !victim.isAlive) return;
         var killer = DamageSourceFor(victim);
         var replica = NetworkAvatarRegistry.ReplicaForBody(killer);
         if (replica == null || replica.remotePeerId == 0) return;
 
+        MultiplayerSession.Send(new KillScreenEffectPacket(), replica.remotePeerId);
         suppressNpcKillEffectFor = victim;
+    }
+
+    internal static void RoutePlayerKillScreenEffect(ushort killerPeerId)
+    {
+        if (!MultiplayerSession.IsHosting || killerPeerId == 0) return;
+        if (killerPeerId == MultiplayerSession.LocalPeerId)
+        {
+            PlayKillScreenEffect();
+            return;
+        }
+        MultiplayerSession.Send(new KillScreenEffectPacket(), killerPeerId);
+    }
+
+    internal static void PlayKillScreenEffect()
+    {
+        if (ScreenFXManager.main != null) ScreenFXManager.main.OnKill(true);
     }
 
     internal static bool AllowNpcKillScreenEffect()
