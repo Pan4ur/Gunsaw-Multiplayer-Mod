@@ -1074,7 +1074,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (MultiplayerSession.IsHost || zone == null) return;
         var id = ActivationZoneId(zone);
-        if (!manual) localZonePrompts.Add(id);
+        if (!manual && !WorldEnvironmentReplication.ActivatesTeleport(zone)) localZonePrompts.Add(id);
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
@@ -1456,7 +1456,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (zone == null || !MultiplayerSession.IsHost) return;
         var id = ActivationZoneId(zone);
-        if (!manual && activatedZoneIds.Contains(id)) localZonePrompts.Add(id);
+        if (!manual && activatedZoneIds.Contains(id) && !WorldEnvironmentReplication.ActivatesTeleport(zone)) localZonePrompts.Add(id);
         enviroment.ApplyZoneActivation(id, MultiplayerSession.LocalPeerId, manual);
     }
 

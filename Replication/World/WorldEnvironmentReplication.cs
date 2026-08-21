@@ -228,7 +228,7 @@ public class WorldEnvironmentReplication
             : NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
         float allowedAt;
         if (!WorldReplication.Instance.activationZones.TryGetValue(id, out zone) || zone == null || remotePlayer == null ||
-            !remotePlayer.isAlive || (!manual && WorldReplication.Instance.activatedZoneIds.Contains(id)) ||
+            !remotePlayer.isAlive || (!manual && WorldReplication.Instance.activatedZoneIds.Contains(id) && !ActivatesTeleport(zone)) ||
             (WorldReplication.Instance.nextZoneActivation.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt)) return;
         var zoneCollider = zone.GetComponent<Collider2D>();
         if (zoneCollider == null || zoneCollider.bounds.SqrDistance(remotePlayer.transform.position) > 4f) return;
@@ -239,6 +239,25 @@ public class WorldEnvironmentReplication
         WorldReplication.Instance.activatedZoneIds.Add(id);
         foreach (var target in GameObject.FindGameObjectsWithTag("Activateable"))
             target.SendMessage("Activate", zone.id, SendMessageOptions.DontRequireReceiver);
+    }
+
+    private static bool ActivatesTeleport(ActivateZoneScript zone)
+    {
+        if (zone == null) return false;
+        var hasTeleport = false;
+        foreach (var target in GameObject.FindGameObjectsWithTag("Activateable"))
+        foreach (var receiver in target.GetComponents<MonoBehaviour>())
+        {
+            if (receiver == null) continue;
+            var method = receiver.GetType().GetMethod("Activate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic, null, new[] { typeof(int) }, null);
+            if (method == null) continue;
+            var field = receiver.GetType().GetField("id", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            if (field == null || field.FieldType != typeof(int)) return false;
+            if ((int) field.GetValue(receiver) != zone.id) continue;
+            if (!(receiver is TeleportZone)) return false;
+            hasTeleport = true;
+        }
+        return hasTeleport;
     }
     
     internal static void SetButtonInactive(ButtonScript button)
