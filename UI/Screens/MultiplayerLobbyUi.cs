@@ -284,8 +284,15 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (text != null) text.text = "MULTIPLAYER";
         var rect = clone.GetComponent<RectTransform>();
         var sourceRect = source.GetComponent<RectTransform>();
-        var gap = 12f;
-        var extension = sourceRect.rect.height + gap;
+        var extension = sourceRect.rect.height;
+        foreach (var candidate in source.transform.parent.GetComponentsInChildren<Button>(true))
+        {
+            var candidateText = candidate.GetComponentInChildren<TMP_Text>(true);
+            if (candidateText == null || !string.Equals(candidateText.text.Trim(), "SETTINGS", StringComparison.OrdinalIgnoreCase)) continue;
+            var candidateRect = candidate.GetComponent<RectTransform>();
+            if (candidateRect != null) extension = Mathf.Abs(sourceRect.position.y - candidateRect.position.y);
+            break;
+        }
         rect.position = sourceRect.position + Vector3.up * extension;
         StartCoroutine(ExpandNativeButtonFrame(sourceRect, extension));
     }
@@ -294,7 +301,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     {
         yield return new WaitForEndOfFrame();
         var frame = FindNativeButtonFrame(source);
-        if (frame != null) frame.offsetMax += Vector2.up * (extension + 14f);
+        if (frame != null) frame.offsetMax += Vector2.up * (extension + 2f);
     }
 
     private static RectTransform FindNativeButtonFrame(RectTransform source)
