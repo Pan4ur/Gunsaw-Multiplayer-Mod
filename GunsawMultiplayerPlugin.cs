@@ -48,7 +48,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool visible;
     internal string status = "Select an option.";
     internal string updateStatus = "Checking for updates..."; 
-    internal string lobbyServerAddress = "gunsaw.e621.su";
+    internal string lobbyServerAddress = "expie.fun";
     internal string lobbyName = "Lobby";
     internal string playerName = "Player";
     internal bool createPvp;
@@ -117,7 +117,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         KeepMultiplayerRunningInBackground();
         Instance = this;
         _chatCommandSystem = new ChatCommandSystem(this);
-        masterUrl = Config.Bind("Network", "MasterUrl", "https://gunsaw.e621.su", "Lobby directory URL.");
+        masterUrl = Config.Bind("Network", "MasterUrl", "https://expie.fun", "Lobby directory URL.");
+        string normalizedServer;
+        if (TryNormalizeServerAddress(masterUrl.Value, out normalizedServer)) masterUrl.Value = normalizedServer;
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
         savedPlayerName = Config.Bind("Lobby", "PlayerName", playerName, "Name shown to other players.");
         savedLobbyName = Config.Bind("Lobby", "LobbyName", lobbyName, "Default name for new lobbies.");
@@ -1114,7 +1116,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void ApplyHeadlessCommandLineOptions()
     {
         var value = CommandLineValue("--master");
-        if (!string.IsNullOrWhiteSpace(value)) { masterUrl.Value = value; lobbyServerAddress = DisplayServerAddress(value); }
+        if (!string.IsNullOrWhiteSpace(value) && TryNormalizeServerAddress(value, out var normalized))
+        {
+            masterUrl.Value = normalized;
+            lobbyServerAddress = DisplayServerAddress(normalized);
+        }
         value = CommandLineValue("--name");
         if (!string.IsNullOrWhiteSpace(value)) lobbyName = value.Trim();
         value = CommandLineValue("--host");
@@ -1216,7 +1222,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private string DefaultRelayAddress()
     {
-        return "udp://gunsaw.e621.su:27015";
+        return "udp://expie.fun:27015";
     }
 
     private static string HttpAt(string server, string method, string path, string body, string authorization)
@@ -1508,6 +1514,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             if (uri.IsDefaultPort) builder.Port = -1;
             uri = builder.Uri;
         }
+        if (uri.Host.IndexOf("e621.su", StringComparison.OrdinalIgnoreCase) >= 0)
+            uri = new UriBuilder(uri) { Host = "expie.fun" }.Uri;
         normalized = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         return true;
     }

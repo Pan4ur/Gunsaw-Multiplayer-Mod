@@ -241,7 +241,7 @@ public class WorldEnvironmentReplication
             target.SendMessage("Activate", zone.id, SendMessageOptions.DontRequireReceiver);
     }
 
-    private static bool ActivatesTeleport(ActivateZoneScript zone)
+    internal static bool ActivatesTeleport(ActivateZoneScript zone)
     {
         if (zone == null) return false;
         var hasTeleport = false;

@@ -53,38 +53,40 @@ internal sealed class RPCManager : MonoBehaviour
     private bool _enable;
     private float timer = 5f;
 
-    private const string HASHES_URL = "https://raw.githubusercontent.com/rushellxyz/gunsaw-level-hashes/refs/heads/main/hashes.txt";
+    private const string HASHES_URL =
+        "https://raw.githubusercontent.com/rushellxyz/gunsaw-level-hashes/refs/heads/main/hashes.txt";
+
     private const string HASHES_PATH = "hashes-to-name.txt";
 
     private static readonly Dictionary<string, string> levels = new Dictionary<string, string>
     {
-        {"ViolenceWarning", "Just started"},
-        {"tutorial1", "Basic Training"},
-        {"actualLevel1", "Lock Break"},
-        {"actualLevel2", "Box Check"},
-        {"beautyLevel", "Belt Dropdown"},
-        {"campaign3", "Box Check"},
+        { "ViolenceWarning", "Just started" },
+        { "tutorial1", "Basic Training" },
+        { "actualLevel1", "Lock Break" },
+        { "actualLevel2", "Box Check" },
+        { "beautyLevel", "Belt Dropdown" },
+        { "campaign3", "Box Check" },
         // Green skies is the only level with second word starting from small letter
         // You will never unsee this
-        {"campaign4", "Green skies"},
-        {"campaign5", "Zigzag"},
-        {"campaign6", "Downdrops"},
-        {"campaign7", "Crush Forces"},
-        {"campaign8", "Mount Basins"},
-        {"campaign9", "Blue Sewers"},
-        {"campaign10", "Weird Technology"},
-        {"campaign11", "Foggy Whites"},
-        {"campaign12", "Rooftops"},
-        {"campaign13", "Vanished Forts"},
-        {"campaign14", "Acid Plants"},
-        {"SampleScene", "Trash Containment"},
-        {"LevelSelect", "Chooses level"},
-        {"LevelEditor", "Level editor"},
-        {"LevelLoader", "Custom level"},
+        { "campaign4", "Green skies" },
+        { "campaign5", "Zigzag" },
+        { "campaign6", "Downdrops" },
+        { "campaign7", "Crush Forces" },
+        { "campaign8", "Mount Basins" },
+        { "campaign9", "Blue Sewers" },
+        { "campaign10", "Weird Technology" },
+        { "campaign11", "Foggy Whites" },
+        { "campaign12", "Rooftops" },
+        { "campaign13", "Vanished Forts" },
+        { "campaign14", "Acid Plants" },
+        { "SampleScene", "Trash Containment" },
+        { "LevelSelect", "Chooses level" },
+        { "LevelEditor", "Level editor" },
+        { "LevelLoader", "Custom level" },
         // Two secret levels, yep theres secret levels
         // try them with unity explorer
-        {"level1", "Secret level"},
-        {"level2", "Secret level"},
+        { "level1", "Secret level" },
+        { "level2", "Secret level" },
     };
 
     private Dictionary<string, string> hashesToName;
@@ -137,9 +139,11 @@ internal sealed class RPCManager : MonoBehaviour
         bool shouldResetJoinSecret = true;
         if (MultiplayerSession.IsConnected || MultiplayerSession.IsHosting)
         {
-            bool defaultServer = GunsawMultiplayerPlugin.Instance.lobbyServerAddress.Contains("e621.su");
+            bool defaultServer = GunsawMultiplayerPlugin.Instance.lobbyServerAddress.Contains("expie.fun") ||
+                                 GunsawMultiplayerPlugin.Instance.lobbyServerAddress.Contains("e621.su");
             string lobbyId = GunsawMultiplayerPlugin.Instance.GetCurrentLobbyId();
-            RichPresence.Party = new PresenceParty(lobbyId, MultiplayerSession.PlayerCount, MultiplayerSession.MaxPlayers, defaultServer);
+            RichPresence.Party = new PresenceParty(lobbyId, MultiplayerSession.PlayerCount,
+                MultiplayerSession.MaxPlayers, defaultServer);
             if (defaultServer)
             {
                 RichPresence.JoinSecret = lobbyId + ":" + GunsawMultiplayerPlugin.PluginVersion;
@@ -157,16 +161,17 @@ internal sealed class RPCManager : MonoBehaviour
         else
         {
             RichPresence.Party = null;
-            if (null == PlayerScript.player || null == PlayerScript.player.bodyScript || string.IsNullOrEmpty(PlayerScript.player.bodyScript.speciesName))
+            if (null == PlayerScript.player || null == PlayerScript.player.bodyScript ||
+                string.IsNullOrEmpty(PlayerScript.player.bodyScript.speciesName))
                 RichPresence.Details = "In main menu";
             else
-                RichPresence.Details = playerSpecie; // mb utilize it on stats?
+                RichPresence.Details = playerSpecie == "Unknown" ? "" : playerSpecie; // mb utilize it on stats?
 
-            RichPresence.SmallImage = new PresencePair("https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/refs/heads/main/Assets/Heads/" + playerSpecie + ".png", playerSpecie);
+            RichPresence.SmallImage = playerSpecie == "Unknown" ? null : new PresencePair("https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/refs/heads/main/Assets/Heads/" + playerSpecie + ".png", playerSpecie);
         }
 
         if (null != GameManager.main && GameManager.main.hardMode)
-            RichPresence.Details += " |BRUTAL";
+            RichPresence.Details += " | BRUTAL";
 
         if (shouldResetJoinSecret)
             RichPresence.JoinSecret = null;
@@ -174,7 +179,7 @@ internal sealed class RPCManager : MonoBehaviour
         string scene = SceneManager.GetActiveScene().name;
         if ("LevelLoader" == scene)
             RichPresence.State = customLevel;
-   else if (levels.TryGetValue(scene, out string level))
+        else if (levels.TryGetValue(scene, out string level))
             RichPresence.State = level;
         else
             RichPresence.State = scene;
@@ -241,6 +246,7 @@ internal sealed class RPCManager : MonoBehaviour
             {
                 sb.Append(b.ToString("x2"));
             }
+
             levelHash = sb.ToString();
         }
 
@@ -248,7 +254,7 @@ internal sealed class RPCManager : MonoBehaviour
         {
             if (hashesToName.TryGetValue(levelHash, out string name))
                 customLevel = name;
-       else     customLevel = "Custom level";
+            else customLevel = "Custom level";
             return;
         }
 
@@ -282,7 +288,7 @@ internal sealed class RPCManager : MonoBehaviour
                 hashesToName = new Dictionary<string, string>();
                 for (int i = 0; i < entries.Length; i += 2)
                 {
-                    hashesToName.Add(entries[i], entries[i+1]);
+                    hashesToName.Add(entries[i], entries[i + 1]);
                 }
 
                 if (hashesToName.TryGetValue(levelHash, out string name))
