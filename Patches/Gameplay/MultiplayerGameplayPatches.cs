@@ -152,7 +152,7 @@ internal static class MultiplayerPlayerSlowmoPatch
 
         MultiplayerTimeControl.KeepMultiplayerActive();
         __state = MultiplayerTimeControl.BeginPlayerUpdate(__instance);
-        return !MultiplayerHud.IsTyping;
+        return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen;
     }
 
     private static Exception Finalizer(PlayerScript __instance, Exception __exception,

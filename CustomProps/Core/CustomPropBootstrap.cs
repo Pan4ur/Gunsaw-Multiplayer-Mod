@@ -9,5 +9,6 @@ internal static class CustomPropBootstrap
 
         CustomPropRegistry.Register(new NpcSpawnerPropDefinition());
         CustomPropRegistry.Register(new RandomIdRouterPropDefinition());
+        CustomPropRegistry.Register(new ArsenalPropDefinition());
     }
 }

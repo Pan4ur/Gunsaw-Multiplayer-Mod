@@ -47,7 +47,12 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateSpectator();
         UpdateStatusPrompts();
         
-        if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) && !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
+        if (!string.IsNullOrEmpty(ArsenalMenu.Prompt))
+        {
+            activationText.text = ArsenalMenu.Prompt;
+            activationText.gameObject.SetActive(true);
+        }
+        else if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) && !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
         {
             activationText.text = PlayerCarrySystem.Prompt;
             activationText.gameObject.SetActive(true);
@@ -222,7 +227,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         respawnText.gameObject.SetActive(!string.IsNullOrEmpty(countdown));
         if (!string.IsNullOrEmpty(countdown)) respawnText.text = countdown;
         activationText.text = "PRESS [USE] TO ACTIVATE";
-        activationText.gameObject.SetActive(WorldReplication.Instance != null && WorldReplication.Instance.HasActivationPrompt);
+        activationText.gameObject.SetActive((WorldReplication.Instance != null && WorldReplication.Instance.HasActivationPrompt) ||
+            !string.IsNullOrEmpty(PlayerCarrySystem.Prompt) || !string.IsNullOrEmpty(ArsenalMenu.Prompt));
     }
 
     private void UpdatePlayers()

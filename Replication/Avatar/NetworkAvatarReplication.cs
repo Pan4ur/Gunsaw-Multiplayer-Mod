@@ -2726,7 +2726,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         
         if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
         
-        Sound.Play(EmbeddedAudioLoader.RespawnSound, position, pitchShift: false);
+        Sound.Play(EmbeddedAudioLoader.RespawnSound, position, true, false);
     }
 
     private IEnumerator FinalizeLocalRespawn(BodyScript newBody, BodyScript oldBody, int generation)
