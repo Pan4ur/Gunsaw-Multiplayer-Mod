@@ -7,12 +7,17 @@ public class WorldBodyReplication
     internal readonly Dictionary<string, ulong> wireIds = new();
     internal readonly Dictionary<ulong, string> idsByWire = new();
     internal readonly HashSet<Rigidbody2D> interactivePropBodies = new();
+    internal readonly HashSet<Rigidbody2D> frozenFarClientProps = new();
+    private readonly Dictionary<Rigidbody2D, Vector2> frozenFarPropPositions = new();
+    private readonly Dictionary<Rigidbody2D, Vector2> lodPositions = new();
     internal readonly Dictionary<Rigidbody2D, WorldReplication.State> received = new();
     internal readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
     internal readonly Dictionary<string, WorldReplication.ClientBodyState> pushes = new();
     internal readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
     internal readonly Dictionary<string, WorldReplication.PropAuthority> propAuthorities = new();
     internal readonly Dictionary<Rigidbody2D, LocalSettings> localSettings = new();
+    private readonly Dictionary<Rigidbody2D, BodyClassification> classifications = new();
+    private readonly Dictionary<Rigidbody2D, NearLocalCache> nearLocal = new();
     internal readonly List<Rigidbody2D> staleVehiclePaths = new();
     internal readonly ContactPoint2D[] contactBuffer = new ContactPoint2D[32];
     internal Rigidbody2D[] localContactBodies = new Rigidbody2D[0];
@@ -43,12 +48,19 @@ public class WorldBodyReplication
 
         var id = WorldReplication.Instance.Id(body);
         bodies[id] = body;
+        lodPositions[body] = body.position;
+        classifications[body] = new BodyClassification
+        {
+            Mechanism = IsMechanismBody(body),
+            InteractiveProp = WorldReplication.IsInteractivePropBodyUncached(body),
+            ClientPhysicsJoint = IsClientPhysicsJointBody(body)
+        };
         LoadDistanceSystem.RegisterWorldBody(body);
         WorldReplication.Instance.WireId(id);
         if (!WorldReplication.Instance.droppedWeapons.ContainsKey(body))
             WorldReplication.Instance.droppedWeapons[body] = body.GetComponentInParent<DroppedWeapon>();
         if (!WorldReplication.Instance.bodyLayouts.ContainsKey(body)) WorldReplication.Instance.bodyLayouts[body] = CreateBodyLayout(body);
-        var interactiveProp = WorldReplication.IsInteractivePropBodyUncached(body);
+        var interactiveProp = classifications[body].InteractiveProp;
         if (interactiveProp) interactivePropBodies.Add(body);
         else interactivePropBodies.Remove(body);
         if (MultiplayerSession.IsHost && interactiveProp)
@@ -71,10 +83,15 @@ public class WorldBodyReplication
         WorldReplication.Instance.droppedWeapons.Remove(body);
         WorldReplication.Instance.bodyLayouts.Remove(body);
         interactivePropBodies.Remove(body);
+        frozenFarClientProps.Remove(body);
+        frozenFarPropPositions.Remove(body);
+        lodPositions.Remove(body);
         received.Remove(body);
         locallyControlledUntil.Remove(body);
         WorldReplication.Instance.nextContactStateAt.Remove(body);
         localSettings.Remove(body);
+        classifications.Remove(body);
+        nearLocal.Remove(body);
         WorldReplication.Instance.initializedBodies.Remove(body);
     }
 
@@ -100,6 +117,8 @@ public class WorldBodyReplication
     {
         if (body == null) return false;
         if (interactivePropBodies.Contains(body)) return true;
+        BodyClassification classification;
+        if (classifications.TryGetValue(body, out classification)) return classification.InteractiveProp;
         return !ids.ContainsKey(body) && WorldReplication.IsInteractivePropBodyUncached(body);
     }
     
@@ -171,7 +190,8 @@ public class WorldBodyReplication
                 joint.breakForce = Mathf.Infinity;
                 joint.breakTorque = Mathf.Infinity;
             }
-        if (IsMechanismBody(body) && !IsInteractivePropBody(body) && !IsClientPhysicsJointBody(body) && body.simulated)
+        var classification = ClassificationFor(body);
+        if (classification.Mechanism && !classification.InteractiveProp && !classification.ClientPhysicsJoint && body.simulated)
             body.bodyType = RigidbodyType2D.Kinematic;
     }
     
@@ -252,17 +272,20 @@ public class WorldBodyReplication
     
     internal void ApplyAuthoritativeState(Rigidbody2D body, WorldReplication.State state)
     {
+        lodPositions[body] = state.position;
         if (state.safetyRailing && !state.safetyRailingAttached) DetachSafetyRailing(body);
         
         ApplyVehicleState(body, state);
         
-        if (!MultiplayerSession.IsHost && !state.vehiclePart && !LoadDistanceSystem.IsWorldNearLocalPlayer(body))
+        if (!MultiplayerSession.IsHost && !state.vehiclePart && frozenFarClientProps.Contains(body))
         {
+            frozenFarPropPositions[body] = state.position;
             body.simulated = false;
             return;
         }
 
-        var mechanism = IsMechanismBody(body) && !IsInteractivePropBody(body) && !IsClientPhysicsJointBody(body);
+        var classification = ClassificationFor(body);
+        var mechanism = classification.Mechanism && !classification.InteractiveProp && !classification.ClientPhysicsJoint;
         float controlUntil;
         if (!mechanism && locallyControlledUntil.TryGetValue(body, out controlUntil))
         {
@@ -410,6 +433,44 @@ public class WorldBodyReplication
         return IsSafetyRailingBody(body) || IsChainlinkFenceBody(body);
     }
 
+    private BodyClassification ClassificationFor(Rigidbody2D body)
+    {
+        BodyClassification classification;
+        if (classifications.TryGetValue(body, out classification)) return classification;
+        classification = new BodyClassification
+        {
+            Mechanism = IsMechanismBody(body),
+            InteractiveProp = WorldReplication.IsInteractivePropBodyUncached(body),
+            ClientPhysicsJoint = IsClientPhysicsJointBody(body)
+        };
+        classifications[body] = classification;
+        return classification;
+    }
+
+    private bool IsNearLocalPlayer(Rigidbody2D body)
+    {
+        NearLocalCache cached;
+        var now = Time.unscaledTime;
+        if (nearLocal.TryGetValue(body, out cached) && now < cached.NextSampleAt) return cached.Near;
+        cached.Near = LoadDistanceSystem.IsWorldNearLocalPlayer(body);
+        cached.NextSampleAt = now + 0.1f;
+        nearLocal[body] = cached;
+        return cached.Near;
+    }
+
+    private struct BodyClassification
+    {
+        public bool Mechanism;
+        public bool InteractiveProp;
+        public bool ClientPhysicsJoint;
+    }
+
+    private struct NearLocalCache
+    {
+        public bool Near;
+        public float NextSampleAt;
+    }
+
     internal void TickVehiclePaths()
     {
         if (vehiclePaths.Count == 0) return;
@@ -451,8 +512,27 @@ public class WorldBodyReplication
         var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
         foreach (var body in interactivePropBodies)
         {
-            if (body == null || (body.position - localPosition).sqrMagnitude < LoadDistanceSystem.WorldDistanceSqr)
+            if (body == null) continue;
+            Vector2 position;
+            float controlledUntil;
+            if (locallyControlledUntil.TryGetValue(body, out controlledUntil) && Time.unscaledTime < controlledUntil)
+            {
+                position = body.position;
+                lodPositions[body] = position;
+            }
+            else if (!lodPositions.TryGetValue(body, out position))
+            {
+                position = body.position;
+                lodPositions[body] = position;
+            }
+            if ((position - localPosition).sqrMagnitude < LoadDistanceSystem.WorldDistanceSqr)
+            {
+                frozenFarClientProps.Remove(body);
+                frozenFarPropPositions.Remove(body);
                 continue;
+            }
+            frozenFarClientProps.Add(body);
+            frozenFarPropPositions[body] = position;
             body.velocity = Vector2.zero;
             body.angularVelocity = 0f;
             body.simulated = false;

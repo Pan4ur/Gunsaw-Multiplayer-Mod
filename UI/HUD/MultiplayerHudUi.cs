@@ -34,10 +34,10 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             return;
         }
         
-        root.SetActive(true);
-        hostPanel.SetActive(MultiplayerSession.IsHosting);
-        playersPanel.SetActive(Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
-        chatPanel.SetActive(MultiplayerSession.IsConnected);
+        if (!root.activeSelf) root.SetActive(true);
+        SetActive(hostPanel, MultiplayerSession.IsHosting);
+        SetActive(playersPanel, Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
+        SetActive(chatPanel, MultiplayerSession.IsConnected);
         hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
         hostText.gameObject.SetActive(null == PlayerScript.player || PlayerScript.player.canvasVisible);
         if (playersPanel.activeSelf) UpdatePlayers();
@@ -372,8 +372,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             if (screen.z <= 0f) continue;
             active.Add(body);
             TMP_Text tag;
-            if (!nameTags.TryGetValue(body, out tag) || tag == null)
+            if (!nameTags.TryGetValue(body, out tag) || tag == null || tag is TextMeshPro)
             {
+                if (tag != null) Destroy(tag.gameObject);
                 tag = Text(root.transform, "", Vector2.zero, new Vector2(420f, 32f), 15, TextAlignmentOptions.Center);
                 tag.fontStyle = FontStyles.Bold;
                 nameTags[body] = tag;
@@ -648,6 +649,11 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         chatWasOpen = hud.ChatOpen;
     }
 
+    private static void SetActive(GameObject gameObject, bool active)
+    {
+        if (gameObject != null && gameObject.activeSelf != active) gameObject.SetActive(active);
+    }
+
     private GameObject Panel(Transform parent, Vector2 position, Vector2 size)
     {
         var go = new GameObject("Panel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline)); go.transform.SetParent(parent, false); Rect(go.GetComponent<RectTransform>(), position, size); go.GetComponent<Image>().color = new Color(0.19f, 0.19f, 0.19f, 0.0f); var outline = go.GetComponent<Outline>(); outline.effectColor = new Color(0.58f, 0.58f, 0.58f, 0.0f); outline.effectDistance = new Vector2(1f, -1f); return go;
@@ -658,6 +664,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var go = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI)); go.transform.SetParent(parent, false); Rect(go.GetComponent<RectTransform>(), position, size);
         var text = go.GetComponent<TextMeshProUGUI>(); text.font = template.font; text.fontSharedMaterial = template.fontSharedMaterial; text.color = template.color; text.fontSize = fontSize; text.alignment = alignment; text.text = value; return text;
     }
+
 
     private TMP_InputField CreateInput(Transform parent, Vector2 position, Vector2 size)
     {

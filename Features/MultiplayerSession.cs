@@ -66,6 +66,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] worldDamageHeader = PacketHeader.Create(PacketType.WorldDamage);
     private static readonly byte[] npcHeader = PacketHeader.Create(PacketType.NpcSnapshot);
     private static readonly byte[] npcDamageHeader = PacketHeader.Create(PacketType.NpcDamage);
+    private static readonly byte[] npcGrabHeader = PacketHeader.Create(PacketType.NpcGrab);
     private static readonly byte[] npcSpeechHeader = PacketHeader.Create(PacketType.NpcSpeech);
     private static readonly byte[] worldInteractionHeader = PacketHeader.Create(PacketType.WorldInteraction);
     private static readonly byte[] playerDamageHeader = PacketHeader.Create(PacketType.PlayerDamage);

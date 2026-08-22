@@ -78,7 +78,9 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly Dictionary<AudioSource, string> mechanismAudioIds = new();
     internal readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new();
     internal readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new();
+    internal readonly Dictionary<AudioSource, Rigidbody2D> doorAudioBodies = new();
     internal readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new();
+    internal readonly List<AudioSource> staleClientDoorAudio = new();
     private readonly HashSet<SawScript> clientSaws = [];
     private byte[] lastSerializedWorld;
     private byte[] lastSerializedEnvironment;
@@ -583,7 +585,9 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         clientAudioWasPlaying.Clear();
         doorAudioSources.Clear();
+        doorAudioBodies.Clear();
         clientDoorAudioStartedAt.Clear();
+        staleClientDoorAudio.Clear();
         mechanismAudioIds.Clear();
         mechanismAudio.Clear();
         clientSaws.Clear();
@@ -1005,7 +1009,7 @@ internal sealed class WorldReplication : MonoBehaviour
         var localPlayer = PlayerScript.player;
         if (localPlayer == null || pushingBody != localPlayer.bodyScript) return;
         var body = collision.rigidbody ?? collision.gameObject.GetComponentInParent<Rigidbody2D>();
-        if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body) || WorldBodyReplication.IsClientAuthorityJointBody(body))) return;
+        if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
         bodies.QueueContactBodyState(body, Time.unscaledTime);
         var crate = body.GetComponentInParent<CrateScript>();
         if (crate != null && collision.relativeVelocity.magnitude >= crate.minDamageSpeed)
@@ -1039,7 +1043,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal void QueueLevitated(Rigidbody2D body)
     {
         if (MultiplayerSession.IsHost || body == null ||
-            !(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body) || WorldBodyReplication.IsClientAuthorityJointBody(body))) return;
+            !(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
         QueueBodyState(body);
     }
     
@@ -1074,7 +1078,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (MultiplayerSession.IsHost || zone == null) return;
         var id = ActivationZoneId(zone);
-        if (!manual && !WorldEnvironmentReplication.ActivatesTeleport(zone)) localZonePrompts.Add(id);
+        if (!manual) localZonePrompts.Add(id);
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
@@ -1187,7 +1191,7 @@ internal sealed class WorldReplication : MonoBehaviour
                     {
                         continue;
                     }
-                    if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body) && !WorldBodyReplication.IsClientAuthorityJointBody(body))
+                    if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body))
                     {
                         continue;
                     }
@@ -1456,7 +1460,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (zone == null || !MultiplayerSession.IsHost) return;
         var id = ActivationZoneId(zone);
-        if (!manual && activatedZoneIds.Contains(id) && !WorldEnvironmentReplication.ActivatesTeleport(zone)) localZonePrompts.Add(id);
+        if (!manual && activatedZoneIds.Contains(id)) localZonePrompts.Add(id);
         enviroment.ApplyZoneActivation(id, MultiplayerSession.LocalPeerId, manual);
     }
 

@@ -172,7 +172,11 @@ public class WorldEnvironmentReplication
             WorldReplication.Instance.mechanismAudioIds[source] = id;
         }
         WorldReplication.Instance.mechanismAudio[id] = source;
-        if (door != null) WorldReplication.Instance.doorAudioSources[source] = door;
+        if (door != null)
+        {
+            WorldReplication.Instance.doorAudioSources[source] = door;
+            WorldReplication.Instance.doorAudioBodies[source] = door.GetComponent<Rigidbody2D>();
+        }
         if (MultiplayerSession.IsHost || WorldReplication.Instance.clientAudioWasPlaying.ContainsKey(source)) return;
         WorldReplication.Instance.clientAudioWasPlaying[source] = source.isPlaying;
         source.Stop();
@@ -319,8 +323,7 @@ public class WorldEnvironmentReplication
         finally { MultiplayerGlassDamagePatch.ApplyingNetworkState = false; }
     }
 
-    internal void ApplyFireState(string id, Vector2 position, float rotation, float fuel,
-        bool canIgnite, float damageMult, float fuelConsMult)
+    internal void ApplyFireState(string id, Vector2 position, float rotation, float fuel, bool canIgnite, float damageMult, float fuelConsMult)
     {
         FireScript fire;
         if (!WorldReplication.Instance.fires.TryGetValue(id, out fire) || fire == null)
@@ -462,22 +465,29 @@ public class WorldEnvironmentReplication
     internal void StopSettledClientDoorAudio()
     {
         if (MultiplayerSession.IsHost) return;
-        foreach (var pair in WorldReplication.Instance.doorAudioSources)
+        var stale = WorldReplication.Instance.staleClientDoorAudio;
+        stale.Clear();
+        foreach (var pair in WorldReplication.Instance.clientDoorAudioStartedAt)
         {
             var source = pair.Key;
-            var door = pair.Value;
-            if (source == null || door == null || !source.isPlaying) continue;
-            float startedAt;
-            if (!WorldReplication.Instance.clientDoorAudioStartedAt.TryGetValue(source, out startedAt) ||
-                Time.unscaledTime - startedAt < 0.2f) continue;
-            var body = door.GetComponent<Rigidbody2D>();
+            DoorScript door;
+            Rigidbody2D body;
+            if (!WorldReplication.Instance.doorAudioSources.TryGetValue(source, out door) ||
+                !WorldReplication.Instance.doorAudioBodies.TryGetValue(source, out body) ||
+                source == null || door == null || !source.isPlaying)
+            {
+                stale.Add(source);
+                continue;
+            }
+            if (Time.unscaledTime - pair.Value < 0.2f) continue;
             if (body == null || body.velocity.sqrMagnitude > 0.0001f || door.point1 == null || door.point2 == null) continue;
             var closeEnough = Mathf.Min(Vector2.Distance(door.transform.position, door.point1.position),
                 Vector2.Distance(door.transform.position, door.point2.position)) < door.speed * 0.05f;
             if (!closeEnough) continue;
             source.Stop();
-            WorldReplication.Instance.clientDoorAudioStartedAt.Remove(source);
+            stale.Add(source);
         }
+        foreach (var source in stale) WorldReplication.Instance.clientDoorAudioStartedAt.Remove(source);
     }
     
     internal byte[] SerializeEnvironment()
@@ -578,7 +588,8 @@ public class WorldEnvironmentReplication
                 var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 var rotation = reader.ReadSingle(); var fuel = reader.ReadSingle(); var canIgnite = reader.ReadBoolean();
                 var damageMult = reader.ReadSingle(); var fuelConsMult = reader.ReadSingle();
-                seenSnapshotFires.Add(id); ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
+                seenSnapshotFires.Add(id);
+                ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
             }
             RemoveMissingFires(seenSnapshotFires);
             seenSnapshotAudio.Clear();

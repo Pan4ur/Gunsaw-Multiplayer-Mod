@@ -6,7 +6,7 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NpcReplication : MonoBehaviour
 {
-    private const byte ProtocolVersion = 12;
+    private const byte ProtocolVersion = 13;
     private const byte CompressedSnapshotMarker = 0xFF;
     private const int CompressionThresholdBytes = 256;
     private const int MaxDecompressedSnapshotBytes = 1024 * 1024;
@@ -32,6 +32,8 @@ internal sealed class NpcReplication : MonoBehaviour
     private readonly Dictionary<string, float> lastChangedNpcAt = new();
     private readonly Dictionary<string, NpcProxy> clientNpcs = new();
     private readonly Dictionary<string, NpcIdentity> clientIdentities = new();
+    private readonly Dictionary<string, NpcState> clientStateBuffers = new();
+    private readonly List<NpcState> decodedStates = new();
     private readonly Dictionary<BodyScript, NpcProxy> clientBodies = new();
     private readonly HashSet<NpcProxy> clientProxies = [];
     private readonly Dictionary<string, float> prefabRetryAt = new();
@@ -226,14 +228,19 @@ internal sealed class NpcReplication : MonoBehaviour
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolate, interpolationStarted);
         foreach (var proxy in clientProxies)
         {
-            if (proxy != null && proxy.NetworkVisible)
+            if (proxy != null)
             {
-                if (proxy.PendingSpeech.HasValue && ApplyNpcSpeech(proxy, proxy.PendingSpeech.Value))
-                    proxy.PendingSpeech = null;
-                ApplyFacialExpressions(proxy.FacialExpressions, proxy.FacialExpressionStates);
+                if (proxy.NetworkVisible)
+                {
+                    if (proxy.PendingSpeech.HasValue && ApplyNpcSpeech(proxy, proxy.PendingSpeech.Value))
+                        proxy.PendingSpeech = null;
+                }
+                else
+                {
+                    if (proxy.Root != null && proxy.Root.activeSelf)
+                        proxy.Root.SetActive(false); 
+                }
             }
-            if (proxy != null && proxy.Root != null && !proxy.NetworkVisible && proxy.Root.activeSelf)
-                proxy.Root.SetActive(false);
         }
     }
 
@@ -668,8 +675,14 @@ internal sealed class NpcReplication : MonoBehaviour
 
                 sectionStarted = writer.BaseStream.Position;
                 WriteLine(writer, layout.WeaponLaserLine);
-                WriteVisuals(writer, layout);
-                WriteFacialExpressions(writer, layout.FacialExpressions);
+                var visualsChanged = RefreshVisuals(layout);
+                var includeVisuals = includeIdentity || visualsChanged;
+                writer.Write(includeVisuals);
+                if (includeVisuals)
+                {
+                    writer.Write(layout.VisualState);
+                    WriteFacialExpressions(writer, layout.FacialExpressions);
+                }
                 breakdown.Effects += (int)(writer.BaseStream.Position - sectionStarted);
     }
 
@@ -758,16 +771,16 @@ internal sealed class NpcReplication : MonoBehaviour
                 if (sequence <= receivedSequence) return;
                 var fullSnapshot = reader.ReadBoolean();
                 var count = reader.ReadUInt16();
-                var states = new List<NpcState>(count);
+                decodedStates.Clear();
                 var parseStarted = MultiplayerPerformance.StartPhase();
-                for (var index = 0; index < count; index++) states.Add(ReadState(reader));
+                for (var index = 0; index < count; index++) decodedStates.Add(ReadState(reader));
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSnapshotParse, parseStarted);
                 receivedSequence = sequence;
                 lastStateCount = count;
                 receivedPacketsWindow++;
                 receivedStatesWindow += count;
                 var applyStarted = MultiplayerPerformance.StartPhase();
-                ApplyStates(states, fullSnapshot);
+                ApplyStates(decodedStates, fullSnapshot);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateApply, applyStarted);
             }
         }
@@ -789,37 +802,39 @@ internal sealed class NpcReplication : MonoBehaviour
             clientIdentities[id] = identity;
         }
         else clientIdentities.TryGetValue(id, out identity);
-        var state = new NpcState
+        NpcState state;
+        if (!clientStateBuffers.TryGetValue(id, out state))
         {
-            Id = id,
-            RootName = identity == null ? "" : identity.RootName,
-            CharacterName = identity == null ? "" : identity.CharacterName,
-            SpeciesName = identity == null ? "" : identity.SpeciesName,
-            Active = reader.ReadBoolean(),
-            IsRight = reader.ReadBoolean(),
-            CurrentState = reader.ReadInt32(),
-            ControlState = reader.ReadInt32(),
-            Health = reader.ReadSingle(),
-            Stamina = reader.ReadSingle(),
-            IsAlive = reader.ReadBoolean(),
-            Grounded = reader.ReadBoolean(),
-            IsInWater = reader.ReadBoolean(),
-            NoLegs = reader.ReadBoolean(),
-            DeHeaded = reader.ReadBoolean(),
-            BurnIntensity = reader.ReadSingle(),
-            Alertness = reader.ReadSingle()
-        };
+            state = new NpcState { Id = id };
+            clientStateBuffers[id] = state;
+        }
+        state.RootName = identity == null ? "" : identity.RootName;
+        state.CharacterName = identity == null ? "" : identity.CharacterName;
+        state.SpeciesName = identity == null ? "" : identity.SpeciesName;
+        state.Active = reader.ReadBoolean();
+        state.IsRight = reader.ReadBoolean();
+        state.CurrentState = reader.ReadInt32();
+        state.ControlState = reader.ReadInt32();
+        state.Health = reader.ReadSingle();
+        state.Stamina = reader.ReadSingle();
+        state.IsAlive = reader.ReadBoolean();
+        state.Grounded = reader.ReadBoolean();
+        state.IsInWater = reader.ReadBoolean();
+        state.NoLegs = reader.ReadBoolean();
+        state.DeHeaded = reader.ReadBoolean();
+        state.BurnIntensity = reader.ReadSingle();
+        state.Alertness = reader.ReadSingle();
         var deathObjectCount = reader.ReadUInt16();
-        state.DeathObjects = new bool[deathObjectCount];
+        EnsureArray(ref state.DeathObjects, deathObjectCount);
         for (var index = 0; index < deathObjectCount; index++) state.DeathObjects[index] = reader.ReadBoolean();
         state.Body = ReadPose(reader);
         state.Arms = ReadTransform(reader);
         var rigBodyCount = reader.ReadUInt16();
-        state.RigBodies = new RigPose[rigBodyCount];
+        EnsureArray(ref state.RigBodies, rigBodyCount);
         for (var index = 0; index < rigBodyCount; index++)
             state.RigBodies[index] = new RigPose { Id = reader.ReadUInt64(), Pose = ReadPose(reader) };
         var limbCount = reader.ReadUInt16();
-        state.Limbs = new LimbState[limbCount];
+        EnsureArray(ref state.Limbs, limbCount);
         for (var index = 0; index < limbCount; index++)
         {
             var pose = ReadPose(reader);
@@ -831,20 +846,24 @@ internal sealed class NpcReplication : MonoBehaviour
             };
         }
         var tailBaseCount = reader.ReadUInt16();
-        state.TailBases = new Pose[tailBaseCount];
+        EnsureArray(ref state.TailBases, tailBaseCount);
         for (var index = 0; index < tailBaseCount; index++) state.TailBases[index] = ReadPose(reader);
-        state.Tails = ReadTransforms(reader);
+        ReadTransforms(reader, ref state.Tails);
         state.Gun = ReadTransform(reader);
         state.GunAnimation = ReadTransform(reader);
         state.Weapon = ReadTransform(reader);
         state.WeaponSlot = reader.ReadInt32();
         state.WeaponAmmo = reader.ReadInt32();
         var weaponCount = reader.ReadUInt16();
-        state.Weapons = new ulong[weaponCount];
+        EnsureArray(ref state.Weapons, weaponCount);
         for (var index = 0; index < weaponCount; index++) state.Weapons[index] = reader.ReadUInt64();
         state.Laser = ReadLine(reader);
-        state.Visuals = ReadVisuals(reader);
-        state.FacialExpressions = ReadFacialExpressions(reader);
+        state.HasVisuals = reader.ReadBoolean();
+        if (state.HasVisuals)
+        {
+            state.Visuals = ReadVisuals(reader, state.Visuals);
+            ReadFacialExpressions(reader, ref state.FacialExpressions);
+        }
         return state;
     }
 
@@ -862,7 +881,7 @@ internal sealed class NpcReplication : MonoBehaviour
             if (proxy == null) continue;
             claimed.Add(proxy);
             proxy.NetworkVisible = state.Active;
-            proxy.Root.SetActive(state.Active);
+            if (proxy.Root.activeSelf != state.Active) proxy.Root.SetActive(state.Active);
             if (!state.Active)
             {
                 clientSkippedPoseWindow++;
@@ -889,7 +908,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
         if (fullSnapshot)
             foreach (var proxy in clientProxies)
-                if (!claimed.Contains(proxy) && proxy.Root != null) proxy.Root.SetActive(false);
+                if (!claimed.Contains(proxy) && proxy.Root != null && proxy.Root.activeSelf) proxy.Root.SetActive(false);
     }
 
     private NpcProxy FindOrCreateProxy(NpcState state, HashSet<NpcProxy> claimed)
@@ -1028,6 +1047,9 @@ internal sealed class NpcReplication : MonoBehaviour
         CacheDismembermentVisuals(proxy);
         CacheFireVisuals(proxy);
         CacheRigBodies(proxy);
+        proxy.WeaponBackShows = body == null ? Array.Empty<WeaponBackShow>() : body.GetComponentsInChildren<WeaponBackShow>(true);
+        proxy.AiControllers = root == null ? Array.Empty<AIScript>() : root.GetComponentsInChildren<AIScript>(true);
+        proxy.DismemberedLimbs = new bool[body == null || body.limbs == null ? 0 : body.limbs.Count];
         proxy.SpriteRenderers = GetSpriteRenderers(root);
         proxy.ReplicatedSpriteRenderers = new bool[proxy.SpriteRenderers.Length];
         for (var index = 0; index < proxy.SpriteRenderers.Length; index++)
@@ -1100,14 +1122,14 @@ internal sealed class NpcReplication : MonoBehaviour
         body.noLegs = state.NoLegs;
         body.deHeaded = state.DeHeaded;
         body.burnIntensity = state.BurnIntensity;
-        foreach (var ai in proxy.Root.GetComponentsInChildren<AIScript>(true))
+        foreach (var ai in proxy.AiControllers)
             if (ai != null && ai.body == body) ai.susness = state.Alertness;
         if (body.limbMat != null) body.limbMat.SetFloat("BurnIntensity", state.BurnIntensity);
         var destroyOnDeath = body.destroyOnDeath;
         for (var index = 0; index < state.DeathObjects.Length && index < destroyOnDeath.Count; index++)
         {
             var item = destroyOnDeath[index] as GameObject;
-            if (item != null) item.SetActive(state.DeathObjects[index]);
+            if (item != null && item.activeSelf != state.DeathObjects[index]) item.SetActive(state.DeathObjects[index]);
         }
         SetTarget(proxy, body.rb, state.Body);
         SetTransformTarget(proxy, body.Arms, state.Arms);
@@ -1136,7 +1158,13 @@ internal sealed class NpcReplication : MonoBehaviour
                 SetTransformTarget(proxy, limb.rb.transform, TransformPose.From(state.Limbs[index].Pose));
 
             SetTransformTarget(proxy, limb.transform, state.Limbs[index].Visual);
-            limb.dismembered = state.Limbs[index].Dismembered;
+            var dismembered = state.Limbs[index].Dismembered;
+            if (limb.dismembered != dismembered) limb.dismembered = dismembered;
+            if (index >= proxy.DismemberedLimbs.Length || proxy.DismemberedLimbs[index] != dismembered)
+            {
+                if (index < proxy.DismemberedLimbs.Length) proxy.DismemberedLimbs[index] = dismembered;
+                proxy.DismembermentDirty = true;
+            }
             SetRemoteFire(proxy, index, limb, state.Limbs[index].Burning);
         }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateLimbs, limbsStarted);
@@ -1163,10 +1191,17 @@ internal sealed class NpcReplication : MonoBehaviour
         ApplyLine(state.Laser, body.wepLaserLine, body.wepLaser);
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateTransforms, transformsStarted);
         var visualsStarted = MultiplayerPerformance.StartPhase();
-        ApplyVisuals(proxy, state.Visuals);
-        ApplyFacialExpressions(proxy.FacialExpressions, state.FacialExpressions);
-        proxy.FacialExpressionStates = state.FacialExpressions;
-        ApplyDismembermentVisuals(proxy);
+        if (state.HasVisuals)
+        {
+            ApplyVisuals(proxy, state.Visuals);
+            ApplyFacialExpressions(proxy.FacialExpressions, state.FacialExpressions);
+            proxy.FacialExpressionStates = state.FacialExpressions;
+        }
+        if (proxy.DismembermentDirty)
+        {
+            ApplyDismembermentVisuals(proxy);
+            proxy.DismembermentDirty = false;
+        }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcVisuals, visualsStarted);
         proxy.ReceivedFirstState = true;
         if (hostReportedDeath && MissionManager.main != null)
@@ -1371,8 +1406,8 @@ internal sealed class NpcReplication : MonoBehaviour
     private static void ApplyWeapon(NpcProxy proxy, NpcState state)
     {
         var body = proxy.Body;
-        var inventoryKey = string.Join("|", state.Weapons);
-        if (proxy.AppliedInventory != inventoryKey)
+        var inventoryChanged = !SameWeapons(proxy.AppliedWeapons, state.Weapons);
+        if (inventoryChanged)
         {
             var weapons = body.weapons;
             while (weapons.Count < state.Weapons.Length) weapons.Add(null);
@@ -1384,10 +1419,11 @@ internal sealed class NpcReplication : MonoBehaviour
                 if (preset != null || state.Weapons[index] == 0UL) weapons[index] = preset;
                 else resolved = false;
             }
-            if (resolved) proxy.AppliedInventory = inventoryKey;
+            if (resolved) proxy.AppliedWeapons = (ulong[])state.Weapons.Clone();
             proxy.AppliedWeapon = -2;
         }
 
+        var slotChanged = proxy.AppliedWeapon != state.WeaponSlot;
         var currentWeapons = body.weapons;
         if (state.WeaponSlot >= 0 && state.WeaponSlot < currentWeapons.Count &&
             currentWeapons[state.WeaponSlot] != null &&
@@ -1418,7 +1454,15 @@ internal sealed class NpcReplication : MonoBehaviour
             FreezeProxy(proxy);
         }
         if (body.weapon != null) body.weapon.ammo = state.WeaponAmmo;
-        ApplyWeaponBackShows(body);
+        if (inventoryChanged || slotChanged) ApplyWeaponBackShows(proxy);
+    }
+
+    private static bool SameWeapons(ulong[] left, ulong[] right)
+    {
+        if (left == right) return true;
+        if (left == null || right == null || left.Length != right.Length) return false;
+        for (var index = 0; index < left.Length; index++) if (left[index] != right[index]) return false;
+        return true;
     }
 
     private static void ApplyProxyWeaponSlot(BodyScript body, NpcState state)
@@ -1656,7 +1700,7 @@ internal sealed class NpcReplication : MonoBehaviour
         proxy.FireVisuals.TryGetValue(limbIndex, out visual);
         if (!burning)
         {
-            if (visual != null) visual.SetActive(false);
+            if (visual != null && visual.activeSelf) visual.SetActive(false);
             return;
         }
         if (visual == null)
@@ -1673,7 +1717,7 @@ internal sealed class NpcReplication : MonoBehaviour
             foreach (var behaviour in visual.GetComponentsInChildren<Behaviour>(true))
                 if (behaviour.GetType().Name == "AudioSource") behaviour.enabled = false;
         }
-        visual.SetActive(true);
+        if (!visual.activeSelf) visual.SetActive(true);
     }
 
     private static void CacheDismembermentVisuals(NpcProxy proxy)
@@ -1729,6 +1773,8 @@ internal sealed class NpcReplication : MonoBehaviour
         hostLayouts.Clear();
         npcRoots.Clear();
         clientNpcs.Clear();
+        clientStateBuffers.Clear();
+        decodedStates.Clear();
         clientBodies.Clear();
         clientProxies.Clear();
         prefabRetryAt.Clear();
@@ -1979,12 +2025,11 @@ internal sealed class NpcReplication : MonoBehaviour
         foreach (var transform in transforms) WriteTransform(writer, transform);
     }
 
-    private static TransformPose[] ReadTransforms(BinaryReader reader)
+    private static void ReadTransforms(BinaryReader reader, ref TransformPose[] states)
     {
         var count = reader.ReadUInt16();
-        var states = new TransformPose[count];
+        EnsureArray(ref states, count);
         for (var index = 0; index < count; index++) states[index] = ReadTransform(reader);
-        return states;
     }
 
     private static void WriteTransform(BinaryWriter writer, Transform transform)
@@ -2035,17 +2080,25 @@ internal sealed class NpcReplication : MonoBehaviour
         }
     }
 
-    private static void WriteVisuals(BinaryWriter writer, HostNpcLayout layout)
+    private static bool RefreshVisuals(HostNpcLayout layout)
     {
-        if (layout.VisualState == null || Time.unscaledTime >= layout.NextVisualState)
-        {
-            layout.VisualStream.Position = 0;
-            layout.VisualStream.SetLength(0);
-            WriteVisualState(layout.VisualWriter, layout);
-            layout.VisualState = layout.VisualStream.ToArray();
-            layout.NextVisualState = Time.unscaledTime + VisualStateInterval;
-        }
-        writer.Write(layout.VisualState);
+        if (layout.VisualState != null && Time.unscaledTime < layout.NextVisualState) return false;
+        layout.VisualStream.Position = 0;
+        layout.VisualStream.SetLength(0);
+        WriteVisualState(layout.VisualWriter, layout);
+        var current = layout.VisualStream.ToArray();
+        layout.NextVisualState = Time.unscaledTime + VisualStateInterval;
+        var changed = !ByteArraysEqual(layout.VisualState, current);
+        layout.VisualState = current;
+        return changed;
+    }
+
+    private static bool ByteArraysEqual(byte[] left, byte[] right)
+    {
+        if (left == right) return true;
+        if (left == null || right == null || left.Length != right.Length) return false;
+        for (var index = 0; index < left.Length; index++) if (left[index] != right[index]) return false;
+        return true;
     }
 
     private static void WriteFacialExpressions(BinaryWriter writer, FacialExpression[] expressions)
@@ -2069,12 +2122,11 @@ internal sealed class NpcReplication : MonoBehaviour
         return 0;
     }
 
-    private static byte[] ReadFacialExpressions(BinaryReader reader)
+    private static void ReadFacialExpressions(BinaryReader reader, ref byte[] states)
     {
         var count = reader.ReadUInt16();
-        var states = new byte[count];
+        EnsureArray(ref states, count);
         for (var index = 0; index < count; index++) states[index] = reader.ReadByte();
-        return states;
     }
 
     private static void ApplyFacialExpressions(FacialExpression[] expressions, byte[] states)
@@ -2147,11 +2199,11 @@ internal sealed class NpcReplication : MonoBehaviour
         }
     }
 
-    private static NpcVisualState ReadVisuals(BinaryReader reader)
+    private static NpcVisualState ReadVisuals(BinaryReader reader, NpcVisualState state)
     {
-        var state = new NpcVisualState();
+        if (state == null) state = new NpcVisualState();
         var rendererCount = reader.ReadUInt16();
-        state.Renderers = new RendererVisualState[rendererCount];
+        EnsureArray(ref state.Renderers, rendererCount);
         for (var index = 0; index < rendererCount; index++)
         {
             var flags = reader.ReadByte();
@@ -2163,7 +2215,7 @@ internal sealed class NpcReplication : MonoBehaviour
             };
         }
         var particleCount = reader.ReadUInt16();
-        state.Particles = new ParticleVisualState[particleCount];
+        EnsureArray(ref state.Particles, particleCount);
         for (var index = 0; index < particleCount; index++)
         {
             var flags = reader.ReadByte();
@@ -2174,7 +2226,7 @@ internal sealed class NpcReplication : MonoBehaviour
             };
         }
         var lightCount = reader.ReadUInt16();
-        state.Lights = new LightVisualState[lightCount];
+        EnsureArray(ref state.Lights, lightCount);
         for (var index = 0; index < lightCount; index++)
         {
             var flags = reader.ReadByte();
@@ -2189,19 +2241,21 @@ internal sealed class NpcReplication : MonoBehaviour
         return state;
     }
 
+    private static void EnsureArray<T>(ref T[] array, int length)
+    {
+        if (array == null || array.Length != length) array = new T[length];
+    }
+
     private static void ApplyVisuals(NpcProxy proxy, NpcVisualState state)
     {
         if (proxy == null) return;
-        var previous = proxy.LastVisualState;
-        if (proxy.HasVisualState && SameVisualState(previous, state)) return;
         for (var index = 0; index < state.Renderers.Length && index < proxy.SpriteRenderers.Length; index++)
         {
             var renderer = proxy.SpriteRenderers[index];
             if (renderer == null) continue;
             if (index >= proxy.ReplicatedSpriteRenderers.Length || !proxy.ReplicatedSpriteRenderers[index]) continue;
-            if (proxy.HasVisualState && index < previous.Renderers.Length &&
-                SameRendererVisual(previous.Renderers[index], state.Renderers[index])) continue;
-            renderer.gameObject.SetActive(state.Renderers[index].Active);
+            if (renderer.gameObject.activeSelf != state.Renderers[index].Active)
+                renderer.gameObject.SetActive(state.Renderers[index].Active);
             renderer.enabled = state.Renderers[index].Enabled;
             renderer.color = state.Renderers[index].Color;
         }
@@ -2209,9 +2263,8 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             var particle = proxy.Particles[index];
             if (particle == null) continue;
-            if (proxy.HasVisualState && index < previous.Particles.Length &&
-                SameParticleVisual(previous.Particles[index], state.Particles[index])) continue;
-            particle.gameObject.SetActive(state.Particles[index].Active);
+            if (particle.gameObject.activeSelf != state.Particles[index].Active)
+                particle.gameObject.SetActive(state.Particles[index].Active);
             if (!state.Particles[index].Active) continue;
             if (state.Particles[index].Playing)
             {
@@ -2224,9 +2277,8 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             var light = proxy.Lights[index];
             if (light == null) continue;
-            if (proxy.HasVisualState && index < previous.Lights.Length &&
-                SameLightVisual(previous.Lights[index], state.Lights[index])) continue;
-            light.gameObject.SetActive(state.Lights[index].Active);
+            if (light.gameObject.activeSelf != state.Lights[index].Active)
+                light.gameObject.SetActive(state.Lights[index].Active);
             light.enabled = state.Lights[index].Enabled;
             light.intensity = state.Lights[index].Intensity;
             light.color = state.Lights[index].Color;
@@ -2307,14 +2359,19 @@ internal sealed class NpcReplication : MonoBehaviour
         }
     }
 
-    private static void ApplyWeaponBackShows(BodyScript body)
+    private static void ApplyWeaponBackShows(NpcProxy proxy)
     {
+        var body = proxy.Body;
         if (body == null || body.weapons == null || body.weapons.Count < 3)
         {
-            ClearWeaponBackShows(body);
+            foreach (var weaponBack in proxy.WeaponBackShows)
+            {
+                if (weaponBack.sprite1 != null) weaponBack.sprite1.sprite = null;
+                if (weaponBack.sprite2 != null) weaponBack.sprite2.sprite = null;
+            }
             return;
         }
-        foreach (var weaponBack in body.GetComponentsInChildren<WeaponBackShow>(true))
+        foreach (var weaponBack in proxy.WeaponBackShows)
         {
             WeaponPreset first = null;
             WeaponPreset second = null;
@@ -2559,7 +2616,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public bool LocalPhysics;
         public float LocalPhysicsUntil;
         public int AppliedWeapon = -2;
-        public string AppliedInventory = "\0";
+        public ulong[] AppliedWeapons = Array.Empty<ulong>();
         public NpcNetworkReplica Marker;
         public readonly Dictionary<MonoBehaviour, bool> Behaviours = new Dictionary<MonoBehaviour, bool>();
         public readonly Dictionary<Behaviour, bool> OtherBehaviours = new Dictionary<Behaviour, bool>();
@@ -2576,6 +2633,10 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly Dictionary<SpriteRenderer, Sprite> OriginalDismemberSprites = new Dictionary<SpriteRenderer, Sprite>();
         public readonly Dictionary<Joint2D, bool> OriginalJointStates = new Dictionary<Joint2D, bool>();
         public DismemberManager[] DismemberManagers = new DismemberManager[0];
+        public AIScript[] AiControllers = Array.Empty<AIScript>();
+        public WeaponBackShow[] WeaponBackShows = Array.Empty<WeaponBackShow>();
+        public bool[] DismemberedLimbs = Array.Empty<bool>();
+        public bool DismembermentDirty = true;
         public SpriteRenderer[] SpriteRenderers = new SpriteRenderer[0];
         public bool[] ReplicatedSpriteRenderers = new bool[0];
         public ParticleSystem[] Particles = new ParticleSystem[0];
@@ -2622,6 +2683,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public ulong[] Weapons = new ulong[0];
         public LineState Laser;
         public NpcVisualState Visuals = new NpcVisualState();
+        public bool HasVisuals;
         public byte[] FacialExpressions = Array.Empty<byte>();
     }
 
