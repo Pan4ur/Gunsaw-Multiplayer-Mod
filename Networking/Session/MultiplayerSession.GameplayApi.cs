@@ -185,9 +185,6 @@ internal static partial class MultiplayerSession
     internal static bool TryTakeNpcGrab(out ushort peerId, out NpcGrabPacket packet)
         => TryTakePacket(npcGrabs, out peerId, out packet);
 
-    internal static bool TryTakeNpcPossession(out ushort peerId, out NpcPossessionPacket packet)
-        => TryTakePacket(npcPossessions, out peerId, out packet);
-
     internal static bool TryTakeMissionFinished(out ushort peerId, out MissionFinishedPacket packet)
         => TryTakePacket(missionFinished, out peerId, out packet);
 

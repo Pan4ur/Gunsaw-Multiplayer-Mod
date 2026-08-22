@@ -356,7 +356,7 @@ internal static class MultiplayerVanillaBodySwitchPatch
         if (!MultiplayerSession.IsConnected) return true;
         var player = PlayerScript.player;
         if (player != null && player.bodyScript != null && !player.bodyScript.isAlive) return false;
-        return !NpcReplication.TryPossessLocalPlayer(limb);
+        return true;
     }
 }
 
@@ -379,8 +379,7 @@ internal static class MultiplayerLimbAnimationPatch
     private static bool Prefix(LimbScript __instance)
     {
         var body = __instance == null ? null : __instance.body;
-        if (body == null || NpcReplication.IsPossessionRenderGuard(body) ||
-            NpcReplication.IsClientProxy(body) || NetworkAvatarRegistry.IsRemoteAvatarBody(body))
+        if (body == null || NpcReplication.IsClientProxy(body) || NetworkAvatarRegistry.IsRemoteAvatarBody(body))
             return false;
 
         if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
@@ -795,9 +794,7 @@ internal static class ClientNpcLimbCollisionPatch
     private static bool Prefix(LimbScript __instance)
     {
         return __instance == null ||
-            (!NpcReplication.IsClientProxy(__instance.body) &&
-             !NpcReplication.IsLocallyPossessedBody(__instance.body) &&
-             !NetworkAvatarRegistry.IsRemoteAvatarBody(__instance.body));
+            (!NpcReplication.IsClientProxy(__instance.body) && !NetworkAvatarRegistry.IsRemoteAvatarBody(__instance.body));
     }
 }
 

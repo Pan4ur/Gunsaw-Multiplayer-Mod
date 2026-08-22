@@ -34,9 +34,6 @@ internal sealed class NpcReplication : MonoBehaviour
     private readonly Dictionary<string, NpcIdentity> clientIdentities = new();
     private readonly Dictionary<BodyScript, NpcProxy> clientBodies = new();
     private readonly HashSet<NpcProxy> clientProxies = [];
-    private readonly HashSet<string> locallyPossessedNpcIds = [];
-    private readonly HashSet<string> remotelyPossessedNpcIds = [];
-    private float possessionRenderGuardUntil;
     private readonly Dictionary<string, float> prefabRetryAt = new();
     private float nextSnapshot;
     private float nextDiscovery;
@@ -150,10 +147,6 @@ internal sealed class NpcReplication : MonoBehaviour
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDiscovery, discoveryStarted);
             }
             ProcessPendingBodies(player.bodyScript);
-            NpcPossessionPacket possessionPacket;
-            ushort possessionPeer;
-            while (MultiplayerSession.TryTakeNpcPossession(out possessionPeer, out possessionPacket))
-                ApplyRemotePossession(possessionPeer, possessionPacket);
             NpcDamagePacket damagePacket;
             ushort damagePeer;
             while (MultiplayerSession.TryTakeNpcDamage(out damagePeer, out damagePacket))
@@ -322,7 +315,6 @@ internal sealed class NpcReplication : MonoBehaviour
         id = "";
         if (!IsNpc(body, localBody)) return false;
         id = StableId(body);
-        if (remotelyPossessedNpcIds.Contains(id)) return false;
         var root = NpcRoot(body);
         if (!root.activeSelf) root.SetActive(true);
         foreach (var ai in root.GetComponentsInChildren<AIScript>(true))
@@ -372,34 +364,6 @@ internal sealed class NpcReplication : MonoBehaviour
             !string.IsNullOrEmpty(body.characterName) || body.tails == null || body.tails.Length == 0 ||
             body.rb == null || body.rb.position.sqrMagnitude > 0.0001f) return false;
         return body.GetComponentsInChildren<LimbScript>(true).Length == 0;
-    }
-
-    private void ApplyRemotePossession(ushort peerId, NpcPossessionPacket packet)
-    {
-        var id = ResolveWireId(packet.NpcId);
-        if (string.IsNullOrEmpty(id)) return;
-        remotelyPossessedNpcIds.Add(id);
-        BodyScript body;
-        if (hostNpcs.TryGetValue(id, out body) && body != null)
-        {
-            hostNpcs.Remove(id);
-            hostIds.Remove(body);
-            RemoveHostLayout(body);
-            var root = NpcRoot(body);
-            if (root != null)
-            {
-                UnityEngine.Object.Destroy(root);
-                return;
-            }
-        }
-
-        foreach (var candidate in Resources.FindObjectsOfTypeAll<BodyScript>())
-        {
-            if (candidate == null || StableId(candidate) != id) continue;
-            var candidateRoot = NpcRoot(candidate);
-            if (candidateRoot != null) UnityEngine.Object.Destroy(candidateRoot);
-            break;
-        }
     }
 
     private void AnimateHostNpcs()
@@ -892,7 +856,6 @@ internal sealed class NpcReplication : MonoBehaviour
         var claimed = new HashSet<NpcProxy>();
         foreach (var state in states)
         {
-            if (locallyPossessedNpcIds.Contains(state.Id)) continue;
             var proxyStarted = MultiplayerPerformance.StartPhase();
             var proxy = FindOrCreateProxy(state, claimed);
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcProxyLookup, proxyStarted);
@@ -1243,152 +1206,12 @@ internal sealed class NpcReplication : MonoBehaviour
         return MultiplayerSession.IsConnected && !MultiplayerSession.IsHost && Instance != null &&
             body != null && Instance.clientBodies.ContainsKey(body);
     }
-
-    internal static bool IsLocallyPossessedBody(BodyScript body)
-    {
-        var current = Instance;
-        return MultiplayerSession.IsConnected && !MultiplayerSession.IsHost && current != null &&
-            body != null && current.locallyPossessedNpcIds.Contains(StableId(body));
-    }
-
-    internal static bool IsPossessionRenderGuard(BodyScript body)
-    {
-        var current = Instance;
-        return current != null && body != null && Time.unscaledTime < current.possessionRenderGuardUntil &&
-            current.locallyPossessedNpcIds.Contains(StableId(body));
-    }
-
+    
     internal static void PrepareAuthoritativeNpcDeath(BodyScript body)
     {
         if (!MultiplayerSession.IsHosting || body == null || body.isPlayer || !body.isAlive ||
             body.weapon == null || body.unarmed) return;
         body.dropWeapon = true;
-    }
-
-    internal static bool TryPossessLocalPlayer(LimbScript limb)
-    {
-        var current = Instance;
-        var player = PlayerScript.player;
-        var oldBody = player == null ? null : player.bodyScript;
-        var target = limb == null ? null : limb.body;
-        if (current == null || player == null || oldBody == null || target == null ||
-            target == oldBody || !oldBody.isAlive || !MultiplayerSession.IsConnected || target.isPlayer)
-            return false;
-
-        string id = null;
-        NpcProxy proxy = null;
-        if (MultiplayerSession.IsHost)
-        {
-            if (!current.hostIds.TryGetValue(target, out id) || !current.hostNpcs.ContainsKey(id))
-            {
-                id = StableId(target);
-                BodyScript mapped;
-                if (!current.hostNpcs.TryGetValue(id, out mapped) || mapped != target) return false;
-                current.hostIds[target] = id;
-            }
-        }
-        else if (!current.clientBodies.TryGetValue(target, out proxy) || proxy == null)
-        {
-            return false;
-        }
-        else
-        {
-            id = proxy.NetworkId;
-        }
-
-        var sourceRoot = NpcRoot(target);
-        if (sourceRoot == null || !sourceRoot.scene.IsValid()) return false;
-        var sourcePosition = sourceRoot.transform.position;
-        var sourceRotation = sourceRoot.transform.rotation;
-        var sourceParent = sourceRoot.transform.parent;
-        var clone = UnityEngine.Object.Instantiate(sourceRoot);
-        if (clone == null) return false;
-
-        clone.SetActive(false);
-        foreach (var customJoint in clone.GetComponentsInChildren<CustJoint>(true))
-            if (customJoint != null) UnityEngine.Object.DestroyImmediate(customJoint);
-
-        foreach (var chatter in clone.GetComponentsInChildren<Chatter>(true))
-            if (chatter != null) UnityEngine.Object.DestroyImmediate(chatter);
-        foreach (var ai in clone.GetComponentsInChildren<AIScript>(true))
-            if (ai != null) UnityEngine.Object.DestroyImmediate(ai);
-        foreach (var marker in clone.GetComponentsInChildren<NpcNetworkReplica>(true))
-            if (marker != null) UnityEngine.Object.DestroyImmediate(marker);
-        clone.name = sourceRoot.name + " [Player]";
-        if (sourceParent != null) clone.transform.SetParent(sourceParent, true);
-        clone.transform.position = sourcePosition;
-        clone.transform.rotation = sourceRotation;
-        clone.transform.localScale = sourceRoot.transform.localScale;
-        clone.SetActive(true);
-
-        var newBody = FindBodyForPossession(clone, target);
-        if (newBody == null || newBody.limbs == null || newBody.limbs.Count == 0)
-        {
-            UnityEngine.Object.Destroy(clone);
-            return false;
-        }
-
-        foreach (var behaviour in clone.GetComponentsInChildren<Behaviour>(true))
-            if (behaviour != null && !(behaviour is PlayerScript)) behaviour.enabled = true;
-        foreach (var child in clone.GetComponentsInChildren<Transform>(true))
-            if (child != null) child.gameObject.SetActive(true);
-        newBody.noLegs = false;
-        newBody.deHeaded = false;
-        foreach (var limbItem in newBody.limbs)
-        {
-            var limbScript = limbItem as LimbScript;
-            if (limbScript != null) limbScript.dismembered = false;
-        }
-        foreach (var renderer in clone.GetComponentsInChildren<SpriteRenderer>(true))
-            if (renderer != null) renderer.enabled = true;
-
-        if (!NetworkAvatarReplication.ReplaceLocalPlayerBody(oldBody, newBody))
-        {
-            UnityEngine.Object.Destroy(clone);
-            return false;
-        }
-
-        if (!MultiplayerSession.IsHost)
-            MultiplayerSession.Send(new NpcPossessionPacket(current.WireId(id)), 1);
-        current.locallyPossessedNpcIds.Add(id);
-        current.possessionRenderGuardUntil = Time.unscaledTime + 0.5f;
-        if (proxy != null)
-        {
-            current.clientBodies.Remove(target);
-            current.clientNpcs.Remove(proxy.NetworkId);
-            current.clientProxies.Remove(proxy);
-        }
-        else
-        {
-            current.hostIds.Remove(target);
-            current.hostNpcs.Remove(id);
-            current.RemoveHostLayout(target);
-        }
-
-        var oldRoot = oldBody.transform.root == null ? null : oldBody.transform.root.gameObject;
-        if (oldRoot != null && oldRoot != clone) UnityEngine.Object.Destroy(oldRoot);
-        if (sourceRoot != null && sourceRoot != clone) UnityEngine.Object.Destroy(sourceRoot);
-        return true;
-    }
-
-    private static BodyScript FindBodyForPossession(GameObject root, BodyScript source)
-    {
-        var bodies = root.GetComponentsInChildren<BodyScript>(true);
-        foreach (var body in bodies)
-            if (body != null && source != null && body.characterName == source.characterName &&
-                body.speciesName == source.speciesName) return body;
-        return bodies.Length == 0 ? null : bodies[0];
-    }
-
-    private static void RemoveDetachedPossessionParts(BodyScript body)
-    {
-        if (body == null) return;
-        foreach (var limb in Resources.FindObjectsOfTypeAll<LimbScript>())
-        {
-            if (limb == null || limb.body != body || limb.transform.root == body.transform.root) continue;
-            var root = limb.transform.root;
-            if (root != null && root.gameObject.scene.IsValid()) root.gameObject.SetActive(false);
-        }
     }
 
     internal static void TryGrabClientCorpse(LevitatorScript levitator)
@@ -1908,9 +1731,6 @@ internal sealed class NpcReplication : MonoBehaviour
         clientNpcs.Clear();
         clientBodies.Clear();
         clientProxies.Clear();
-        locallyPossessedNpcIds.Clear();
-        remotelyPossessedNpcIds.Clear();
-        possessionRenderGuardUntil = -1f;
         prefabRetryAt.Clear();
         receivedSequence = -1;
         nextSnapshot = 0f;

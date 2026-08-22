@@ -22,7 +22,6 @@ internal enum PacketType : byte
     Disconnect = 0x14,
     Chat = 0x15,
     CustomLevel = 0x16,
-    NpcPossession = 0x17,
     Reliable = 0x18,
     ReliableAck = 0x19,
     WorldEnvironment = 0x1A,

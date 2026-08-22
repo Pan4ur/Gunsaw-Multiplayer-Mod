@@ -198,15 +198,6 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
-            else if (isHost && decodedPacket.Type == PacketType.NpcPossession)
-            {
-                try
-                {
-                    var reader = new PacketReader(decodedPacket.Payload);
-                    EnqueueNpcPossession(senderId, NpcPossessionPacket.Read(ref reader));
-                }
-                catch (System.Exception) { }
-            }
             else if (isHost && decodedPacket.Type == PacketType.WorldInteraction)
             {
                 try
@@ -645,7 +636,6 @@ internal static partial class MultiplayerSession
         teleportRequests.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();
-        npcPossessions.Clear();
         missionFinished.Clear();
         playerPerformance.Clear();
         playerKills.Clear();
@@ -723,9 +713,6 @@ internal static partial class MultiplayerSession
 
     private static void EnqueueNpcDamage(ushort peerId, NpcDamagePacket packet)
         => EnqueueEvent(npcDamage, peerId, packet);
-
-    private static void EnqueueNpcPossession(ushort peerId, NpcPossessionPacket packet)
-        => EnqueueEvent(npcPossessions, peerId, packet);
 
     private static void EnqueueProjectileImpact(ushort peerId, ProjectileImpactPacket packet)
         => EnqueueEvent(projectileImpacts, peerId, packet);
