@@ -2336,6 +2336,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         
+        MusicManager.main.intensity += amount * 0.5f;
         if (Time.unscaledTime < localRespawnProtectionUntil) return;
         
         if (amount > 0f && body.isAlive)
