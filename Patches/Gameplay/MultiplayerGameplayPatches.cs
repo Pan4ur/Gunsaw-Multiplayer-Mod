@@ -1050,13 +1050,13 @@ internal static class MultiplayerVelvetWebPatch
 [HarmonyPatch(typeof(TeleportZone), "Activate")]
 internal static class MultiplayerTeleportZonePatch
 {
-    private static void Prefix(TeleportZone __instance, int idd, out List<BodyScript> __state)
+    private static void Prefix(TeleportZone __instance, int idd, out List<NetworkAvatarReplication.SuppressedTeleportBody> __state)
     {
         NetworkAvatarReplication.ReplicateTeleportZone(__instance, idd);
         __state = NetworkAvatarReplication.SuppressRemoteTeleportEffects(__instance, idd);
     }
 
-    private static void Postfix(List<BodyScript> __state)
+    private static void Postfix(List<NetworkAvatarReplication.SuppressedTeleportBody> __state)
     {
         NetworkAvatarReplication.RestoreRemoteTeleportEffects(__state);
     }

@@ -3571,9 +3571,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    internal static List<BodyScript> SuppressRemoteTeleportEffects(TeleportZone zone, int activationId)
+    internal static List<SuppressedTeleportBody> SuppressRemoteTeleportEffects(TeleportZone zone, int activationId)
     {
-        var suppressed = new List<BodyScript>();
+        var suppressed = new List<SuppressedTeleportBody>();
         if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId) return suppressed;
         var collider = zone.GetComponent<BoxCollider2D>();
         if (collider == null) return suppressed;
@@ -3581,17 +3581,21 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var body = replica == null ? null : replica.remoteBody;
             if (body == null || !body.isPlayer || !IsInsideTeleportZone(body, zone.transform, collider)) continue;
+            suppressed.Add(new SuppressedTeleportBody(body));
             body.isPlayer = false;
-            suppressed.Add(body);
         }
         return suppressed;
     }
 
-    internal static void RestoreRemoteTeleportEffects(List<BodyScript> suppressed)
+    internal static void RestoreRemoteTeleportEffects(List<SuppressedTeleportBody> suppressed)
     {
         if (suppressed == null) return;
-        foreach (var body in suppressed)
-            if (body != null) body.isPlayer = true;
+        foreach (var state in suppressed)
+        {
+            if (state.Body == null) continue;
+            state.Body.transform.position = state.Position;
+            state.Body.isPlayer = state.IsPlayer;
+        }
     }
 
     private static bool IsInsideTeleportZone(BodyScript body, Transform zone, BoxCollider2D collider)
@@ -5867,5 +5871,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public float LocalRotation;
         public float FromLocalRotation;
         public float StartedAt;
+    }
+    
+    internal readonly struct SuppressedTeleportBody
+    {
+        internal readonly BodyScript Body;
+        internal readonly Vector3 Position;
+        internal readonly bool IsPlayer;
+
+        internal SuppressedTeleportBody(BodyScript body)
+        {
+            Body = body;
+            Position = body.transform.position;
+            IsPlayer = body.isPlayer;
+        }
     }
 }
