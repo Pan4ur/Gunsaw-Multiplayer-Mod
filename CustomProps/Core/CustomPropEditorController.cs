@@ -23,6 +23,9 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private ICustomPropDefinition placingDefinition;
     private CustomPropMarker shownMarker;
     private bool listenersInstalled;
+    private bool nativeInspectorCaptured;
+    private readonly List<NativeInputState> nativeInputs = new List<NativeInputState>();
+    private readonly List<NativeLabelState> nativeLabels = new List<NativeLabelState>();
 
     internal static CustomPropEditorController Ensure(LevelEditor value)
     {
@@ -95,8 +98,9 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private void Start()
     {
         if (editor == null) editor = GetComponent<LevelEditor>();
-        if (editor == null || editor.miscMenu == null || editor.spawnButtonPrefab == null) return;
+        if (editor == null || editor.spawnButtonPrefab == null) return;
         InstallFieldListeners();
+        CaptureNativeInspector();
         CreateButtons();
     }
 
@@ -268,14 +272,19 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private void CreateButtons()
     {
-        RectTransform previous = null;
-        foreach (var existing in editor.miscMenu.GetComponentsInChildren<SpawnIcon>(true))
-            if (existing != null) previous = existing.GetComponent<RectTransform>();
+        var previousByCategory = new Dictionary<CustomPropCategory, RectTransform>();
 
         foreach (var definition in CustomPropRegistry.All)
         {
             var captured = definition;
-            var buttonObject = Instantiate(editor.spawnButtonPrefab, editor.miscMenu.transform);
+            var category = captured.EditorCategory;
+            var menu = CategoryMenu(category);
+            if (menu == null) continue;
+            RectTransform previous;
+            if (!previousByCategory.TryGetValue(category, out previous))
+                previous = LastSpawnButton(menu);
+
+            var buttonObject = Instantiate(editor.spawnButtonPrefab, menu.transform);
             var rect = buttonObject.GetComponent<RectTransform>();
             if (rect != null && previous != null)
             {
@@ -284,6 +293,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
                     : new Vector2(previous.anchoredPosition.x + 121f, 0f);
                 previous = rect;
             }
+            previousByCategory[category] = previous;
 
             var label = buttonObject.GetComponent<TextMeshProUGUI>();
             if (label != null) label.text = captured.DisplayName;
@@ -306,6 +316,28 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             var icon = buttonObject.GetComponent<SpawnIcon>();
             if (icon != null) icon.descrption = captured.Description;
         }
+    }
+
+    private GameObject CategoryMenu(CustomPropCategory category)
+    {
+        switch (category)
+        {
+            case CustomPropCategory.Basic: return editor.basicMenu;
+            case CustomPropCategory.Obstacle: return editor.obstacleMenu;
+            case CustomPropCategory.Enemy: return editor.enemyMenu;
+            case CustomPropCategory.Decor: return editor.decorMenu;
+            case CustomPropCategory.Trigger: return editor.triggerMenu;
+            default: return editor.miscMenu;
+        }
+    }
+
+    private static RectTransform LastSpawnButton(GameObject menu)
+    {
+        if (menu == null) return null;
+        RectTransform previous = null;
+        foreach (var existing in menu.GetComponentsInChildren<SpawnIcon>(true))
+            if (existing != null) previous = existing.GetComponent<RectTransform>();
+        return previous;
     }
 
     private void InstallFieldListeners()
@@ -366,6 +398,28 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         UpdateInspector();
     }
 
+    internal void RestoreNativeInspector()
+    {
+        if (!nativeInspectorCaptured) CaptureNativeInspector();
+        foreach (var state in nativeInputs)
+        {
+            if (state.Input == null) continue;
+            state.Input.gameObject.SetActive(state.Active);
+            state.Input.interactable = state.Interactable;
+            state.Input.readOnly = state.ReadOnly;
+            state.Input.contentType = state.ContentType;
+            state.Input.inputType = state.InputType;
+            SetPlaceholder(state.Input, state.Placeholder);
+        }
+        foreach (var state in nativeLabels)
+        {
+            if (state.Label == null) continue;
+            state.Label.gameObject.SetActive(state.Active);
+            state.Label.text = state.Text;
+        }
+        shownMarker = null;
+    }
+
     private void UpdateInspector()
     {
         if (editor == null || selectedField == null) return;
@@ -382,6 +436,37 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         shownMarker = marker;
         if (selectionChanged || !HasGenericInspectorLayout(marker))
             ShowGenericFields(marker, selectionChanged || !AnyInputFocused());
+    }
+
+    private void CaptureNativeInspector()
+    {
+        if (nativeInspectorCaptured || editor == null) return;
+        nativeInspectorCaptured = true;
+        foreach (var input in GetInputs())
+        {
+            if (input == null) continue;
+            nativeInputs.Add(new NativeInputState
+            {
+                Input = input,
+                Active = input.gameObject.activeSelf,
+                Interactable = input.interactable,
+                ReadOnly = input.readOnly,
+                ContentType = input.contentType,
+                InputType = input.inputType,
+                Placeholder = PlaceholderText(input)
+            });
+        }
+        var seen = new HashSet<TMP_Text>();
+        foreach (var label in GetLabels())
+        {
+            if (label == null || !seen.Add(label)) continue;
+            nativeLabels.Add(new NativeLabelState
+            {
+                Label = label,
+                Active = label.gameObject.activeSelf,
+                Text = label.text
+            });
+        }
     }
 
     private bool HasGenericInspectorLayout(CustomPropMarker marker)
@@ -526,6 +611,31 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         if (input == null || input.placeholder == null) return;
         var label = input.placeholder.GetComponent<TextMeshProUGUI>();
         if (label != null) label.text = text ?? string.Empty;
+    }
+
+    private static string PlaceholderText(TMP_InputField input)
+    {
+        if (input == null || input.placeholder == null) return string.Empty;
+        var label = input.placeholder.GetComponent<TextMeshProUGUI>();
+        return label == null ? string.Empty : label.text;
+    }
+
+    private sealed class NativeInputState
+    {
+        internal TMP_InputField Input;
+        internal bool Active;
+        internal bool Interactable;
+        internal bool ReadOnly;
+        internal TMP_InputField.ContentType ContentType;
+        internal TMP_InputField.InputType InputType;
+        internal string Placeholder;
+    }
+
+    private sealed class NativeLabelState
+    {
+        internal TMP_Text Label;
+        internal bool Active;
+        internal string Text;
     }
 
     private void BeginPlacement(ICustomPropDefinition definition)

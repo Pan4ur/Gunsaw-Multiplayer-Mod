@@ -49,6 +49,12 @@ internal static class CustomPropRuntimeLoadPatch
 [HarmonyPatch(typeof(LevelEditor), "SelectPart")]
 internal static class CustomPropEditorSelectPartPatch
 {
+    private static void Prefix(LevelEditor __instance)
+    {
+        var controller = CustomPropEditorController.Ensure(__instance);
+        if (controller != null) controller.RestoreNativeInspector();
+    }
+
     private static void Postfix(LevelEditor __instance)
     {
         var controller = CustomPropEditorController.Ensure(__instance);

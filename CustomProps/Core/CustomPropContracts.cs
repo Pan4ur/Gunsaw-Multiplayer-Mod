@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 
 internal enum CustomPropFieldType
@@ -6,6 +5,16 @@ internal enum CustomPropFieldType
     Text,
     Integer,
     Float
+}
+
+internal enum CustomPropCategory
+{
+    Basic,
+    Obstacle,
+    Enemy,
+    Decor,
+    Misc,
+    Trigger
 }
 
 internal sealed class CustomPropField
@@ -58,6 +67,7 @@ internal interface ICustomPropDefinition
     string TypeId { get; }
     string DisplayName { get; }
     string Description { get; }
+    CustomPropCategory EditorCategory { get; }
     Sprite Icon { get; }
     object CreateDefaultData();
     string SerializeData(object data);
@@ -72,6 +82,7 @@ internal abstract class CustomPropDefinition<TData> : ICustomPropDefinition
     public abstract string TypeId { get; }
     public abstract string DisplayName { get; }
     public abstract string Description { get; }
+    public virtual CustomPropCategory EditorCategory => CustomPropCategory.Misc;
     public abstract Sprite Icon { get; }
     public abstract CustomPropField[] Fields { get; }
 

@@ -44,6 +44,8 @@ internal sealed class NpcSpawnerPropDefinition : CustomPropDefinition<NpcSpawner
         get { return "Spawns configured NPCs during play."; }
     }
 
+    public override CustomPropCategory EditorCategory => CustomPropCategory.Enemy;
+
     public override Sprite Icon
     {
         get

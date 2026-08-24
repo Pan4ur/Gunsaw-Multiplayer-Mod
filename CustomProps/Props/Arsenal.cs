@@ -17,6 +17,7 @@ internal sealed class ArsenalPropDefinition : CustomPropDefinition<ArsenalData>
     public override string TypeId => "MP/Arsenal";
     public override string DisplayName => "Arsenal";
     public override string Description => "Lets players choose a weapon.";
+    public override CustomPropCategory EditorCategory => CustomPropCategory.Misc;
 
     public override Sprite Icon => EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.arsenal.png", 28f,
         new Vector2(0.5f, 0.15f));

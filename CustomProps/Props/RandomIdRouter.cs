@@ -14,6 +14,7 @@ internal sealed class RandomIdRouterPropDefinition : CustomPropDefinition<Random
     public override string TypeId => "MP/RND";
     public override string DisplayName => "RND";
     public override string Description => "Receives an activation signal and forwards it to one random ID from the list.";
+    public override CustomPropCategory EditorCategory => CustomPropCategory.Trigger;
 
     public override Sprite Icon => EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.rnd.png", 28f, new Vector2(0.5f, 0.15f));
 
