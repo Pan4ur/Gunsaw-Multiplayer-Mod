@@ -202,6 +202,7 @@ internal sealed class WorldReplication : MonoBehaviour
             if (!MultiplayerSession.IsConnected)
             {
                 if (wasConnected) RestoreClientWorld();
+                if (isHost && !discoveredScene) DiscoverScene();
                 wasConnected = false;
                 wasHost = isHost;
                 return;
@@ -215,22 +216,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
             wasConnected = true;
             wasHost = isHost;
-            if (!discoveredScene)
-            {
-                var discoveryStarted = MultiplayerPerformance.StartPhase();
-                discoveredScene = true;
-                bodies.RefreshWorldBodies();
-                enviroment.RefreshButtons();
-                enviroment.RefreshProximityDoors();
-                enviroment.RefreshActivationZones();
-                enviroment.RefreshGlasses();
-                enviroment.RefreshDrones();
-                enviroment.DiscoverWorldFires();
-                RefreshClientSaws();
-                RefreshWorldControllers();
-                enviroment.RefreshMechanismAudio();
-                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDiscovery, discoveryStarted);
-            }
+            if (!discoveredScene) DiscoverScene();
 
             if (Time.unscaledTime >= nextFireRefresh)
             {
@@ -309,6 +295,23 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             MultiplayerPerformance.AddWorld(performanceStarted);
         }
+    }
+
+    private void DiscoverScene()
+    {
+        var discoveryStarted = MultiplayerPerformance.StartPhase();
+        discoveredScene = true;
+        bodies.RefreshWorldBodies();
+        enviroment.RefreshButtons();
+        enviroment.RefreshProximityDoors();
+        enviroment.RefreshActivationZones();
+        enviroment.RefreshGlasses();
+        enviroment.RefreshDrones();
+        enviroment.DiscoverWorldFires();
+        RefreshClientSaws();
+        RefreshWorldControllers();
+        enviroment.RefreshMechanismAudio();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDiscovery, discoveryStarted);
     }
 
     private void FixedUpdate()
