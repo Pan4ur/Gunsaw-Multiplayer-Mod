@@ -1038,6 +1038,27 @@ internal static class MultiplayerPlayerKickDelayedPatch
     }
 }
 
+[HarmonyPatch]
+internal static class MultiplayerWeaponEffectPatch
+{
+    private static IEnumerable<System.Reflection.MethodBase> TargetMethods()
+    {
+        yield return AccessTools.Method(typeof(AnimatedBodyScript), nameof(AnimatedBodyScript.DoCasing));
+        yield return AccessTools.Method(typeof(AnimatedBodyScript), nameof(AnimatedBodyScript.DropMag));
+    }
+
+    private static void Prefix(AnimatedBodyScript __instance, System.Reflection.MethodBase __originalMethod)
+    {
+        var mag = __originalMethod.Name == nameof(AnimatedBodyScript.DropMag);
+        if (!MultiplayerSession.IsConnected || __instance == null) return;
+        var body = __instance.GetComponentInParent<BodyScript>();
+        var player = PlayerScript.player;
+        if (body == null || player == null || body != player.bodyScript || body.weapon == null) return;
+        if (mag && !body.weapon.isReloading) return;
+        MultiplayerSession.Send(new ReloadEffectPacket(mag));
+    }
+}
+
 [HarmonyPatch(typeof(VelvetScript), "Shoot")]
 internal static class MultiplayerVelvetWebPatch
 {

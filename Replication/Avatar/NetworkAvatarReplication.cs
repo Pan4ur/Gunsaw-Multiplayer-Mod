@@ -821,6 +821,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var shooter = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteShot(shotVisual);
         }
+        ReloadEffectPacket reloadEffect;
+        while (MultiplayerSession.TryTakeReloadEffect(out senderId, out reloadEffect))
+        {
+            var reloader = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
+            if (reloader != null) reloader.PlayRemoteReloadEffect(reloadEffect);
+        }
         ProjectileImpactPacket projectileImpact;
         while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
         {
@@ -4008,6 +4014,49 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             CreateRemoteTracer(preset, origin, FindRemoteShotEnd(origin, shotDirection, !npcShot));
             CreateRemoteBulletImpact(preset, origin, shotDirection, !npcShot);
         }
+    }
+
+    private void PlayRemoteCasing()
+    {
+        if (remoteBody != null && remoteBody.weapon != null && remoteBody.weapon.casing != null)
+            remoteBody.weapon.DoCasing();
+    }
+
+    private void PlayRemoteReloadEffect(ReloadEffectPacket packet)
+    {
+        if (packet.Mag)
+            CreateRemoteDroppedMagazine();
+        else 
+            PlayRemoteCasing();
+    }
+
+    private void CreateRemoteDroppedMagazine()
+    {
+        var body = remoteBody;
+        var weapon = body == null ? null : body.weapon;
+        var stats = weapon == null ? null : weapon.stats;
+        var sprite = stats == null ? null : stats.magSprite;
+        if (weapon == null || sprite == null) return;
+
+        var prefab = Resources.Load<GameObject>("Spawnables/DropMag");
+        if (prefab == null) return;
+        var magazine = Instantiate(prefab, weapon.transform.TransformPoint(stats.magPosition), weapon.transform.rotation);
+        if (magazine == null) return;
+
+        if (!body.isRight) magazine.transform.localScale = new Vector2(-1f, 1f);
+        var rigidbody = magazine.GetComponent<Rigidbody2D>();
+        if (rigidbody != null)
+        {
+            rigidbody.velocity = body.lastMoveDir;
+            rigidbody.angularVelocity = UnityEngine.Random.Range(-25f, 25f);
+        }
+        var renderer = magazine.GetComponent<SpriteRenderer>();
+        if (renderer != null) renderer.sprite = sprite;
+        var collider = magazine.GetComponent<BoxCollider2D>();
+        if (collider != null && sprite.texture != null && sprite.pixelsPerUnit > 0f)
+            collider.size = new Vector2(sprite.texture.width / sprite.pixelsPerUnit,
+                sprite.texture.height / sprite.pixelsPerUnit);
+        Destroy(magazine, 30f);
     }
 
     private void PlayRemoteProjectile(WeaponPreset preset, Vector2 origin, Vector2 direction,

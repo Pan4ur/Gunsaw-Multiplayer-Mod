@@ -302,6 +302,15 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
+            else if (decodedPacket.Type == PacketType.ReloadEffect)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueReloadEffect(senderId, ReloadEffectPacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
             else if (decodedPacket.Type == PacketType.ProjectileImpact)
             {
                 try
@@ -628,6 +637,7 @@ internal static partial class MultiplayerSession
         playerDamage.Clear();
         pvpDamage.Clear();
         shotVisuals.Clear();
+        reloadEffects.Clear();
         projectileImpacts.Clear();
         velvetWebs.Clear();
         playerTeleports.Clear();
@@ -710,6 +720,9 @@ internal static partial class MultiplayerSession
             shotVisuals.Enqueue(new PeerPacket<ShotVisualPacket> { PeerId = peerId, Packet = packet });
         }
     }
+
+    private static void EnqueueReloadEffect(ushort peerId, ReloadEffectPacket packet)
+        => EnqueueEvent(reloadEffects, peerId, packet);
 
     private static void EnqueueNpcDamage(ushort peerId, NpcDamagePacket packet)
         => EnqueueEvent(npcDamage, peerId, packet);

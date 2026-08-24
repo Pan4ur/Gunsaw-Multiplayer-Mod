@@ -111,6 +111,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> playerDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> pvpDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
     private static readonly Queue<PeerPacket<ShotVisualPacket>> shotVisuals = new Queue<PeerPacket<ShotVisualPacket>>();
+    private static readonly Queue<PeerPacket<ReloadEffectPacket>> reloadEffects = new Queue<PeerPacket<ReloadEffectPacket>>();
     private static readonly Queue<PeerPacket<ProjectileImpactPacket>> projectileImpacts = new Queue<PeerPacket<ProjectileImpactPacket>>();
     private static readonly Queue<PeerPacket<VelvetWebPacket>> velvetWebs = new Queue<PeerPacket<VelvetWebPacket>>();
     private static readonly Queue<PeerPacket<PlayerTeleportPacket>> playerTeleports = new Queue<PeerPacket<PlayerTeleportPacket>>();
@@ -414,7 +415,7 @@ internal static partial class MultiplayerSession
             lock (statusLock)
                 return worldSnapshots.Count + worldInputs.Count + worldDamage.Count +
                     npcSnapshots.Count + npcDamage.Count + worldInteractions.Count +
-                    playerDamage.Count + pvpDamage.Count + shotVisuals.Count +
+                    playerDamage.Count + pvpDamage.Count + shotVisuals.Count + reloadEffects.Count +
                     projectileImpacts.Count +
                     playerGrabs.Count + npcGrabs.Count;
         }

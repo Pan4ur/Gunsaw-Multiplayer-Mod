@@ -41,5 +41,6 @@ internal enum PacketType : byte
     ObserverState = 0x28,
     Team = 0x29,
     PlayerKill = 0x2A,
-    KillScreenEffect = 0x2B
+    KillScreenEffect = 0x2B,
+    ReloadEffect = 0x2C
 }
