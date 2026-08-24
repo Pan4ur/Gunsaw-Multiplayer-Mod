@@ -22,6 +22,27 @@ internal static class KartPassengerExitPatch
     }
 }
 
+[HarmonyPatch(typeof(VehicleBase), "LateUpdate")]
+internal static class ClientVehicleExplosionPatch
+{
+    private static void Prefix(VehicleBase __instance)
+    {
+        if (__instance == null || !MultiplayerSession.IsConnected || MultiplayerSession.IsHost || __instance.health >= -100f || __instance.exploded)
+            return;
+        
+        if (__instance.mainPart != null)
+            Sound.Play(__instance.explodeSound, __instance.mainPart.transform.position);
+        
+        __instance.exploded = true;
+        
+        foreach (var part in __instance.GetComponentsInChildren<VehiclePart>())
+        {
+            var renderer = part.GetComponent<UnityEngine.SpriteRenderer>();
+            if (renderer != null) renderer.color = new UnityEngine.Color(0.25f, 0.25f, 0.25f, 1f);
+        }
+    }
+}
+
 [HarmonyPatch(typeof(BodyScript), "DoFallDamage")]
 internal static class KartPassengerFallDamagePatch
 {
