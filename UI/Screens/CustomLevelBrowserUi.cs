@@ -81,9 +81,9 @@ internal sealed class CustomLevelBrowserUi
     internal void SetOpen(bool value)
     {
         open = value;
+        panel.SetActive(value);
         if (value)
         {
-            panel.SetActive(true);
             if (!loading && levels.Length == 0) plugin.StartCoroutine(LoadCatalog());
         }
     }
