@@ -170,6 +170,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
         if (nativeUi == null) nativeUi = gameObject.GetComponent<MultiplayerHudUi>() ?? gameObject.AddComponent<MultiplayerHudUi>();
         if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
         {

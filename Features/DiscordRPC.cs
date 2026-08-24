@@ -16,6 +16,8 @@ internal static class RPCSettings
 {
     private static void Postfix(ControlBinder __instance)
     {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+
         GameObject crossToggle = GameObject.Find("Canvas/Settings/CrosshairSettings/CrossToggle");
         GameObject rpcToggle = UnityEngine.Object.Instantiate(crossToggle);
         rpcToggle.transform.SetParent(crossToggle.transform.parent);
@@ -95,6 +97,12 @@ internal sealed class RPCManager : MonoBehaviour
 
     public static void CheckInstance()
     {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode)
+        {
+            if (instance) UnityEngine.Object.Destroy(instance.gameObject);
+            return;
+        }
+
         if (!instance)
         {
             new GameObject("RPCManager", typeof(RPCManager));
@@ -103,6 +111,12 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Awake()
     {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode)
+        {
+            UnityEngine.Object.Destroy(gameObject);
+            return;
+        }
+
         instance = this; // Inverted, so its on by default
         enable = 0 == PlayerPrefs.GetInt("rpcdisable");
         UnityEngine.Object.DontDestroyOnLoad(base.gameObject);
@@ -110,6 +124,17 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Update()
     {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode)
+        {
+            enable = false;
+            if (_enable)
+            {
+                DestroyClient();
+                _enable = false;
+            }
+            return;
+        }
+
         timer -= Time.unscaledDeltaTime;
         if (timer < 0f)
         {
@@ -134,6 +159,8 @@ internal sealed class RPCManager : MonoBehaviour
 
     internal void UpdateRichPresence()
     {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+
         string playerSpecie = GetCharacterName();
 
         bool shouldResetJoinSecret = true;
@@ -187,6 +214,8 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Initialize()
     {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+
         // Refer to rushellxyz regarding app
         RichPresence.AppId = 1538837414515052575L;
         RichPresence.AutoRegister = true;
@@ -234,7 +263,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     public void UpdateCustomLevel(string level)
     {
-        if (!enable)
+        if (GunsawMultiplayerPlugin.IsHeadlessMode || !enable)
             return;
         string levelHash;
         using (SHA256 sha256 = SHA256.Create())

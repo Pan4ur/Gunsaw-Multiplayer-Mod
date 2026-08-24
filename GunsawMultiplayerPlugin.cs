@@ -61,6 +61,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool createAllowSwap = true;
     internal bool createAllowScaleChanging = true;
     internal bool createAllowObserver = true;
+    internal bool warningSkipped;
     internal bool createTeams;
     internal string createTeamsCfg = "Milkies:blue;Expies:red";
     internal string createInitialScale = "1.0";
@@ -245,18 +246,20 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     }
 
     internal static WorldReplication World;
+    internal static bool IsHeadlessMode => Instance != null && Instance.headlessMode;
     internal static bool IsHeadlessServer => Instance != null && Instance.headlessMode && MultiplayerSession.IsHosting;
 
     private void Update()
     {
         KeepMultiplayerRunningInBackground();
         UpdateHeadlessTps();
-        if (headlessMode)
+        if (headlessMode && !warningSkipped)
         {
-            var warning = UnityEngine.Object.FindObjectOfType<ViolenceScreen>();
+            var warning = FindObjectOfType<ViolenceScreen>();
             if (warning != null)
             {
-                AccessTools.Field(typeof(ViolenceScreen), "clicked")?.SetValue(warning, true);
+                warning.clicked = true;
+                warningSkipped = true;
                 return;
             }
         }
@@ -339,7 +342,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel))
         {
             RPCManager.CheckInstance();
-            RPCManager.instance.UpdateCustomLevel(incomingCustomLevel);
+            RPCManager.instance?.UpdateCustomLevel(incomingCustomLevel);
             CustomLevelProgress.SetActive(incomingCustomLevel);
             receivedCustomLevelJson = Compression.Decompress(incomingCustomLevel);
             if (waitingForCustomLevel)
@@ -555,7 +558,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             MultiplayerSession.StartHostCustomLevel(customLevelJson, customLevelCode);
             StartCustomLevelLocally(customLevelJson);
             RPCManager.CheckInstance();
-            RPCManager.instance.UpdateCustomLevel(customLevelCode);
+            RPCManager.instance?.UpdateCustomLevel(customLevelCode);
         }
         catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
     }

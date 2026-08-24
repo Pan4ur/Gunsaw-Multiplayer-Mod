@@ -25,6 +25,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     internal void Configure(GunsawMultiplayerPlugin owner)
     {
         plugin = owner;
+        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
         if (SceneManager.GetActiveScene().name != "LevelSelect")
         {
             if (root != null && root.activeSelf) root.SetActive(false);
