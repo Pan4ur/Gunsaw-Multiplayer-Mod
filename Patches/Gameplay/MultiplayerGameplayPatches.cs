@@ -225,6 +225,8 @@ internal static class MultiplayerBackToEditorRedirectPatch
 {
     private static bool Prefix()
     {
+        if (!MultiplayerSession.IsConnected) return true;
+
         if (MultiplayerSession.IsHosting)
             MultiplayerSession.EndHostCustomLevel("LevelSelect");
         if (SceneLoader.main != null)
