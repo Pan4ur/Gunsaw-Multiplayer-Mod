@@ -61,6 +61,8 @@ internal static partial class MultiplayerSession
     private static readonly byte[] sceneHeader = PacketHeader.Create(PacketType.Scene);
     private static readonly byte[] identityHeader = PacketHeader.Create(PacketType.Identity);
     private static readonly byte[] snapshotHeader = PacketHeader.Create(PacketType.PlayerSnapshot);
+    private static readonly byte[] playerStateHeader = PacketHeader.Create(PacketType.PlayerState);
+    private static readonly byte[] playerSpecialLinesHeader = PacketHeader.Create(PacketType.PlayerSpecialLines);
     private static readonly byte[] worldHeader = PacketHeader.Create(PacketType.WorldSnapshot);
     private static readonly byte[] worldInputHeader = PacketHeader.Create(PacketType.WorldInput);
     private static readonly byte[] worldDamageHeader = PacketHeader.Create(PacketType.WorldDamage);
@@ -100,6 +102,8 @@ internal static partial class MultiplayerSession
     private static readonly HashSet<ushort> blockedPeers = new HashSet<ushort>();
     private static readonly Queue<PeerIdentity> identities = new Queue<PeerIdentity>();
     private static readonly Dictionary<ushort, PlayerSnapshotPacket> snapshots = new Dictionary<ushort, PlayerSnapshotPacket>();
+    private static readonly Dictionary<ushort, PlayerStatePacket> playerStates = new Dictionary<ushort, PlayerStatePacket>();
+    private static readonly Dictionary<ushort, PlayerSpecialLinesPacket> playerSpecialLines = new Dictionary<ushort, PlayerSpecialLinesPacket>();
     private static readonly Queue<PeerPayload> worldSnapshots = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> worldEnvironments = new Queue<PeerPayload>();
     private static readonly Queue<PeerPacket<WorldInputPacket>> worldInputs = new Queue<PeerPacket<WorldInputPacket>>();

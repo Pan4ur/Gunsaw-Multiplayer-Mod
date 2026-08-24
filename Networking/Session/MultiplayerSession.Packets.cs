@@ -148,6 +148,26 @@ internal static partial class MultiplayerSession
                     snapshots[senderId] = snapshot;
                 }
             }
+            else if (decodedPacket.Type == PacketType.PlayerState)
+            {
+                var reader = new PacketReader(decodedPacket.Payload);
+                var state = PlayerStatePacket.Read(ref reader);
+                lock (statusLock)
+                {
+                    TouchPeerLocked(senderId, null);
+                    playerStates[senderId] = state;
+                }
+            }
+            else if (decodedPacket.Type == PacketType.PlayerSpecialLines)
+            {
+                var reader = new PacketReader(decodedPacket.Payload);
+                var lines = PlayerSpecialLinesPacket.Read(ref reader);
+                lock (statusLock)
+                {
+                    TouchPeerLocked(senderId, null);
+                    playerSpecialLines[senderId] = lines;
+                }
+            }
             else if (!isHost && decodedPacket.Type == PacketType.WorldSnapshot)
             {
                 var data = new byte[packet.Length - worldHeader.Length];
@@ -624,6 +644,8 @@ internal static partial class MultiplayerSession
         blockedPeers.Clear();
         identities.Clear();
         snapshots.Clear();
+        playerStates.Clear();
+        playerSpecialLines.Clear();
         receivedSnapshotSequences.Clear();
         worldSnapshots.Clear();
         worldEnvironments.Clear();

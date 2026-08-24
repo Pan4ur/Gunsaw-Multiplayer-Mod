@@ -161,6 +161,37 @@ internal static partial class MultiplayerSession
         }
     }
 
+    internal static bool TryTakePlayerState(out ushort peerId, out PlayerStatePacket packet)
+    {
+        lock (statusLock)
+        {
+            peerId = 0;
+            packet = default(PlayerStatePacket);
+            foreach (var pair in playerStates)
+            {
+                peerId = pair.Key;
+                packet = pair.Value;
+                break;
+            }
+            if (peerId == 0) return false;
+            playerStates.Remove(peerId);
+            return true;
+        }
+    }
+
+    internal static bool TryTakePlayerSpecialLines(out ushort peerId, out PlayerSpecialLinesPacket packet)
+    {
+        lock (statusLock)
+        {
+            peerId = 0;
+            packet = default(PlayerSpecialLinesPacket);
+            foreach (var pair in playerSpecialLines) { peerId = pair.Key; packet = pair.Value; break; }
+            if (peerId == 0) return false;
+            playerSpecialLines.Remove(peerId);
+            return true;
+        }
+    }
+
     internal static bool TryTakeReloadEffect(out ushort peerId, out ReloadEffectPacket packet)
         => TryTakePacket(reloadEffects, out peerId, out packet);
 

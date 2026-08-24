@@ -33,42 +33,13 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal readonly PlayerSnapshotTransform ArmsTransform;
     internal readonly PlayerSnapshotTransform GunTransform;
     internal readonly PlayerSnapshotTransform GunAnimationTransform;
-    internal readonly PlayerSnapshotTransform WeaponTransform;
-    internal readonly float Health;
-    internal readonly bool IsAlive;
-    internal readonly PlayerDeathCause DeathCause;
-    internal readonly float SusnessMultiplier;
-    internal readonly float CharacterScale;
-    internal readonly float Stamina;
-    internal readonly byte ControlState;
-    internal readonly bool CanBeGrabbed;
-    internal readonly float BurnIntensity;
-    internal readonly bool HasNoLegs;
-    internal readonly bool IsDecapitated;
-    internal readonly int WeaponSlot;
-    internal readonly int WeaponAmmo;
-    internal readonly ulong WeaponSpriteId;
-    internal readonly ulong[] InventorySpriteIds;
-    internal readonly bool InventoryChanged;
-    internal readonly PlayerSnapshotLineState WeaponLaser;
-    internal readonly PlayerSnapshotLineState LevitatorLaser;
-    internal readonly PlayerSnapshotLineState CrystalTongue;
-    internal readonly PlayerSnapshotScarfState Scarf;
-    internal readonly bool IncludesVisualState;
-    internal readonly PlayerSnapshotVisualState? VisualState;
 
     internal PlayerSnapshotPacket(int sequence, bool inVehicle, ulong vehicleId,
         bool isVehicleDriver, byte entityState, bool isRight, bool isReflected, bool isActive,
-        float headRotation, PlayerSnapshotBodyState body, float health, bool isAlive, PlayerDeathCause deathCause,
-        float susnessMultiplier, float characterScale, float stamina,
-        byte controlState, bool canBeGrabbed, float burnIntensity, bool hasNoLegs, bool isDecapitated,
+        float headRotation, PlayerSnapshotBodyState body,
         PlayerSnapshotTransform armsTransform, PlayerSnapshotTransform gunTransform,
-        PlayerSnapshotTransform gunAnimationTransform, PlayerSnapshotTransform weaponTransform,
-        PlayerSnapshotLimbState[] limbs, PlayerSnapshotTailState[] tailBases, PlayerSnapshotTailState[] tails,
-        int weaponSlot, int weaponAmmo, ulong weaponSpriteId, ulong[] inventorySpriteIds, bool inventoryChanged,
-        PlayerSnapshotScarfState scarf, PlayerSnapshotLineState weaponLaser, PlayerSnapshotLineState levitatorLaser,
-        PlayerSnapshotLineState crystalTongue,
-        bool includesVisualState, PlayerSnapshotVisualState? visualState)
+        PlayerSnapshotTransform gunAnimationTransform,
+        PlayerSnapshotLimbState[] limbs, PlayerSnapshotTailState[] tailBases, PlayerSnapshotTailState[] tails)
     {
         Sequence = sequence;
         InVehicle = inVehicle;
@@ -80,35 +51,12 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         IsActive = isActive;
         HeadRotation = headRotation;
         Body = body;
-        Health = health;
-        IsAlive = isAlive;
-        DeathCause = deathCause;
-        SusnessMultiplier = susnessMultiplier;
-        CharacterScale = characterScale;
-        Stamina = stamina;
-        ControlState = controlState;
-        CanBeGrabbed = canBeGrabbed;
-        BurnIntensity = burnIntensity;
-        HasNoLegs = hasNoLegs;
-        IsDecapitated = isDecapitated;
         ArmsTransform = armsTransform;
         GunTransform = gunTransform;
         GunAnimationTransform = gunAnimationTransform;
-        WeaponTransform = weaponTransform;
         Limbs = limbs;
         TailBases = tailBases;
         Tails = tails;
-        WeaponSlot = weaponSlot;
-        WeaponAmmo = weaponAmmo;
-        WeaponSpriteId = weaponSpriteId;
-        InventorySpriteIds = inventorySpriteIds;
-        InventoryChanged = inventoryChanged;
-        Scarf = scarf;
-        WeaponLaser = weaponLaser;
-        LevitatorLaser = levitatorLaser;
-        CrystalTongue = crystalTongue;
-        IncludesVisualState = includesVisualState;
-        VisualState = visualState;
     }
 
     public PacketType Type => PacketType.PlayerSnapshot;
@@ -121,21 +69,17 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     private void WriteTypedState(ref PacketWriter writer)
     {
         writer.WriteInt32(Sequence);
-        writer.WriteBoolean(InVehicle);
-        writer.WriteUInt64(VehicleId);
-        writer.WriteBoolean(IsVehicleDriver);
+        var flags = (byte)((InVehicle ? 1 : 0) | (IsVehicleDriver ? 2 : 0) | (IsRight ? 4 : 0) |
+                           (IsReflected ? 8 : 0) | (IsActive ? 16 : 0));
+        writer.WriteByte(flags);
+        if (InVehicle) writer.WriteUInt64(VehicleId);
         writer.WriteByte(EntityState);
-        writer.WriteBoolean(IsRight);
-        writer.WriteBoolean(IsReflected);
-        writer.WriteBoolean(IsActive);
-        writer.WriteSingle(HeadRotation);
+        WriteRotation(ref writer, HeadRotation);
         WriteBody(ref writer, Body);
         writer.WriteUInt16((ushort)Limbs.Length);
         foreach (var limb in Limbs)
         {
-            WriteBody(ref writer, limb.Body);
-            writer.WriteBoolean(limb.Dismembered);
-            writer.WriteBoolean(limb.Burning);
+            WriteLimb(ref writer, limb.Body, Body);
         }
 
         WriteTails(ref writer, TailBases);
@@ -143,46 +87,20 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         WriteTransform(ref writer, ArmsTransform);
         WriteTransform(ref writer, GunTransform);
         WriteTransform(ref writer, GunAnimationTransform);
-        WriteTransform(ref writer, WeaponTransform);
-        writer.WriteSingle(Health);
-        writer.WriteBoolean(IsAlive);
-        writer.WriteSingle(Stamina);
-        writer.WriteByte(ControlState);
-        writer.WriteBoolean(CanBeGrabbed);
-        writer.WriteSingle(BurnIntensity);
-        writer.WriteBoolean(HasNoLegs);
-        writer.WriteBoolean(IsDecapitated);
-        writer.WriteInt32(WeaponSlot);
-        writer.WriteInt32(WeaponAmmo);
-        writer.WriteUInt64(WeaponSpriteId);
-        writer.WriteUInt16((ushort)InventorySpriteIds.Length);
-        writer.WriteBoolean(InventoryChanged);
-        if (InventoryChanged)
-            foreach (var id in InventorySpriteIds)
-                writer.WriteUInt64(id);
-        WriteLine(ref writer, WeaponLaser);
-        WriteLine(ref writer, LevitatorLaser);
-        WriteScarf(ref writer, Scarf);
-        WriteLine(ref writer, CrystalTongue);
-        writer.WriteBoolean(IncludesVisualState);
-        if (IncludesVisualState) WriteVisualState(ref writer, VisualState.Value);
-        writer.WriteByte((byte)DeathCause);
-        writer.WriteSingle(SusnessMultiplier);
-        writer.WriteSingle(CharacterScale);
     }
 
     private static void WriteBody(ref PacketWriter writer, PlayerSnapshotBodyState value)
     {
         writer.WriteSingle(value.X);
         writer.WriteSingle(value.Y);
-        writer.WriteSingle(value.Rotation);
+        WriteRotation(ref writer, value.Rotation);
     }
 
     private static void WriteTransform(ref PacketWriter writer, PlayerSnapshotTransform value)
     {
         writer.WriteSingle(value.X);
         writer.WriteSingle(value.Y);
-        writer.WriteSingle(value.Rotation);
+        WriteRotation(ref writer, value.Rotation);
     }
 
     private static void WriteTails(ref PacketWriter writer, PlayerSnapshotTailState[] values)
@@ -194,14 +112,12 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
             writer.WriteSingle(value.OffsetY);
             writer.WriteSingle(value.Rotation);
             writer.WriteBoolean(value.Flipped);
-            if (value.Colors == null) continue;
-            writer.WriteByte((byte)value.Colors.Length);
-            foreach (var color in value.Colors)
+            var colors = value.Colors ?? new PlayerSnapshotByteColor[0];
+            writer.WriteByte((byte)colors.Length);
+            foreach (var color in colors)
             {
-                writer.WriteByte(color.Red);
-                writer.WriteByte(color.Green);
-                writer.WriteByte(color.Blue);
-                writer.WriteByte(color.Alpha);
+                writer.WriteByte(color.Red); writer.WriteByte(color.Green);
+                writer.WriteByte(color.Blue); writer.WriteByte(color.Alpha);
             }
         }
     }
@@ -214,7 +130,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         writer.WriteSingle(value.Alpha);
     }
 
-    private static void WriteLine(ref PacketWriter writer, PlayerSnapshotLineState value)
+    internal static void WriteLine(ref PacketWriter writer, PlayerSnapshotLineState value)
     {
         writer.WriteBoolean(value.Visible);
         if (!value.Visible) return;
@@ -232,7 +148,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         }
     }
 
-    private static void WriteScarf(ref PacketWriter writer, PlayerSnapshotScarfState value)
+    internal static void WriteScarf(ref PacketWriter writer, PlayerSnapshotScarfState value)
     {
         writer.WriteBoolean(value.Visible);
         if (value.Visible)
@@ -242,7 +158,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         }
     }
 
-    private static void WriteVisualState(ref PacketWriter writer, PlayerSnapshotVisualState value)
+    internal static void WriteVisualState(ref PacketWriter writer, PlayerSnapshotVisualState value)
     {
         var renderers = value.Renderers ?? new PlayerSnapshotRendererState[0];
         writer.WriteUInt16((ushort)renderers.Length);
@@ -273,63 +189,41 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal static PlayerSnapshotPacket Read(ref PacketReader reader)
     {
         var sequence = reader.ReadInt32();
-        var inVehicle = reader.ReadBoolean();
-        var vehicleId = reader.ReadUInt64();
-        var isVehicleDriver = reader.ReadBoolean();
+        var flags = reader.ReadByte();
+        var inVehicle = (flags & 1) != 0;
+        var vehicleId = inVehicle ? reader.ReadUInt64() : 0UL;
+        var isVehicleDriver = (flags & 2) != 0;
         var entityState = reader.ReadByte();
-        var isRight = reader.ReadBoolean();
-        var isReflected = reader.ReadBoolean();
-        var isActive = reader.ReadBoolean();
-        var headRotation = reader.ReadSingle();
+        var isRight = (flags & 4) != 0;
+        var isReflected = (flags & 8) != 0;
+        var isActive = (flags & 16) != 0;
+        var headRotation = ReadRotation(ref reader);
         var body = ReadBody(ref reader);
         var limbs = new PlayerSnapshotLimbState[reader.ReadUInt16()];
         for (var i = 0; i < limbs.Length; i++)
-            limbs[i] = new PlayerSnapshotLimbState(ReadBody(ref reader), reader.ReadBoolean(), reader.ReadBoolean());
+            limbs[i] = new PlayerSnapshotLimbState(ReadLimb(ref reader, body), false, false);
         var tailBases = ReadTails(ref reader);
         var tails = ReadTails(ref reader);
         var arms = ReadTransform(ref reader);
         var gun = ReadTransform(ref reader);
         var gunAnimation = ReadTransform(ref reader);
-        var weaponTransform = ReadTransform(ref reader);
-        var health = reader.ReadSingle();
-        var isAlive = reader.ReadBoolean();
-        var stamina = reader.ReadSingle();
-        var controlState = reader.ReadByte();
-        var canBeGrabbed = reader.ReadBoolean();
-        var burnIntensity = reader.ReadSingle();
-        var hasNoLegs = reader.ReadBoolean();
-        var isDecapitated = reader.ReadBoolean();
-        var weaponSlot = reader.ReadInt32();
-        var weaponAmmo = reader.ReadInt32();
-        var weaponSpriteId = reader.ReadUInt64();
-        var inventory = new ulong[reader.ReadUInt16()];
-        var inventoryChanged = reader.ReadBoolean();
-        if (inventoryChanged)
-            for (var i = 0; i < inventory.Length; i++)
-                inventory[i] = reader.ReadUInt64();
-        var weaponLaser = ReadLine(ref reader);
-        var levitatorLaser = ReadLine(ref reader);
-        var scarf = ReadScarf(ref reader);
-        var crystalTongue = ReadLine(ref reader);
-        var includesVisualState = reader.ReadBoolean();
-        var visualState = includesVisualState ? (PlayerSnapshotVisualState?)ReadVisualState(ref reader) : null;
-        var deathCause = reader.Remaining > 0 ? (PlayerDeathCause)reader.ReadByte() : PlayerDeathCause.Unknown;
-        var susnessMultiplier = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
-        var characterScale = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
         return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight,
-            isReflected, isActive,
-            headRotation, body, health, isAlive, deathCause, susnessMultiplier, characterScale, stamina, controlState, canBeGrabbed,
-            burnIntensity, hasNoLegs, isDecapitated,
-            arms, gun, gunAnimation, weaponTransform, limbs, tailBases, tails, weaponSlot, weaponAmmo, weaponSpriteId,
-            inventory, inventoryChanged, scarf, weaponLaser, levitatorLaser, crystalTongue, includesVisualState,
-            visualState);
+            isReflected, isActive, headRotation, body, arms, gun, gunAnimation, limbs, tailBases, tails);
     }
 
-    private static PlayerSnapshotBodyState ReadBody(ref PacketReader reader) =>
-        new PlayerSnapshotBodyState(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static PlayerSnapshotBodyState ReadBody(ref PacketReader reader) => new (reader.ReadSingle(), reader.ReadSingle(), ReadRotation(ref reader));
 
-    private static PlayerSnapshotTransform ReadTransform(ref PacketReader reader) =>
-        new PlayerSnapshotTransform(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static PlayerSnapshotTransform ReadTransform(ref PacketReader reader) => new (reader.ReadSingle(), reader.ReadSingle(), ReadRotation(ref reader));
+
+    private static void WriteLimb(ref PacketWriter writer, PlayerSnapshotBodyState limb, PlayerSnapshotBodyState root)
+    {
+        WriteTailOffset(ref writer, limb.X - root.X);
+        WriteTailOffset(ref writer, limb.Y - root.Y);
+        WriteRotation(ref writer, limb.Rotation);
+    }
+
+    private static PlayerSnapshotBodyState ReadLimb(ref PacketReader reader, PlayerSnapshotBodyState root) =>
+        new (root.X + ReadTailOffset(ref reader), root.Y + ReadTailOffset(ref reader), ReadRotation(ref reader));
 
     private static PlayerSnapshotTailState[] ReadTails(ref PacketReader reader)
     {
@@ -342,18 +236,37 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
             var flipped = reader.ReadBoolean();
             var colors = new PlayerSnapshotByteColor[reader.ReadByte()];
             for (var j = 0; j < colors.Length; j++)
-                colors[j] = new PlayerSnapshotByteColor(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(),
-                    reader.ReadByte());
+            {
+                var red = reader.ReadByte();
+                var green = reader.ReadByte();
+                var blue = reader.ReadByte();
+                var alpha = reader.ReadByte();
+                colors[j] = new PlayerSnapshotByteColor(red, green, blue, alpha);
+            }
             values[i] = new PlayerSnapshotTailState(x, y, rotation, flipped, colors);
         }
 
         return values;
     }
 
+    private static void WriteRotation(ref PacketWriter writer, float rotation)
+    {
+        var normalized = rotation % 360f;
+        if (normalized < 0f) normalized += 360f;
+        writer.WriteUInt16((ushort)Math.Round(normalized * (65535f / 360f)));
+    }
+
+    private static float ReadRotation(ref PacketReader reader) => reader.ReadUInt16() * (360f / 65535f);
+
+    private static void WriteTailOffset(ref PacketWriter writer, float value) =>
+        writer.WriteInt16((short)Math.Round(Math.Max(short.MinValue, Math.Min(short.MaxValue, value * 1024f))));
+
+    private static float ReadTailOffset(ref PacketReader reader) => reader.ReadInt16() / 1024f;
+
     private static PlayerSnapshotColor ReadColor(ref PacketReader reader) =>
         new PlayerSnapshotColor(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 
-    private static PlayerSnapshotLineState ReadLine(ref PacketReader reader)
+    internal static PlayerSnapshotLineState ReadLine(ref PacketReader reader)
     {
         var visible = reader.ReadBoolean();
         if (!visible)
@@ -370,7 +283,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         return new PlayerSnapshotLineState(true, world, start, end, startWidth, endWidth, points);
     }
 
-    private static PlayerSnapshotScarfState ReadScarf(ref PacketReader reader)
+    internal static PlayerSnapshotScarfState ReadScarf(ref PacketReader reader)
     {
         var visible = reader.ReadBoolean();
         return visible
@@ -378,7 +291,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
             : new PlayerSnapshotScarfState(false, default(PlayerSnapshotColor), default(PlayerSnapshotColor));
     }
 
-    private static PlayerSnapshotVisualState ReadVisualState(ref PacketReader reader)
+    internal static PlayerSnapshotVisualState ReadVisualState(ref PacketReader reader)
     {
         var renderers = new PlayerSnapshotRendererState[reader.ReadUInt16()];
         for (var i = 0; i < renderers.Length; i++)

@@ -381,8 +381,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 var clientSendStarted = MultiplayerPerformance.StartPhase();
                 clientFastSerializeState -= Time.fixedDeltaTime;
                 nextSnapshot = Time.unscaledTime + SnapshotInterval;
-                MultiplayerSession.Send(SerializePushes(), 1);
-                MultiplayerSession.Send(SerializeDamage(), 1);
+                var pushes = SerializePushes();
+                if (pushes.States.Length != 0) MultiplayerSession.Send(pushes, 1);
+                var damagePacket = SerializeDamage();
+                if (damagePacket.Entries.Length != 0) MultiplayerSession.Send(damagePacket, 1);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientSend, clientSendStarted);
             }
         }

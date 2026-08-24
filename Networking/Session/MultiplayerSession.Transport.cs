@@ -513,6 +513,8 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
     {
         return HasRoutedHeader(packet, identityHeader) ||
             HasRoutedHeader(packet, snapshotHeader) ||
+            HasRoutedHeader(packet, playerStateHeader) ||
+            HasRoutedHeader(packet, playerSpecialLinesHeader) ||
             HasRoutedHeader(packet, worldHeader) ||
             HasRoutedHeader(packet, worldInputHeader) ||
             HasRoutedHeader(packet, npcHeader);
@@ -682,7 +684,9 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
         const int packetOffset = sizeof(ushort);
         if (HasHeaderAt(routedPacket, packetOffset, npcHeader)) return 1;
         if (HasHeaderAt(routedPacket, packetOffset, worldHeader)) return 2;
-        if (HasHeaderAt(routedPacket, packetOffset, snapshotHeader)) return 3;
+        if (HasHeaderAt(routedPacket, packetOffset, snapshotHeader) ||
+            HasHeaderAt(routedPacket, packetOffset, playerStateHeader) ||
+            HasHeaderAt(routedPacket, packetOffset, playerSpecialLinesHeader)) return 3;
         return 0;
     }
 
