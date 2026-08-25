@@ -8,6 +8,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private GameObject root, hostPanel, playersPanel, chatPanel, finalLeaderboardPanel;
     private TMP_Text template, hostText, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText, finalLeaderboardHeader;
     private TMP_InputField input;
+    private TMP_FontAsset unicodeChatFont;
+    private TMP_FontAsset chatFont;
     private ScrollRect chatScroll;
     private RectTransform chatContent;
     private float nextChatRefresh;
@@ -121,6 +123,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             fallback.hideFlags = HideFlags.HideAndDontSave;
         }
         if (template == null) return;
+        unicodeChatFont = CreateUnicodeChatFont();
+        chatFont = CreateChatFontWithFallback(template.font, unicodeChatFont);
         if (UnityEngine.EventSystems.EventSystem.current == null)
         {
             var eventSystem = new GameObject("MultiplayerChatEventSystem",
@@ -169,6 +173,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         chatText.rectTransform.anchoredPosition = Vector2.zero;
         chatText.rectTransform.sizeDelta = Vector2.zero;
         chatText.enableWordWrapping = true;
+        ApplyChatFont(chatText);
         chatHint = Text(root.transform, "", Vector2.zero, new Vector2(620f, 42f), 14, TextAlignmentOptions.Center);
         ScreenAnchor(chatHint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
         chatHint.color = new Color(template.color.r, template.color.g, template.color.b, 0.45f);
@@ -376,6 +381,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             {
                 if (tag != null) Destroy(tag.gameObject);
                 tag = Text(root.transform, "", Vector2.zero, new Vector2(420f, 32f), 15, TextAlignmentOptions.Center);
+                ApplyChatFont(tag);
                 tag.fontStyle = FontStyles.Bold;
                 nameTags[body] = tag;
             }
@@ -440,6 +446,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var screen = camera.WorldToScreenPoint(position + Vector3.down * 1.4f);
             if (screen.z <= 0f) continue;
             var bubble = Text(root.transform, pair.Value.Message, CanvasPosition(screen), new Vector2(300f, 54f), 14, TextAlignmentOptions.Center);
+            ApplyChatFont(bubble);
             bubble.fontStyle = FontStyles.Bold;
             bubble.enableWordWrapping = true;
             chatBubbles[pair.Key] = bubble;
@@ -577,6 +584,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var visualGo = new GameObject("HeadVisual", typeof(RectTransform)); visualGo.transform.SetParent(go.transform, false);
         Rect(visualGo.GetComponent<RectTransform>(), new Vector2(0f, -13f), new Vector2(60f, 60f));
         var name = Text(go.transform, "", new Vector2(0f, 34f), new Vector2(190f, 30f), 16f, TextAlignmentOptions.Center); name.fontStyle = FontStyles.Bold; name.outlineWidth = 0.22f;
+        ApplyChatFont(name);
         return new CoopMarker { Root = go, Rect = rect, Visual = visualGo.transform, Name = name };
     }
 
@@ -665,6 +673,53 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var text = go.GetComponent<TextMeshProUGUI>(); text.font = template.font; text.fontSharedMaterial = template.fontSharedMaterial; text.color = template.color; text.fontSize = fontSize; text.alignment = alignment; text.text = value; return text;
     }
 
+    private static TMP_FontAsset CreateUnicodeChatFont()
+    {
+        Font source = null;
+        foreach (var candidate in Resources.FindObjectsOfTypeAll<Font>())
+        {
+            if (candidate != null && string.Equals(candidate.name, "LiberationSans", StringComparison.OrdinalIgnoreCase))
+            {
+                source = candidate;
+                break;
+            }
+        }
+        
+        if (source == null) return null;
+
+        try
+        {
+            var asset = TMP_FontAsset.CreateFontAsset(source);
+            var characters = new char[0x052F - 0x0400 + 1];
+            for (var codePoint = 0x0400; codePoint <= 0x052F; codePoint++)
+                characters[codePoint - 0x0400] = (char)codePoint;
+            asset.TryAddCharacters(new string(characters));
+            return asset;
+        }
+        catch (Exception exception)
+        {
+            return null;
+        }
+    }
+
+    private static TMP_FontAsset CreateChatFontWithFallback(TMP_FontAsset primary, TMP_FontAsset unicodeFallback)
+    {
+        if (primary == null || unicodeFallback == null) return primary;
+        var font = Instantiate(primary);
+        var fallbacks = primary.fallbackFontAssetTable == null
+            ? new List<TMP_FontAsset>()
+            : new List<TMP_FontAsset>(primary.fallbackFontAssetTable);
+        if (!fallbacks.Contains(unicodeFallback)) fallbacks.Add(unicodeFallback);
+        font.fallbackFontAssetTable = fallbacks;
+        return font;
+    }
+
+    private void ApplyChatFont(TMP_Text text)
+    {
+        if (chatFont == null) return;
+        text.font = chatFont;
+        text.fontSharedMaterial = template.fontSharedMaterial;
+    }
 
     private TMP_InputField CreateInput(Transform parent, Vector2 position, Vector2 size)
     {
@@ -685,6 +740,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         text.rectTransform.offsetMax = Vector2.zero;
         text.margin = Vector4.zero;
         text.enableWordWrapping = false;
+        ApplyChatFont(text);
         field.textViewport = viewport;
         field.textComponent = text;
         return field;
@@ -701,12 +757,28 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private Vector2 CanvasPosition(Vector3 screen)
     {
         Vector2 local;
-        RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)root.transform,
-            screen, null, out local);
+        RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)root.transform, screen, null, out local);
         return local;
     }
-    private sealed class CoopMarker { internal GameObject Root; internal RectTransform Rect; internal Transform Visual; internal readonly List<Image> HeadParts = new List<Image>(); internal TMP_Text Name; }
-    private sealed class FinalLeaderboardRow { internal GameObject Root; internal Image Background; internal Transform Visual; internal readonly List<Image> HeadParts = new List<Image>(); internal TMP_Text Stats; }
+
+    private sealed class CoopMarker
+    {
+        internal GameObject Root;
+        internal RectTransform Rect;
+        internal Transform Visual;
+        internal readonly List<Image> HeadParts = new List<Image>();
+        internal TMP_Text Name;
+    }
+
+    private sealed class FinalLeaderboardRow
+    {
+        internal GameObject Root;
+        internal Image Background;
+        internal Transform Visual;
+        internal readonly List<Image> HeadParts = new List<Image>();
+        internal TMP_Text Stats;
+    }
+
     private readonly struct FinalLeaderboardEntry
     {
         internal readonly ushort PeerId;
@@ -714,7 +786,14 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         internal readonly int Ping;
         internal readonly bool Host;
         internal readonly BodyScript Body;
+
         internal FinalLeaderboardEntry(ushort peerId, string name, int ping, bool host, BodyScript body)
-        { PeerId = peerId; Name = name ?? "Player"; Ping = ping; Host = host; Body = body; }
+        {
+            PeerId = peerId;
+            Name = name ?? "Player";
+            Ping = ping;
+            Host = host;
+            Body = body;
+        }
     }
 }
