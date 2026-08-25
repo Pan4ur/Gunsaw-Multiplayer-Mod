@@ -128,6 +128,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static BodyScript currentShooter;
     private static ShotState activeShotState;
     private static RocketProjectile activeRocketProjectile;
+    private static BodyScript replicatedExplosionShooter;
+    private static ushort replicatedExplosionImpulseExclusionPeerId;
     private static int nextShotSpreadSeed;
     private static bool applyingNetworkPlayerDamage;
     private static Material fallbackTracerMaterial;
@@ -839,6 +841,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         ProjectileImpactPacket projectileImpact;
         while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
         {
+            if (MultiplayerSession.IsHost && ApplyRemoteProjectileExplosion(senderId, projectileImpact)) continue;
             var shooter = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteProjectileImpact(projectileImpact);
         }
@@ -3599,7 +3602,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             IsExplosion = true
         };
         activeShotState = state;
-        currentShooter = ProjectileOwner(projectile);
+        currentShooter = ProjectileOwner(projectile) ?? replicatedExplosionShooter;
         return state;
     }
 
@@ -3637,6 +3640,54 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var weapon = shooter == null ? null : shooter.weapon;
         MultiplayerSession.Send(new ProjectileImpactPacket(position.x, position.y,
             SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite)));
+    }
+
+    internal static bool ShouldSuppressClientProjectileFires(GameObject projectile)
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || projectile == null ||
+            (projectile.GetComponentInChildren<RocketProjectile>(true) == null &&
+             projectile.GetComponentInChildren<GrenadeScript>(true) == null)) return false;
+        var player = PlayerScript.player;
+        return player != null && ProjectileOwner(projectile) == player.bodyScript;
+    }
+
+    private static bool ApplyRemoteProjectileExplosion(ushort senderId, ProjectileImpactPacket packet)
+    {
+        if (senderId == 0 || !IsFinite(packet.PositionX) || !IsFinite(packet.PositionY)) return false;
+        var replica = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
+        var shooter = replica == null ? null : replica.remoteBody;
+        var preset = FindWeaponPreset(packet.WeaponSpriteId);
+        var projectile = preset == null ? null : preset.tracerLine;
+        var rocket = projectile == null ? null : projectile.GetComponentInChildren<RocketProjectile>(true);
+        var grenade = projectile == null ? null : projectile.GetComponentInChildren<GrenadeScript>(true);
+        if (shooter == null || (rocket == null && grenade == null)) return false;
+        var range = rocket == null ? grenade.range : rocket.range;
+        var force = rocket == null ? grenade.force : rocket.force;
+        var damage = rocket == null ? grenade.damage : rocket.damage;
+        var fireAmount = rocket == null ? grenade.fireAmount : rocket.fireAmount;
+        var sound = rocket == null ? grenade.explosionSound : rocket.sound;
+        var impactEffect = rocket == null ? grenade.objOnDestroy : rocket.objOnDestroy;
+        if (!IsFinite(range) || !IsFinite(force) || !IsFinite(damage) || range <= 0f || force <= 0f ||
+            damage < 0f) return false;
+
+        var previousShooter = replicatedExplosionShooter;
+        var previousExclusionPeerId = replicatedExplosionImpulseExclusionPeerId;
+        replicatedExplosionShooter = shooter;
+        replicatedExplosionImpulseExclusionPeerId = senderId;
+        try
+        {
+            var position = new Vector2(packet.PositionX, packet.PositionY);
+            ExplosionHandler.CreateExplosion(null, position, range, force, damage,
+                Mathf.Clamp(fireAmount, 0, 64), sound);
+            if (impactEffect != null)
+                Destroy(Instantiate(impactEffect, position, Quaternion.identity), 60f);
+            return true;
+        }
+        finally
+        {
+            replicatedExplosionShooter = previousShooter;
+            replicatedExplosionImpulseExclusionPeerId = previousExclusionPeerId;
+        }
     }
 
     internal static void ReplicateVelvetWeb(VelvetScript velvet)
@@ -3939,6 +3990,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
         {
             if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0 ||
+                replica.remotePeerId == replicatedExplosionImpulseExclusionPeerId ||
                 !BodyMayBeAffectedByExplosion(replica.remoteBody, explosionObject, position, range)) continue;
             MultiplayerSession.Send(PlayerDamagePacket.Explosion(position.x, position.y, range, force),
                 replica.remotePeerId);
@@ -4181,10 +4233,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         GameObject visual = null;
         GameObject impactEffect = null;
         AudioClip explosionSound = null;
-        var fireAmount = 0;
-        var explosionRange = 0f;
         var speed = 22f;
         var speedIncrease = 0f;
+        var grenadeGravityScale = 1f;
+        var ballisticGrenade = false;
         if (preset.tracerLine != null)
         {
             visual = Instantiate(preset.tracerLine, origin, Quaternion.identity);
@@ -4197,8 +4249,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             {
                 impactEffect = rocket.objOnDestroy;
                 explosionSound = rocket.sound;
-                fireAmount = rocket.fireAmount;
-                explosionRange = rocket.range;
             }
             var grenade = visual.GetComponentInChildren<GrenadeScript>(true);
             if (grenade != null && grenade.startSpeed > 0f) speed = grenade.startSpeed;
@@ -4206,8 +4256,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             {
                 impactEffect = grenade.objOnDestroy;
                 explosionSound = grenade.explosionSound;
-                fireAmount = grenade.fireAmount;
-                explosionRange = grenade.range;
+                var grenadeBody = grenade.GetComponent<Rigidbody2D>();
+                if (grenadeBody != null) grenadeGravityScale = grenadeBody.gravityScale;
+                ballisticGrenade = true;
             }
             foreach (var behaviour in visual.GetComponentsInChildren<MonoBehaviour>(true)) behaviour.enabled = false;
             foreach (var collider in visual.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
@@ -4228,12 +4279,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             Visual = visual,
             ImpactEffect = impactEffect,
             ExplosionSound = explosionSound,
-            FireAmount = fireAmount,
-            Range = explosionRange,
             ExpiresAt = Time.unscaledTime + 5f
         });
-        StartCoroutine(MoveRemoteProjectile(visual, direction,
-            FindRemoteShotEnd(origin, direction, ignoreRemoteAvatar), speed, speedIncrease));
+        if (ballisticGrenade)
+            StartCoroutine(MoveRemoteGrenade(visual, direction * speed, grenadeGravityScale,
+                ignoreRemoteAvatar));
+        else
+            StartCoroutine(MoveRemoteProjectile(visual, direction,
+                FindRemoteShotEnd(origin, direction, ignoreRemoteAvatar), speed, speedIncrease));
     }
 
     private static IEnumerator MoveRemoteProjectile(GameObject visual, Vector2 direction, Vector2 end,
@@ -4257,8 +4310,29 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (visual != null) Destroy(visual);
     }
 
-    private static void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect,
-        AudioClip explosionSound, int fireAmount, float range)
+    private IEnumerator MoveRemoteGrenade(GameObject visual, Vector2 velocity, float gravityScale,
+        bool ignoreRemoteAvatar)
+    {
+        var maximumLifetime = 5f;
+        while (visual != null && maximumLifetime > 0f)
+        {
+            var current = (Vector2)visual.transform.position;
+            velocity += Physics2D.gravity * gravityScale * Time.deltaTime;
+            var next = current + velocity * Time.deltaTime;
+            var hit = FindRemoteProjectileCollision(current, next, ignoreRemoteAvatar);
+            visual.transform.position = hit.HasValue ? hit.Value : next;
+            if (velocity.sqrMagnitude > 0.01f) visual.transform.right = velocity;
+            if (hit.HasValue)
+            {
+                velocity = Vector2.zero;
+            }
+            maximumLifetime -= Time.deltaTime;
+            yield return null;
+        }
+        if (visual != null) Destroy(visual);
+    }
+
+    private static void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect, AudioClip explosionSound)
     {
         if (impactEffect != null)
         {
@@ -4270,7 +4344,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             Destroy(effect, 60f);
         }
         if (explosionSound != null) Sound.Play(explosionSound, position);
-        CreateRemoteExplosionFires(position, fireAmount, range);
         CreateRemoteExplosionCracks(position);
     }
 
@@ -4291,8 +4364,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (projectile == null) return;
         if (projectile.Visual != null) Destroy(projectile.Visual);
-        CreateRemoteProjectileImpact(position, projectile.ImpactEffect, projectile.ExplosionSound,
-            projectile.FireAmount, projectile.Range);
+        CreateRemoteProjectileImpact(position, projectile.ImpactEffect, projectile.ExplosionSound);
     }
 
     private static RemoteProjectileVisual CreateRemoteProjectileVisualData(GameObject projectile)
@@ -4304,36 +4376,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             result.ImpactEffect = rocket.objOnDestroy;
             result.ExplosionSound = rocket.sound;
-            result.FireAmount = rocket.fireAmount;
-            result.Range = rocket.range;
         }
         var grenade = projectile.GetComponentInChildren<GrenadeScript>(true);
         if (grenade != null)
         {
             result.ImpactEffect = grenade.objOnDestroy;
             result.ExplosionSound = grenade.explosionSound;
-            result.FireAmount = grenade.fireAmount;
-            result.Range = grenade.range;
         }
         return rocket == null && grenade == null ? null : result;
-    }
-
-    private static void CreateRemoteExplosionFires(Vector2 position, int fireAmount, float range)
-    {
-        if (fireAmount < 1 || range <= 0f) return;
-        var fire = Resources.Load<GameObject>("Spawnables/FireParticle");
-        if (fire == null) return;
-        for (var index = 0; index < fireAmount; index++)
-        {
-            var angle = (float)index * 360f / fireAmount + UnityEngine.Random.Range(-20f, 20f);
-            var direction = (Vector2)(Quaternion.AngleAxis(angle, Vector3.forward) * Vector2.right);
-            foreach (var hit in Physics2D.RaycastAll(position, direction, range, LayerMask.GetMask("Ground")))
-            {
-                if (hit.collider == null) continue;
-                Instantiate(fire, hit.point, Quaternion.identity).transform.SetParent(hit.transform);
-                break;
-            }
-        }
     }
 
     private static void CreateRemoteExplosionCracks(Vector2 position)
@@ -4425,6 +4475,21 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
         }
         return end;
+    }
+
+    private Vector2? FindRemoteProjectileCollision(Vector2 origin, Vector2 end, bool ignoreRemoteAvatar)
+    {
+        var delta = end - origin;
+        var distance = delta.magnitude;
+        if (distance < 0.0001f) return null;
+        foreach (var hit in Physics2D.RaycastAll(origin, delta / distance, distance))
+        {
+            var collider = hit.collider;
+            if (collider == null || collider.isTrigger || (ignoreRemoteAvatar && remoteAvatar != null &&
+                collider.transform.IsChildOf(remoteAvatar.transform))) continue;
+            return hit.point;
+        }
+        return null;
     }
 
     private void CreateRemoteBulletImpact(WeaponPreset preset, Vector2 origin, Vector2 direction,
@@ -6043,8 +6108,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public GameObject Visual;
         public GameObject ImpactEffect;
         public AudioClip ExplosionSound;
-        public int FireAmount;
-        public float Range;
         public float ExpiresAt;
     }
     

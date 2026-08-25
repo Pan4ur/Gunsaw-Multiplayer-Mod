@@ -1203,10 +1203,10 @@ internal static class MultiplayerRocketUpdatePatch
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class MultiplayerExplosionPatch
 {
-    private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force,
-        out NetworkAvatarReplication.ShotState __state)
+    private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force, ref int fireAmount, out NetworkAvatarReplication.ShotState __state)
     {
         var projectile = NetworkAvatarReplication.ResolveExplosionProjectile(explosionObj);
+        if (NetworkAvatarReplication.ShouldSuppressClientProjectileFires(projectile)) fireAmount = 0;
         __state = NetworkAvatarReplication.BeginProjectileExplosion(projectile);
         NetworkAvatarReplication.ReplicateProjectileImpact(projectile, pos);
         NetworkAvatarReplication.ReplicateExplosionImpulse(projectile, pos, range, force);
