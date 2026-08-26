@@ -182,6 +182,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         headlessMode = HasCommandLineFlag("-headlessLobby");
         if (headlessMode)
         {
+            HeadlessPresentation.Enable();
             ApplyHeadlessCommandLineOptions();
             var mapPath = CommandLineValue("-headlessMap");
             if (string.IsNullOrEmpty(mapPath)) mapPath = Path.Combine(Paths.GameRootPath, "default_map.txt");
