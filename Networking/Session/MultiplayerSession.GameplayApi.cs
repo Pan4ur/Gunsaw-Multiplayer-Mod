@@ -12,13 +12,16 @@ internal static partial class MultiplayerSession
     {
         if (!IsActive) return;
         var now = DateTime.UtcNow.Ticks;
+        ushort[] targets;
         lock (statusLock)
         {
             if (now < nextPingTicks) return;
             nextPingTicks = now + TimeSpan.TicksPerSecond;
             pendingPingTicks = now;
+            targets = isHost ? peers.Ids() : (hostPeerId == 0 ? [] : [hostPeerId]);
         }
-        SendPacket(PacketCodec.Encode(new PingPacket(now)));
+        var packet = PacketCodec.Encode(new PingPacket(now));
+        foreach (var target in targets) SendPacket(packet, target);
     }
 
     private static void QueueCustomLevelTransfer(string levelCode, ushort targetId = 0)

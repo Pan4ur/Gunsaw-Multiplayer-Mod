@@ -409,6 +409,16 @@ internal static partial class MultiplayerSession
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueueHostFps(senderId, HostFpsPacket.Read(ref reader)); }
                 catch (System.Exception) { }
             }
+            else if (!isHost && decodedPacket.Type == PacketType.HostPing && senderId == hostPeerId)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    var hostPing = HostPingPacket.Read(ref reader);
+                    ApplyHostPing(hostPing);
+                }
+                catch (System.Exception) { }
+            }
             else if (isHost && decodedPacket.Type == PacketType.TeleportRequest)
             {
                 try
@@ -465,6 +475,7 @@ internal static partial class MultiplayerSession
             {
                 var sent = BitConverter.ToInt64(packet, pongHeader.Length);
                 var now = DateTime.UtcNow.Ticks;
+                var ping = -1;
                 lock (statusLock)
                 {
                     if (sent == pendingPingTicks && now >= sent && now - sent <= TimeSpan.TicksPerSecond * 30)
@@ -472,9 +483,14 @@ internal static partial class MultiplayerSession
                         var sample = (int)Math.Min(9999, (now - sent) / TimeSpan.TicksPerMillisecond);
                         PeerState peer;
                         if (peers.TryGet(senderId, out peer))
+                        {
                             peer.PingMs = peer.PingMs < 0 ? sample : (peer.PingMs * 3 + sample) / 4;
+                            ping = peer.PingMs;
+                        }
                     }
                 }
+                if (isHost && ping >= 0)
+                    Send(new HostPingPacket(senderId, (ushort)ping));
             }
             lock (statusLock) TouchPeerLocked(senderId, null);
             }
@@ -511,6 +527,16 @@ internal static partial class MultiplayerSession
             nextPingTicks = 0;
             pendingPingTicks = 0;
             foreach (var peer in peers.All) peer.PingMs = -1;
+        }
+    }
+
+    private static void ApplyHostPing(HostPingPacket packet)
+    {
+        if (packet.PeerId == 0 || packet.PeerId == localPeerId) return;
+        lock (statusLock)
+        {
+            PeerState peer;
+            if (peers.TryGet(packet.PeerId, out peer)) peer.PingMs = packet.PingMs;
         }
     }
 

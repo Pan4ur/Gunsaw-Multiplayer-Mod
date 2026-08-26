@@ -44,5 +44,6 @@ internal enum PacketType : byte
     KillScreenEffect = 0x2B,
     ReloadEffect = 0x2C,
     PlayerState = 0x2D,
-    PlayerSpecialLines = 0x2E
+    PlayerSpecialLines = 0x2E,
+    HostPing = 0x2F
 }

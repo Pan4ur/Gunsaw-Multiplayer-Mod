@@ -460,8 +460,8 @@ internal static partial class MultiplayerSession
     
     internal static int PingMs { get { lock (statusLock)
         {
-            foreach (var peer in peers.All) return peer.PingMs;
-            return -1;
+            PeerState host;
+            return peers.TryGet(hostPeerId, out host) ? host.PingMs : -1;
         } } }
     internal static string LocalPlayerName { get { lock (statusLock) return localPlayerName; } }
     internal static string RemotePlayerName { get { lock (statusLock)
