@@ -3638,8 +3638,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             shooter.GetComponentInParent<NetworkReplica>() == null;
         if (!localPlayerShot && !hostNpcShot) return;
         var weapon = shooter == null ? null : shooter.weapon;
+        var trace = CaptureExplosionTrace(position);
         MultiplayerSession.Send(new ProjectileImpactPacket(position.x, position.y,
-            SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite)));
+            SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite), true,
+            trace.HasBackgroundCrack, trace.BackgroundCrackRotation, trace.BackgroundCrackFlipX,
+            trace.BackgroundCrackFlipY, trace.HasFloorCrack, trace.FloorCrackPosition.x,
+            trace.FloorCrackPosition.y, trace.FloorCrackFlipX));
     }
 
     internal static bool ShouldSuppressClientProjectileFires(GameObject projectile)
@@ -3677,8 +3681,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         try
         {
             var position = new Vector2(packet.PositionX, packet.PositionY);
+            var existingCracks = packet.HasExplosionTrace ? CaptureExplosionCracks() : null;
             ExplosionHandler.CreateExplosion(null, position, range, force, damage,
                 Mathf.Clamp(fireAmount, 0, 64), sound);
+            if (existingCracks != null)
+            {
+                DestroyNewExplosionCracks(existingCracks);
+                CreateRemoteExplosionCracks(packet);
+            }
             if (impactEffect != null)
                 Destroy(Instantiate(impactEffect, position, Quaternion.identity), 60f);
             return true;
@@ -4344,7 +4354,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             Destroy(effect, 60f);
         }
         if (explosionSound != null) Sound.Play(explosionSound, position);
-        CreateRemoteExplosionCracks(position);
+        CreateRemoteExplosionCracks(new ProjectileImpactPacket(position.x, position.y, ""));
     }
 
     private void PlayRemoteProjectileImpact(ProjectileImpactPacket packet)
@@ -4364,7 +4374,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (projectile == null) return;
         if (projectile.Visual != null) Destroy(projectile.Visual);
-        CreateRemoteProjectileImpact(position, projectile.ImpactEffect, projectile.ExplosionSound);
+        CreateRemoteProjectileImpact(position, projectile.ImpactEffect, projectile.ExplosionSound, packet);
     }
 
     private static RemoteProjectileVisual CreateRemoteProjectileVisualData(GameObject projectile)
@@ -4386,35 +4396,121 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return rocket == null && grenade == null ? null : result;
     }
 
-    private static void CreateRemoteExplosionCracks(Vector2 position)
+    private static void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect, AudioClip explosionSound,
+        ProjectileImpactPacket packet)
     {
-        var backgroundCrack = Resources.Load<GameObject>("Spawnables/BackgroundCrack");
-        foreach (var wall in GameManager.wallColls)
+        if (impactEffect != null)
         {
-            if (wall == null || !wall.OverlapPoint(position)) continue;
-            var crack = backgroundCrack == null ? null : Instantiate(backgroundCrack, position,
-                Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(0f, 360f)));
-            SetRandomCrackFlip(crack);
-            break;
+            var effect = Instantiate(impactEffect, position, Quaternion.identity);
+            foreach (var projectile in effect.GetComponentsInChildren<RocketProjectile>(true)) projectile.enabled = false;
+            foreach (var grenade in effect.GetComponentsInChildren<GrenadeScript>(true)) grenade.enabled = false;
+            foreach (var collider in effect.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
+            foreach (var rigidbody in effect.GetComponentsInChildren<Rigidbody2D>(true)) rigidbody.simulated = false;
+            Destroy(effect, 60f);
+        }
+        if (explosionSound != null) Sound.Play(explosionSound, position);
+        CreateRemoteExplosionCracks(packet);
+    }
+
+    private static void CreateRemoteExplosionCracks(ProjectileImpactPacket packet)
+    {
+        var position = new Vector2(packet.PositionX, packet.PositionY);
+        if (!packet.HasExplosionTrace)
+        {
+            var trace = CaptureExplosionTrace(position);
+            packet = new ProjectileImpactPacket(position.x, position.y, "", true, trace.HasBackgroundCrack,
+                trace.BackgroundCrackRotation, trace.BackgroundCrackFlipX, trace.BackgroundCrackFlipY,
+                trace.HasFloorCrack, trace.FloorCrackPosition.x, trace.FloorCrackPosition.y, trace.FloorCrackFlipX);
+        }
+        var backgroundCrack = Resources.Load<GameObject>("Spawnables/BackgroundCrack");
+        if (packet.HasBackgroundCrack)
+        {
+            var crack = InstantiateExplosionCrack(backgroundCrack, position,
+                Quaternion.Euler(0f, 0f, packet.BackgroundCrackRotation));
+            SetCrackFlip(crack, packet.BackgroundCrackFlipX, packet.BackgroundCrackFlipY);
+            if (crack != null) Destroy(crack, 120f);
         }
 
         var floorCrack = Resources.Load<GameObject>("Spawnables/FloorCrack");
-        foreach (var hit in Physics2D.RaycastAll(position, Vector2.down, 10f, LayerMask.GetMask("Ground")))
+        if (packet.HasFloorCrack)
         {
-            if (hit.rigidbody != null) continue;
-            var crack = floorCrack == null ? null : Instantiate(floorCrack, hit.point, Quaternion.identity);
-            SetRandomCrackFlip(crack);
-            break;
+            var crack = InstantiateExplosionCrack(floorCrack,
+                new Vector2(packet.FloorCrackX, packet.FloorCrackY), Quaternion.identity);
+            SetCrackFlip(crack, packet.FloorCrackFlipX, false);
+            if (crack != null) Destroy(crack, 120f);
         }
     }
 
-    private static void SetRandomCrackFlip(GameObject crack)
+    private static ExplosionTrace CaptureExplosionTrace(Vector2 position)
+    {
+        var trace = new ExplosionTrace();
+        foreach (var wall in GameManager.wallColls)
+        {
+            if (wall == null || !wall.OverlapPoint(position)) continue;
+            trace.HasBackgroundCrack = true;
+            trace.BackgroundCrackRotation = UnityEngine.Random.Range(0f, 360f);
+            trace.BackgroundCrackFlipX = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+            trace.BackgroundCrackFlipY = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+            break;
+        }
+        foreach (var hit in Physics2D.RaycastAll(position, Vector2.down, 10f, LayerMask.GetMask("Ground")))
+        {
+            if (hit.rigidbody != null) continue;
+            trace.HasFloorCrack = true;
+            trace.FloorCrackPosition = hit.point;
+            trace.FloorCrackFlipX = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+            break;
+        }
+        return trace;
+    }
+
+    private static GameObject InstantiateExplosionCrack(GameObject prefab, Vector2 position, Quaternion rotation)
+    {
+        if (prefab == null) return null;
+        var crack = Instantiate(prefab, position, rotation);
+        var sourceRenderer = prefab.GetComponent<SpriteRenderer>();
+        var renderer = crack.GetComponent<SpriteRenderer>();
+        if (sourceRenderer != null && renderer != null)
+        {
+            renderer.sortingLayerID = sourceRenderer.sortingLayerID;
+            renderer.sortingOrder = sourceRenderer.sortingOrder;
+        }
+        return crack;
+    }
+
+    private static HashSet<int> CaptureExplosionCracks()
+    {
+        var cracks = new HashSet<int>();
+        foreach (var gameObject in FindObjectsOfType<GameObject>())
+            if (IsExplosionCrack(gameObject)) cracks.Add(gameObject.GetInstanceID());
+        return cracks;
+    }
+
+    private static void DestroyNewExplosionCracks(HashSet<int> existingCracks)
+    {
+        foreach (var gameObject in FindObjectsOfType<GameObject>())
+            if (IsExplosionCrack(gameObject) && !existingCracks.Contains(gameObject.GetInstanceID())) Destroy(gameObject);
+    }
+
+    internal static void ScheduleExplosionCrackCleanup()
+    {
+        foreach (var gameObject in FindObjectsOfType<GameObject>())
+            if (IsExplosionCrack(gameObject)) Destroy(gameObject, 120f);
+    }
+
+    private static bool IsExplosionCrack(GameObject gameObject)
+    {
+        return gameObject != null && (gameObject.name.StartsWith("BackgroundCrack") ||
+            gameObject.name.StartsWith("FloorCrack"));
+    }
+
+    private static void SetCrackFlip(GameObject crack, bool flipX, bool flipY)
     {
         if (crack == null) return;
         var renderer = crack.GetComponent<SpriteRenderer>();
         if (renderer == null) return;
-        renderer.flipX = UnityEngine.Random.Range(0f, 1f) > 0.5f;
-        renderer.flipY = UnityEngine.Random.Range(0f, 1f) > 0.5f;
+        renderer.flipX = flipX;
+        renderer.flipY = flipY;
     }
 
     private void CreateRemoteTracer(WeaponPreset preset, Vector2 origin, Vector2 end)
@@ -6109,6 +6205,17 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         public GameObject ImpactEffect;
         public AudioClip ExplosionSound;
         public float ExpiresAt;
+    }
+
+    private struct ExplosionTrace
+    {
+        internal bool HasBackgroundCrack;
+        internal float BackgroundCrackRotation;
+        internal bool BackgroundCrackFlipX;
+        internal bool BackgroundCrackFlipY;
+        internal bool HasFloorCrack;
+        internal Vector2 FloorCrackPosition;
+        internal bool FloorCrackFlipX;
     }
     
     private struct VehicleTailTransformTarget

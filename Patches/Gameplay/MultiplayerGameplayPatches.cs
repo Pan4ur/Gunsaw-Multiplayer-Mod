@@ -17,7 +17,7 @@ internal static class BloodPropCreationPatch
 {
     private static void Postfix(GameObject __instance)
     {
-        BloodCleanupSystem.Register(__instance);
+        LevelCleanupSystem.Register(__instance);
     }
 }
 
@@ -1215,6 +1215,7 @@ internal static class MultiplayerExplosionPatch
     private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)
     {
         NetworkAvatarReplication.EndWeaponShot(__state);
+        NetworkAvatarReplication.ScheduleExplosionCrackCleanup();
         return __exception;
     }
 }

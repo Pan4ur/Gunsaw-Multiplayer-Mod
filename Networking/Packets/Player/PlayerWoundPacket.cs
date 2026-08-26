@@ -51,6 +51,7 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
         writer.WriteByte((byte)PlayerDamageEffect.Wound);
         
         writer.WriteBoolean(false);
+        writer.WriteUInt16(0);
         writer.WriteBinaryString("");
         writer.WriteBinaryString("");
         

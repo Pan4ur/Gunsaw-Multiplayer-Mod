@@ -126,6 +126,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                 writer.WriteBinaryString(WoundSprite);
                 writer.WriteBoolean(HasSplash);
                 writer.WriteBoolean(CreateScreenCrack);
+                writer.WriteSingle(BaseDamage);
+                writer.WriteBoolean(BodyColliderHit);
                 break;
             case PlayerDamageEffect.Explosion:
                 writer.WriteSingle(ExplosionX);

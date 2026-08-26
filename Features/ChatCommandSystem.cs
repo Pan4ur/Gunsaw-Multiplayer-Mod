@@ -18,7 +18,7 @@ internal sealed class ChatCommandSystem
         if (IsCommand(message, "/tp")) return Teleport(message);
         if (IsCommand(message, "/ban")) return Ban(message);
         if (IsCommand(message, "/scale")) return Scale(message);
-        if (IsCommand(message, "/clearblood")) return BloodCleanupSystem.Clear();
+        if (IsCommand(message, "/clearblood")) return LevelCleanupSystem.Clear();
         return false;
     }
 

@@ -1,15 +1,16 @@
 using UnityEngine;
 
-internal static class BloodCleanupSystem
+internal static class LevelCleanupSystem
 {
     private const float Lifetime = 120f;
     private static readonly HashSet<GameObject> bloodProps = [];
 
     internal static void Register(GameObject gameObject)
     {
-        if (gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop")) return;
+        if (gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop" &&
+            gameObject.name != "BulletHole" && gameObject.name != "MP BulletHole")) return;
         if (!bloodProps.Add(gameObject)) return;
-        gameObject.AddComponent<BloodPropLifetime>();
+        gameObject.AddComponent<LevelPropLifetime>();
         UnityEngine.Object.Destroy(gameObject, Lifetime);
     }
 
@@ -30,10 +31,10 @@ internal static class BloodCleanupSystem
     }
 }
 
-internal sealed class BloodPropLifetime : MonoBehaviour
+internal sealed class LevelPropLifetime : MonoBehaviour
 {
     private void OnDestroy()
     {
-        BloodCleanupSystem.Unregister(gameObject);
+        LevelCleanupSystem.Unregister(gameObject);
     }
 }
