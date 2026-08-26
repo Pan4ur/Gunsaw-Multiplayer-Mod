@@ -1153,6 +1153,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 characterDisplayNames[path] = characters[index].name.Trim();
         }
 
+        if (!knownCharacterPrefabs.Contains(ProtogenPrefabPath)) knownCharacterPrefabs.Add(ProtogenPrefabPath);
+        characterDisplayNames[ProtogenPrefabPath] = "G4-A";
+
         var selectedIndex = menu.charIndex;
         if (selectedIndex >= 0 && selectedIndex < characters.Count)
         {
