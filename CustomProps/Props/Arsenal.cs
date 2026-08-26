@@ -43,6 +43,7 @@ internal sealed class ArsenalPropDefinition : CustomPropDefinition<ArsenalData>
 internal sealed class ArsenalRuntime : MonoBehaviour
 {
     private ArsenalData data;
+    private readonly HashSet<ushort> suppliedPlayers = [];
     internal float Radius => data == null ? 2.5f : Mathf.Max(0.5f, data.radius);
 
     internal void Configure(ArsenalData value)
@@ -73,6 +74,11 @@ internal sealed class ArsenalRuntime : MonoBehaviour
             if (int.TryParse(values[index].Trim(), out var amount))
                 result[index] = Mathf.Max(0, amount);
         return result;
+    }
+
+    internal bool TryGrantAmmo()
+    {
+        return suppliedPlayers.Add(MultiplayerSession.LocalPeerId);
     }
 
     private void Update()
@@ -375,7 +381,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
     {
         menu.SetActive(false);
         var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
-        if (body != null)
+        if (body != null && (arsenal == null || arsenal.TryGrantAmmo()))
         {
             var amounts = arsenal == null ? new[] { 60, 60, 60, 60 } : arsenal.AmmoAmounts();
             for (var index = 0; index < amounts.Length; index++)
