@@ -354,7 +354,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
         if (editor.idField != null) editor.idField.onEndEdit.AddListener(value => CommitFields());
         if (editor.tarIdField != null) editor.tarIdField.onEndEdit.AddListener(value => CommitFields());
-        if (editor.teamField != null) editor.teamField.onEndEdit.AddListener(value => CommitFields());
+        if (editor.teamField != null)
+        {
+            editor.teamField.onEndEdit.AddListener(value => CommitFields());
+            editor.teamField.onEndEdit.AddListener(value => CommitPlayerSpawnTeam());
+        }
         if (editor.forceXField != null) editor.forceXField.onEndEdit.AddListener(value => CommitFields());
         if (editor.forceYField != null) editor.forceYField.onEndEdit.AddListener(value => CommitFields());
         if (editor.sizeXField != null) editor.sizeXField.onEndEdit.AddListener(value => CommitFields());
@@ -368,6 +372,26 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         field.readOnly = false;
         field.contentType = TMP_InputField.ContentType.Standard;
         field.inputType = TMP_InputField.InputType.Standard;
+    }
+
+    internal void EnableTeamFieldForPlayerSpawn()
+    {
+        if (editor == null || editor.teamField == null) return;
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        if (levelPart == null || levelPart.part == null || levelPart.part.path != "Building/PlayerSpawn") return;
+        levelPart.showTeam = true;
+        editor.teamField.text = levelPart.part.team ?? "";
+        SetEditable(editor.teamField);
+    }
+
+    internal void CommitPlayerSpawnTeam()
+    {
+        if (editor == null || editor.teamField == null) return;
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        if (levelPart == null || levelPart.part == null || levelPart.part.path != "Building/PlayerSpawn") return;
+        levelPart.part.team = editor.teamField.text.Trim();
     }
 
     private void Update()

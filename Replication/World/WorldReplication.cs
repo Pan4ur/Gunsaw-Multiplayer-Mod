@@ -1014,7 +1014,7 @@ internal sealed class WorldReplication : MonoBehaviour
         var localPlayer = PlayerScript.player;
         if (localPlayer == null || pushingBody != localPlayer.bodyScript) return;
         var body = collision.rigidbody ?? collision.gameObject.GetComponentInParent<Rigidbody2D>();
-        if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
+        if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body) || WorldBodyReplication.IsClientAuthorityJointBody(body))) return;
         bodies.QueueContactBodyState(body, Time.unscaledTime);
         var crate = body.GetComponentInParent<CrateScript>();
         if (crate != null && collision.relativeVelocity.magnitude >= crate.minDamageSpeed)
@@ -1048,7 +1048,8 @@ internal sealed class WorldReplication : MonoBehaviour
     internal void QueueLevitated(Rigidbody2D body)
     {
         if (MultiplayerSession.IsHost || body == null ||
-            !(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body))) return;
+            !(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body) ||
+              WorldBodyReplication.IsClientAuthorityJointBody(body))) return;
         QueueBodyState(body);
     }
     
@@ -1196,7 +1197,7 @@ internal sealed class WorldReplication : MonoBehaviour
                     {
                         continue;
                     }
-                    if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body))
+                    if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body) && !WorldBodyReplication.IsClientAuthorityJointBody(body))
                     {
                         continue;
                     }

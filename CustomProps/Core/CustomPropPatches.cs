@@ -26,6 +26,12 @@ internal static class CustomPropEditorLoadPatch
 [HarmonyPatch(typeof(LevelEditor), "GetLevelCode")]
 internal static class CustomPropEditorSavePatch
 {
+    private static void Prefix(LevelEditor __instance)
+    {
+        var controller = CustomPropEditorController.Ensure(__instance);
+        if (controller != null) controller.CommitPlayerSpawnTeam();
+    }
+
     private static void Postfix(LevelEditor __instance, bool __0, ref string __result)
     {
         __result = CustomPropEditorController.WriteLevel(__instance, __result);
@@ -58,6 +64,10 @@ internal static class CustomPropEditorSelectPartPatch
     private static void Postfix(LevelEditor __instance)
     {
         var controller = CustomPropEditorController.Ensure(__instance);
-        if (controller != null) controller.RefreshInspectorImmediate();
+        if (controller != null)
+        {
+            controller.RefreshInspectorImmediate();
+            controller.EnableTeamFieldForPlayerSpawn();
+        }
     }
 }

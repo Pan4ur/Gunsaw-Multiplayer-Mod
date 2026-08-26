@@ -246,7 +246,7 @@ internal static class CustomLevelSpawnSelection
 {
     private static int selectionDepth;
     private static GameObject selectedSpawn;
-    private static readonly List<Vector3> spawnPositions = new List<Vector3>();
+    private static readonly List<SpawnPoint> spawnPoints = new List<SpawnPoint>();
     private static int spawnScene = int.MinValue;
 
     internal static void Begin()
@@ -254,7 +254,7 @@ internal static class CustomLevelSpawnSelection
         if (selectionDepth++ == 0)
         {
             selectedSpawn = null;
-            spawnPositions.Clear();
+            spawnPoints.Clear();
             spawnScene = SceneManager.GetActiveScene().handle;
         }
     }
@@ -273,8 +273,8 @@ internal static class CustomLevelSpawnSelection
             var spawns = GameObject.FindGameObjectsWithTag("PlayerSpawn");
             if (spawns == null || spawns.Length == 0) return;
             foreach (var spawn in spawns)
-                if (spawn != null) spawnPositions.Add(spawn.transform.position);
-            selectedSpawn = spawns[UnityEngine.Random.Range(0, spawns.Length)];
+                AddSpawnPoint(spawn);
+            selectedSpawn = SelectSpawn(spawns);
         }
         result = selectedSpawn;
     }
@@ -282,9 +282,10 @@ internal static class CustomLevelSpawnSelection
     internal static void Capture(Level level)
     {
         if (level == null || level.parts == null) return;
-        spawnPositions.Clear();
+        spawnPoints.Clear();
         foreach (var part in level.parts)
-            if (part != null && part.path == "Building/PlayerSpawn") spawnPositions.Add(part.pos);
+            if (part != null && part.path == "Building/PlayerSpawn")
+                spawnPoints.Add(new SpawnPoint(part.pos, part.team));
         spawnScene = SceneManager.GetActiveScene().handle;
     }
 
@@ -292,14 +293,73 @@ internal static class CustomLevelSpawnSelection
     {
         position = default(Vector3);
         if (spawnScene != SceneManager.GetActiveScene().handle) return false;
-        if (spawnPositions.Count == 0)
+        if (spawnPoints.Count == 0)
         {
             foreach (var spawn in GameObject.FindGameObjectsWithTag("PlayerSpawn"))
-                if (spawn != null) spawnPositions.Add(spawn.transform.position);
+                AddSpawnPoint(spawn);
         }
-        if (spawnPositions.Count == 0) return false;
-        position = spawnPositions[UnityEngine.Random.Range(0, spawnPositions.Count)];
+        if (spawnPoints.Count == 0) return false;
+        var candidates = new List<SpawnPoint>();
+        var hasTeamSpawn = false;
+        foreach (var spawn in spawnPoints)
+        {
+            if (string.IsNullOrWhiteSpace(spawn.Team)) continue;
+            hasTeamSpawn = true;
+            if (TeamSystem.MatchesSpawnTeam(MultiplayerSession.LocalPeerId, spawn.Team)) candidates.Add(spawn);
+        }
+        if (TeamSystem.Enabled && hasTeamSpawn && candidates.Count == 0)
+            foreach (var spawn in spawnPoints)
+                if (string.IsNullOrWhiteSpace(spawn.Team)) candidates.Add(spawn);
+        if (!TeamSystem.Enabled || !hasTeamSpawn || candidates.Count == 0) candidates = spawnPoints;
+        position = candidates[UnityEngine.Random.Range(0, candidates.Count)].Position;
         return true;
+    }
+
+    private static void AddSpawnPoint(GameObject spawn)
+    {
+        if (spawn == null) return;
+        var levelPart = spawn.GetComponent<LevelPartGame>();
+        spawnPoints.Add(new SpawnPoint(spawn.transform.position,
+            levelPart == null || levelPart.part == null ? "" : levelPart.part.team));
+    }
+
+    private static GameObject SelectSpawn(IList<GameObject> spawns)
+    {
+        var candidates = new List<GameObject>();
+        var hasTeamSpawn = false;
+        foreach (var spawn in spawns)
+        {
+            if (spawn == null) continue;
+            var levelPart = spawn.GetComponent<LevelPartGame>();
+            var team = levelPart == null || levelPart.part == null ? "" : levelPart.part.team;
+            if (string.IsNullOrWhiteSpace(team)) continue;
+            hasTeamSpawn = true;
+            if (TeamSystem.MatchesSpawnTeam(MultiplayerSession.LocalPeerId, team)) candidates.Add(spawn);
+        }
+        if (TeamSystem.Enabled && hasTeamSpawn && candidates.Count == 0)
+            foreach (var spawn in spawns)
+            {
+                if (spawn == null) continue;
+                var levelPart = spawn.GetComponent<LevelPartGame>();
+                var team = levelPart == null || levelPart.part == null ? "" : levelPart.part.team;
+                if (string.IsNullOrWhiteSpace(team)) candidates.Add(spawn);
+            }
+        if (!TeamSystem.Enabled || !hasTeamSpawn || candidates.Count == 0)
+            foreach (var spawn in spawns)
+                if (spawn != null) candidates.Add(spawn);
+        return candidates.Count == 0 ? null : candidates[UnityEngine.Random.Range(0, candidates.Count)];
+    }
+
+    private readonly struct SpawnPoint
+    {
+        internal readonly Vector3 Position;
+        internal readonly string Team;
+
+        internal SpawnPoint(Vector3 position, string team)
+        {
+            Position = position;
+            Team = team ?? "";
+        }
     }
 }
 

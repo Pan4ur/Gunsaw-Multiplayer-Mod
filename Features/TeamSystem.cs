@@ -78,6 +78,20 @@ internal static class TeamSystem
 
     internal static string Name(ushort id) => playerTeams.TryGetValue(id, out var value) ? value : "";
 
+    internal static bool MatchesSpawnTeam(ushort id, string value)
+    {
+        if (!Enabled || string.IsNullOrWhiteSpace(value) || !playerTeams.TryGetValue(id, out var playerTeam))
+            return false;
+        foreach (var team in teams)
+        {
+            if (!string.Equals(team.Name, playerTeam, StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(team.Name, value.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+            Color color;
+            return ColorUtility.TryParseHtmlString(value.Trim(), out color) && color == team.Color;
+        }
+        return false;
+    }
+
     internal static Color Color(ushort id)
     {
         foreach (var item in teams)
