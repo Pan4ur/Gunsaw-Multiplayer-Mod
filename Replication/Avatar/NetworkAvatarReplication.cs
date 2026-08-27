@@ -874,6 +874,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         string identity;
         while (MultiplayerSession.TryTakeIdentity(out senderId, out identity))
         {
+            if (MultiplayerSession.IsHost) WorldReplication.Instance?.SendFullEnvironment(senderId);
             var replica = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (replica != null) replica.CreateRemote(identity, player.bodyScript);
         }

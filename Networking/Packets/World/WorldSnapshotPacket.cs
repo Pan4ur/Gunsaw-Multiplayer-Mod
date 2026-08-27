@@ -4,7 +4,7 @@ internal readonly struct WorldBodySnapshot
     internal readonly bool Destroyed;
     internal readonly bool IsDroppedWeapon;
     internal readonly bool IsCrate;
-    internal readonly string CratePrefabName;
+    internal readonly ulong CratePrefabId;
     internal readonly float PositionX, PositionY, Rotation, VelocityX, VelocityY, AngularVelocity, GravityScale;
     internal readonly int Constraints;
     internal readonly byte BodyType;
@@ -15,7 +15,7 @@ internal readonly struct WorldBodySnapshot
     internal readonly int Ammo;
 
     internal WorldBodySnapshot(ulong id, bool destroyed, bool isDroppedWeapon = false, bool isCrate = false,
-        string cratePrefabName = "", float positionX = 0f, float positionY = 0f, float rotation = 0f,
+        ulong cratePrefabId = 0UL, float positionX = 0f, float positionY = 0f, float rotation = 0f,
         float velocityX = 0f, float velocityY = 0f, float angularVelocity = 0f, float gravityScale = 0f,
         int constraints = 0, byte bodyType = 0, bool simulated = false, bool awake = false,
         bool safetyRailing = false, bool safetyRailingAttached = false, bool isVehiclePart = false,
@@ -26,7 +26,7 @@ internal readonly struct WorldBodySnapshot
         Destroyed = destroyed;
         IsDroppedWeapon = isDroppedWeapon;
         IsCrate = isCrate;
-        CratePrefabName = cratePrefabName ?? "";
+        CratePrefabId = cratePrefabId;
         PositionX = positionX;
         PositionY = positionY;
         Rotation = rotation;
@@ -56,7 +56,7 @@ internal readonly struct WorldBodySnapshot
         if (Destroyed) return;
         writer.WriteBoolean(IsDroppedWeapon);
         writer.WriteBoolean(IsCrate);
-        if (IsCrate) writer.WriteBinaryString(CratePrefabName);
+        if (IsCrate) writer.WriteUInt64(CratePrefabId);
         writer.WriteSingle(PositionX);
         writer.WriteSingle(PositionY);
         writer.WriteSingle(Rotation);
@@ -92,7 +92,7 @@ internal readonly struct WorldBodySnapshot
         if (reader.ReadBoolean()) return new WorldBodySnapshot(id, true);
         var dropped = reader.ReadBoolean();
         var crate = reader.ReadBoolean();
-        var crateName = crate ? reader.ReadBinaryString() : "";
+        var cratePrefabId = crate ? reader.ReadUInt64() : 0UL;
         var positionX = reader.ReadSingle();
         var positionY = reader.ReadSingle();
         var rotation = reader.ReadSingle();
@@ -121,7 +121,7 @@ internal readonly struct WorldBodySnapshot
 
         var weaponId = dropped ? reader.ReadUInt64() : 0UL;
         var ammo = dropped ? reader.ReadInt32() : 0;
-        return new WorldBodySnapshot(id, false, dropped, crate, crateName, positionX, positionY, rotation,
+        return new WorldBodySnapshot(id, false, dropped, crate, cratePrefabId, positionX, positionY, rotation,
             velocityX, velocityY, angularVelocity, gravityScale, constraints, bodyType, simulated, awake,
             railing, railingAttached, vehiclePart, vehiclePartHealth, vehicleHealth, engineDisabled,
             jointAttached, weaponId, ammo);
@@ -133,17 +133,12 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
     internal readonly int SceneEpoch;
     internal readonly int Sequence;
     internal readonly WorldBodySnapshot[] Bodies;
-    internal readonly bool IncludesEnvironment;
-    internal readonly WorldEnvironmentPacket Environment;
 
-    internal WorldSnapshotPacket(int sceneEpoch, int sequence, WorldBodySnapshot[] bodies, bool includesEnvironment,
-        WorldEnvironmentPacket environment)
+    internal WorldSnapshotPacket(int sceneEpoch, int sequence, WorldBodySnapshot[] bodies)
     {
         SceneEpoch = sceneEpoch;
         Sequence = sequence;
         Bodies = bodies ?? new WorldBodySnapshot[0];
-        IncludesEnvironment = includesEnvironment;
-        Environment = environment;
     }
 
     public PacketType Type => PacketType.WorldSnapshot;
@@ -154,8 +149,6 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
         writer.WriteInt32(Sequence);
         writer.WriteUInt16((ushort)System.Math.Min(Bodies.Length, ushort.MaxValue));
         for (var index = 0; index < Bodies.Length && index < ushort.MaxValue; index++) Bodies[index].Write(ref writer);
-        writer.WriteBoolean(IncludesEnvironment);
-        if (IncludesEnvironment) Environment.Write(ref writer);
     }
 
     internal static WorldSnapshotPacket Read(ref PacketReader reader)
@@ -164,10 +157,6 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
         var sequence = reader.ReadInt32();
         var bodies = new WorldBodySnapshot[reader.ReadUInt16()];
         for (var index = 0; index < bodies.Length; index++) bodies[index] = WorldBodySnapshot.Read(ref reader);
-        var includesEnvironment = reader.ReadBoolean();
-        var environment = includesEnvironment
-            ? WorldEnvironmentPacket.Read(ref reader)
-            : default(WorldEnvironmentPacket);
-        return new WorldSnapshotPacket(sceneEpoch, sequence, bodies, includesEnvironment, environment);
+        return new WorldSnapshotPacket(sceneEpoch, sequence, bodies);
     }
 }

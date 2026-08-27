@@ -40,6 +40,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly HashSet<Rigidbody2D> clientBoundDroppedWeapons = [];
     private readonly HashSet<Rigidbody2D> networkCrateDebrisBodies = [];
     private readonly Dictionary<CrateScript, float> networkCrateDebrisDamageUntil = new();
+    private readonly HashSet<ushort> environmentSentPeers = [];
     private readonly Dictionary<GameObject, bool> clientHiddenObjects = new();
     private readonly Dictionary<MonoBehaviour, bool> clientControllers = new();
     internal readonly HashSet<Rigidbody2D> initializedBodies = [];
@@ -576,6 +577,7 @@ internal sealed class WorldReplication : MonoBehaviour
         clientBoundDroppedWeapons.Clear();
         networkCrateDebrisBodies.Clear();
         networkCrateDebrisDamageUntil.Clear();
+        environmentSentPeers.Clear();
         clientFireSettings.Clear();
         clientCreatedFires.Clear();
         pendingRuntimeFires.Clear();
@@ -634,6 +636,7 @@ internal sealed class WorldReplication : MonoBehaviour
             {
                 var body = pair.Value;
                 if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
+                if (!fullSnapshot && IsIdleVehiclePart(body)) continue;
                 var awake = body != null && body.IsAwake();
                 if (!fullSnapshot && body != null && !awake) continue;
                 byte[] state;
@@ -652,19 +655,38 @@ internal sealed class WorldReplication : MonoBehaviour
             var environmentSerializeStarted = MultiplayerPerformance.StartPhase();
             var environment = enviroment.SerializeEnvironment();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeEnvironment, environmentSerializeStarted);
-            var includeEnvironment = fullSnapshot || !BytesEqual(lastSerializedEnvironment, environment);
-            writer.Write(includeEnvironment);
-            if (includeEnvironment) writer.Write(environment);
             lastSerializedEnvironment = environment;
             var packet = stream.ToArray();
             if (!fullSnapshot && WorldSnapshotEquals(lastSerializedWorld, packet)) return null;
             lastSerializedWorld = packet;
             lastSentPropCount = changedPropCount;
-            lastSentOtherCount = changedOtherBodyCount + (includeEnvironment ? buttons.Count + fires.Count + mechanismAudio.Count : 0);
+            lastSentOtherCount = changedOtherBodyCount;
             sentPacketsWindow++;
-            sentStatesWindow += changedStates.Count + (includeEnvironment ? buttons.Count + fires.Count + mechanismAudio.Count : 0);
+            sentStatesWindow += changedStates.Count;
             return packet;
         }
+    }
+
+    internal void SendFullEnvironment(ushort peerId)
+    {
+        if (!MultiplayerSession.IsHost || peerId == 0 || !environmentSentPeers.Add(peerId)) return;
+        var environment = enviroment.SerializeEnvironment();
+        lastSerializedEnvironment = environment;
+        MultiplayerSession.Send(new WorldEnvironmentPacket(environment), peerId);
+    }
+
+    private bool IsIdleVehiclePart(Rigidbody2D body)
+    {
+        if (body == null) return false;
+        var layout = bodies.BodyLayoutFor(body);
+        var part = layout.VehiclePart;
+        if (part == null) return false;
+        var vehicle = part.vehicle ?? layout.Vehicle;
+        if (vehicle == null || vehicle.occupant != null) return false;
+        var mainPart = vehicle.mainPart;
+        var mainBody = mainPart == null ? body : mainPart.rb;
+        return mainBody != null && mainBody.velocity.sqrMagnitude < 0.0025f &&
+               Mathf.Abs(mainBody.angularVelocity) < 0.25f;
     }
 
     internal void DrawReplicationDebugOverlay()
@@ -703,7 +725,7 @@ internal sealed class WorldReplication : MonoBehaviour
             var crate = layout.Crate;
             writer.Write(dropped != null); writer.Write(crate != null);
             if (crate != null)
-                writer.Write(networkCrateDebrisBodies.Contains(body) ? "" : layout.CratePrefabName);
+                writer.Write(networkCrateDebrisBodies.Contains(body) ? 0UL : NetworkWireId.FromString(layout.CratePrefabName));
             BinaryWriterRaw.WriteSingle(writer, body.position.x); BinaryWriterRaw.WriteSingle(writer, body.position.y);
             BinaryWriterRaw.WriteSingle(writer, body.rotation);
             BinaryWriterRaw.WriteSingle(writer, body.velocity.x); BinaryWriterRaw.WriteSingle(writer, body.velocity.y);
@@ -911,7 +933,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
                 var isDropped = reader.ReadBoolean();
                 var isCrate = reader.ReadBoolean();
-                var cratePrefabName = isCrate ? reader.ReadString() : "";
+                var cratePrefabId = isCrate ? reader.ReadUInt64() : 0UL;
                 var state = new State
                 {
                     position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
@@ -972,7 +994,7 @@ internal sealed class WorldReplication : MonoBehaviour
                     else if (isCrate && (!bodies.bodies.TryGetValue(id, out body) || body == null))
                     {
                         var objectStarted = MultiplayerPerformance.StartPhase();
-                        body = CreateRuntimeCrate(id, cratePrefabName, state.position, state.rotation);
+                        body = CreateRuntimeCrate(id, cratePrefabId, state.position, state.rotation);
                         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects,
                             objectStarted);
                     }
@@ -990,12 +1012,6 @@ internal sealed class WorldReplication : MonoBehaviour
             }
 
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotParse, parseStarted);
-            if (reader.ReadBoolean())
-            {
-                var environmentStarted = MultiplayerPerformance.StartPhase();
-                enviroment.ApplyEnvironment(reader.ReadBytes(reader.ReadInt32()));
-                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldEnvironmentApply, environmentStarted);
-            }
         }
         catch (EndOfStreamException)
         {
@@ -1611,22 +1627,17 @@ internal sealed class WorldReplication : MonoBehaviour
         return ordinal;
     }
 
-    private Rigidbody2D CreateRuntimeCrate(string id, string prefabName, Vector2 position, float rotation)
+    private Rigidbody2D CreateRuntimeCrate(string id, ulong prefabId, Vector2 position, float rotation)
     {
-        if (string.IsNullOrEmpty(prefabName)) return null;
-        var prefab = Resources.Load<GameObject>("Spawnables/" + prefabName) ??
-            Resources.Load<GameObject>("Objects/" + prefabName) ??
-            Resources.Load<GameObject>(prefabName);
-        if (prefab == null)
+        if (prefabId == 0UL) return null;
+        GameObject prefab = null;
+        foreach (var candidate in Resources.FindObjectsOfTypeAll<GameObject>())
         {
-            foreach (var candidate in Resources.FindObjectsOfTypeAll<GameObject>())
-            {
-                if (candidate == null || candidate.scene.IsValid() ||
-                    CleanCloneName(candidate.name) != prefabName ||
-                    candidate.GetComponentInChildren<CrateScript>(true) == null) continue;
-                prefab = candidate;
-                break;
-            }
+            if (candidate == null || candidate.scene.IsValid() ||
+                NetworkWireId.FromString(CleanCloneName(candidate.name)) != prefabId ||
+                candidate.GetComponentInChildren<CrateScript>(true) == null) continue;
+            prefab = candidate;
+            break;
         }
         if (prefab == null) return null;
         var created = Instantiate(prefab, position, Quaternion.Euler(0f, 0f, rotation));
