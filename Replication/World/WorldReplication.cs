@@ -22,7 +22,7 @@ internal sealed class WorldReplication : MonoBehaviour
     // Ill just leave it like this for now (It's becoming painful to drive the karts)
     private const float SnapshotInterval = 1f / 50f;
 
-    private const float FullSnapshotInterval = 1f;
+    private const float FullSnapshotInterval = 3f;
     internal const float ClientAuthorityGrace = 0.35f;
     
     internal readonly Dictionary<Rigidbody2D, DroppedWeapon> droppedWeapons = new ();

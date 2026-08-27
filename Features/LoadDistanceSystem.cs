@@ -154,6 +154,14 @@ internal static class LoadDistanceSystem
     internal static void ApplyWorldBody(Rigidbody2D body)
     {
         if (body == null || !IsHostSimulationActive()) return;
+        var door = body.GetComponentInParent<DoorScript>();
+        var source = door == null ? null : door.GetComponent<AudioSource>();
+        if (source != null && source.isPlaying)
+        {
+            worldNearPlayerStates[body] = true;
+            SetSimulation(body, true);
+            return;
+        }
         var near = IsNearAnyPlayer(body.position, WorldSleepDistanceSqr(body));
         worldNearPlayerStates[body] = near;
         SetSimulation(body, near);

@@ -100,9 +100,9 @@ internal static class MultiplayerDroppedWeaponTickCullPatch
 [HarmonyPatch(typeof(DoorScript), "FixedUpdate")]
 internal static class MultiplayerDoorTickCullPatch
 {
-    private static bool Prefix(DoorScript __instance)
+    private static bool Prefix(DoorScript __instance, bool ___hasStopped)
     {
-        return LoadDistanceSystem.ShouldTickWorld(__instance);
+        return !___hasStopped || LoadDistanceSystem.ShouldTickWorld(__instance);
     }
 }
 
