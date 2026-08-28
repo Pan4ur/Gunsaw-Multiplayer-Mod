@@ -275,6 +275,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var score = ScoreboardSystem.ForPlayer(peerId);
         var rank = ScoreboardSystem.Rank(score);
         var displayName = (host ? "[HOST] " : "") + name;
+        if (ScoreboardSystem.IsMvp(peerId)) displayName = "[MVP] " + displayName;
         if (displayName.Length > 21) displayName = displayName.Substring(0, 21);
         return Monospace(displayName.PadRight(22) + (ping >= 0 ? ping.ToString().PadLeft(4) : "   -") + "  " +
             score.Kills.ToString().PadLeft(3) + "  " + score.Deaths.ToString().PadLeft(3) + "  " +

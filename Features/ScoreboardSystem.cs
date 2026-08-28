@@ -134,13 +134,10 @@ internal static class ScoreboardSystem
 
     internal static bool IsMvp(ushort peerId)
     {
-        if (!scores.TryGetValue(peerId, out var candidate) || !HasActivity(candidate)) return false;
-        var candidateValue = PerformanceValue(candidate);
+        if (!scores.TryGetValue(peerId, out var candidate) || candidate.Kills <= 0) return false;
         foreach (var pair in scores)
         {
-            if (!HasActivity(pair.Value)) continue;
-            var value = PerformanceValue(pair.Value);
-            if (value > candidateValue || (value == candidateValue && pair.Key != peerId)) return false;
+            if (pair.Value.Kills > candidate.Kills) return false;
         }
         return true;
     }
