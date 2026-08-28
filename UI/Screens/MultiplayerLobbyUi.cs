@@ -11,7 +11,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GameObject panel;
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
@@ -56,6 +56,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetInput(lobbyInput, plugin.lobbyName);
         SetInput(maxPlayersInput, plugin.createMaxPlayers);
         SetInput(respawnInput, plugin.createRespawnTime);
+        SetInput(numberOfLivesInput, plugin.createNumberOfLives);
         SetInput(serverInput, plugin.lobbyServerAddress);
         pvpToggle.isOn = plugin.createPvp;
         grabToggle.isOn = plugin.createCanGrab;
@@ -75,6 +76,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetInput(startingAmmoInput, plugin.createStartingAmmo);
         SetInput(respawnAmmoInput, plugin.createRespawnAmmo);
         respawnInput.interactable = plugin.createAllowRespawn;
+        numberOfLivesInput.interactable = plugin.createAllowRespawn;
         respawnAtStartToggle.interactable = plugin.createAllowRespawn;
         connectionModeText.text = plugin.createConnectionMode.ToString();
         statusText.text = plugin.status;
@@ -142,6 +144,10 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         CreateText(delayRow, "RESPAWN DELAY", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         respawnInput = CreateInput(delayRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createRespawnTime = value);
         AddTooltip(delayRow.gameObject, "RESPAWN DELAY: The time in seconds before a player respawns when ALLOW RESPAWN is enabled.");
+        var livesRow = CreateSettingsRow(settings);
+        CreateText(livesRow, "NUMBER OF LIVES", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        numberOfLivesInput = CreateInput(livesRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 5, value => plugin.createNumberOfLives = value);
+        AddTooltip(livesRow.gameObject, "NUMBER OF LIVES: 0 gives unlimited respawns. With 1 or more, each death uses a life; after the last life, the player spectates until the level reloads.");
         respawnAtStartToggle = CreateToggle(CreateSettingsRow(settings), "RESPAWN AT START", Vector2.zero, new Vector2(520f, 40f), value => plugin.createRespawnAtStart = value);
         AddTooltip(respawnAtStartToggle.gameObject, "RESPAWN AT START: Applies to ALLOW RESPAWN. When enabled, players spawn at a player spawn point placed by the map author. If there are several, one is chosen at random. Some custom maps may accidentally contain too many spawn points and become impossible to complete without removing the extra points. When disabled, players respawn at the position of their corpse.");
         playerCollisionsToggle = CreateToggle(CreateSettingsRow(settings), "PLAYER COLLISIONS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createPlayerCollisions = value);

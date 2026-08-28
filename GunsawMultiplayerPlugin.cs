@@ -44,6 +44,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<string> savedCreateStartingAmmo;
     private ConfigEntry<string> savedCreateRespawnAmmo;
     private ConfigEntry<string> savedCreateRespawnTime;
+    private ConfigEntry<string> savedCreateNumberOfLives;
     private ConfigEntry<string> savedCreateMaxPlayers;
     internal bool visible;
     internal string status = "Select an option.";
@@ -70,6 +71,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal string createStartingAmmo = LobbyAmmoRules.StartingDefault;
     internal string createRespawnAmmo = LobbyAmmoRules.RespawnDefault;
     internal string createRespawnTime = "5";
+    internal string createNumberOfLives = "0";
     internal string createMaxPlayers = "4";
     internal string customLevelJson = "";
     private string customLevelCode = "";
@@ -156,6 +158,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             "Ammo assigned when a player respawns, in Pistol;Rifle;Heavy;Grenade format.");
         savedCreateRespawnTime = Config.Bind("Lobby", "RespawnTime", createRespawnTime,
             "Default respawn delay in seconds.");
+        savedCreateNumberOfLives = Config.Bind("Lobby", "NumberOfLives", createNumberOfLives,
+            "Lives available to each player per level. Zero means unlimited lives.");
         savedCreateMaxPlayers = Config.Bind("Lobby", "MaxPlayers", createMaxPlayers,
             "Default maximum player count.");
         playerName = savedPlayerName.Value;
@@ -178,6 +182,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createStartingAmmo = savedCreateStartingAmmo.Value;
         createRespawnAmmo = savedCreateRespawnAmmo.Value;
         createRespawnTime = savedCreateRespawnTime.Value;
+        createNumberOfLives = savedCreateNumberOfLives.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
         headlessMode = HasCommandLineFlag("-headlessLobby");
         if (headlessMode)
@@ -472,6 +477,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (savedCreateStartingAmmo.Value != createStartingAmmo) { savedCreateStartingAmmo.Value = createStartingAmmo; changed = true; }
         if (savedCreateRespawnAmmo.Value != createRespawnAmmo) { savedCreateRespawnAmmo.Value = createRespawnAmmo; changed = true; }
         if (savedCreateRespawnTime.Value != createRespawnTime) { savedCreateRespawnTime.Value = createRespawnTime; changed = true; }
+        if (savedCreateNumberOfLives.Value != createNumberOfLives) { savedCreateNumberOfLives.Value = createNumberOfLives; changed = true; }
         if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
         if (changed) Config.Save();
     }
@@ -628,6 +634,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             if (!int.TryParse(createRespawnTime, out respawnTime)) respawnTime = 5;
             respawnTime = Mathf.Clamp(respawnTime, 0, 3600);
             createRespawnTime = respawnTime.ToString();
+            int numberOfLives;
+            if (!int.TryParse(createNumberOfLives, out numberOfLives)) numberOfLives = 0;
+            numberOfLives = Mathf.Clamp(numberOfLives, 0, ushort.MaxValue);
+            createNumberOfLives = numberOfLives.ToString();
             int maxPlayers;
             if (!int.TryParse(createMaxPlayers, out maxPlayers)) maxPlayers = 4;
             maxPlayers = Mathf.Clamp(maxPlayers, 2, 16);
@@ -635,7 +645,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var body = JsonUtility.ToJson(new CreateLobbyRequest { name = lobbyName, hostName = playerName,
                 map = "Host chooses level", maxPlayers = maxPlayers, hostPort = 27016, pvp = createPvp,
                 canGrab = createCanGrab, grabOnlyUnconscious = createGrabOnlyUnconscious,
-                allowRespawn = createAllowRespawn, respawnTime = respawnTime,
+                allowRespawn = createAllowRespawn, respawnTime = respawnTime, numberOfLives = numberOfLives,
                 respawnAtStart = createRespawnAtStart,
                 playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
                 allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(), startingWeapon = createStartingWeapon, respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
@@ -644,7 +654,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 brutalMode = GameManager.main != null && GameManager.main.hardMode,
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(), modVersion = PluginVersion });
-            ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, maxPlayers));
+            ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, numberOfLives, maxPlayers));
         }
         catch (Exception e) { status = "Could not create lobby: " + e.Message; }
     }
@@ -660,12 +670,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (!int.TryParse(createRespawnTime, out respawnTime)) respawnTime = 5;
         respawnTime = Mathf.Clamp(respawnTime, 0, 3600);
         createRespawnTime = respawnTime.ToString();
+        int numberOfLives;
+        if (!int.TryParse(createNumberOfLives, out numberOfLives)) numberOfLives = 0;
+        numberOfLives = Mathf.Clamp(numberOfLives, 0, ushort.MaxValue);
+        createNumberOfLives = numberOfLives.ToString();
         int maxPlayers;
         if (!int.TryParse(createMaxPlayers, out maxPlayers)) maxPlayers = MultiplayerSession.MaxPlayers;
         maxPlayers = Mathf.Clamp(maxPlayers, 2, 16);
         createMaxPlayers = maxPlayers.ToString();
         if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
-            createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
+            createAllowRespawn, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
             createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, maxPlayers))
         {
             status = "Could not update lobby settings.";
@@ -812,7 +826,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         status = "Connecting via " + mode + " through UDP relay " + address + "...";
     }
 
-    private void CreateLobbyInDirectory(string body, int respawnTime, int maxPlayers)
+    private void CreateLobbyInDirectory(string body, int respawnTime, int numberOfLives, int maxPlayers)
     {
         try
         {
@@ -826,7 +840,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RunOnMainThread(() =>
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
-                    createGrabOnlyUnconscious, createAllowRespawn, respawnTime, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
+                    createGrabOnlyUnconscious, createAllowRespawn, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
                     createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo,
                     playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
@@ -1357,6 +1371,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             lobby.grabOnlyUnconscious = JsonBool(item, "grabOnlyUnconscious");
             lobby.allowRespawn = JsonBool(item, "allowRespawn");
             lobby.respawnTime = JsonInt(item, "respawnTime");
+            lobby.numberOfLives = JsonInt(item, "numberOfLives");
             lobby.respawnAtStart = JsonBool(item, "respawnAtStart");
             lobby.playerCollisions = JsonBool(item, "playerCollisions");
             lobby.cheats = JsonBool(item, "cheats");
@@ -1440,6 +1455,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 grabOnlyUnconscious = createCanGrab && createGrabOnlyUnconscious,
                 allowRespawn = createAllowRespawn,
                 respawnTime = MultiplayerSession.RespawnTimeSeconds,
+                numberOfLives = MultiplayerSession.NumberOfLives,
                 respawnAtStart = createAllowRespawn && createRespawnAtStart,
                 playerCollisions = createPlayerCollisions,
                 cheats = createCheats,
@@ -1601,6 +1617,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool grabOnlyUnconscious;
         public bool allowRespawn;
         public int respawnTime;
+        public int numberOfLives;
         public bool respawnAtStart;
         public bool playerCollisions = true;
         public bool cheats;
@@ -1646,6 +1663,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool grabOnlyUnconscious;
         public bool allowRespawn;
         public int respawnTime;
+        public int numberOfLives;
         public bool respawnAtStart;
         public bool playerCollisions = true;
         public bool cheats;

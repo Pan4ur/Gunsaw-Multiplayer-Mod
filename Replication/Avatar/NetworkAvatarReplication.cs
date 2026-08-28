@@ -155,6 +155,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private Vector3 localSpawnPosition;
     private Vector3 localDeathPosition;
     private bool localWasAlive = true;
+    private int remainingLives;
+    private int livesRule = -1;
     private float respawnAt = -1f;
     private bool localRespawnPending;
     private int localRespawnGeneration;
@@ -197,7 +199,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return true;
     }
     
-    internal static bool IsSpectating { get { return instance != null && instance.spectating && !MultiplayerSession.AllowRespawn; } }
+    internal static bool IsSpectating { get { return instance != null && instance.spectating && !instance.CanRespawn; } }
     private bool HasActiveColorEffect => colorEffects.IsActive;
 
     internal static string SpectatorTargetName()
@@ -211,7 +213,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static string RespawnCountdownText()
     {
         var player = PlayerScript.player;
-        if (instance == null || !MultiplayerSession.AllowRespawn || instance.respawnAt < 0f ||
+        if (instance == null || !instance.CanRespawn || instance.respawnAt < 0f ||
             player == null || player.bodyScript == null || player.bodyScript.isAlive) return "";
         return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(instance.respawnAt - Time.unscaledTime));
     }
@@ -2709,6 +2711,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var body = player == null ? null : player.bodyScript;
         if (body == null) return;
         var scene = SceneManager.GetActiveScene();
+        if (livesRule != MultiplayerSession.NumberOfLives)
+        {
+            livesRule = MultiplayerSession.NumberOfLives;
+            remainingLives = livesRule;
+        }
         if (scene.handle != localSpawnScene)
         {
             localSpawnScene = scene.handle;
@@ -2716,6 +2723,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             localDeathPosition = localSpawnPosition;
             localWasAlive = body.isAlive;
             respawnAt = -1f;
+            remainingLives = MultiplayerSession.NumberOfLives;
         }
 
         if (body.isAlive)
@@ -2730,19 +2738,23 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             localWasAlive = false;
             localDeathPosition = body.transform.position;
-            respawnAt = MultiplayerSession.AllowRespawn
+            if (MultiplayerSession.NumberOfLives > 0) remainingLives = Mathf.Max(0, remainingLives - 1);
+            respawnAt = CanRespawn
                 ? Time.unscaledTime + MultiplayerSession.RespawnTimeSeconds
                 : -1f;
         }
-        if (MultiplayerSession.AllowRespawn && respawnAt >= 0f && Time.unscaledTime >= respawnAt)
+        if (CanRespawn && respawnAt >= 0f && Time.unscaledTime >= respawnAt)
             RespawnLocalPlayer(player, body);
     }
+
+    private bool CanRespawn => MultiplayerSession.AllowRespawn &&
+        (MultiplayerSession.NumberOfLives == 0 || remainingLives > 0);
 
     private void UpdateSpectator(PlayerScript player)
     {
         var body = player == null ? null : player.bodyScript;
         if (body == null) return;
-        if (MultiplayerSession.AllowRespawn || body.isAlive)
+        if (CanRespawn || body.isAlive)
         {
             if (spectating && CameraFollow.cam != null) CameraFollow.cam.target = body.transform;
             RestoreSpectatorVisuals(player);
@@ -2794,7 +2806,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     internal static void SuppressSpectatorDeathEffects(PlayerScript player)
     {
-        if (instance == null || !instance.spectating || MultiplayerSession.AllowRespawn ||
+        if (instance == null || !instance.spectating || instance.CanRespawn ||
             player == null || player.bodyScript == null || player.bodyScript.isAlive) return;
         if (player.deathNoise != null) player.deathNoise.color = Color.clear;
         if (player.deathText != null) player.deathText.SetActive(false);

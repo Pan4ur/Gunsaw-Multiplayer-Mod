@@ -40,7 +40,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives), senderId);
                 TeamSystem.SendAll(senderId);
                 ObserverSystem.SendCurrentState(senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
@@ -256,6 +256,7 @@ internal static partial class MultiplayerSession
                 AllowRespawn = settings.AllowRespawn;
                 RespawnAtStart = settings.RespawnAtStart;
                 RespawnTimeSeconds = settings.RespawnTimeSeconds;
+                NumberOfLives = settings.NumberOfLives;
                 PlayerCollisions = settings.PlayerCollisions;
                 CheatsEnabled = settings.CheatsEnabled;
                 AllowSwap = settings.AllowSwap;
@@ -605,6 +606,7 @@ internal static partial class MultiplayerSession
                 GrabOnlyUnconscious = false;
                 AllowRespawn = false;
                 RespawnTimeSeconds = 0;
+                NumberOfLives = 0;
                 RespawnAtStart = false;
             }
             nextPingTicks = 0;
@@ -652,6 +654,7 @@ internal static partial class MultiplayerSession
                 GrabOnlyUnconscious = false;
                 AllowRespawn = false;
                 RespawnTimeSeconds = 0;
+                NumberOfLives = 0;
                 RespawnAtStart = false;
             }
             nextPingTicks = 0;

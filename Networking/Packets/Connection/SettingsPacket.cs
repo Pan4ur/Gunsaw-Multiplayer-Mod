@@ -20,8 +20,9 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly string RespawnWeapon;
     internal readonly string StartingAmmo;
     internal readonly string RespawnAmmo;
+    internal readonly ushort NumberOfLives;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0)
     {
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -43,6 +44,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         RespawnWeapon = respawnWeapon ?? "Default";
         StartingAmmo = startingAmmo ?? LobbyAmmoRules.StartingDefault;
         RespawnAmmo = respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
+        NumberOfLives = numberOfLives;
     }
 
     public PacketType Type => PacketType.Settings;
@@ -69,6 +71,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteBinaryString(RespawnWeapon);
         writer.WriteBinaryString(StartingAmmo);
         writer.WriteBinaryString(RespawnAmmo);
+        writer.WriteUInt16(NumberOfLives);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -83,6 +86,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         var respawnWeapon = reader.Remaining > 0 ? reader.ReadBinaryString() : "Default";
         var startingAmmo = reader.Remaining > 0 ? reader.ReadBinaryString() : LobbyAmmoRules.StartingDefault;
         var respawnAmmo = reader.Remaining > 0 ? reader.ReadBinaryString() : LobbyAmmoRules.RespawnDefault;
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo);
+        var lives = reader.Remaining >= sizeof(ushort) ? reader.ReadUInt16() : (ushort)0;
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives);
     }
 }
