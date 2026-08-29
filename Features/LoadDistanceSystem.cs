@@ -10,7 +10,7 @@ internal static class LoadDistanceSystem
     // For conveyor belts, I think we may need a mechanic that "wakes up" props and npcs
     // standing on them, so they can be carried along or slide off.
     // Otherwise, maps with enemy waves built around conveyor belt mechanics probably no longer work
-    internal const float MechanismSleepDistanceSqr = 1800f;
+    internal const float MechanismSleepDistanceSqr = 2400f;
     private const float DefaultTickDistanceSqr = 1000f;
     internal const float NpcPoseDistanceSqr = 600f;
 
