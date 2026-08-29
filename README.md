@@ -65,14 +65,9 @@ MP Features:
 - ENTER - Open chat
 - TAB - Open player list
 - C - Carry player (You need to aim at him with your sights)
+- E - Reactivate one-time triggers
 
-### Debug binds (ill remove it later)
-- END + SPACE + G - Spawn random gun
-- END + SPACE + 1 - Spawn Grenade Launcher
-- END + SPACE + 2 - Spawn Rocket Launcher
-- END + SPACE + 3 - Spawn Sniper Rifle
-- END + SPACE + 4 - Marksman Rifle
-
+### Debug binds
 - END + SPACE + S - Net/CPU profiler
 - END + SPACE + R - Sleeping objects debug
 - END + SPACE + C + S - CS Expierience
