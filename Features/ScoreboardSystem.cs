@@ -5,11 +5,24 @@ internal readonly struct PlayerPerformance
 {
     internal readonly int Hits, Misses, Heads, Kills, Deaths;
     internal readonly float DamageDealt, DamageReceived;
+
     internal PlayerPerformance(int hits, int misses, int heads, float dealt, float received, int kills, int deaths)
-    { Hits = hits; Misses = misses; Heads = heads; DamageDealt = dealt; DamageReceived = received; Kills = kills; Deaths = deaths; }
+    {
+        Hits = hits;
+        Misses = misses;
+        Heads = heads;
+        DamageDealt = dealt;
+        DamageReceived = received;
+        Kills = kills;
+        Deaths = deaths;
+    }
+    
     internal float Accuracy => Ratio(Hits, Misses);
+    
     internal float HeadshotRatio => Hits == 0 ? 0f : Mathf.Clamp01((float)Heads / Hits);
-    internal float DamageRatio => DamageDealt + DamageReceived <= 0f ? 0f : (DamageDealt > DamageReceived ? 1f - DamageReceived / (DamageDealt + DamageReceived) : DamageDealt / (DamageDealt + DamageReceived));
+    
+    internal float DamageRatio => DamageDealt + DamageReceived <= 0f ? 0f : DamageDealt > DamageReceived ? 1f - DamageReceived / (DamageDealt + DamageReceived) : DamageDealt / (DamageDealt + DamageReceived);
+    
     private static float Ratio(int hits, int misses) { var total = hits + misses; return total <= 0 ? 0f : (hits > misses ? 1f - (float)misses / total : (float)hits / total); }
 }
 
@@ -23,18 +36,43 @@ internal static class ScoreboardSystem
     private static float localDamageDealt, localDamageReceived, localPvpDamageDealt;
     private static bool localWasAlive;
     private static float nextSend;
+    private static bool preserveForNextScene;
 
     internal static PlayerPerformance ForPlayer(ushort peerId) => scores.TryGetValue(peerId, out var score) ? score : default;
+    internal static void PreserveForNextScene() => preserveForNextScene = true;
 
     internal static void Tick()
     {
-        if (!MultiplayerSession.IsActive) { scores.Clear(); hostKills.Clear(); hostPvpVictims.Clear(); scene = int.MinValue; localDeaths = 0; localPvpHeadShots = localPvpKills = 0; localDamageDealt = localDamageReceived = localPvpDamageDealt = 0f; return; }
+        if (!MultiplayerSession.IsActive)
+        {
+            scores.Clear();
+            hostKills.Clear();
+            hostPvpVictims.Clear();
+            scene = int.MinValue;
+            preserveForNextScene = false;
+            localDeaths = 0;
+            localPvpHeadShots = localPvpKills = 0;
+            localDamageDealt = localDamageReceived = localPvpDamageDealt = 0f;
+            return;
+        }
+        
         var currentScene = SceneManager.GetActiveScene().handle;
         if (scene != currentScene)
         {
-            scene = currentScene; scores.Clear(); hostKills.Clear(); hostPvpVictims.Clear(); localDeaths = 0; localPvpHeadShots = localPvpKills = 0; localDamageDealt = localDamageReceived = localPvpDamageDealt = 0f;
+            scene = currentScene;
+            if (!preserveForNextScene)
+            {
+                scores.Clear();
+                hostKills.Clear();
+                hostPvpVictims.Clear();
+                localDeaths = 0;
+                localPvpHeadShots = localPvpKills = 0;
+                localDamageDealt = localDamageReceived = localPvpDamageDealt = 0f;
+            }
+            preserveForNextScene = false;
             localWasAlive = PlayerScript.player?.bodyScript != null && PlayerScript.player.bodyScript.isAlive;
         }
+        
         var body = PlayerScript.player?.bodyScript;
         if (body != null)
         {
@@ -44,7 +82,8 @@ internal static class ScoreboardSystem
             localWasAlive = body.isAlive;
         }
 
-        ushort senderId; PlayerPerformancePacket packet;
+        ushort senderId; 
+        PlayerPerformancePacket packet;
         while (MultiplayerSession.TryTakePlayerPerformance(out senderId, out packet))
         {
             if (MultiplayerSession.IsHost)
@@ -69,15 +108,16 @@ internal static class ScoreboardSystem
         nextSend = Time.unscaledTime + 1f;
         var mission = MissionManager.main;
         var localKills = MultiplayerSession.IsHost ? KillsFor(MultiplayerSession.LocalPeerId) : ForPlayer(MultiplayerSession.LocalPeerId).Kills;
-        var local = mission == null ? new PlayerPerformance(0, 0, localPvpHeadShots, localDamageDealt + localPvpDamageDealt, localDamageReceived, localKills, localDeaths) :
-            new PlayerPerformance(mission.hitShots, mission.missedShots, mission.headShots + localPvpHeadShots,
-                Mathf.Max(localDamageDealt, mission.damageDealt) + localPvpDamageDealt,
-                Mathf.Max(localDamageReceived, Mathf.Max(0f, mission.damageReceived - localPvpDamageDealt)),
-                localKills, localDeaths);
+       
+        var local = mission == null ? new PlayerPerformance(0, 0, localPvpHeadShots, localDamageDealt + localPvpDamageDealt, localDamageReceived, localKills, localDeaths) : new
+            PlayerPerformance(mission.hitShots, mission.missedShots, mission.headShots + localPvpHeadShots, Mathf.Max(localDamageDealt, mission.damageDealt) + localPvpDamageDealt, Mathf.Max(localDamageReceived, Mathf.Max(0f, mission.damageReceived - localPvpDamageDealt)), localKills, localDeaths);
+       
         scores[MultiplayerSession.LocalPeerId] = local;
-        if (MultiplayerSession.IsHost) MultiplayerSession.Send(ToPacket(MultiplayerSession.LocalPeerId, local));
-        else MultiplayerSession.Send(ToPacket(0, new PlayerPerformance(local.Hits, local.Misses, local.Heads,
-            local.DamageDealt, local.DamageReceived, 0, local.Deaths)), 1);
+        
+        if (MultiplayerSession.IsHost) 
+            MultiplayerSession.Send(ToPacket(MultiplayerSession.LocalPeerId, local));
+        else 
+            MultiplayerSession.Send(ToPacket(0, new PlayerPerformance(local.Hits, local.Misses, local.Heads, local.DamageDealt, local.DamageReceived, 0, local.Deaths)), 1);
     }
 
     internal static void RecordHostNpcKill(BodyScript victim)
@@ -87,15 +127,6 @@ internal static class ScoreboardSystem
         if (killer == null) return;
         var peerId = killer == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId : (NetworkAvatarRegistry.ReplicaForBody(killer)?.remotePeerId ?? 0);
         if (peerId != 0) hostKills[peerId] = KillsFor(peerId) + 1;
-    }
-
-    internal static void RecordHostPvpKill(BodyScript killer, ushort victimPeerId)
-    {
-        if (killer == null || !killer.isPlayer) return;
-        var peerId = killer == PlayerScript.player?.bodyScript
-            ? MultiplayerSession.LocalPeerId
-            : NetworkAvatarRegistry.ReplicaForBody(killer)?.remotePeerId ?? 0;
-        RecordHostPvpKill(peerId, victimPeerId);
     }
 
     internal static void RecordHostPvpKill(ushort killerPeerId, ushort victimPeerId)

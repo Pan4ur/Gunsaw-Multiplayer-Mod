@@ -1,16 +1,13 @@
-using System;
-using System.Collections.Generic;
+
 using System.Diagnostics;
 using System.Globalization;
-using System.IO;
-using System.Threading;
 
 namespace DiscordIPC.Internal
 {
     internal sealed class DiscordIpcClient
     {
         private static readonly string[] UnixTempVariables = { "XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP" };
-        private readonly object _sync = new object();
+        private readonly object _sync = new();
         private Connection _connection;
         private Activity _queuedActivity;
         private bool _ready;

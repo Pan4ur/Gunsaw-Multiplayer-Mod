@@ -97,9 +97,10 @@ internal static partial class MultiplayerSession
                         {
                             scene = payload.Substring(0, split);
                             var rest = payload.Substring(split + 1);
-                            if (rest.EndsWith("\nR", StringComparison.Ordinal))
+                            if (rest.EndsWith("\nR", StringComparison.Ordinal) || rest.EndsWith("\nA", StringComparison.Ordinal))
                             {
                                 reload = true;
+                                if (rest.EndsWith("\nA", StringComparison.Ordinal)) ScoreboardSystem.PreserveForNextScene();
                                 rest = rest.Substring(0, rest.Length - 2);
                             }
                             int epoch;

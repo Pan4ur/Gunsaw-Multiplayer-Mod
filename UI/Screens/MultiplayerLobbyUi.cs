@@ -12,7 +12,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
@@ -62,6 +62,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         grabToggle.isOn = plugin.createCanGrab;
         downToggle.isOn = plugin.createGrabOnlyUnconscious;
         respawnToggle.isOn = plugin.createAllowRespawn;
+        autoRestartToggle.isOn = plugin.createAutoRestart;
         respawnAtStartToggle.isOn = plugin.createRespawnAtStart;
         playerCollisionsToggle.isOn = plugin.createPlayerCollisions;
         cheatsToggle.isOn = plugin.createCheats;
@@ -140,6 +141,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(maxPlayersRow.gameObject, "MAX PLAYERS: The maximum number of players allowed in your lobby.");
         respawnToggle = CreateToggle(CreateSettingsRow(settings), "ALLOW RESPAWN", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAllowRespawn = value);
         AddTooltip(respawnToggle.gameObject, "ALLOW RESPAWN: When enabled, players can respawn after death. When disabled, they can only spectate living players until the game ends.");
+        autoRestartToggle = CreateToggle(CreateSettingsRow(settings), "AUTO RESTART", Vector2.zero, new Vector2(520f, 40f), value => plugin.createAutoRestart = value);
+        AddTooltip(autoRestartToggle.gameObject, "AUTO RESTART: The host restarts the level after everyone dies, or after only one team remains alive.");
         var delayRow = CreateSettingsRow(settings);
         CreateText(delayRow, "RESPAWN DELAY", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         respawnInput = CreateInput(delayRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createRespawnTime = value);

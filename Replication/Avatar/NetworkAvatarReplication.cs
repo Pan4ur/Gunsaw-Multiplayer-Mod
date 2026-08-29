@@ -84,7 +84,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool collisionRulePlayerCollisions;
     private readonly Dictionary<SpriteRenderer, Sprite> originalDismemberSprites = new();
     private readonly List<Transform> staleWorldTargets = [];
-    private readonly List<KeyValuePair<Transform, WorldTargetState>> orderedWorldTargets = new();
+    private readonly List<KeyValuePair<Transform, WorldTargetState>> orderedWorldTargets = [];
     private Rigidbody2D[] remoteRigidbodies = new Rigidbody2D[0];
     private readonly List<Rigidbody2D> remoteTailBases = [];
     private Transform[] remoteTails = new Transform[0];
@@ -172,7 +172,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private VehicleBase localVehicle;
     private bool localVehicleLocked;
     private bool localVehicleWasSimulated;
-    private readonly AvatarColorDebug colorEffects = new();
 
     internal static int AvatarCoreBytesPerSecond { get { return instance == null ? 0 : instance.avatarCoreBytesPerSecond; } }
     internal static int AvatarLimbBytesPerSecond { get { return instance == null ? 0 : instance.avatarLimbBytesPerSecond; } }
@@ -200,7 +199,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     }
     
     internal static bool IsSpectating { get { return instance != null && instance.spectating && !instance.CanRespawn; } }
-    private bool HasActiveColorEffect => colorEffects.IsActive;
 
     internal static string SpectatorTargetName()
     {
@@ -861,7 +859,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (player == null) return;
         if (player.bodyScript == null) return;
         UpdateSpectator(player);
-        colorEffects.Update(player.bodyScript);
 
         var serverOnlyHost = GunsawMultiplayerPlugin.IsHeadlessServer;
         var prefab = ResolveLocalCharacterPrefab(player.bodyScript);
@@ -1002,7 +999,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void OnDestroy()
     {
-        colorEffects.Restore();
         if (coordinator)
         {
             RestoreLocalVehiclePhysics();

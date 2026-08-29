@@ -147,7 +147,7 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
     {
         writer.WriteInt32(SceneEpoch);
         writer.WriteInt32(Sequence);
-        writer.WriteUInt16((ushort)System.Math.Min(Bodies.Length, ushort.MaxValue));
+        writer.WriteUInt16((ushort) Math.Min(Bodies.Length, ushort.MaxValue));
         for (var index = 0; index < Bodies.Length && index < ushort.MaxValue; index++) Bodies[index].Write(ref writer);
     }
 

@@ -29,7 +29,6 @@ internal static class CsExperienceMode
             nextFlick = 0f;
             pauseFlickUntil = 0f;
             lastAmmo = -1;
-            if (body != null) GiveSniperRifle(body);
         }
         else if (body != null)
         {
@@ -75,42 +74,6 @@ internal static class CsExperienceMode
     {
         var player = PlayerScript.player;
         return player == null ? null : player.bodyScript;
-    }
-
-    private static void GiveSniperRifle(BodyScript body)
-    {
-        WeaponPreset sniper = null;
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-        {
-            if (preset != null && preset.sprite != null &&
-                string.Equals(preset.name, "Sniper Rifle", StringComparison.OrdinalIgnoreCase))
-            {
-                sniper = preset;
-                break;
-            }
-        }
-        if (sniper == null)
-            foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-                if (preset != null && preset.sprite != null && !string.IsNullOrEmpty(preset.name) &&
-                    preset.name.IndexOf("sniper", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    sniper = preset;
-                    break;
-                }
-        if (sniper == null) return;
-        NetworkAvatarReplication.EnsureRespawnWeaponSlots(body);
-        var slot = 0;
-        for (var index = 0; index < body.weapons.Count; index++)
-            if (body.weapons[index] == null) { slot = index; break; }
-        body.weapons[slot] = sniper;
-        body.weaponAmmos[slot] = sniper.magSize;
-        if (sniper.ammoType >= 0)
-        {
-            if (body.ammoAmount == null) body.ammoAmount = new List<int>();
-            while (body.ammoAmount.Count <= sniper.ammoType) body.ammoAmount.Add(0);
-            body.ammoAmount[sniper.ammoType] = Mathf.Max(body.ammoAmount[sniper.ammoType], sniper.magSize * 20);
-        }
-        body.ChangeWeapon(slot);
     }
 }
 

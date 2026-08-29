@@ -669,10 +669,12 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal void SendFullEnvironment(ushort peerId)
     {
-        if (!MultiplayerSession.IsHost || peerId == 0 || !environmentSentPeers.Add(peerId)) return;
-        var environment = enviroment.SerializeEnvironment();
-        lastSerializedEnvironment = environment;
-        MultiplayerSession.Send(new WorldEnvironmentPacket(environment), peerId);
+        if (!MultiplayerSession.IsHost || peerId == 0 || !environmentSentPeers.Add(peerId)) 
+            return;
+        
+        var env = enviroment.SerializeEnvironment();
+        lastSerializedEnvironment = env;
+        MultiplayerSession.Send(new WorldEnvironmentPacket(env), peerId);
     }
 
     private bool IsIdleVehiclePart(Rigidbody2D body)
@@ -696,9 +698,7 @@ internal sealed class WorldReplication : MonoBehaviour
             var body = pair.Value;
             if (body == null) continue;
             float changedAt;
-            MultiplayerHud.DrawReplicationMarker(body.worldCenterOfMass,
-                lastChangedBodyAt.TryGetValue(pair.Key, out changedAt) &&
-                Time.unscaledTime - changedAt <= 1f);
+            MultiplayerHud.DrawReplicationMarker(body.worldCenterOfMass, lastChangedBodyAt.TryGetValue(pair.Key, out changedAt) && Time.unscaledTime - changedAt <= 1f);
         }
     }
 
@@ -710,6 +710,7 @@ internal sealed class WorldReplication : MonoBehaviour
             scratch = new BodyStateScratch(WireId(id));
             bodyStateScratch[id] = scratch;
         }
+        
         var stream = scratch.Stream;
         var writer = scratch.Writer;
         stream.Position = 0;
@@ -726,11 +727,14 @@ internal sealed class WorldReplication : MonoBehaviour
             writer.Write(dropped != null); writer.Write(crate != null);
             if (crate != null)
                 writer.Write(networkCrateDebrisBodies.Contains(body) ? 0UL : NetworkWireId.FromString(layout.CratePrefabName));
-            BinaryWriterRaw.WriteSingle(writer, body.position.x); BinaryWriterRaw.WriteSingle(writer, body.position.y);
+            BinaryWriterRaw.WriteSingle(writer, body.position.x);
+            BinaryWriterRaw.WriteSingle(writer, body.position.y);
             BinaryWriterRaw.WriteSingle(writer, body.rotation);
-            BinaryWriterRaw.WriteSingle(writer, body.velocity.x); BinaryWriterRaw.WriteSingle(writer, body.velocity.y);
+            BinaryWriterRaw.WriteSingle(writer, body.velocity.x); 
+            BinaryWriterRaw.WriteSingle(writer, body.velocity.y);
             BinaryWriterRaw.WriteSingle(writer, body.angularVelocity);
-            BinaryWriterRaw.WriteSingle(writer, body.gravityScale); writer.Write((int)body.constraints);
+            BinaryWriterRaw.WriteSingle(writer, body.gravityScale);
+            writer.Write((int)body.constraints);
             writer.Write((byte)body.bodyType); writer.Write(body.simulated); writer.Write(awake);
             var safetyRailing = layout.SafetyRailing;
             writer.Write(safetyRailing);

@@ -89,6 +89,7 @@ internal static partial class MultiplayerSession
     private static string hostScene = "";
     private static string pendingScene = "";
     private static bool pendingSceneReload;
+    private static bool autoRestartSceneReload;
     private static bool pendingSceneAdvanced;
     private static int hostSceneEpoch;
     private static int lastHostSceneHandle;
@@ -351,7 +352,14 @@ internal static partial class MultiplayerSession
         if (!isHost || string.IsNullOrEmpty(scene)) return;
         ObserverSystem.BroadcastResetForLevelChange();
         hostScene = scene;
-        Send(new ScenePacket(scene + "\n" + (hostSceneEpoch + 1) + "\nR"), 0, false);
+        var autoRestart = autoRestartSceneReload;
+        autoRestartSceneReload = false;
+        Send(new ScenePacket(scene + "\n" + (hostSceneEpoch + 1) + (autoRestart ? "\nA" : "\nR")), 0, false);
+    }
+
+    internal static void MarkNextSceneReloadAutoRestart()
+    {
+        if (isHost) autoRestartSceneReload = true;
     }
 
     internal static void EndHostCustomLevel(string scene)

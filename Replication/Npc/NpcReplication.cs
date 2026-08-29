@@ -463,7 +463,9 @@ internal sealed class NpcReplication : MonoBehaviour
             }
             scratch.Stream.Position = 0;
             scratch.Stream.SetLength(0);
+            
             var stateBreakdown = new NpcWireBreakdown();
+            
             WriteState(scratch.Writer, scratch.WireId, pair.Key, pair.Value, false, ref stateBreakdown);
             byte[] previous;
             var stateChanged = !lastSentStates.TryGetValue(pair.Key, out previous) || !StreamEquals(scratch.Stream, previous);
@@ -482,8 +484,12 @@ internal sealed class NpcReplication : MonoBehaviour
                 }
                 else state = new NpcSerializedState { Data = scratch.Stream.ToArray(), Breakdown = stateBreakdown };
                 changed.Add(state);
-                if (stateChanged) lastChangedNpcAt[pair.Key] = Time.unscaledTime;
-                if (stateChanged) lastSentStates[pair.Key] = fullSnapshot ? scratch.Stream.ToArray() : state.Data;
+
+                if (stateChanged)
+                {
+                    lastChangedNpcAt[pair.Key] = Time.unscaledTime;
+                    lastSentStates[pair.Key] = fullSnapshot ? scratch.Stream.ToArray() : state.Data;
+                }
             }
         }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSerializeStates, stateSerializeStarted);

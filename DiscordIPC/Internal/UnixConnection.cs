@@ -1,8 +1,5 @@
-using System;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
 
 namespace DiscordIPC.Internal
 {
@@ -12,7 +9,7 @@ namespace DiscordIPC.Internal
         private const int SOCK_STREAM = 1;
 
         private int _fd = -1;
-        private readonly object _writeSync = new object();
+        private readonly object _writeSync = new();
         private readonly Thread _readerThread;
 
         public UnixConnection(string path, Action<Packet> packetHandler, Action disconnectHandler)

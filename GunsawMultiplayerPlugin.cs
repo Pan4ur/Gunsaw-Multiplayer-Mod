@@ -30,6 +30,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<bool> savedCreateCanGrab;
     private ConfigEntry<bool> savedCreateGrabOnlyUnconscious;
     private ConfigEntry<bool> savedCreateAllowRespawn;
+    private ConfigEntry<bool> savedCreateAutoRestart;
     private ConfigEntry<bool> savedCreateRespawnAtStart;
     private ConfigEntry<bool> savedCreatePlayerCollisions;
     private ConfigEntry<bool> savedCreateCheats;
@@ -56,6 +57,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool createCanGrab = true;
     internal bool createGrabOnlyUnconscious = true;
     internal bool createAllowRespawn = true;
+    internal bool createAutoRestart;
     internal bool createRespawnAtStart = true;
     internal bool createPlayerCollisions = true;
     internal bool createCheats;
@@ -88,7 +90,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ChatCommandSystem _chatCommandSystem;
     private MultiplayerLobbyUi multiplayerLobbyUi;
     private MultiplayerReplicationDebugMode replicationDebugMode;
-    private int debugWeaponSequence;
     private bool gameplayTypesLogged;
     private string hostedLobbyId = "";
     private string hostedLobbyDisplayName = "";
@@ -132,6 +133,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             "Limit grabbing to unconscious players in new lobbies.");
         savedCreateAllowRespawn = Config.Bind("Lobby", "AllowRespawn", createAllowRespawn,
             "Allow respawning in new lobbies.");
+        savedCreateAutoRestart = Config.Bind("Lobby", "AutoRestart", createAutoRestart,
+            "Restart the level after every player or team but one is eliminated.");
         savedCreateRespawnAtStart = Config.Bind("Lobby", "RespawnAtStart", createRespawnAtStart,
             "Respawn players at level start in new lobbies.");
         savedCreatePlayerCollisions = Config.Bind("Lobby", "PlayerCollisions", createPlayerCollisions,
@@ -168,6 +171,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createCanGrab = savedCreateCanGrab.Value;
         createGrabOnlyUnconscious = savedCreateGrabOnlyUnconscious.Value;
         createAllowRespawn = savedCreateAllowRespawn.Value;
+        createAutoRestart = savedCreateAutoRestart.Value;
         createRespawnAtStart = savedCreateRespawnAtStart.Value;
         createPlayerCollisions = savedCreatePlayerCollisions.Value;
         createCheats = savedCreateCheats.Value;
@@ -274,6 +278,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         MultiplayerSession.UpdateConnection();
         TeamSystem.Tick();
         ScoreboardSystem.Tick();
+        AutoRestartSystem.Tick(createAutoRestart);
         MultiplayerSession.SyncBrutalMode();
         ObserverSystem.Tick();
         if (MultiplayerSession.IsHosting)
@@ -412,34 +417,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             multiplayerHud.ToggleNetworkStats();
             return;
         }
-        if (Input.GetKeyDown(KeyCode.Space)) debugWeaponSequence = 1;
-        else if (debugWeaponSequence == 1 && Input.GetKeyDown(KeyCode.End)) debugWeaponSequence = 2;
-        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.G))
-        {
-            debugWeaponSequence = 0;
-            SpawnRandomWeapon();
-        }
-        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha1))
-        {
-            debugWeaponSequence = 0;
-            SpawnNamedWeapon("Grenade Launcher", "Grenade launcher");
-        }
-        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha2))
-        {
-            debugWeaponSequence = 0;
-            SpawnNamedWeapon("Rocket Launcher", "Rocket", "RPG");
-        }
-        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha3))
-        {
-            debugWeaponSequence = 0;
-            SpawnNamedWeapon("Sniper Rifle", "Sniper rifle");
-        }
-        else if (debugWeaponSequence == 2 && Input.GetKeyDown(KeyCode.Alpha4))
-        {
-            debugWeaponSequence = 0;
-            SpawnNamedWeapon("Marksman Rifle", "Marksman rifle");
-        }
-        else if (Input.anyKeyDown) debugWeaponSequence = 0;
     }
 
     internal void SaveLobbyPreferences()
@@ -459,6 +436,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             savedCreateAllowRespawn.Value = createAllowRespawn;
             changed = true;
         }
+        if (savedCreateAutoRestart.Value != createAutoRestart) { savedCreateAutoRestart.Value = createAutoRestart; changed = true; }
         if (savedCreateRespawnAtStart.Value != createRespawnAtStart)
         {
             savedCreateRespawnAtStart.Value = createRespawnAtStart;
@@ -1546,27 +1524,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (Uri.TryCreate(value, UriKind.Absolute, out uri))
             return uri.IsDefaultPort ? uri.Host : uri.Host + ":" + uri.Port;
         return value;
-    }
-
-    private void SpawnRandomWeapon()
-    {
-        var player = PlayerScript.player;
-        if (player == null || player.bodyScript == null) return;
-        var presets = Resources.FindObjectsOfTypeAll<WeaponPreset>();
-        if (presets == null || presets.Length == 0) { status = "No weapon presets loaded."; return; }
-        var choices = new List<WeaponPreset>();
-        foreach (var preset in presets)
-            if (preset != null && preset.sprite != null) choices.Add(preset);
-        if (choices.Count == 0) { status = "No usable weapon presets loaded."; return; }
-        var prefab = Resources.Load<GameObject>("Spawnables/PickupWeapon");
-        if (prefab == null) { status = "Pickup weapon prefab not found."; return; }
-        var position = player.bodyScript.transform.position + new Vector3(0f, 2f, 0f);
-        var pickup = Instantiate(prefab, position, Quaternion.identity).GetComponent<DroppedWeapon>();
-        if (pickup == null) { status = "Pickup component not found."; return; }
-        var weapon = choices[UnityEngine.Random.Range(0, choices.Count)];
-        pickup.ChangeWeapon(weapon, weapon.magSize);
-        WorldReplication.Instance.weapons.RegisterDroppedWeapon(pickup);
-        status = "Spawned " + weapon.name + ".";
     }
 
     private void SpawnNamedWeapon(string weaponName, string fallbackName, string alternateName = "")
