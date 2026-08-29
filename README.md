@@ -56,9 +56,9 @@ MP Features:
 
 1. Create and export a level in Gunsaw's level editor or copy it [here](https://gunsaw-level-codes.jimmyking.dev/)
 2. Host a multiplayer lobby
-3. In the multiplayer window, choose **Paste custom level**. The exported level code must be
+3. In the multiplayer window, choose **Paste**. The exported level code must be
    in the clipboard
-4. Confirm that the status says the level is loaded, then choose **Start custom level**
+4. Confirm that the status says the level is loaded, then choose **Start**
 
 ## Default binds
 
