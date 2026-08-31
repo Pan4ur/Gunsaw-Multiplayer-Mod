@@ -6,7 +6,7 @@ using UnityEngine.UI;
 internal sealed class MultiplayerHudUi : MonoBehaviour
 {
     private GameObject root, hostPanel, playersPanel, chatPanel, finalLeaderboardPanel;
-    private TMP_Text template, hostText, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText, finalLeaderboardHeader;
+    private TMP_Text template, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText, finalLeaderboardHeader;
     private TMP_InputField input;
     private TMP_FontAsset unicodeChatFont;
     private TMP_FontAsset chatFont;
@@ -40,8 +40,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         SetActive(hostPanel, MultiplayerSession.IsHosting);
         SetActive(playersPanel, Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
         SetActive(chatPanel, MultiplayerSession.IsConnected);
-        hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
-        hostText.gameObject.SetActive(null == PlayerScript.player || PlayerScript.player.canvasVisible);
+       // hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
+       // hostText.gameObject.SetActive(null == PlayerScript.player || PlayerScript.player.canvasVisible);
         if (playersPanel.activeSelf) UpdatePlayers();
         UpdateNameTags();
         UpdateCoopMarkers();
@@ -138,7 +138,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
         hostPanel = Panel(root.transform, Vector2.zero, new Vector2(480f, 66f));
         ScreenAnchor(hostPanel.GetComponent<RectTransform>(), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-20f, -20f));
-        hostText = Text(hostPanel.transform, "", Vector2.zero, new Vector2(450f, 48f), 21, TextAlignmentOptions.Center);
+     //   hostText = Text(hostPanel.transform, "", Vector2.zero, new Vector2(450f, 48f), 21, TextAlignmentOptions.Center);
 
         playersPanel = Panel(root.transform, Vector2.zero, new Vector2(1080f, 320f));
         ScreenAnchor(playersPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -20f));
