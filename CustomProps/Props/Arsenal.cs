@@ -95,6 +95,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
 {
     private static ArsenalMenu instance;
     private GameObject menu, content;
+    private ScrollRect weaponScroll;
     private RectTransform characterPreview;
     private Image weaponPreview;
     private TMP_Text weaponName, weaponInfo;
@@ -103,7 +104,6 @@ internal sealed class ArsenalMenu : MonoBehaviour
     private List<WeaponPreset> weapons = [];
     private WeaponPreset selected;
     private float nearbyUntil;
-    private float maxScroll;
     private bool cursorVisible;
     private CursorLockMode cursorLock;
     private readonly Dictionary<SpriteRenderer, Image> characterSprites = [];
@@ -173,9 +173,16 @@ internal sealed class ArsenalMenu : MonoBehaviour
         title.fontStyle = FontStyles.Bold;
         var listPanel = Panel(menu.transform, new Vector2(-320f, -5f), new Vector2(590f, 550f),
             new Color(0.08f, 0.1f, 0.12f, 1f));
-        var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+        var viewport = new GameObject("Weapon Scroll", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image),
+            typeof(RectMask2D), typeof(ScrollRect));
         viewport.transform.SetParent(listPanel.transform, false);
         Stretch(viewport.GetComponent<RectTransform>(), new Vector2(12f, 12f), new Vector2(-12f, -12f));
+        viewport.GetComponent<Image>().color = Color.clear;
+        weaponScroll = viewport.GetComponent<ScrollRect>();
+        weaponScroll.viewport = viewport.GetComponent<RectTransform>();
+        weaponScroll.horizontal = false;
+        weaponScroll.movementType = ScrollRect.MovementType.Clamped;
+        weaponScroll.scrollSensitivity = 28f;
         content = new GameObject("Weapons", typeof(RectTransform));
         content.transform.SetParent(viewport.transform, false);
         var contentRect = content.GetComponent<RectTransform>();
@@ -183,6 +190,9 @@ internal sealed class ArsenalMenu : MonoBehaviour
         contentRect.anchorMax = new Vector2(1f, 1f);
         contentRect.pivot = new Vector2(0.5f, 1f);
         contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = new Vector2(-18f, 0f);
+        weaponScroll.content = contentRect;
+        CreateScrollbar(viewport.transform, weaponScroll);
         var preview = Panel(menu.transform, new Vector2(320f, -5f), new Vector2(590f, 550f),
             new Color(0.08f, 0.1f, 0.12f, 1f));
         var character = new GameObject("CharacterPreview", typeof(RectTransform), typeof(RectMask2D));
@@ -214,50 +224,100 @@ internal sealed class ArsenalMenu : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         RefreshCharacterPreview();
         if (Input.GetKeyDown(KeyCode.Escape)) CloseAndEquip();
-        var wheel = Input.mouseScrollDelta.y;
-        if (Mathf.Abs(wheel) > 0.01f)
-        {
-            var rect = content.GetComponent<RectTransform>();
-            rect.anchoredPosition = new Vector2(0f, Mathf.Clamp(rect.anchoredPosition.y - wheel * 70f, 0f, maxScroll));
-        }
     }
 
     private void RebuildTiles()
     {
-        foreach (var tile in tiles)
-            if (tile != null)
-                Destroy(tile.gameObject);
+        foreach (Transform item in content.transform)
+            Destroy(item.gameObject);
         tiles.Clear();
-        for (var index = 0; index < weapons.Count; index++)
+        var y = 8f;
+        foreach (var group in weapons.GroupBy(weapon => weapon.slot).OrderBy(group => group.Key))
         {
-            var weapon = weapons[index];
-            var row = index / 3;
-            var column = index % 3;
-            var tile = Button(content.transform, weapon.name, Vector2.zero, new Vector2(178f, 94f));
-            TopRect(tile.GetComponent<RectTransform>(), new Vector2(-190f + column * 190f, -8f - row * 112f));
-            var icon = Image(tile.transform, new Vector2(-54f, 0f), new Vector2(52f, 52f));
-            icon.sprite = weapon.sprite;
-            icon.color = weapon.sprite == null ? Color.clear : Color.white;
-            var label = tile.GetComponentInChildren<TextMeshProUGUI>();
-            label.rectTransform.anchoredPosition = new Vector2(33f, 0f);
-            label.rectTransform.sizeDelta = new Vector2(108f, 70f);
-            label.fontSize = 13f;
-            label.alignment = TextAlignmentOptions.Left;
-            var captured = weapon;
-            tile.onClick.AddListener(() =>
+            var header = Panel(content.transform, Vector2.zero, new Vector2(520f, 30f),
+                new Color(0.12f, 0.16f, 0.19f, 1f));
+            header.name = SlotCategoryName(group.Key);
+            TopRect(header.GetComponent<RectTransform>(), new Vector2(0f, -y + 8f));
+            var headerText = Text(header.transform, SlotCategoryName(group.Key), new Vector2(0f, -2f),
+                new Vector2(490f, 26f), 17f, TextAlignmentOptions.Left);
+            headerText.fontStyle = FontStyles.Bold;
+            headerText.raycastTarget = false;
+            y += 40f;
+
+            var groupedWeapons = group.OrderBy(weapon => weapon.name, StringComparer.OrdinalIgnoreCase).ToList();
+            for (var index = 0; index < groupedWeapons.Count; index++)
             {
-                selected = captured;
-                EquipSelected();
-                UpdatePreview();
-            });
-            tiles.Add(tile);
+                var weapon = groupedWeapons[index];
+                var row = index / 3;
+                var column = index % 3;
+                var tile = Button(content.transform, weapon.name, Vector2.zero, new Vector2(170f, 94f));
+                TopRect(tile.GetComponent<RectTransform>(), new Vector2(-180f + column * 180f, -y - row * 112f));
+                var icon = Image(tile.transform, new Vector2(-50f, 0f), new Vector2(52f, 52f));
+                icon.sprite = weapon.sprite;
+                icon.color = weapon.sprite == null ? Color.clear : Color.white;
+                var label = tile.GetComponentInChildren<TextMeshProUGUI>();
+                label.rectTransform.anchoredPosition = new Vector2(30f, 0f);
+                label.rectTransform.sizeDelta = new Vector2(104f, 70f);
+                label.fontSize = 13f;
+                label.alignment = TextAlignmentOptions.Left;
+                var captured = weapon;
+                tile.onClick.AddListener(() =>
+                {
+                    selected = captured;
+                    EquipSelected();
+                    UpdatePreview();
+                });
+                tiles.Add(tile);
+            }
+            y += ((groupedWeapons.Count + 2) / 3) * 112f + 10f;
         }
 
-        var height = Mathf.Max(526f, ((weapons.Count + 2) / 3) * 112f + 20f);
+        var height = Mathf.Max(526f, y);
         var contentRect = content.GetComponent<RectTransform>();
-        contentRect.sizeDelta = new Vector2(0f, height);
-        contentRect.anchoredPosition = Vector2.zero;
-        maxScroll = Mathf.Max(0f, height - 526f);
+        contentRect.sizeDelta = new Vector2(-18f, height);
+        weaponScroll.verticalNormalizedPosition = 1f;
+    }
+
+    private static string SlotCategoryName(int slot)
+    {
+        return slot switch
+        {
+            0 => "PISTOLS",
+            1 => "MAIN GUNS",
+            2 => "SNIPERS & SPECIAL",
+            _ => "SLOT " + (slot + 1)
+        };
+    }
+
+    private static void CreateScrollbar(Transform parent, ScrollRect scroll)
+    {
+        var scrollbar = new GameObject("Scrollbar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image),
+            typeof(Scrollbar));
+        scrollbar.transform.SetParent(parent, false);
+        var scrollbarRect = scrollbar.GetComponent<RectTransform>();
+        scrollbarRect.anchorMin = new Vector2(1f, 0f);
+        scrollbarRect.anchorMax = new Vector2(1f, 1f);
+        scrollbarRect.pivot = new Vector2(1f, 0.5f);
+        scrollbarRect.anchoredPosition = new Vector2(6f, 0f);
+        scrollbarRect.sizeDelta = new Vector2(12f, -10f);
+        scrollbar.GetComponent<Image>().color = new Color(0.08f, 0.08f, 0.08f, 0.9f);
+
+        var handle = new GameObject("Handle", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        handle.transform.SetParent(scrollbar.transform, false);
+        var handleRect = handle.GetComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.offsetMin = new Vector2(2f, 2f);
+        handleRect.offsetMax = new Vector2(-2f, -2f);
+        var handleImage = handle.GetComponent<Image>();
+        handleImage.color = new Color(0.65f, 0.65f, 0.65f, 0.95f);
+
+        var bar = scrollbar.GetComponent<Scrollbar>();
+        bar.targetGraphic = handleImage;
+        bar.handleRect = handleRect;
+        bar.direction = Scrollbar.Direction.BottomToTop;
+        scroll.verticalScrollbar = bar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
     }
 
     private void UpdatePreview()
