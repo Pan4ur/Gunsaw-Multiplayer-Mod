@@ -61,11 +61,13 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     internal static void PrepareRuntime(LevelLoader loader)
     {
         CustomPropBootstrap.EnsureRegistered();
+        LogicTickService.ResetRuntime();
         runtimeInstances.Clear();
         var json = SceneLoader.main == null
             ? (loader == null ? string.Empty : loader.levelCode)
             : SceneLoader.main.levelEditString;
         runtimeSourceJson = json ?? string.Empty;
+        ToggleableLampSystem.PrepareRuntime(runtimeSourceJson);
         runtimeInstances.AddRange(ReadInstances(runtimeSourceJson));
         var cleaned = RemoveCustomParts(runtimeSourceJson);
         if (SceneLoader.main != null) SceneLoader.main.levelEditString = cleaned;
@@ -352,7 +354,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         SetEditable(editor.sizeXField);
         SetEditable(editor.sizeYField);
 
-        if (editor.idField != null) editor.idField.onEndEdit.AddListener(value => CommitFields());
+        if (editor.idField != null)
+        {
+            editor.idField.onEndEdit.AddListener(value => CommitFields());
+            editor.idField.onEndEdit.AddListener(value => CommitColoredLampId());
+        }
         if (editor.tarIdField != null) editor.tarIdField.onEndEdit.AddListener(value => CommitFields());
         if (editor.teamField != null)
         {
@@ -392,6 +398,37 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
         if (levelPart == null || levelPart.part == null || levelPart.part.path != "Building/PlayerSpawn") return;
         levelPart.part.team = editor.teamField.text.Trim();
+    }
+
+    internal void EnableIdFieldForColoredLamp()
+    {
+        if (editor == null || editor.idField == null) return;
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        if (!IsColoredLamp(levelPart)) return;
+        levelPart.showId = true;
+        levelPart.idNameOverride = "Activation ID";
+        editor.idField.text = levelPart.part.id.ToString();
+        if (editor.idName != null) editor.idName.text = "Activation ID";
+        SetEditable(editor.idField);
+    }
+
+    internal void CommitColoredLampId()
+    {
+        if (editor == null || editor.idField == null) return;
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        if (!IsColoredLamp(levelPart)) return;
+        int id;
+        if (int.TryParse(editor.idField.text, out id)) levelPart.part.id = Mathf.Max(0, id);
+    }
+
+    private static bool IsColoredLamp(LevelPartGame levelPart)
+    {
+        return levelPart != null && levelPart.part != null &&
+               (levelPart.fullName == "Colored Lamp" ||
+                (!string.IsNullOrEmpty(levelPart.part.path) &&
+                 levelPart.part.path.IndexOf("Lamp", StringComparison.OrdinalIgnoreCase) >= 0));
     }
 
     private void Update()

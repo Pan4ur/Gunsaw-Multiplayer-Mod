@@ -412,7 +412,15 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
 
         if (targetId == 0 && connectionMode != ConnectionMode.Relay)
         {
-            var targets = PeerIds();
+
+            ushort[] targets;
+            lock (statusLock)
+            {
+                var targetSet = new HashSet<ushort>(peers.Ids());
+                foreach (var peerId in p2pPeers.Keys)
+                    if (peerId != 0 && peerId != localPeerId) targetSet.Add(peerId);
+                targets = targetSet.ToArray();
+            }
             if (targets.Length > 0)
             {
                 foreach (var peerId in targets) SendPacket(packet, peerId, priority, allowReliable, sendImmediately);

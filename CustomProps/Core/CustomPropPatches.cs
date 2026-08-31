@@ -29,7 +29,11 @@ internal static class CustomPropEditorSavePatch
     private static void Prefix(LevelEditor __instance)
     {
         var controller = CustomPropEditorController.Ensure(__instance);
-        if (controller != null) controller.CommitPlayerSpawnTeam();
+        if (controller != null)
+        {
+            controller.CommitPlayerSpawnTeam();
+            controller.CommitColoredLampId();
+        }
     }
 
     private static void Postfix(LevelEditor __instance, bool __0, ref string __result)
@@ -48,6 +52,7 @@ internal static class CustomPropRuntimeLoadPatch
 
     private static void Postfix()
     {
+        ToggleableLampSystem.AttachRuntime();
         CustomPropEditorController.CreateRuntime();
     }
 }
@@ -68,6 +73,7 @@ internal static class CustomPropEditorSelectPartPatch
         {
             controller.RefreshInspectorImmediate();
             controller.EnableTeamFieldForPlayerSpawn();
+            controller.EnableIdFieldForColoredLamp();
         }
     }
 }

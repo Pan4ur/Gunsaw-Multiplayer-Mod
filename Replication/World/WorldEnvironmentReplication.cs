@@ -560,6 +560,24 @@ public class WorldEnvironmentReplication
             var mission = MissionManager.main;
             writer.Write(mission == null ? -1 : mission.killAmount);
             writer.Write(mission == null ? -1 : mission.totalEnemyCount);
+
+            var poweredLampCount = 0;
+            foreach (var pair in WorldReplication.Instance.lamps)
+            {
+                if (ToggleableLampSystem.RuntimeForLamp(pair.Value) != null && poweredLampCount < ushort.MaxValue)
+                    poweredLampCount++;
+            }
+            writer.Write((ushort)poweredLampCount);
+            var writtenPoweredLamps = 0;
+            foreach (var pair in WorldReplication.Instance.lamps)
+            {
+                if (writtenPoweredLamps >= poweredLampCount) break;
+                var runtime = ToggleableLampSystem.RuntimeForLamp(pair.Value);
+                if (runtime == null) continue;
+                writer.Write(WorldReplication.Instance.WireId(pair.Key));
+                writer.Write(runtime.Powered);
+                writtenPoweredLamps++;
+            }
             return stream.ToArray();
         }
     }
@@ -611,9 +629,26 @@ public class WorldEnvironmentReplication
             ApplyWeather(rain, snow, fog);
             if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(int) * 2)
                 ApplyMissionEnemyCount(reader.ReadInt32(), reader.ReadInt32());
+            if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(ushort))
+            {
+                var poweredLampCount = reader.ReadUInt16();
+                for (var index = 0; index < poweredLampCount &&
+                     reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(ulong) + 1; index++)
+                {
+                    ApplyLampPowerState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()), reader.ReadBoolean());
+                }
+            }
         }
     }
     
+    internal void ApplyLampPowerState(string id, bool powered)
+    {
+        WorldReplication.LampState lamp;
+        if (!WorldReplication.Instance.lamps.TryGetValue(id, out lamp)) return;
+        var runtime = ToggleableLampSystem.RuntimeForLamp(lamp);
+        if (runtime != null) runtime.SetPowered(powered);
+    }
+
     internal static void ApplyMissionEnemyCount(int killed, int total)
     {
         if (killed < 0 || total < 0) return;

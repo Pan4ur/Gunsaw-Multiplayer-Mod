@@ -6,6 +6,13 @@ internal readonly struct EnvironmentButtonState
     internal EnvironmentButtonState(ulong id, bool active, uint activations) { Id = id; Active = active; Activations = activations; }
 }
 
+internal readonly struct EnvironmentLampPowerState
+{
+    internal readonly ulong Id;
+    internal readonly bool Powered;
+    internal EnvironmentLampPowerState(ulong id, bool powered) { Id = id; Powered = powered; }
+}
+
 internal readonly struct EnvironmentFireState
 {
     internal readonly ulong Id;
@@ -54,11 +61,12 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly float FogIntensity;
     internal readonly int EnemyKills;
     internal readonly int EnemyTotal;
+    internal readonly EnvironmentLampPowerState[] LampPower;
 
     internal WorldEnvironmentPacket(int sceneEpoch, float gravityX, float gravityY, EnvironmentButtonState[] buttons,
         ulong[] destroyedGlassIds, ulong[] destroyedLampIds, EnvironmentFireState[] fires,
         EnvironmentAudioState[] audio, ulong[] destroyedDroneIds, float rainIntensity, float snowIntensity,
-        float fogIntensity, int enemyKills = -1, int enemyTotal = -1)
+        float fogIntensity, int enemyKills = -1, int enemyTotal = -1, EnvironmentLampPowerState[] lampPower = null)
     {
         SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
         Buttons = buttons ?? new EnvironmentButtonState[0];
@@ -69,6 +77,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         DestroyedDroneIds = destroyedDroneIds ?? new ulong[0];
         RainIntensity = rainIntensity; SnowIntensity = snowIntensity; FogIntensity = fogIntensity;
         EnemyKills = enemyKills; EnemyTotal = enemyTotal;
+        LampPower = lampPower ?? new EnvironmentLampPowerState[0];
     }
 
     internal WorldEnvironmentPacket(byte[] payload)
@@ -85,6 +94,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         WriteFires(ref writer, Fires); WriteAudio(ref writer, Audio); WriteIds(ref writer, DestroyedDroneIds);
         writer.WriteSingle(RainIntensity); writer.WriteSingle(SnowIntensity); writer.WriteSingle(FogIntensity);
         writer.WriteInt32(EnemyKills); writer.WriteInt32(EnemyTotal);
+        WriteLampPower(ref writer, LampPower);
     }
 
     internal static WorldEnvironmentPacket Read(ref PacketReader reader)
@@ -96,8 +106,9 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var rain = reader.ReadSingle(); var snow = reader.ReadSingle(); var fog = reader.ReadSingle();
         var enemyKills = reader.Remaining >= sizeof(int) * 2 ? reader.ReadInt32() : -1;
         var enemyTotal = reader.Remaining >= sizeof(int) ? reader.ReadInt32() : -1;
+        var lampPower = reader.Remaining >= sizeof(ushort) ? ReadLampPower(ref reader) : new EnvironmentLampPowerState[0];
         return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, lamps, fires, audio, drones,
-            rain, snow, fog, enemyKills, enemyTotal);
+            rain, snow, fog, enemyKills, enemyTotal, lampPower);
     }
 
     private static void WriteButtons(ref PacketWriter writer, EnvironmentButtonState[] values)
@@ -125,6 +136,24 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     {
         var values = new ulong[reader.ReadUInt16()];
         for (var index = 0; index < values.Length; index++) values[index] = reader.ReadUInt64();
+        return values;
+    }
+
+    private static void WriteLampPower(ref PacketWriter writer, EnvironmentLampPowerState[] values)
+    {
+        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
+        {
+            writer.WriteUInt64(values[index].Id);
+            writer.WriteBoolean(values[index].Powered);
+        }
+    }
+
+    private static EnvironmentLampPowerState[] ReadLampPower(ref PacketReader reader)
+    {
+        var values = new EnvironmentLampPowerState[reader.ReadUInt16()];
+        for (var index = 0; index < values.Length; index++)
+            values[index] = new EnvironmentLampPowerState(reader.ReadUInt64(), reader.ReadBoolean());
         return values;
     }
 
