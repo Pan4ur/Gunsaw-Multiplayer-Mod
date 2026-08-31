@@ -338,79 +338,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 }
         return true;
     }
-
-    internal static bool ReplaceLocalPlayerBody(BodyScript oldBody, BodyScript newBody)
-    {
-        var player = PlayerScript.player;
-        if (instance == null || player == null || newBody == null ||
-            newBody.limbs == null || newBody.limbs.Count == 0)
-            return false;
-
-        instance.localRespawnGeneration++;
-        instance.respawnAt = -1f;
-        instance.localRespawnPending = false;
-        instance.localWasAlive = true;
-        instance.localDeathPosition = newBody.transform.position;
-        localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
-
-        if (oldBody != null)
-        {
-            oldBody.OnWeaponChanged.RemoveListener(player.BodyWeaponChanged);
-            oldBody.OnDeath.RemoveListener(player.OnDied);
-            oldBody.OnAmmoChanged.RemoveListener(player.BodyAmmoChanged);
-        }
-
-        EnsureRespawnWeaponSlots(newBody);
-        newBody.isPlayer = true;
-        newBody.team = "goodguys";
-        newBody.crateDamage = true;
-        newBody.healthRegen = newBody.regenOnSwap;
-        newBody.isWalking = false;
-        newBody.isAlive = true;
-        newBody.health = Mathf.Max(1f, newBody.maxHealth);
-        newBody.dropWeapon = false;
-        newBody.CurrentState = 0;
-        newBody.controlState = 0;
-        newBody.noLegs = false;
-        newBody.deHeaded = false;
-        newBody.onScreen = true;
-        foreach (LimbScript limb in newBody.limbs)
-        { // Restore limbs health and regenration to merchant's level
-            if (null == limb || null == limb.passer || null == limb.passer.relevantDismember)
-                continue;
-            limb.passer.relevantDismember.damageFall = 4f;
-            limb.passer.relevantDismember.currentDamage = 54f;
-        }
-        newBody.EnterFullControl();
-        newBody.WakeUp();
-
-        var levitator = newBody.GetComponent<LevitatorScript>();
-        if (levitator == null) levitator = newBody.gameObject.AddComponent<LevitatorScript>();
-        levitator.levitMask = LayerMask.GetMask("Ground");
-        levitator.grabMask = LayerMask.GetMask("Default", "Ground", "Entity", "EntityStand", "DropWeapon");
-        levitator.rb = newBody.rb;
-        levitator.refBody = newBody;
-        var weaponBack = newBody.GetComponent<WeaponBackShow>();
-        if (weaponBack != null) weaponBack.active = true;
-
-        player.bodyScript = newBody;
-        if (player.bloodBars != null) player.bloodBars.body = newBody;
-        player.levit = levitator;
-        player.enabled = true;
-        localPlayerInstance = player;
-        localGlobalBody = newBody.transform;
-        RestoreLocalPlayerSingleton();
-        EnsurePlayerAmmoDisplaySlots(player);
-        newBody.OnWeaponChanged.AddListener(player.BodyWeaponChanged);
-        newBody.OnDeath.AddListener(player.OnDied);
-        newBody.OnAmmoChanged.AddListener(player.BodyAmmoChanged);
-        player.BodyWeaponChanged();
-        player.BodyAmmoChanged();
-        player.UnDie();
-        if (CameraFollow.cam != null) CameraFollow.cam.target = newBody.transform;
-        return true;
-    }
-
+    
     internal static void RecordDamageSource(BodyScript victim)
     {
         if (victim == null) return;
@@ -3085,6 +3013,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         body.WakeUp();
         body.health = body.maxHealth;
         body.isAlive = true;
+
+        foreach (var limb in body.limbs)
+        {
+            if (limb == null || limb.passer == null || limb.passer.relevantDismember == null) 
+                continue;
+            
+            var manager = limb.passer.relevantDismember;
+                                        // Expie
+            manager.currentDamage = 0f; // 0 0
+            manager.damageFall += 4f;   // 0 4
+            manager.damageFall *= 1.8f; // 33 59.4
+        }
     }
 
     internal static void EnsureRespawnWeaponSlots(BodyScript body)
