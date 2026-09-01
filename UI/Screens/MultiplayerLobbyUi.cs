@@ -16,7 +16,11 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
+    private TMP_Text customLevelActionText;
     private Button closeLobbyButton;
+    private GameObject customLevelSuggestionDialog;
+    private TMP_Text customLevelSuggestionText;
+    private CustomLevelSuggestionPacket pendingCustomLevelSuggestion;
     private Transform lobbyRows;
     private CustomLevelBrowserUi customLevelBrowser;
     private int renderedLobbyHash;
@@ -84,6 +88,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (updateText != null) updateText.text = plugin.updateStatus;
         customLevelText.text = string.IsNullOrEmpty(plugin.customLevelJson) ? "CUSTOM LEVEL: NOT LOADED" : "CUSTOM LEVEL: LOADED";
         if (lobbyActionText != null) lobbyActionText.text = MultiplayerSession.IsHosting ? "APPLY SETTINGS" : "CREATE LOBBY";
+        if (customLevelActionText != null) customLevelActionText.text = MultiplayerSession.IsHosting ? "START" : MultiplayerSession.IsConnected ? "SUGGEST" : "START";
         if (closeLobbyButton != null) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
         RebuildLobbyRows();
         plugin.SaveLobbyPreferences();
@@ -216,15 +221,19 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var paste = CreateButton(customGroup.transform, "PASTE", new Vector2(-190f, -42f), new Vector2(180f, 46f));
         paste.onClick.AddListener(() => plugin.PasteCustomLevel());
         var startCustom = CreateButton(customGroup.transform, "START", new Vector2(0f, -42f), new Vector2(180f, 46f));
+        customLevelActionText = startCustom.GetComponentInChildren<TMP_Text>();
         startCustom.onClick.AddListener(() =>
         {
             if (MultiplayerSession.IsHosting && !string.IsNullOrEmpty(plugin.customLevelJson))
                 plugin.StartCustomLevel();
+            else if (MultiplayerSession.IsConnected)
+                plugin.SuggestCustomLevel();
         });
         var openBrowser = CreateButton(customGroup.transform, "OPEN BROWSER", new Vector2(190f, -42f), new Vector2(180f, 46f));
         openBrowser.onClick.AddListener(() => customLevelBrowser?.Toggle());
         customLevelText = CreateText(customGroup.transform, "", new Vector2(0f, 17f), new Vector2(570f, 28f), 13, TextAlignmentOptions.Center);
         customLevelBrowser = new CustomLevelBrowserUi(plugin, root.transform, template, templateButton);
+        CreateCustomLevelSuggestionDialog();
         //
 
 
@@ -256,6 +265,33 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         tooltipText.enableWordWrapping = true;
         tooltipText.raycastTarget = false;
         tooltipPanel.SetActive(false);
+    }
+
+    internal void ShowCustomLevelSuggestion(string playerName, CustomLevelSuggestionPacket suggestion)
+    {
+        if (!MultiplayerSession.IsHosting || customLevelSuggestionDialog == null) return;
+        pendingCustomLevelSuggestion = suggestion;
+        customLevelSuggestionText.text = playerName + " suggests loading their map (" + suggestion.SizeKiB + " KiB).";
+        customLevelSuggestionDialog.SetActive(true);
+    }
+
+    private void CreateCustomLevelSuggestionDialog()
+    {
+        customLevelSuggestionDialog = CreatePanel(root.transform, Vector2.zero, new Vector2(580f, 260f));
+        customLevelSuggestionDialog.name = "Custom Level Suggestion";
+        customLevelSuggestionDialog.GetComponent<Image>().color = new Color(0.04f, 0.04f, 0.04f, 0.98f);
+        CreateText(customLevelSuggestionDialog.transform, "CUSTOM LEVEL SUGGESTION", new Vector2(0f, 88f), new Vector2(520f, 38f), 22, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        customLevelSuggestionText = CreateText(customLevelSuggestionDialog.transform, "", Vector2.zero, new Vector2(500f, 100f), 16, TextAlignmentOptions.Center);
+        customLevelSuggestionText.enableWordWrapping = true;
+        var load = CreateButton(customLevelSuggestionDialog.transform, "LOAD", new Vector2(-125f, -88f), new Vector2(210f, 44f));
+        load.onClick.AddListener(() =>
+        {
+            customLevelSuggestionDialog.SetActive(false);
+            plugin.AcceptCustomLevelSuggestion(pendingCustomLevelSuggestion);
+        });
+        var decline = CreateButton(customLevelSuggestionDialog.transform, "DECLINE", new Vector2(125f, -88f), new Vector2(210f, 44f));
+        decline.onClick.AddListener(() => customLevelSuggestionDialog.SetActive(false));
+        customLevelSuggestionDialog.SetActive(false);
     }
 
     private GameObject CreatePanel(Transform parent, Vector2 position, Vector2 size)

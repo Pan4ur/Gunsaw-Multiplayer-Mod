@@ -52,6 +52,15 @@ internal static partial class MultiplayerSession
         }
     }
 
+    internal static void SuggestCustomLevel(string levelCode, int sizeKiB)
+    {
+        if (IsHosting || !IsConnected || string.IsNullOrWhiteSpace(levelCode)) return;
+        Send(new CustomLevelSuggestionPacket(levelCode, sizeKiB), hostPeerId, true);
+    }
+
+    internal static bool TryTakeCustomLevelSuggestion(out ushort peerId, out CustomLevelSuggestionPacket suggestion)
+        => TryTakePacket(customLevelSuggestions, out peerId, out suggestion);
+
     internal static bool TryTakeSnapshot(out ushort peerId, out PlayerSnapshotPacket packet)
     {
         lock (statusLock)

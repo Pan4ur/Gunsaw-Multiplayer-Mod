@@ -131,6 +131,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<PlayerCarryPacket>> playerCarries = new Queue<PeerPacket<PlayerCarryPacket>>();
     private static readonly Queue<PeerPacket<HostFpsPacket>> hostFpsPackets = new Queue<PeerPacket<HostFpsPacket>>();
     private static readonly Queue<ChatMessage> chatMessages = new Queue<ChatMessage>();
+    private static readonly Queue<PeerPacket<CustomLevelSuggestionPacket>> customLevelSuggestions = new Queue<PeerPacket<CustomLevelSuggestionPacket>>();
     private static readonly HashSet<long> receivedChatIds = new HashSet<long>();
     private static readonly Queue<long> receivedChatOrder = new Queue<long>();
     private static readonly Dictionary<int, NpcTransfer> npcTransfers = new Dictionary<int, NpcTransfer>();

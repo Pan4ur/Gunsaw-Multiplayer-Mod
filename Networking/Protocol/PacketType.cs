@@ -45,5 +45,6 @@ internal enum PacketType : byte
     ReloadEffect = 0x2C,
     PlayerState = 0x2D,
     PlayerSpecialLines = 0x2E,
-    HostPing = 0x2F
+    HostPing = 0x2F,
+    CustomLevelSuggestion = 0x30
 }

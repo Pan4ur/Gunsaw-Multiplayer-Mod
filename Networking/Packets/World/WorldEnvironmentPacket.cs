@@ -52,7 +52,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly float GravityY;
     internal readonly EnvironmentButtonState[] Buttons;
     internal readonly ulong[] DestroyedGlassIds;
-    internal readonly ulong[] DestroyedLampIds;
     internal readonly EnvironmentFireState[] Fires;
     internal readonly EnvironmentAudioState[] Audio;
     internal readonly ulong[] DestroyedDroneIds;
@@ -64,14 +63,13 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly EnvironmentLampPowerState[] LampPower;
 
     internal WorldEnvironmentPacket(int sceneEpoch, float gravityX, float gravityY, EnvironmentButtonState[] buttons,
-        ulong[] destroyedGlassIds, ulong[] destroyedLampIds, EnvironmentFireState[] fires,
+        ulong[] destroyedGlassIds, EnvironmentFireState[] fires,
         EnvironmentAudioState[] audio, ulong[] destroyedDroneIds, float rainIntensity, float snowIntensity,
         float fogIntensity, int enemyKills = -1, int enemyTotal = -1, EnvironmentLampPowerState[] lampPower = null)
     {
         SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
         Buttons = buttons ?? new EnvironmentButtonState[0];
         DestroyedGlassIds = destroyedGlassIds ?? new ulong[0];
-        DestroyedLampIds = destroyedLampIds ?? new ulong[0];
         Fires = fires ?? new EnvironmentFireState[0];
         Audio = audio ?? new EnvironmentAudioState[0];
         DestroyedDroneIds = destroyedDroneIds ?? new ulong[0];
@@ -90,7 +88,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     public void Write(ref PacketWriter writer)
     {
         writer.WriteInt32(SceneEpoch); writer.WriteSingle(GravityX); writer.WriteSingle(GravityY);
-        WriteButtons(ref writer, Buttons); WriteIds(ref writer, DestroyedGlassIds); WriteIds(ref writer, DestroyedLampIds);
+        WriteButtons(ref writer, Buttons); WriteIds(ref writer, DestroyedGlassIds);
         WriteFires(ref writer, Fires); WriteAudio(ref writer, Audio); WriteIds(ref writer, DestroyedDroneIds);
         writer.WriteSingle(RainIntensity); writer.WriteSingle(SnowIntensity); writer.WriteSingle(FogIntensity);
         writer.WriteInt32(EnemyKills); writer.WriteInt32(EnemyTotal);
@@ -101,13 +99,13 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     {
         var sceneEpoch = reader.ReadInt32();
         var gravityX = reader.ReadSingle(); var gravityY = reader.ReadSingle();
-        var buttons = ReadButtons(ref reader); var glass = ReadIds(ref reader); var lamps = ReadIds(ref reader);
+        var buttons = ReadButtons(ref reader); var glass = ReadIds(ref reader);
         var fires = ReadFires(ref reader); var audio = ReadAudio(ref reader); var drones = ReadIds(ref reader);
         var rain = reader.ReadSingle(); var snow = reader.ReadSingle(); var fog = reader.ReadSingle();
         var enemyKills = reader.Remaining >= sizeof(int) * 2 ? reader.ReadInt32() : -1;
         var enemyTotal = reader.Remaining >= sizeof(int) ? reader.ReadInt32() : -1;
         var lampPower = reader.Remaining >= sizeof(ushort) ? ReadLampPower(ref reader) : new EnvironmentLampPowerState[0];
-        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, lamps, fires, audio, drones,
+        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, fires, audio, drones,
             rain, snow, fog, enemyKills, enemyTotal, lampPower);
     }
 

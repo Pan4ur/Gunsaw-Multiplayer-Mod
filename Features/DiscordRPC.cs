@@ -298,7 +298,7 @@ internal sealed class RPCManager : MonoBehaviour
             {
                 bool exists = File.Exists(HASHES_PATH);
                 bool onlyOlder = exists && File.GetLastWriteTimeUtc(HASHES_PATH) < DateTime.UtcNow.AddDays(-1.0);
-                if (exists || onlyOlder)
+                if (!exists || onlyOlder)
                 {
                     try
                     {

@@ -276,6 +276,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lock (mainThreadActionsLock)
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
+        ushort suggestingPeer;
+        CustomLevelSuggestionPacket suggestion;
+        while (MultiplayerSession.TryTakeCustomLevelSuggestion(out suggestingPeer, out suggestion))
+            multiplayerLobbyUi?.ShowCustomLevelSuggestion(MultiplayerSession.PlayerName(suggestingPeer), suggestion);
         TeamSystem.Tick();
         ScoreboardSystem.Tick();
         AutoRestartSystem.Tick(createAutoRestart);
@@ -548,6 +552,30 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
     }
 
+    internal void SuggestCustomLevel()
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHosting)
+        {
+            status = "Join a lobby before suggesting a custom level.";
+            return;
+        }
+        
+        if (string.IsNullOrWhiteSpace(customLevelJson) || string.IsNullOrWhiteSpace(customLevelCode))
+        {
+            status = "Load a custom level before suggesting it.";
+            return;
+        }
+        
+        var sizeKiB = (Encoding.UTF8.GetByteCount(customLevelJson) + 1023) / 1024;
+        MultiplayerSession.SuggestCustomLevel(customLevelCode, sizeKiB);
+        status = "Custom level suggestion sent to the host.";
+    }
+
+    internal void AcceptCustomLevelSuggestion(CustomLevelSuggestionPacket suggestion)
+    {
+        if (MultiplayerSession.IsHosting) StartCatalogCustomLevel(suggestion.LevelCode, "Untitled");
+    }
+
     private void LoadCustomLevelCatalog()
     {
         ThreadPool.QueueUserWorkItem(_ =>
@@ -573,7 +601,21 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         if (!MultiplayerSession.IsHosting)
         {
-            status = "Create a lobby before starting a custom level.";
+            if (!MultiplayerSession.IsConnected)
+            {
+                status = "Join a lobby before suggesting a custom level.";
+                return;
+            }
+            try
+            {
+                var levelJson = DecodeCatalogLevelCode(code);
+                if (JsonUtility.FromJson<Level>(levelJson) == null || string.IsNullOrWhiteSpace(levelJson))
+                    throw new InvalidDataException("The level JSON is invalid.");
+                var sizeKiB = (Encoding.UTF8.GetByteCount(levelJson) + 1023) / 1024;
+                MultiplayerSession.SuggestCustomLevel(code, sizeKiB);
+                status = "Custom level suggestion sent to the host.";
+            }
+            catch (Exception exception) { status = "Could not suggest custom level: " + exception.Message; }
             return;
         }
         try

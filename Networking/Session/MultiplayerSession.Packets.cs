@@ -80,6 +80,15 @@ internal static partial class MultiplayerSession
                 var reader = new PacketReader(decodedPacket.Payload);
                 ReceiveCustomLevelChunk(CustomLevelPacket.Read(ref reader));
             }
+            else if (isHost && decodedPacket.Type == PacketType.CustomLevelSuggestion)
+            {
+                if (decodedPacket.Payload.Length > 512 * 1024) continue;
+                var reader = new PacketReader(decodedPacket.Payload);
+                var suggestion = CustomLevelSuggestionPacket.Read(ref reader);
+                if (string.IsNullOrWhiteSpace(suggestion.LevelCode) || suggestion.LevelCode.Length > 512 * 1024) continue;
+                suggestion = new CustomLevelSuggestionPacket(suggestion.LevelCode, Math.Max(0, Math.Min(8192, suggestion.SizeKiB)));
+                EnqueueCustomLevelSuggestion(senderId, suggestion);
+            }
             else if (!isHost && decodedPacket.Type == PacketType.Scene)
             {
                 var reader = new PacketReader(decodedPacket.Payload);
@@ -708,6 +717,7 @@ internal static partial class MultiplayerSession
         playerKills.Clear();
         hostFpsPackets.Clear();
         chatMessages.Clear();
+        customLevelSuggestions.Clear();
         receivedChatIds.Clear();
         receivedChatOrder.Clear();
     }
@@ -822,6 +832,9 @@ internal static partial class MultiplayerSession
 
     private static void EnqueueNpcGrab(ushort peerId, NpcGrabPacket packet)
         => EnqueueEvent(npcGrabs, peerId, packet);
+
+    private static void EnqueueCustomLevelSuggestion(ushort peerId, CustomLevelSuggestionPacket packet)
+        => EnqueueEvent(customLevelSuggestions, peerId, packet);
 
     private static void EnqueueEvent<TPacket>(Queue<PeerPacket<TPacket>> queue, ushort peerId, TPacket packet)
     {
