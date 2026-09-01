@@ -411,6 +411,11 @@ internal static partial class MultiplayerSession
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueueHostFps(senderId, HostFpsPacket.Read(ref reader)); }
                 catch (System.Exception) { }
             }
+            else if (!isHost && decodedPacket.Type == PacketType.WorldInteraction && senderId == hostPeerId)
+            {
+                try { var reader = new PacketReader(decodedPacket.Payload); EnqueueWorldInteraction(senderId, WorldInteractionPacket.Read(ref reader)); }
+                catch (System.Exception) { }
+            }
             else if (!isHost && decodedPacket.Type == PacketType.HostPing && senderId == hostPeerId)
             {
                 try

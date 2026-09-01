@@ -16,7 +16,9 @@ internal sealed class WorldReplication : MonoBehaviour
         GlassDamage = 6,
         VehicleDamage = 7,
         DroneDamage = 8,
-        WeaponDrop = 9
+        WeaponDrop = 9,
+        LampBreak = 10,
+        LampHistoryRequest = 11
     }
 
     // Ill just leave it like this for now (It's becoming painful to drive the karts)
@@ -65,6 +67,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly Dictionary<string, LampState> lamps = [];
     internal readonly Dictionary<Collider2D, string> lampIds = new();
     internal readonly HashSet<string> destroyedLamps = [];
+    private bool lampHistoryRequested;
     internal readonly Dictionary<string, DroneScript> drones = new();
     internal readonly Dictionary<DroneScript, string> droneIds = new();
     internal readonly HashSet<string> destroyedDrones = [];
@@ -245,6 +248,13 @@ internal sealed class WorldReplication : MonoBehaviour
             var clientZonePromptStarted = MultiplayerPerformance.StartPhase();
             enviroment.UpdateZonePrompt();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, clientZonePromptStarted);
+            if (!lampHistoryRequested)
+            {
+                lampHistoryRequested = true;
+                RequestLampHistory();
+            }
+            byte[] remoteInteraction; ushort remotePeer;
+            while (MultiplayerSession.TryTakeWorldInteraction(out remotePeer, out remoteInteraction)) ApplyRemoteLampBreak(remoteInteraction);
 
             byte[] snapshot;
             byte[] latestSnapshot = null;
@@ -302,6 +312,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         var discoveryStarted = MultiplayerPerformance.StartPhase();
         discoveredScene = true;
+        lampHistoryRequested = false;
         bodies.RefreshWorldBodies();
         enviroment.RefreshButtons();
         enviroment.RefreshProximityDoors();
@@ -1270,6 +1281,11 @@ internal sealed class WorldReplication : MonoBehaviour
             {
                 var operation = (WorldInteraction) reader.ReadByte();
                 var id = ResolveWireId(reader.ReadUInt64());
+                if (operation == WorldInteraction.LampHistoryRequest)
+                {
+                    SendLampHistory(peerId);
+                    return;
+                }
                 if (operation == WorldInteraction.ButtonActivate)
                 {
                     enviroment.ApplyButtonActivation(id, peerId);
@@ -1300,6 +1316,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 {
                     enviroment.ApplyDroneDamage(id, reader.ReadSingle());
                     return;
+                }
+                if (operation == WorldInteraction.LampBreak)
+                {
+                    enviroment.ApplyClientLampBreak(id, new Vector2(reader.ReadSingle(), reader.ReadSingle())); return;
                 }
                 var slot = reader.ReadInt32();
                 var oldWeaponId = reader.ReadUInt64();
@@ -1376,6 +1396,49 @@ internal sealed class WorldReplication : MonoBehaviour
         catch (EndOfStreamException) { }
     }
 
+    private void ApplyRemoteLampBreak(byte[] data)
+    {
+        try
+        {
+            using (var reader = new BinaryReader(new MemoryStream(data)))
+            {
+                if ((WorldInteraction)reader.ReadByte() != WorldInteraction.LampBreak) return;
+                var id = ResolveWireId(reader.ReadUInt64());
+                enviroment.ApplyRemoteLampBreak(id, new Vector2(reader.ReadSingle(), reader.ReadSingle()));
+            }
+        }
+        catch (Exception) { }
+    }
+
+    private void RequestLampHistory()
+    {
+        var packet = WorldInteractionPacket.LampHistoryRequest();
+        var writer = new PacketWriter(16);
+        packet.Write(ref writer);
+        MultiplayerSession.SendWorldInteraction(writer.ToArray());
+    }
+
+    private void SendLampHistory(ushort peerId)
+    {
+        enviroment.CaptureDestroyedLampIds(destroyedLamps);
+        foreach (var id in destroyedLamps)
+        {
+            if (!lamps.TryGetValue(id, out var lamp)) continue;
+            MultiplayerSession.Send(WorldInteractionPacket.LampBreak(WireId(id), lamp.Position.x, lamp.Position.y), peerId);
+        }
+    }
+
+    internal void NotifyLocalLampBroken(Collider2D collider, Vector2 point)
+    {
+        if (!MultiplayerSession.IsConnected || collider == null || !lampIds.TryGetValue(collider, out var id)) return;
+        destroyedLamps.Add(id);
+        var packet = WorldInteractionPacket.LampBreak(WireId(id), point.x, point.y);
+        if (MultiplayerSession.IsHost) MultiplayerSession.Send(packet);
+        else { var writer = new PacketWriter(32); packet.Write(ref writer); MultiplayerSession.SendWorldInteraction(writer.ToArray()); }
+    }
+
+
+
     private void ApplyVehicleDamage(string id, ushort peerId, float amount, bool collision)
     {
         Rigidbody2D body;
@@ -1424,6 +1487,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (!MultiplayerSession.IsConnected) return;
         enviroment.RefreshGlasses();
+        lampHistoryRequested = false;
         nextSnapshot = 0f;
     }
 
@@ -1806,6 +1870,7 @@ internal sealed class WorldReplication : MonoBehaviour
         internal GameObject Object;
         internal Behaviour Light;
         internal Collider2D Collider;
+        internal Vector2 Position;
     }
 
     internal struct ClientBodyState

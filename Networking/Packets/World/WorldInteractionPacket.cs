@@ -8,7 +8,9 @@ internal enum WorldInteractionOperation : byte
     GlassDamage = 6,
     VehicleDamage = 7,
     DroneDamage = 8,
-    WeaponDrop = 9
+    WeaponDrop = 9,
+    LampBreak = 10,
+    LampHistoryRequest = 11
 }
 
 internal readonly struct WorldInteractionPacket : INetworkPacket
@@ -81,6 +83,12 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
     internal static WorldInteractionPacket DroneDamage(ulong targetId, float damage)
         => new WorldInteractionPacket(WorldInteractionOperation.DroneDamage, targetId, damage: damage);
 
+    internal static WorldInteractionPacket LampBreak(ulong targetId, float x, float y)
+        => new WorldInteractionPacket(WorldInteractionOperation.LampBreak, targetId, positionX: x, positionY: y);
+
+    internal static WorldInteractionPacket LampHistoryRequest()
+        => new WorldInteractionPacket(WorldInteractionOperation.LampHistoryRequest, 0UL);
+
     public PacketType Type => PacketType.WorldInteraction;
 
     public void Write(ref PacketWriter writer)
@@ -108,6 +116,10 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
             case WorldInteractionOperation.DroneDamage:
                 writer.WriteSingle(Damage);
                 return;
+            case WorldInteractionOperation.LampBreak:
+                writer.WriteSingle(PositionX); writer.WriteSingle(PositionY); return;
+            case WorldInteractionOperation.LampHistoryRequest:
+                return;
             default:
                 writer.WriteInt32(WeaponSlot);
                 writer.WriteUInt64(PreviousWeaponId);
@@ -132,6 +144,8 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
                 return GlassDamage(targetId, reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
             case WorldInteractionOperation.VehicleDamage: return VehicleDamage(targetId, reader.ReadSingle(), reader.ReadBoolean());
             case WorldInteractionOperation.DroneDamage: return DroneDamage(targetId, reader.ReadSingle());
+            case WorldInteractionOperation.LampBreak: return LampBreak(targetId, reader.ReadSingle(), reader.ReadSingle());
+            case WorldInteractionOperation.LampHistoryRequest: return LampHistoryRequest();
             case WorldInteractionOperation.WeaponPickup:
                 return WeaponPickup(targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(),
                     reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());

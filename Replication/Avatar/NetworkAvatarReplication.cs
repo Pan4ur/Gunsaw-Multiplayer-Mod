@@ -3460,7 +3460,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             state.Up = weapon.transform.up;
             state.WeaponSprite = SpriteId(weapon.stats.sprite);
         }
-        GunsawMultiplayerPlugin.World?.enviroment?.CaptureDestroyedLampIds(state.DestroyedLampIds);
         var player = PlayerScript.player;
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
             instance == null || player == null || currentShooter != player.bodyScript)
@@ -4025,12 +4024,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 var direction = state.ShotDirections[index];
                 exactDirections[index] = new ShotVisualDirection(direction.x, direction.y);
             }
-            GunsawMultiplayerPlugin.World?.enviroment?.CollectNewDestroyedLampIds(state.DestroyedLampIds,
-                state.NewlyDestroyedLampIds);
             MultiplayerSession.Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x,
                 state.Direction.y, state.Up.x, state.Up.y, state.WeaponSprite, hostNpcShot,
                 targetPeers.ToArray(), state.SpreadSeed, exactDirections,
-                state.NewlyDestroyedLampIds.ToArray()));
+                Array.Empty<string>()));
             foreach (var wound in state.Wounds)
                 SendRemotePlayerWound(wound, wound.BaseDamage > 20f || wound.Critical);
         }
@@ -4109,8 +4106,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             preset = remoteBody.weapon.stats;
         if (preset == null) return;
 
-        GunsawMultiplayerPlugin.World?.enviroment?.ApplyRemoteDestroyedLamps(packet.DestroyedLampIds);
-        
         if (preset.fireSound != null)
             Sound.Play(preset.fireSound, origin, false, false, null, 1f, 1f);
         
@@ -6103,6 +6098,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         rb.AddForceAtPosition(force, position, mode);
         TryTakePropAuthority(rb);
     }
+
+    internal static void NotifyShotLamp(RaycastHit2D hit)
+    {
+        if (hit.collider != null) GunsawMultiplayerPlugin.World?.NotifyLocalLampBroken(hit.collider, hit.point);
+    }
+
 
     internal static void AddForceWithPropAuthority(Rigidbody2D rb, Vector2 force, ForceMode2D mode)
     {

@@ -1034,6 +1034,7 @@ internal static class MultiplayerWeaponShotPatch
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
+        var patched = new List<CodeInstruction>(instructions);
         var original = AccessTools.Method(
             typeof(Rigidbody2D),
             nameof(Rigidbody2D.AddForceAtPosition),
@@ -1045,17 +1046,30 @@ internal static class MultiplayerWeaponShotPatch
             });
 
         var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceAtPositionWithPropAuthority));
+        var compareTag = AccessTools.Method(typeof(GameObject), nameof(GameObject.CompareTag), new[] { typeof(string) });
+        var notifyLamp = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.NotifyShotLamp));
+        var destroy = AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Destroy), new[] { typeof(UnityEngine.Object) });
 
-        foreach (var instruction in instructions)
+        for (var index = 3; index < patched.Count - 2; index++)
         {
+            var instruction = patched[index];
             if (instruction.Calls(original))
             {
                 instruction.opcode = OpCodes.Call;
                 instruction.operand = replacement;
             }
-
-            yield return instruction;
+            if (!instruction.Calls(destroy) || index < 9 ||
+                patched[index - 6].opcode != OpCodes.Ldstr || (string)patched[index - 6].operand != "Lamp" ||
+                !patched[index - 5].Calls(compareTag) ||
+                patched[index - 4].opcode != OpCodes.Brfalse && patched[index - 4].opcode != OpCodes.Brfalse_S)
+                continue;
+            var local = patched[index - 3];
+            if (local.opcode != OpCodes.Ldloca && local.opcode != OpCodes.Ldloca_S) continue;
+            patched.Insert(index - 3, new CodeInstruction(OpCodes.Ldloc, local.operand));
+            patched.Insert(index - 2, new CodeInstruction(OpCodes.Call, notifyLamp));
+            break;
         }
+        return patched;
     }
 }
 

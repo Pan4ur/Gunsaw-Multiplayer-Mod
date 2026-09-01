@@ -64,7 +64,8 @@ public class WorldEnvironmentReplication
                 !light.gameObject.name.StartsWith("Lamp (")) continue;
             var id = WorldReplication.Instance.ComponentId(collider);
             WorldReplication.Instance.lampIds[collider] = id;
-            WorldReplication.Instance.lamps[id] = new WorldReplication.LampState { Object = light.gameObject, Light = light, Collider = collider };
+            WorldReplication.Instance.WireId(id);
+            WorldReplication.Instance.lamps[id] = new WorldReplication.LampState { Object = light.gameObject, Light = light, Collider = collider, Position = light.transform.position };
         }
     }
     
@@ -371,17 +372,20 @@ public class WorldEnvironmentReplication
         var particles = fire.GetComponent<ParticleSystem>();
         if (particles != null && !particles.isPlaying) particles.Play();
     }
-    
-    internal void ApplyLampState(string id)
+
+    internal void ApplyClientLampBreak(string id, Vector2 point)
     {
-        WorldReplication.LampState lamp;
-        if (!WorldReplication.Instance.lamps.TryGetValue(id, out lamp))
-        {
-            RefreshLamps();
-            if (!WorldReplication.Instance.lamps.TryGetValue(id, out lamp)) return;
-        }
-        BreakLamp(id, lamp, lamp.Object == null ? Vector2.zero : lamp.Object.transform.position);
+        if (string.IsNullOrEmpty(id) || WorldReplication.Instance.destroyedLamps.Contains(id)) return;
+        ApplyRemoteLampBreak(id, point);
+        MultiplayerSession.Send(WorldInteractionPacket.LampBreak(WorldReplication.Instance.WireId(id), point.x, point.y));
     }
+
+    internal void ApplyRemoteLampBreak(string id, Vector2 point)
+    {
+        if (string.IsNullOrEmpty(id) || WorldReplication.Instance.destroyedLamps.Contains(id)) return;
+        if (WorldReplication.Instance.lamps.TryGetValue(id, out var lamp)) BreakLamp(id, lamp, point);
+    }
+
     
     private void BreakLamp(string id, WorldReplication.LampState lamp, Vector2 hitPoint)
     {
@@ -511,14 +515,6 @@ public class WorldEnvironmentReplication
                 if (writtenGlass++ >= ushort.MaxValue) break;
                 writer.Write(WorldReplication.Instance.WireId(id));
             }
-            CaptureDestroyedLamps();
-            writer.Write((ushort)Math.Min(ushort.MaxValue, WorldReplication.Instance.destroyedLamps.Count));
-            var writtenLamps = 0;
-            foreach (var id in WorldReplication.Instance.destroyedLamps)
-            {
-                if (writtenLamps++ >= ushort.MaxValue) break;
-                writer.Write(WorldReplication.Instance.WireId(id));
-            }
             var fireCount = 0;
             foreach (var pair in WorldReplication.Instance.fires) if (pair.Value != null && fireCount < ushort.MaxValue) fireCount++;
             writer.Write((ushort)fireCount);
@@ -595,9 +591,6 @@ public class WorldEnvironmentReplication
             var glassCount = reader.ReadUInt16();
             for (var index = 0; index < glassCount; index++)
                 ApplyGlassState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()));
-            var lampCount = reader.ReadUInt16();
-            for (var index = 0; index < lampCount; index++)
-                ApplyLampState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()));
             seenSnapshotFires.Clear();
             var fireCount = reader.ReadUInt16();
             for (var index = 0; index < fireCount; index++)
@@ -702,12 +695,6 @@ public class WorldEnvironmentReplication
         return glass.health <= 0f;
     }
     
-    private void CaptureDestroyedLamps()
-    {
-        foreach (var pair in WorldReplication.Instance.lamps)
-            if (LampIsDestroyed(pair.Value)) WorldReplication.Instance.destroyedLamps.Add(pair.Key);
-    }
-    
     private void CaptureDestroyedDrones()
     {
         foreach (var pair in WorldReplication.Instance.drones)
@@ -721,23 +708,9 @@ public class WorldEnvironmentReplication
             if (LampIsDestroyed(pair.Value)) ids.Add(pair.Key);
     }
     
-    internal void CollectNewDestroyedLampIds(ISet<string> before, List<string> result)
-    {
-        if (before == null || result == null) return;
-        foreach (var pair in WorldReplication.Instance.lamps)
-            if (LampIsDestroyed(pair.Value) && !before.Contains(pair.Key)) result.Add(pair.Key);
-    }
-
     private static bool LampIsDestroyed(WorldReplication.LampState lamp)
     {
         return lamp == null || lamp.Object == null || !lamp.Object.activeSelf ||
                lamp.Light == null || !lamp.Light.enabled || lamp.Collider == null || !lamp.Collider.enabled;
-    }
-
-    internal void ApplyRemoteDestroyedLamps(IList<string> ids)
-    {
-        if (ids == null) return;
-        foreach (var id in ids)
-            if (!string.IsNullOrEmpty(id)) ApplyLampState(id);
     }
 }
