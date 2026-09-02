@@ -1,0 +1,12 @@
+{
+  "servers": [
+    {
+      "address: "pl.expie.fun",
+      "location": "Poland"
+    },
+    {
+      "address": "ny.expie.fun",
+      "location": "USA"
+    }
+  ]
+}
