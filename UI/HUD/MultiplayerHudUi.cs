@@ -5,6 +5,7 @@ using UnityEngine.UI;
 
 internal sealed class MultiplayerHudUi : MonoBehaviour
 {
+    private const float ChatMsgLifetime = 5f;
     private GameObject root, hostPanel, playersPanel, chatPanel, finalLeaderboardPanel;
     private TMP_Text template, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText, finalLeaderboardHeader;
     private TMP_InputField input;
@@ -66,7 +67,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateFinalLeaderboard();
         statsText.gameObject.SetActive(hud.NetworkStatsVisible && !string.IsNullOrEmpty(hud.NetworkStatsText));
         if (statsText.gameObject.activeSelf) statsText.text = hud.NetworkStatsText;
-        if (Time.unscaledTime >= nextChatRefresh || hud.ChatOpen)
+        if (Time.unscaledTime >= nextChatRefresh || hud.ChatOpen || HasActiveChatAnimation(hud))
         {
             nextChatRefresh = Time.unscaledTime + 0.15f;
             UpdateChat(hud);
@@ -421,7 +422,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         for (var index = entries.Count - 1; index >= 0; index--)
         {
             var entry = entries[index];
-            if (now - entry.CreatedAt > 5f) break;
+            if (now - entry.CreatedAt > ChatMsgLifetime) break;
             BodyScript body;
             if (entry.Local)
             {
@@ -446,6 +447,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var screen = camera.WorldToScreenPoint(position + Vector3.down * 1.4f);
             if (screen.z <= 0f) { pair.Value.gameObject.SetActive(false); continue; }
             pair.Value.text = entry.Message;
+            SetTextAlpha(pair.Value, MessageAlpha(now - entry.CreatedAt, ChatMsgLifetime));
             pair.Value.rectTransform.anchoredPosition = CanvasPosition(screen);
             pair.Value.gameObject.SetActive(true);
             latest.Remove(pair.Key);
@@ -460,6 +462,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             ApplyChatFont(bubble);
             bubble.fontStyle = FontStyles.Bold;
             bubble.enableWordWrapping = true;
+            SetTextAlpha(bubble, MessageAlpha(now - pair.Value.CreatedAt, ChatMsgLifetime));
             chatBubbles[pair.Key] = bubble;
         }
     }
@@ -663,8 +666,12 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         for (var i = start; i < entries.Count; i++)
         {
             var entry = entries[i];
-            if (!hud.ChatOpen && now - entry.CreatedAt > 8f) continue;
-            text += "[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message + "\n";
+            var age = now - entry.CreatedAt;
+            if (!hud.ChatOpen && age > ChatMsgLifetime) continue;
+            var line = "[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message;
+            if (!hud.ChatOpen)
+                line = "<color=#FFFFFF" + Mathf.RoundToInt(MessageAlpha(age, ChatMsgLifetime) * 255f).ToString("X2") + ">" + line + "</color>";
+            text += line + "\n";
         }
         if (text != renderedChatText)
         {
@@ -682,6 +689,33 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         renderedChatEntryCount = entries.Count;
         chatWasOpen = hud.ChatOpen;
+    }
+
+    private static float MessageAlpha(float age, float lifetime)
+    {
+        float fade = 0.35f;
+        
+        if (age < fade)
+            return Mathf.Clamp01(age / fade);
+        
+        if (age > lifetime - fade) 
+            return Mathf.Clamp01((lifetime - age) / fade);
+        
+        return 1f;
+    }
+
+    private static bool HasActiveChatAnimation(MultiplayerHud hud)
+    {
+        if (hud.ChatOpen) return false;
+        var entries = hud.ChatHistory;
+        return entries.Count > 0 && Time.unscaledTime - entries[entries.Count - 1].CreatedAt <= ChatMsgLifetime;
+    }
+
+    private static void SetTextAlpha(TMP_Text text, float alpha)
+    {
+        var color = text.color;
+        color.a = alpha;
+        text.color = color;
     }
 
     private bool IsChatAtBottom()

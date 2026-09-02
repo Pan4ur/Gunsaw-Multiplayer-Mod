@@ -293,13 +293,7 @@ internal static partial class MultiplayerSession
                 TeamSystem.Configure(TeamsEnabled, TeamsCfg);
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(16, (int)settings.MaxPlayers));
-                SetStatus("Lobby settings received. PVP " + (PvpEnabled ? "enabled" : "disabled") +
-                    "; player grab " + (CanGrabPlayers ? (GrabOnlyUnconscious ? "unconscious only" : "enabled") : "disabled") +
-                    "; respawn " + (AllowRespawn ? RespawnTimeSeconds + "s" : "disabled") +
-                    "; collisions " + (PlayerCollisions ? "enabled" : "disabled") +
-                    "; cheats " + (CheatsEnabled ? "enabled" : "disabled") +
-                    "; brutal mode " + (BrutalModeEnabled ? "enabled" : "disabled") +
-                    "; observer " + (AllowObserver ? "enabled." : "disabled."));
+                SetStatus("Lobby settings updated.");
             }
             else if (decodedPacket.Type == PacketType.Team)
             {

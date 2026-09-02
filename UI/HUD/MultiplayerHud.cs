@@ -30,6 +30,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private float lowHostFpsSince = -1f;
     private float nextHostFpsSoundAt;
     private AudioSource hostFpsAlert;
+    private AudioSource chatMessageSound;
     private GUIStyle hostFpsWarningStyle;
 
     internal static MultiplayerHud Instance { get; private set; }
@@ -569,6 +570,18 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (string.IsNullOrEmpty(entry.Message)) return;
         history.Add(entry);
         while (history.Count > 80) history.RemoveAt(0);
+        if (!local) PlayChatMessageSound();
+    }
+
+    private void PlayChatMessageSound()
+    {
+        if (chatMessageSound == null)
+        {
+            chatMessageSound = gameObject.AddComponent<AudioSource>();
+            chatMessageSound.clip = Resources.Load<AudioClip>("sounds/hitmark");
+            chatMessageSound.spatialBlend = 0f;
+        }
+        if (chatMessageSound.clip != null) chatMessageSound.PlayOneShot(chatMessageSound.clip);
     }
 
     internal static void AddSystemMessage(string message)
