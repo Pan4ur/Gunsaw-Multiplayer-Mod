@@ -429,6 +429,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void SaveLobbyPreferences()
     {
+        if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) return;
         var changed = false;
         if (savedPlayerName.Value != playerName) { savedPlayerName.Value = playerName; changed = true; }
         if (savedLobbyName.Value != lobbyName) { savedLobbyName.Value = lobbyName; changed = true; }
@@ -771,7 +772,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         maxPlayers = Mathf.Clamp(maxPlayers, 2, 16);
         createMaxPlayers = maxPlayers.ToString();
         if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
-            createAllowRespawn, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
+            createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
             createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, maxPlayers))
         {
             status = "Could not update lobby settings.";
@@ -873,6 +874,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return !string.IsNullOrEmpty(id) && string.Equals(joinedLobbyId, id, StringComparison.Ordinal);
     }
 
+    internal string JoinedLobbyName
+    {
+        get
+        {
+            foreach (var lobby in lobbies)
+                if (string.Equals(lobby.id, joinedLobbyId, StringComparison.Ordinal)) return lobby.name;
+            return "Current lobby";
+        }
+    }
+
     internal void LeaveLobby()
     {
         if (!MultiplayerSession.IsActive || MultiplayerSession.IsHosting) return;
@@ -933,7 +944,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RunOnMainThread(() =>
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
-                    createGrabOnlyUnconscious, createAllowRespawn, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
+                    createGrabOnlyUnconscious, createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
                     createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo,
                     playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";

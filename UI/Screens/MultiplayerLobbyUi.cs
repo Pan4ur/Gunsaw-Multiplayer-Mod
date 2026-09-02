@@ -16,6 +16,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
+    private TMP_Text lobbyGroupTitle;
+    private Button lobbyActionButton, p2pButton, relayButton, autoButton;
     private TMP_Text customLevelActionText;
     private Button closeLobbyButton;
     private GameObject serverBrowserPanel;
@@ -63,42 +65,77 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         customLevelBrowser?.Tick();
 
         SetInput(nameInput, plugin.playerName);
-        SetInput(lobbyInput, plugin.lobbyName);
-        SetInput(maxPlayersInput, plugin.createMaxPlayers);
-        SetInput(respawnInput, plugin.createRespawnTime);
-        SetInput(numberOfLivesInput, plugin.createNumberOfLives);
+        var viewingLobbySettings = MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting;
+        SetInput(lobbyInput, viewingLobbySettings ? plugin.JoinedLobbyName : plugin.lobbyName);
+        SetInput(maxPlayersInput, viewingLobbySettings ? MultiplayerSession.MaxPlayers.ToString() : plugin.createMaxPlayers);
+        SetInput(respawnInput, viewingLobbySettings ? MultiplayerSession.RespawnTimeSeconds.ToString() : plugin.createRespawnTime);
+        SetInput(numberOfLivesInput, viewingLobbySettings ? MultiplayerSession.NumberOfLives.ToString() : plugin.createNumberOfLives);
         SetInput(serverInput, plugin.lobbyServerAddress);
-        pvpToggle.isOn = plugin.createPvp;
-        grabToggle.isOn = plugin.createCanGrab;
-        downToggle.isOn = plugin.createGrabOnlyUnconscious;
-        respawnToggle.isOn = plugin.createAllowRespawn;
-        autoRestartToggle.isOn = plugin.createAutoRestart;
-        respawnAtStartToggle.isOn = plugin.createRespawnAtStart;
-        playerCollisionsToggle.isOn = plugin.createPlayerCollisions;
-        cheatsToggle.isOn = plugin.createCheats;
-        allowSwapToggle.isOn = plugin.createAllowSwap;
-        allowScaleChangingToggle.isOn = plugin.createAllowScaleChanging;
-        allowObserverToggle.isOn = plugin.createAllowObserver;
-        teamsToggle.isOn = plugin.createTeams;
-        SetInput(teamsCfgInput, plugin.createTeamsCfg);
-        SetInput(initialScaleInput, plugin.createInitialScale);
-        SetInput(startingWeaponInput, plugin.createStartingWeapon);
-        SetInput(respawnWeaponInput, plugin.createRespawnWeapon);
-        SetInput(startingAmmoInput, plugin.createStartingAmmo);
-        SetInput(respawnAmmoInput, plugin.createRespawnAmmo);
-        respawnInput.interactable = plugin.createAllowRespawn;
-        numberOfLivesInput.interactable = plugin.createAllowRespawn;
-        respawnAtStartToggle.interactable = plugin.createAllowRespawn;
+        SetToggle(pvpToggle, viewingLobbySettings ? MultiplayerSession.PvpEnabled : plugin.createPvp);
+        SetToggle(grabToggle, viewingLobbySettings ? MultiplayerSession.CanGrabPlayers : plugin.createCanGrab);
+        SetToggle(downToggle, viewingLobbySettings ? MultiplayerSession.GrabOnlyUnconscious : plugin.createGrabOnlyUnconscious);
+        SetToggle(respawnToggle, viewingLobbySettings ? MultiplayerSession.AllowRespawn : plugin.createAllowRespawn);
+        SetToggle(autoRestartToggle, viewingLobbySettings ? MultiplayerSession.AutoRestart : plugin.createAutoRestart);
+        SetToggle(respawnAtStartToggle, viewingLobbySettings ? MultiplayerSession.RespawnAtStart : plugin.createRespawnAtStart);
+        SetToggle(playerCollisionsToggle, viewingLobbySettings ? MultiplayerSession.PlayerCollisions : plugin.createPlayerCollisions);
+        SetToggle(cheatsToggle, viewingLobbySettings ? MultiplayerSession.CheatsEnabled : plugin.createCheats);
+        SetToggle(allowSwapToggle, viewingLobbySettings ? MultiplayerSession.AllowSwap : plugin.createAllowSwap);
+        SetToggle(allowScaleChangingToggle, viewingLobbySettings ? MultiplayerSession.AllowScaleChanging : plugin.createAllowScaleChanging);
+        SetToggle(allowObserverToggle, viewingLobbySettings ? MultiplayerSession.AllowObserver : plugin.createAllowObserver);
+        SetToggle(teamsToggle, viewingLobbySettings ? MultiplayerSession.TeamsEnabled : plugin.createTeams);
+        SetInput(teamsCfgInput, viewingLobbySettings ? MultiplayerSession.TeamsCfg : plugin.createTeamsCfg);
+        SetInput(initialScaleInput, viewingLobbySettings ? MultiplayerSession.InitialScale.ToString("0.##") : plugin.createInitialScale);
+        SetInput(startingWeaponInput, viewingLobbySettings ? MultiplayerSession.StartingWeapon : plugin.createStartingWeapon);
+        SetInput(respawnWeaponInput, viewingLobbySettings ? MultiplayerSession.RespawnWeapon : plugin.createRespawnWeapon);
+        SetInput(startingAmmoInput, viewingLobbySettings ? MultiplayerSession.StartingAmmo : plugin.createStartingAmmo);
+        SetInput(respawnAmmoInput, viewingLobbySettings ? MultiplayerSession.RespawnAmmo : plugin.createRespawnAmmo);
+        SetLobbySettingsInteractable(!viewingLobbySettings, viewingLobbySettings ? false : plugin.createAllowRespawn);
         connectionModeText.text = plugin.createConnectionMode.ToString();
         statusText.text = plugin.status;
         if (updateText != null) updateText.text = plugin.updateStatus;
         customLevelText.text = string.IsNullOrEmpty(plugin.customLevelJson) ? "CUSTOM LEVEL: NOT LOADED" : "CUSTOM LEVEL: LOADED";
+        if (lobbyGroupTitle != null) lobbyGroupTitle.text = viewingLobbySettings ? "CURRENT LOBBY" : "NEW LOBBY";
         if (lobbyActionText != null) lobbyActionText.text = MultiplayerSession.IsHosting ? "APPLY SETTINGS" : "CREATE LOBBY";
+        if (lobbyActionButton != null) lobbyActionButton.interactable = !viewingLobbySettings;
+        if (p2pButton != null) p2pButton.interactable = !viewingLobbySettings;
+        if (relayButton != null) relayButton.interactable = !viewingLobbySettings;
+        if (autoButton != null) autoButton.interactable = !viewingLobbySettings;
         if (customLevelActionText != null) customLevelActionText.text = MultiplayerSession.IsHosting ? "START" : MultiplayerSession.IsConnected ? "SUGGEST" : "START";
         if (closeLobbyButton != null) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
         if (serverBrowserOpen) RebuildServerRows();
         RebuildLobbyRows();
         plugin.SaveLobbyPreferences();
+    }
+
+    private void SetLobbySettingsInteractable(bool interactable, bool allowRespawn)
+    {
+        lobbyInput.interactable = interactable;
+        maxPlayersInput.interactable = interactable;
+        respawnInput.interactable = interactable && allowRespawn;
+        numberOfLivesInput.interactable = interactable && allowRespawn;
+        initialScaleInput.interactable = interactable;
+        startingWeaponInput.interactable = interactable;
+        respawnWeaponInput.interactable = interactable;
+        startingAmmoInput.interactable = interactable;
+        respawnAmmoInput.interactable = interactable;
+        teamsCfgInput.interactable = interactable;
+        pvpToggle.interactable = interactable;
+        grabToggle.interactable = interactable;
+        downToggle.interactable = interactable;
+        respawnToggle.interactable = interactable;
+        autoRestartToggle.interactable = interactable;
+        respawnAtStartToggle.interactable = interactable && allowRespawn;
+        playerCollisionsToggle.interactable = interactable;
+        cheatsToggle.interactable = interactable;
+        allowSwapToggle.interactable = interactable;
+        allowScaleChangingToggle.interactable = interactable;
+        allowObserverToggle.interactable = interactable;
+        teamsToggle.interactable = interactable;
+    }
+
+    private static void SetToggle(Toggle toggle, bool value)
+    {
+        toggle.SetIsOnWithoutNotify(value);
     }
 
     private void Create(MainMenuManager menu)
@@ -137,6 +174,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
         // NEW LOBBY
         var lobbyGroup = CreateGroup(panel.transform, "NEW LOBBY", new Vector2(315f, 142.5f), new Vector2(630f, 405f));
+        lobbyGroupTitle = lobbyGroup.GetComponentInChildren<TMP_Text>();
         CreateText(lobbyGroup.transform, "LOBBY NAME", new Vector2(-235f, 127.5f), new Vector2(120f, 32f), 14);
         lobbyInput = CreateInput(lobbyGroup.transform, new Vector2(55f, 127.5f), new Vector2(460f, 42f), 48, value => plugin.lobbyName = value);
 
@@ -202,17 +240,21 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
         CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -120f), new Vector2(125f, 32f), 14);
         connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -120f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);
-        var p2p = CreateButton(lobbyGroup.transform, "P2P", new Vector2(0f, -120f), new Vector2(95f, 36f));
+        p2pButton = CreateButton(lobbyGroup.transform, "P2P", new Vector2(0f, -120f), new Vector2(95f, 36f));
+        var p2p = p2pButton;
         AddTooltip(p2p.gameObject, "P2P: Experimental direct connection to the host computer. It can reduce ping when you are far from the lobby server, but other players in the lobby can expose your IP address. Do not use it yet unless you are playing with two people and are sure it works correctly.", Color.red);
         p2p.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.P2P);
-        var relay = CreateButton(lobbyGroup.transform, "RELAY", new Vector2(105f, -120f), new Vector2(95f, 36f));
+        relayButton = CreateButton(lobbyGroup.transform, "RELAY", new Vector2(105f, -120f), new Vector2(95f, 36f));
+        var relay = relayButton;
         AddTooltip(relay.gameObject, "RELAY: Standard connection mode. It uses the server as a proxy and is the recommended mode.");
         relay.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.Relay);
-        var auto = CreateButton(lobbyGroup.transform, "AUTO", new Vector2(210f, -120f), new Vector2(95f, 36f));
+        autoButton = CreateButton(lobbyGroup.transform, "AUTO", new Vector2(210f, -120f), new Vector2(95f, 36f));
+        var auto = autoButton;
         AddTooltip(auto.gameObject, "AUTO: First tries P2P, then falls back to RELAY if it fails. It supports P2P + RELAY, where players who can connect through P2P use it while others use RELAY. P2P is not reliable yet. Leave RELAY selected if you are not sure.", Color.red);
         auto.onClick.AddListener(() => plugin.createConnectionMode = ConnectionMode.Auto);
 
-        var create = CreateButton(lobbyGroup.transform, "CREATE LOBBY", new Vector2(-155f, -172.5f), new Vector2(280f, 46f));
+        lobbyActionButton = CreateButton(lobbyGroup.transform, "CREATE LOBBY", new Vector2(-155f, -172.5f), new Vector2(280f, 46f));
+        var create = lobbyActionButton;
         lobbyActionText = create.GetComponentInChildren<TMP_Text>();
         create.onClick.AddListener(() =>
         {
