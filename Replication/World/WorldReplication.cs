@@ -1048,7 +1048,7 @@ internal sealed class WorldReplication : MonoBehaviour
         if (!(bodies.IsInteractivePropBody(body) || droneBodies.Contains(body) || WorldBodyReplication.IsClientAuthorityJointBody(body))) return;
         bodies.QueueContactBodyState(body, Time.unscaledTime);
         var crate = body.GetComponentInParent<CrateScript>();
-        if (crate != null && collision.relativeVelocity.magnitude >= crate.minDamageSpeed)
+        if (crate != null && body.velocity.sqrMagnitude > crate.minDamageSpeed && collision.relativeVelocity.magnitude > 6f)
             QueueDamage(crate, collision.relativeVelocity.magnitude * crate.impactDamageMult);
     }
 
