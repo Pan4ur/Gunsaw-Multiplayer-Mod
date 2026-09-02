@@ -676,7 +676,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             if (!MultiplayerSession.IsConnected)
             {
-                status = "Join a lobby before suggesting a custom level.";
+                status = "Join a lobby before starting a custom level.";
                 return;
             }
             try
@@ -691,6 +691,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             catch (Exception exception) { status = "Could not suggest custom level: " + exception.Message; }
             return;
         }
+        
         try
         {
             var levelJson = DecodeCatalogLevelCode(code);
@@ -744,7 +745,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(), startingWeapon = createStartingWeapon, respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
                 allowObserver = createAllowObserver,
                 teams = createTeams, teamsCfg = createTeamsCfg,
-                brutalMode = GameManager.main != null && GameManager.main.hardMode,
+                brutalMode = MultiplayerSession.ReadBrutalMode(),
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(), modVersion = PluginVersion });
             ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, numberOfLives, maxPlayers));
@@ -1572,7 +1573,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 respawnAmmo = createRespawnAmmo,
                 allowObserver = createAllowObserver,
                 teams = createTeams, teamsCfg = createTeamsCfg,
-                brutalMode = MultiplayerSession.BrutalModeEnabled,
+                brutalMode = MultiplayerSession.ReadBrutalMode(),
                 hostP2P = createConnectionMode != ConnectionMode.Relay,
                 connectionMode = createConnectionMode.ToString(),
                 modVersion = PluginVersion

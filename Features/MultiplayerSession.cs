@@ -3,6 +3,7 @@ using BepInEx.Logging;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using UnityEngine;
 
 internal enum ConnectionMode
 {
@@ -461,16 +462,21 @@ internal static partial class MultiplayerSession
 
     internal static void SyncBrutalMode()
     {
+        if (isHost)
+        {
+            BrutalModeEnabled = ReadBrutalMode();
+            return;
+        }
         var manager = GameManager.main;
-        if (manager == null) return;
-        if (isHost) BrutalModeEnabled = manager.hardMode;
-        else if (IsConnected) manager.hardMode = BrutalModeEnabled;
+        if (manager != null && IsConnected) manager.hardMode = BrutalModeEnabled;
     }
 
     private static void RefreshHostBrutalMode()
     {
-        if (GameManager.main != null) BrutalModeEnabled = GameManager.main.hardMode;
+        BrutalModeEnabled = ReadBrutalMode();
     }
+
+    internal static bool ReadBrutalMode() => PlayerPrefs.GetInt("difficulty") > 0;
     
     internal static int PingMs { get { lock (statusLock)
         {

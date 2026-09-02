@@ -567,8 +567,17 @@ internal sealed class MultiplayerHud : MonoBehaviour
         };
         if (string.IsNullOrEmpty(entry.Message)) return;
         history.Add(entry);
-        while (history.Count > 80) history.RemoveAt(0);
-        if (!local) PlayChatMessageSound();
+        
+        while (history.Count > 80) 
+            history.RemoveAt(0);
+
+
+        var shouldSend = entry.Sender.IndexOf("SYSTEM", StringComparison.OrdinalIgnoreCase) < 0 || 
+                         entry.Message.IndexOf("joined", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         entry.Message.IndexOf("left", StringComparison.OrdinalIgnoreCase) >= 0;
+        
+        if (!local && shouldSend)
+            PlayChatMessageSound();
     }
 
     private void PlayChatMessageSound()
