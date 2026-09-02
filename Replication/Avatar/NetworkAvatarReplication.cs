@@ -3312,15 +3312,28 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var target = levitator.currentlyLevitating;
         var targetBody = target == null ? null : target.GetComponentInParent<BodyScript>();
         var replica = NetworkAvatarRegistry.ReplicaForBody(targetBody);
-        byte kind;
-        short index;
-        if (target != null && replica != null && CanGrabBody(targetBody) &&
-            replica.TryRemotePart(target, out kind, out index))
+        byte kind = 0;
+        short index = 0;
+        var localPoint = levitator.localGrabPoint;
+        var hasTarget = false;
+        if (target != null && replica != null && CanGrabBody(targetBody))
+        {
+            var limb = target.GetComponent<LimbScript>();
+            if (limb != null && limb.limbType == 1 && targetBody.rb != null)
+            {
+                kind = 0;
+                index = 0;
+                localPoint = targetBody.rb.transform.InverseTransformPoint(levitator.point);
+                hasTarget = true;
+            }
+            else hasTarget = replica.TryRemotePart(target, out kind, out index);
+        }
+        if (hasTarget)
         {
             if (instance.outgoingGrabPeerId != 0 && instance.outgoingGrabPeerId != replica.remotePeerId)
                 MultiplayerSession.Send(new PlayerGrabPacket(false), instance.outgoingGrabPeerId);
             MultiplayerSession.Send(new PlayerGrabPacket(true, kind, index, levitator.point.x,
-                levitator.point.y, levitator.localGrabPoint.x, levitator.localGrabPoint.y), replica.remotePeerId);
+                levitator.point.y, localPoint.x, localPoint.y), replica.remotePeerId);
             instance.outgoingGrabPeerId = replica.remotePeerId;
             return;
         }
