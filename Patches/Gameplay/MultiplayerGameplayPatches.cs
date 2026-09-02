@@ -216,7 +216,7 @@ internal static class MultiplayerClientMainMenuPatch
         }
 
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHosting) return;
-        MultiplayerSession.Shutdown();
+        GunsawMultiplayerPlugin.Instance?.LeaveLobby();
     }
 }
 
@@ -237,7 +237,7 @@ internal static class MultiplayerBackToEditorRedirectPatch
         }
         else SceneManager.LoadScene("LevelSelect");
         if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting)
-            MultiplayerSession.Shutdown();
+            GunsawMultiplayerPlugin.Instance?.LeaveLobby();
         return false;
     }
 }

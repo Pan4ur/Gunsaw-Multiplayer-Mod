@@ -882,6 +882,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         waitingForCustomLevel = false;
         receivedCustomLevelJson = "";
         status = "Left lobby.";
+        RefreshLobbies();
     }
 
     internal bool TryHandleHostCommand(string message)
