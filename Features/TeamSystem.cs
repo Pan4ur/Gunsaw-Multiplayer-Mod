@@ -8,7 +8,8 @@ internal static class TeamSystem
 {
     private static readonly List<Team> teams = new();
     private static readonly Dictionary<ushort, string> playerTeams = new();
-    private static readonly Dictionary<string, TMP_Text> countLabels = new();
+    private static readonly Dictionary<string, TMP_Text> teamHeaders = new();
+    private static readonly Dictionary<string, TMP_Text> teamPlayers = new();
     private static GameObject panel;
     private static bool cursorVisible;
     private static CursorLockMode cursorLock;
@@ -49,7 +50,7 @@ internal static class TeamSystem
     internal static void Choose(string name)
     {
         if (!Enabled || !HasTeam(name)) return;
-        if (MultiplayerSession.IsHost) Set(MultiplayerSession.LocalPeerId, Best(name));
+        if (MultiplayerSession.IsHost) Set(MultiplayerSession.LocalPeerId, name);
         else MultiplayerSession.Send(new TeamPacket(MultiplayerSession.LocalPeerId, name));
     }
 
@@ -59,7 +60,7 @@ internal static class TeamSystem
         if (MultiplayerSession.IsHost)
         {
             if (sender != packet.PlayerId || !HasTeam(packet.Team)) return;
-            Set(sender, Best(packet.Team));
+            Set(sender, packet.Team);
             return;
         }
 
@@ -120,13 +121,6 @@ internal static class TeamSystem
         if (MultiplayerSession.IsHost) MultiplayerSession.Send(new TeamPacket(id, name));
     }
 
-    private static string Best(string selected)
-    {
-        var min = int.MaxValue;
-        foreach (var team in teams) min = Math.Min(min, Count(team.Name));
-        return Count(selected) <= min ? selected : teams.Find(item => Count(item.Name) == min).Name;
-    }
-
     private static int Count(string name)
     {
         var count = 0;
@@ -144,31 +138,55 @@ internal static class TeamSystem
         var canvas = root.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = short.MaxValue;
-        root.GetComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        var scaler = root.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
         var image = root.AddComponent<Image>();
         image.color = new UnityEngine.Color(0f, 0f, 0f, 0.78f);
         var rect = root.GetComponent<RectTransform>();
         rect.anchorMin = Vector2.zero;
         rect.anchorMax = Vector2.one;
         rect.sizeDelta = Vector2.zero;
-        var title = Text(root.transform, "CHOOSE TEAM", new Vector2(0f, 200f), 34);
+        var title = Text(root.transform, "CHOOSE TEAM", new Vector2(0f, 255f), 30);
         title.fontStyle = FontStyles.Bold;
+        var columnWidth = Mathf.Clamp((1720f - 18f * (teams.Count - 1)) / teams.Count, 150f, 400f);
         for (var i = 0; i < teams.Count; i++)
         {
             var team = teams[i];
-            var button = new GameObject("Team", typeof(RectTransform), typeof(Image), typeof(Button));
-            button.transform.SetParent(root.transform, false);
+            var column = new GameObject("TeamColumn", typeof(RectTransform), typeof(Image));
+            column.transform.SetParent(root.transform, false);
+            var columnRect = column.GetComponent<RectTransform>();
+            columnRect.anchoredPosition = new Vector2((i - (teams.Count - 1) * 0.5f) * (columnWidth + 18f), -24f);
+            columnRect.sizeDelta = new Vector2(columnWidth, 410f);
+            var columnColor = team.Color;
+            columnColor.a = 0.18f;
+            column.GetComponent<Image>().color = columnColor;
+
+            var header = Text(column.transform, team.Name.ToUpperInvariant(), new Vector2(0f, 160f), 21);
+            header.color = team.Color;
+            header.fontStyle = FontStyles.Bold;
+            header.rectTransform.sizeDelta = new Vector2(columnWidth - 24f, 38f);
+            teamHeaders[team.Name] = header;
+
+            var button = new GameObject("Join", typeof(RectTransform), typeof(Image), typeof(Button));
+            button.transform.SetParent(column.transform, false);
             var buttonRect = button.GetComponent<RectTransform>();
-            buttonRect.anchoredPosition = new Vector2(0f, 100f - i * 70f);
-            buttonRect.sizeDelta = new Vector2(460f, 54f);
+            buttonRect.anchoredPosition = new Vector2(0f, 108f);
+            buttonRect.sizeDelta = new Vector2(columnWidth - 28f, 42f);
             button.GetComponent<Image>().color = team.Color;
-            var label = Text(button.transform, team.Name, new Vector2(0f, 10f), 24);
+            var label = Text(button.transform, "JOIN", Vector2.zero, 18);
+            label.rectTransform.sizeDelta = buttonRect.sizeDelta;
             label.color = UnityEngine.Color.white;
-            var count = Text(button.transform, "", new Vector2(0f, -14f), 14);
-            count.color = new UnityEngine.Color(1f, 1f, 1f, 0.88f);
-            countLabels[team.Name] = count;
             var name = team.Name;
             button.GetComponent<Button>().onClick.AddListener(() => Choose(name));
+
+            var players = Text(column.transform, "", new Vector2(0f, -76f), 16);
+            players.alignment = TextAlignmentOptions.TopLeft;
+            players.enableWordWrapping = true;
+            players.rectTransform.sizeDelta = new Vector2(columnWidth - 34f, 240f);
+            teamPlayers[team.Name] = players;
         }
 
         panel = root;
@@ -211,8 +229,23 @@ internal static class TeamSystem
     private static void UpdatePanel()
     {
         foreach (var team in teams)
-            if (countLabels.TryGetValue(team.Name, out var label) && label != null)
-                label.text = Count(team.Name) + " PLAYERS";
+        {
+            var count = Count(team.Name);
+            if (teamHeaders.TryGetValue(team.Name, out var header) && header != null)
+                header.text = team.Name.ToUpperInvariant() + "\n<size=14>" + count + " PLAYER" + (count == 1 ? "" : "S") + "</size>";
+            if (teamPlayers.TryGetValue(team.Name, out var players) && players != null)
+                players.text = PlayersText(team.Name);
+        }
+    }
+
+    private static string PlayersText(string team)
+    {
+        var values = new List<string>();
+        if (Name(MultiplayerSession.LocalPeerId) == team)
+            values.Add(MultiplayerSession.LocalPlayerName + " <size=13>(YOU)</size>");
+        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+            if (Name(remote.PeerId) == team) values.Add(remote.Name);
+        return values.Count == 0 ? "<color=#FFFFFF99>NO PLAYERS</color>" : string.Join("\n", values);
     }
 
     private static void ClosePanel()
@@ -220,7 +253,8 @@ internal static class TeamSystem
         if (panel == null) return;
         UnityEngine.Object.Destroy(panel);
         panel = null;
-        countLabels.Clear();
+        teamHeaders.Clear();
+        teamPlayers.Clear();
         SetCursor(cursorVisible, cursorLock);
     }
 
