@@ -28,7 +28,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     internal void Configure(MultiplayerHud hud)
     {
-        if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected)
+        var playerExists = PlayerScript.player != null;
+        if (!playerExists && !MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected)
         {
             if (root != null) root.SetActive(false);
             return;
@@ -43,7 +44,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         if (!root.activeSelf) root.SetActive(true);
         SetActive(hostPanel, MultiplayerSession.IsHosting);
         SetActive(playersPanel, Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
-        SetActive(chatPanel, MultiplayerSession.IsConnected);
+        SetActive(chatPanel, true);
        // hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
        // hostText.gameObject.SetActive(null == PlayerScript.player || PlayerScript.player.canvasVisible);
         if (playersPanel.activeSelf) UpdatePlayers();
@@ -74,7 +75,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         if (!hud.ChatOpen) chatWasOpen = false;
         input.gameObject.SetActive(hud.ChatOpen);
-        chatHint.gameObject.SetActive(!hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player || PlayerScript.player.canvasVisible) && MultiplayerSession.IsConnected);
+        chatHint.gameObject.SetActive(!hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player || PlayerScript.player.canvasVisible));
         commandHints.gameObject.SetActive(hud.ChatOpen && hud.ChatSuggestions.Count > 0);
         if (!hud.ChatOpen) chatHint.text = "Press " + Controls.keys[Controls.OPEN_CHAT] + " to open the chat";
         if (hud.ChatOpen && hud.ChatSuggestions.Count > 0)
@@ -196,7 +197,6 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         input = CreateInput(root.transform, Vector2.zero, new Vector2(620f, 42f));
         ScreenAnchor(input.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
         input.onValueChanged.AddListener(value => { if (MultiplayerHud.Instance != null) MultiplayerHud.Instance.ChatInput = value; });
-        input.onSubmit.AddListener(_ => { if (MultiplayerHud.Instance != null) MultiplayerHud.Instance.Submit(); });
         statsText = Text(root.transform, "", Vector2.zero, new Vector2(920f, 330f), 13, TextAlignmentOptions.TopLeft);
         ScreenAnchor(statsText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -20f));
         statsText.enableWordWrapping = false;

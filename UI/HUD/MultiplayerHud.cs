@@ -139,10 +139,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (!MultiplayerSession.IsConnected)
         {
             DestroyNetworkStatsWidget();
-            if (chatOpen) PreserveChatDraft();
-            return;
         }
-        if (networkStatsVisible) UpdateNetworkStatsWidget();
+        if (networkStatsVisible && MultiplayerSession.IsConnected) UpdateNetworkStatsWidget();
         else if (networkStatsObject != null) DestroyNetworkStatsWidget();
         bool chatOpenKeyDown = Input.GetKeyDown(Controls.keys[Controls.OPEN_CHAT]);
         if (!chatOpen && chatOpenKeyDown)
@@ -468,7 +466,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             }
             AddMessage(localName, message, true, MultiplayerSession.LocalPeerId);
             ChatPacket packet;
-            if (ChatService.TryCreate(message, false, out packet)) MultiplayerSession.Send(packet);
+            if (MultiplayerSession.IsConnected && ChatService.TryCreate(message, false, out packet)) MultiplayerSession.Send(packet);
         }
         CloseChat();
     }
