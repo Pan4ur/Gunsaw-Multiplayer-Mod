@@ -89,3 +89,18 @@ internal static class ControlsAdder
         }
     }
 }
+
+[HarmonyPatch(typeof(ControlBinder), "UpdateBindings")]
+internal static class ControlsBindingSyncPatch
+{
+    private static void Postfix()
+    {
+        var settings = Controls.newControls;
+        for (int i = 0; i < settings.Length; i++)
+        {
+            var ki = settings[i];
+            if (PlayerPrefs.HasKey(ki)) 
+                Controls.keys[i] = (KeyCode) PlayerPrefs.GetInt(ki);
+        }
+    }
+}
