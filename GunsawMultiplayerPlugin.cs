@@ -17,12 +17,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     public const string PluginVersion = "0.4.6";
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     private const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
+    private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
 
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
 
     internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
+    internal readonly List<ServerInfo> servers = new List<ServerInfo>();
     internal bool customLevelCatalogReady;
     internal string customLevelCatalogError = "";
+    internal bool serverListLoading;
+    internal string serverListError = "";
     private ConfigEntry<string> masterUrl;
     private ConfigEntry<string> savedPlayerName;
     private ConfigEntry<string> savedLobbyName;
@@ -500,6 +504,74 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lobbies.Clear();
         status = "Connecting to lobby server " + lobbyServerAddress + "...";
         RefreshLobbies();
+    }
+
+    internal void RefreshServerList()
+    {
+        if (serverListLoading) return;
+        serverListLoading = true;
+        serverListError = "";
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                var loaded = ParseServerList(new WebClient().DownloadString(ServersUrl));
+                if (loaded.Count == 0) throw new InvalidDataException("The server list is empty.");
+                foreach (var server in loaded)
+                {
+                    server.address = server.address.Trim();
+                    server.location = string.IsNullOrWhiteSpace(server.location) ? "Unknown location" : server.location.Trim();
+                    server.pingMs = MeasureServerPing(server.address);
+                }
+                RunOnMainThread(() =>
+                {
+                    servers.Clear();
+                    servers.AddRange(loaded);
+                    serverListLoading = false;
+                });
+            }
+            catch (Exception exception)
+            {
+                RunOnMainThread(() =>
+                {
+                    serverListError = exception.Message;
+                    serverListLoading = false;
+                });
+            }
+        });
+    }
+
+    internal void SelectLobbyServer(string address)
+    {
+        lobbyServerAddress = address ?? "";
+        ConnectLobbyServer();
+    }
+
+    private static int MeasureServerPing(string address)
+    {
+        try
+        {
+            using (var ping = new System.Net.NetworkInformation.Ping())
+            {
+                var reply = ping.Send(address, 1500);
+                return reply != null && reply.Status == System.Net.NetworkInformation.IPStatus.Success && reply.RoundtripTime <= int.MaxValue
+                    ? (int)reply.RoundtripTime : -1;
+            }
+        }
+        catch { return -1; }
+    }
+
+    private static List<ServerInfo> ParseServerList(string source)
+    {
+        var servers = new List<ServerInfo>();
+        var matches = Regex.Matches(source ?? "", "\\{\\s*\\\"address\\\"\\s*:\\s*\\\"(?<address>(?:\\\\.|[^\\\"])*)\\\"\\s*,\\s*\\\"location\\\"\\s*:\\s*\\\"(?<location>(?:\\\\.|[^\\\"])*)\\\"\\s*\\}", RegexOptions.Singleline);
+        foreach (Match match in matches)
+        {
+            var address = Regex.Unescape(match.Groups["address"].Value).Trim();
+            if (string.IsNullOrWhiteSpace(address) || servers.Exists(item => string.Equals(item.address, address, StringComparison.OrdinalIgnoreCase))) continue;
+            servers.Add(new ServerInfo { address = address, location = Regex.Unescape(match.Groups["location"].Value) });
+        }
+        return servers;
     }
 
     internal void PasteCustomLevel()
@@ -1601,7 +1673,15 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         WorldReplication.Instance.weapons.RegisterDroppedWeapon(pickup);
         status = "Spawned " + weapon.name + ".";
     }
-    // holy inliners
+
+    [Serializable]
+    internal sealed class ServerInfo
+    {
+        public string address = "";
+        public string location = "";
+        [NonSerialized] public int pingMs = -1;
+    }
+
     [Serializable]
     internal sealed class LobbyInfo
     {

@@ -6,11 +6,13 @@ internal sealed class MultiplayerHud : MonoBehaviour
 {
     private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban", "/scale", "/clearblood"];
     private static string savedChatDraft = "";
+    private static int savedChatCaretPosition;
     private static bool savedChatWasOpen;
     private readonly List<ChatEntry> history = [];
     private readonly List<string> chatSuggestions = [];
     private string localName = "Player";
     private string input = "";
+    private int chatCaretPosition;
     private bool chatOpen;
     private bool focusChat;
     private bool waitForChatOpenKeyRelease;
@@ -54,13 +56,14 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         Instance = this;
         localName = SanitizeName(playerName);
-        if (!chatOpen && savedChatWasOpen && MultiplayerSession.IsConnected)
+        if (savedChatWasOpen && MultiplayerSession.IsConnected && (!chatOpen || input != savedChatDraft))
         {
             chatOpen = true;
             IsTyping = true;
             focusChat = true;
             waitForChatOpenKeyRelease = true;
             input = savedChatDraft;
+            chatCaretPosition = Mathf.Clamp(savedChatCaretPosition, 0, input.Length);
             UpdateChatSuggestions();
         }
     }
@@ -84,6 +87,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         history.Clear();
         input = "";
+        chatCaretPosition = 0;
+        savedChatCaretPosition = 0;
         chatSuggestions.Clear();
         CloseChat();
     }
@@ -133,7 +138,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         if (!MultiplayerSession.IsConnected)
         {
             DestroyNetworkStatsWidget();
-            if (chatOpen) CloseChat();
+            if (chatOpen) PreserveChatDraft();
             return;
         }
         if (networkStatsVisible) UpdateNetworkStatsWidget();
@@ -146,7 +151,9 @@ internal sealed class MultiplayerHud : MonoBehaviour
             focusChat = true;
             waitForChatOpenKeyRelease = true;
             input = "";
+            chatCaretPosition = 0;
             savedChatDraft = "";
+            savedChatCaretPosition = 0;
             savedChatWasOpen = true;
             UpdateChatSuggestions();
             return;
@@ -447,7 +454,9 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         var message = SanitizeMessage(input);
         input = "";
+        chatCaretPosition = 0;
         savedChatDraft = "";
+        savedChatCaretPosition = 0;
         chatSuggestions.Clear();
         if (!string.IsNullOrEmpty(message))
         {
@@ -471,7 +480,29 @@ internal sealed class MultiplayerHud : MonoBehaviour
         IsTyping = false;
         savedChatWasOpen = false;
         savedChatDraft = "";
+        savedChatCaretPosition = 0;
         chatSuggestions.Clear();
+    }
+
+    private void PreserveChatDraft()
+    {
+        savedChatDraft = input;
+        savedChatCaretPosition = Mathf.Clamp(chatCaretPosition, 0, input.Length);
+        savedChatWasOpen = chatOpen;
+        focusChat = false;
+        waitForChatOpenKeyRelease = false;
+        IsTyping = false;
+    }
+
+    internal int ChatCaretPosition => Mathf.Clamp(chatCaretPosition, 0, input.Length);
+
+    internal void SetChatCaretPosition(int value)
+    {
+        chatCaretPosition = Mathf.Clamp(value, 0, input.Length);
+        if (!chatOpen) return;
+        savedChatCaretPosition = chatCaretPosition;
+        savedChatDraft = input;
+        savedChatWasOpen = true;
     }
 
     private void UpdateChatSuggestions()

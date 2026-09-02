@@ -46,5 +46,6 @@ internal enum PacketType : byte
     PlayerState = 0x2D,
     PlayerSpecialLines = 0x2E,
     HostPing = 0x2F,
-    CustomLevelSuggestion = 0x30
+    CustomLevelSuggestion = 0x30,
+    PeerName = 0x31
 }

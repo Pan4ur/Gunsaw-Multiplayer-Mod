@@ -41,6 +41,8 @@ internal static partial class MultiplayerSession
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
                     RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives), senderId);
+                SendPeerNames(senderId);
+                Send(new PeerNamePacket(senderId, connectedName));
                 TeamSystem.SendAll(senderId);
                 ObserverSystem.SendCurrentState(senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
@@ -55,6 +57,13 @@ internal static partial class MultiplayerSession
                     TouchPeerLocked(senderId, NormalizePlayerName(AcceptedPacket.Read(ref reader).PlayerName));
                 }
                 SetStatus("Connected to host. Receiving match scene...");
+            }
+            else if (!isHost && decodedPacket.Type == PacketType.PeerName && senderId == hostPeerId)
+            {
+                var reader = new PacketReader(decodedPacket.Payload);
+                var peer = PeerNamePacket.Read(ref reader);
+                if (peer.PeerId == 0 || string.IsNullOrWhiteSpace(peer.Name)) continue;
+                lock (statusLock) TouchPeerLocked(peer.PeerId, NormalizePlayerName(peer.Name));
             }
             else if (decodedPacket.Type == PacketType.Disconnect)
             {
@@ -640,6 +649,12 @@ internal static partial class MultiplayerSession
         MultiplayerHud.AddSystemMessage(text);
         ChatPacket packet;
         if (ChatService.TryCreate(text, true, out packet)) Send(packet);
+    }
+
+    private static void SendPeerNames(ushort targetPeerId)
+    {
+        Send(new PeerNamePacket(localPeerId, localPlayerName), targetPeerId);
+        foreach (var peerId in PeerIds()) Send(new PeerNamePacket(peerId, PlayerName(peerId)), targetPeerId);
     }
 
     private static string EscapeRichText(string value)

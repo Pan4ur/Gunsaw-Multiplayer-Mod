@@ -14,6 +14,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private RectTransform chatContent;
     private float nextChatRefresh;
     private int renderedChatEntryCount = -1;
+    private string renderedChatText = "";
+    private bool chatBottomPending;
+    private int chatBottomPendingFrame;
     private bool chatWasOpen;
     private readonly List<TMP_Text> debugMarkers = new();
     private readonly Dictionary<BodyScript, TMP_Text> nameTags = new();
@@ -78,7 +81,14 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         if (hud.ChatOpen)
         {
             if (!input.isFocused) input.ActivateInputField();
-            if (input.text != hud.ChatInput) input.SetTextWithoutNotify(hud.ChatInput);
+            if (input.text != hud.ChatInput)
+            {
+                input.SetTextWithoutNotify(hud.ChatInput);
+                var caret = hud.ChatCaretPosition;
+                input.caretPosition = caret;
+                input.stringPosition = caret;
+            }
+            hud.SetChatCaretPosition(input.caretPosition);
         }
     }
 
@@ -635,11 +645,18 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdateChat(MultiplayerHud hud)
     {
+        if (chatBottomPending && Time.frameCount > chatBottomPendingFrame)
+        {
+            Canvas.ForceUpdateCanvases();
+            chatScroll.StopMovement();
+            chatScroll.verticalNormalizedPosition = 0f;
+            chatBottomPending = false;
+        }
         chatText.richText = true;
         var entries = hud.ChatHistory;
         var opened = hud.ChatOpen && !chatWasOpen;
-        var newEntry = entries.Count != renderedChatEntryCount;
-        var keepAtBottom = opened || (newEntry && chatScroll.verticalNormalizedPosition <= 0.01f);
+        var keepAtBottom = !hud.ChatOpen || opened || IsChatAtBottom();
+        var previousPosition = chatScroll.verticalNormalizedPosition;
         var start = hud.ChatOpen ? 0 : Mathf.Max(0, entries.Count - 5);
         var text = "";
         var now = Time.unscaledTime;
@@ -649,13 +666,28 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             if (!hud.ChatOpen && now - entry.CreatedAt > 8f) continue;
             text += "[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message + "\n";
         }
-        chatText.text = text;
-        var preferredHeight = chatText.GetPreferredValues(text, 580f, 0f).y;
-        chatContent.sizeDelta = new Vector2(0f, Mathf.Max(185f, preferredHeight + 8f));
-        Canvas.ForceUpdateCanvases();
-        if (keepAtBottom) chatScroll.verticalNormalizedPosition = 0f;
+        if (text != renderedChatText)
+        {
+            chatText.text = text;
+            var preferredHeight = chatText.GetPreferredValues(text, 580f, 0f).y;
+            chatContent.sizeDelta = new Vector2(0f, Mathf.Max(185f, preferredHeight + 8f));
+            Canvas.ForceUpdateCanvases();
+            chatScroll.verticalNormalizedPosition = keepAtBottom ? 0f : previousPosition;
+            if (keepAtBottom)
+            {
+                chatBottomPending = true;
+                chatBottomPendingFrame = Time.frameCount;
+            }
+            renderedChatText = text;
+        }
         renderedChatEntryCount = entries.Count;
         chatWasOpen = hud.ChatOpen;
+    }
+
+    private bool IsChatAtBottom()
+    {
+        if (chatContent.rect.height <= chatScroll.viewport.rect.height + 1f) return true;
+        return chatScroll.verticalNormalizedPosition <= 0.01f;
     }
 
     private static void SetActive(GameObject gameObject, bool active)
@@ -744,6 +776,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         ApplyChatFont(text);
         field.textViewport = viewport;
         field.textComponent = text;
+        field.onFocusSelectAll = false;
         return field;
     }
 

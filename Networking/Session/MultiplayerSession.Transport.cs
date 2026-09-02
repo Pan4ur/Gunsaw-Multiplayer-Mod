@@ -499,6 +499,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             Matches(packet, accepted) || HasHeader(packet, accepted) ||
             HasHeader(packet, sceneHeader) || HasHeader(packet, settingsHeader) ||
             HasHeader(packet, customLevelHeader) ||
+            HasHeader(packet, peerNameHeader) ||
             HasHeader(packet, worldDamageHeader) || HasHeader(packet, npcDamageHeader) || HasHeader(packet, npcGrabHeader) ||
             HasHeader(packet, npcSpeechHeader) ||
             HasHeader(packet, worldEnvironmentHeader) ||

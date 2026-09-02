@@ -77,6 +77,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] pingHeader = PacketHeader.Create(PacketType.Ping);
     private static readonly byte[] pongHeader = PacketHeader.Create(PacketType.Pong);
     private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
+    private static readonly byte[] peerNameHeader = PacketHeader.Create(PacketType.PeerName);
     private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
     private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
     private static readonly byte[] vehicleEjectHeader = PacketHeader.Create(PacketType.VehicleEject);

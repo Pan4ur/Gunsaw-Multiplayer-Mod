@@ -18,6 +18,11 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text lobbyActionText;
     private TMP_Text customLevelActionText;
     private Button closeLobbyButton;
+    private GameObject serverBrowserPanel;
+    private TMP_Text serverBrowserState;
+    private Transform serverRows;
+    private bool serverBrowserOpen;
+    private int renderedServerListHash;
     private GameObject customLevelSuggestionDialog;
     private TMP_Text customLevelSuggestionText;
     private CustomLevelSuggestionPacket pendingCustomLevelSuggestion;
@@ -48,6 +53,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (!plugin.visible)
         {
             customLevelBrowser?.SetOpen(false);
+            SetServerBrowserOpen(false);
             return;
         }
         var panelRect = panel.GetComponent<RectTransform>();
@@ -90,6 +96,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (lobbyActionText != null) lobbyActionText.text = MultiplayerSession.IsHosting ? "APPLY SETTINGS" : "CREATE LOBBY";
         if (customLevelActionText != null) customLevelActionText.text = MultiplayerSession.IsHosting ? "START" : MultiplayerSession.IsConnected ? "SUGGEST" : "START";
         if (closeLobbyButton != null) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
+        if (serverBrowserOpen) RebuildServerRows();
         RebuildLobbyRows();
         plugin.SaveLobbyPreferences();
     }
@@ -240,9 +247,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         // CONNECTION
         var connectionGroup = CreateGroup(panel.transform, "CONNECTION", new Vector2(-325f, 2.5f), new Vector2(620f, 125f));
         CreateText(connectionGroup.transform, "SERVER", new Vector2(-255f, -8f), new Vector2(90f, 32f), 14);
-        serverInput = CreateInput(connectionGroup.transform, new Vector2(-40f, -8f), new Vector2(310f, 42f), 255, value => plugin.lobbyServerAddress = value);
-        var connect = CreateButton(connectionGroup.transform, "CONNECT", new Vector2(220f, -8f), new Vector2(130f, 42f));
+        serverInput = CreateInput(connectionGroup.transform, new Vector2(-68f, -8f), new Vector2(280f, 42f), 255, value => plugin.lobbyServerAddress = value);
+        var connect = CreateButton(connectionGroup.transform, "APPLY", new Vector2(135f, -8f), new Vector2(105f, 42f));
         connect.onClick.AddListener(() => { if (!MultiplayerSession.IsHosting) plugin.ConnectLobbyServer(); });
+        var servers = CreateButton(connectionGroup.transform, "LIST", new Vector2(247.5f, -8f), new Vector2(105f, 42f));
+        servers.onClick.AddListener(() => SetServerBrowserOpen(!serverBrowserOpen));
+        CreateServerBrowser();
 
         // PUBLIC LOBBIES
         var publicGroup = CreateGroup(panel.transform, "PUBLIC LOBBIES", new Vector2(-2.5f, -251.25f), new Vector2(1265f, 372.5f));
@@ -265,6 +275,75 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         tooltipText.enableWordWrapping = true;
         tooltipText.raycastTarget = false;
         tooltipPanel.SetActive(false);
+    }
+
+    private void CreateServerBrowser()
+    {
+        serverBrowserPanel = CreatePanel(root.transform, Vector2.zero, new Vector2(760f, 650f));
+        serverBrowserPanel.name = "Lobby Server Browser";
+        serverBrowserPanel.GetComponent<Image>().color = new Color(0.04f, 0.04f, 0.04f, 0.98f);
+        CreateText(serverBrowserPanel.transform, "LOBBY SERVERS", new Vector2(0f, 285f), new Vector2(600f, 44f), 25, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        var refresh = CreateButton(serverBrowserPanel.transform, "REFRESH", new Vector2(-220f, 285f), new Vector2(150f, 40f));
+        refresh.onClick.AddListener(plugin.RefreshServerList);
+        var close = CreateButton(serverBrowserPanel.transform, "CLOSE", new Vector2(220f, 285f), new Vector2(150f, 40f));
+        close.onClick.AddListener(() => SetServerBrowserOpen(false));
+        serverBrowserState = CreateText(serverBrowserPanel.transform, "Loading servers...", new Vector2(0f, 240f), new Vector2(680f, 30f), 14, TextAlignmentOptions.Center);
+        serverRows = CreateScrollArea(serverBrowserPanel.transform, new Vector2(0f, -38f), new Vector2(700f, 510f));
+        serverBrowserPanel.SetActive(false);
+    }
+
+    private void SetServerBrowserOpen(bool value)
+    {
+        serverBrowserOpen = value;
+        if (serverBrowserPanel == null) return;
+        serverBrowserPanel.SetActive(value);
+        if (value)
+        {
+            renderedServerListHash = int.MinValue;
+            plugin.RefreshServerList();
+            RebuildServerRows();
+        }
+    }
+
+    private void RebuildServerRows()
+    {
+        if (serverRows == null || serverBrowserState == null) return;
+        serverBrowserState.text = plugin.serverListLoading ? "Parsing server list..." :
+            !string.IsNullOrEmpty(plugin.serverListError) ? "Could not load servers: " + plugin.serverListError :
+            plugin.servers.Count == 0 ? "No servers found." : "";
+        var hash = plugin.serverListLoading ? -1 : plugin.serverListError.GetHashCode();
+        foreach (var server in plugin.servers) hash = hash * 31 + (server.address + "\n" + server.location + "\n" + server.pingMs).GetHashCode();
+        if (hash == renderedServerListHash) return;
+        renderedServerListHash = hash;
+        for (var index = serverRows.childCount - 1; index >= 0; index--) Destroy(serverRows.GetChild(index).gameObject);
+        foreach (var server in plugin.servers)
+        {
+            var row = CreatePanel(serverRows, Vector2.zero, new Vector2(670f, 76f));
+            row.name = server.address;
+            row.AddComponent<LayoutElement>().preferredHeight = 76f;
+            CreateText(row.transform, server.address, new Vector2(-165f, 15f), new Vector2(300f, 28f), 18, TextAlignmentOptions.Left, FontStyles.Bold);
+            CreateText(row.transform, server.location, new Vector2(-165f, -15f), new Vector2(300f, 24f), 14, TextAlignmentOptions.Left);
+            var ping = CreateText(row.transform, FormatPing(server.pingMs), new Vector2(105f, 0f), new Vector2(130f, 32f), 17, TextAlignmentOptions.Center, FontStyles.Bold);
+            ping.color = PingColor(server.pingMs);
+            var connect = CreateButton(row.transform, "CONNECT", new Vector2(245f, 0f), new Vector2(145f, 40f));
+            connect.interactable = !MultiplayerSession.IsHosting;
+            var address = server.address;
+            connect.onClick.AddListener(() =>
+            {
+                SetServerBrowserOpen(false);
+                plugin.SelectLobbyServer(address);
+            });
+        }
+    }
+
+    private static string FormatPing(int pingMs) => pingMs < 0 ? "--" : pingMs + " ms";
+
+    private static Color PingColor(int pingMs)
+    {
+        if (pingMs < 0) return new Color(0.65f, 0.65f, 0.65f);
+        if (pingMs < 80) return new Color(0.3f, 1f, 0.4f);
+        if (pingMs < 160) return new Color(1f, 0.82f, 0.2f);
+        return new Color(1f, 0.32f, 0.25f);
     }
 
     internal void ShowCustomLevelSuggestion(string playerName, CustomLevelSuggestionPacket suggestion)
