@@ -674,16 +674,21 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         if (!MultiplayerSession.IsHosting)
         {
-            if (!MultiplayerSession.IsConnected)
-            {
-                status = "Join a lobby before starting a custom level.";
-                return;
-            }
             try
             {
                 var levelJson = DecodeCatalogLevelCode(code);
                 if (JsonUtility.FromJson<Level>(levelJson) == null || string.IsNullOrWhiteSpace(levelJson))
                     throw new InvalidDataException("The level JSON is invalid.");
+                if (!MultiplayerSession.IsConnected)
+                {
+                    customLevelJson = levelJson;
+                    customLevelCode = code;
+                    status = "Starting custom level: " + levelName;
+                    StartCustomLevelLocally(levelJson);
+                    RPCManager.CheckInstance();
+                    RPCManager.instance?.UpdateCustomLevel(code);
+                    return;
+                }
                 var sizeKiB = (Encoding.UTF8.GetByteCount(levelJson) + 1023) / 1024;
                 MultiplayerSession.SuggestCustomLevel(code, sizeKiB);
                 status = "Custom level suggestion sent to the host.";

@@ -1,7 +1,7 @@
 using System.Collections;
-using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
+using BepInEx;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -20,18 +20,32 @@ internal sealed class CustomLevelBrowserUi
     private readonly TMP_Text stateText;
     private readonly Transform rows;
     private readonly Sprite playIcon;
+    private readonly Sprite binIcon;
+    private readonly Button onlineButton;
+    private readonly Button localButton;
+    private readonly Button addLocalButton;
+    private readonly GameObject addLocalPanel;
+    private readonly TMP_InputField localName;
+    private readonly TMP_InputField localDescription;
+    private readonly TMP_Text localCodeStatus;
     private readonly Dictionary<string, Sprite> covers = new Dictionary<string, Sprite>(System.StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> coverFiles = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
     private static CatalogEntry[] cachedLevels = new CatalogEntry[0];
+    private CatalogEntry[] onlineLevels = new CatalogEntry[0];
+    private CatalogEntry[] localLevels = new CatalogEntry[0];
     private CatalogEntry[] levels = new CatalogEntry[0];
     private SortMode sortMode;
     private bool open;
     private bool loading;
+    private bool localMode;
+    private string localCode = "";
     private string renderedSearch = "\u0000";
     private SortMode renderedSort = (SortMode)(-1);
+    private bool renderedLocalMode;
 
     private enum SortMode { Date, Size, Difficulty, Length, Type }
 
+    [System.Serializable]
     private sealed class CatalogEntry
     {
         public string name;
@@ -42,6 +56,7 @@ internal sealed class CustomLevelBrowserUi
         public string type;
         public string info;
         public string date;
+        public bool local;
     }
 
     internal static void CacheCatalog(string source)
@@ -57,6 +72,7 @@ internal sealed class CustomLevelBrowserUi
         template = textTemplate;
         buttonTemplate = sourceButton;
         playIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.play.png", 100f, new Vector2(0.5f, 0.5f));
+        binIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.bin.png", 100f, new Vector2(0.5f, 0.5f));
         panel = CreatePanel(parent, new Vector2(100f, 0f), new Vector2(600f, 920f));
         panel.transform.SetSiblingIndex(Mathf.Max(0, parent.childCount - 2));
         panel.name = "Custom Level Browser";
@@ -70,7 +86,30 @@ internal sealed class CustomLevelBrowserUi
         sortText = sort.GetComponentInChildren<TMP_Text>();
         sort.onClick.AddListener(NextSort);
         stateText = CreateText(panel.transform, "Open the browser to load levels.", new Vector2(0f, 318f), new Vector2(540f, 28f), 13, TextAlignmentOptions.Center);
-        rows = CreateScroll(panel.transform, new Vector2(0f, -36f), new Vector2(550f, 670f));
+        rows = CreateScroll(panel.transform, new Vector2(0f, -25f), new Vector2(550f, 648f));
+        onlineButton = CreateButton(panel.transform, "ONLINE", new Vector2(-145f, -397f), new Vector2(170f, 38f));
+        localButton = CreateButton(panel.transform, "LOCAL", new Vector2(38f, -397f), new Vector2(170f, 38f));
+        addLocalButton = CreateButton(panel.transform, "ADD LEVEL", new Vector2(195f, -397f), new Vector2(112f, 38f));
+        onlineButton.onClick.AddListener(() => SetMode(false));
+        localButton.onClick.AddListener(() => SetMode(true));
+        addLocalButton.onClick.AddListener(OpenAddLocalLevel);
+        addLocalPanel = CreatePanel(panel.transform, Vector2.zero, new Vector2(510f, 430f));
+        addLocalPanel.name = "Add Local Level";
+        CreateText(addLocalPanel.transform, "SAVE LOCAL LEVEL", new Vector2(0f, 172f), new Vector2(460f, 32f), 21, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        localName = CreateInput(addLocalPanel.transform, new Vector2(0f, 118f), new Vector2(440f, 40f), "Level name", 80);
+        localDescription = CreateInput(addLocalPanel.transform, new Vector2(0f, 62f), new Vector2(440f, 40f), "Description", 240);
+        localCodeStatus = CreateText(addLocalPanel.transform, "No level code pasted.", new Vector2(0f, -2f), new Vector2(440f, 28f), 13, TextAlignmentOptions.Center);
+        var paste = CreateButton(addLocalPanel.transform, "PASTE", new Vector2(-76f, -48f), new Vector2(140f, 40f));
+        var copy = CreateButton(addLocalPanel.transform, "COPY", new Vector2(76f, -48f), new Vector2(140f, 40f));
+        paste.onClick.AddListener(PasteLocalCode);
+        copy.onClick.AddListener(CopyLocalCode);
+        var save = CreateButton(addLocalPanel.transform, "SAVE", new Vector2(-75f, -158f), new Vector2(130f, 40f));
+        var cancel = CreateButton(addLocalPanel.transform, "CANCEL", new Vector2(75f, -158f), new Vector2(130f, 40f));
+        save.onClick.AddListener(SaveLocalLevel);
+        cancel.onClick.AddListener(() => addLocalPanel.SetActive(false));
+        addLocalPanel.SetActive(false);
+        LoadLocalLevels();
+        SetMode(false);
         panel.SetActive(false);
     }
 
@@ -81,10 +120,12 @@ internal sealed class CustomLevelBrowserUi
     internal void SetOpen(bool value)
     {
         open = value;
+        if (!value) addLocalPanel.SetActive(false);
         panel.SetActive(value);
         if (value)
         {
-            if (!loading && levels.Length == 0) plugin.StartCoroutine(LoadCatalog());
+            if (!localMode && !loading && onlineLevels.Length == 0) plugin.StartCoroutine(LoadCatalog());
+            if (localMode) Rebuild(true);
         }
     }
 
@@ -107,11 +148,142 @@ internal sealed class CustomLevelBrowserUi
             loading = false;
             yield break;
         }
-        levels = cachedLevels;
+        onlineLevels = cachedLevels;
+        if (!localMode) levels = onlineLevels;
         yield return LoadCoverManifest();
-        stateText.text = levels.Length == 0 ? "No levels found." : levels.Length + " levels loaded.";
+        stateText.text = onlineLevels.Length == 0 ? "No levels found." : onlineLevels.Length + " levels loaded.";
         Rebuild(true);
         loading = false;
+    }
+
+    private void SetMode(bool useLocal)
+    {
+        localMode = useLocal;
+        levels = localMode ? localLevels : onlineLevels;
+        renderedSearch = "\u0000";
+        renderedLocalMode = !localMode;
+        var onlineImage = onlineButton.GetComponent<Image>();
+        var localImage = localButton.GetComponent<Image>();
+        onlineImage.color = localMode ? new Color(0.16f, 0.2f, 0.2f, 1f) : new Color(0.18f, 0.48f, 0.2f, 1f);
+        localImage.color = localMode ? new Color(0.18f, 0.48f, 0.2f, 1f) : new Color(0.16f, 0.2f, 0.2f, 1f);
+        addLocalButton.gameObject.SetActive(localMode);
+        onlineButton.GetComponent<RectTransform>().anchoredPosition = localMode ? new Vector2(-145f, -397f) : new Vector2(-91f, -397f);
+        localButton.GetComponent<RectTransform>().anchoredPosition = localMode ? new Vector2(38f, -397f) : new Vector2(91f, -397f);
+        if (!localMode && open && !loading && onlineLevels.Length == 0) plugin.StartCoroutine(LoadCatalog());
+        if (open) Rebuild(true);
+    }
+
+    private void OpenAddLocalLevel()
+    {
+        localName.text = "";
+        localDescription.text = "";
+        localCode = "";
+        localCodeStatus.text = "No level code pasted.";
+        addLocalPanel.SetActive(true);
+        localName.ActivateInputField();
+    }
+
+    private void SaveLocalLevel()
+    {
+        var name = localName.text.Trim();
+        var description = localDescription.text.Trim();
+        var code = localCode.Trim();
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(code))
+        {
+            stateText.text = "Enter a level name and code.";
+            return;
+        }
+        try
+        {
+            var json = Compression.Decompress(code);
+            if (string.IsNullOrWhiteSpace(json) || JsonUtility.FromJson<Level>(json) == null)
+                throw new System.InvalidOperationException("The level code is invalid.");
+            var entry = new CatalogEntry
+            {
+                name = name,
+                author = "LOCAL",
+                code = code,
+                info = description,
+                date = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm"),
+                type = "LOCAL",
+                local = true
+            };
+            var saved = new List<CatalogEntry>(localLevels) { entry };
+            localLevels = saved.ToArray();
+            SaveLocalLevels();
+            levels = localLevels;
+            addLocalPanel.SetActive(false);
+            Rebuild(true);
+        }
+        catch (System.Exception exception)
+        {
+            stateText.text = "Could not save level: " + exception.Message;
+        }
+    }
+
+    private void PasteLocalCode()
+    {
+        localCode = (GUIUtility.systemCopyBuffer ?? "").Trim();
+        localCodeStatus.text = string.IsNullOrEmpty(localCode) ? "Clipboard does not contain a level code." :
+            "Level code pasted: " + FormatSize(Encoding.UTF8.GetByteCount(localCode));
+    }
+
+    private void CopyLocalCode()
+    {
+        if (string.IsNullOrEmpty(localCode))
+        {
+            localCodeStatus.text = "Paste a level code first.";
+            return;
+        }
+        GUIUtility.systemCopyBuffer = localCode;
+        localCodeStatus.text = "Level code copied.";
+    }
+
+    private static string LocalLevelsPath => Path.Combine(Paths.ConfigPath, "GunsawMultiplayer.LocalLevels.txt");
+
+    private void LoadLocalLevels()
+    {
+        try
+        {
+            if (!File.Exists(LocalLevelsPath)) return;
+            var valid = new List<CatalogEntry>();
+            foreach (var line in File.ReadAllLines(LocalLevelsPath))
+            {
+                var fields = line.Split(new[] { '|' }, 4);
+                if (fields.Length != 4) continue;
+                var entry = new CatalogEntry
+                {
+                    name = DecodeLocalValue(fields[0]),
+                    info = DecodeLocalValue(fields[1]),
+                    code = DecodeLocalValue(fields[2]),
+                    date = DecodeLocalValue(fields[3]),
+                    author = "LOCAL",
+                    type = "LOCAL",
+                    local = true
+                };
+                if (!string.IsNullOrWhiteSpace(entry.name) && !string.IsNullOrWhiteSpace(entry.code)) valid.Add(entry);
+            }
+            localLevels = valid.ToArray();
+        }
+        catch { localLevels = new CatalogEntry[0]; }
+    }
+
+    private void SaveLocalLevels()
+    {
+        Directory.CreateDirectory(Paths.ConfigPath);
+        var lines = new List<string>(localLevels.Length);
+        foreach (var entry in localLevels)
+            lines.Add(EncodeLocalValue(entry.name) + "|" + EncodeLocalValue(entry.info) + "|" +
+                EncodeLocalValue(entry.code) + "|" + EncodeLocalValue(entry.date));
+        File.WriteAllLines(LocalLevelsPath, lines.ToArray());
+    }
+
+    private static string EncodeLocalValue(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? ""));
+
+    private static string DecodeLocalValue(string value)
+    {
+        try { return Encoding.UTF8.GetString(Convert.FromBase64String(value)); }
+        catch { return ""; }
     }
 
     private static CatalogEntry[] ParseCatalog(string source)
@@ -176,9 +348,10 @@ internal sealed class CustomLevelBrowserUi
     {
         if (rows == null) return;
         var query = search == null ? "" : search.text.Trim();
-        if (!force && query == renderedSearch && sortMode == renderedSort) return;
+        if (!force && query == renderedSearch && sortMode == renderedSort && localMode == renderedLocalMode) return;
         renderedSearch = query;
         renderedSort = sortMode;
+        renderedLocalMode = localMode;
         for (var index = rows.childCount - 1; index >= 0; index--) UnityEngine.Object.Destroy(rows.GetChild(index).gameObject);
         var filtered = new List<CatalogEntry>();
         foreach (var entry in levels)
@@ -191,7 +364,7 @@ internal sealed class CustomLevelBrowserUi
     private bool Matches(CatalogEntry entry, string query)
     {
         if (string.IsNullOrEmpty(query)) return true;
-        return Contains(entry.name, query) || Contains(entry.author, query) || Contains(entry.type, query) || Contains(entry.difficulty, query) || Contains(entry.length, query);
+        return Contains(entry.name, query) || Contains(entry.author, query) || Contains(entry.info, query) || Contains(entry.type, query) || Contains(entry.difficulty, query) || Contains(entry.length, query);
     }
 
     private static bool Contains(string value, string query) => (value ?? "").IndexOf(query, System.StringComparison.OrdinalIgnoreCase) >= 0;
@@ -226,9 +399,11 @@ internal sealed class CustomLevelBrowserUi
         var shade = new GameObject("Shade", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); shade.transform.SetParent(card.transform, false); var shadeRect = shade.GetComponent<RectTransform>(); shadeRect.anchorMin = Vector2.zero; shadeRect.anchorMax = Vector2.one; shadeRect.offsetMin = Vector2.zero; shadeRect.offsetMax = Vector2.zero; shade.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.48f);
         var title = CreateText(card.transform, entry.name ?? "Untitled", new Vector2(-50f, 35f), new Vector2(390f, 30f), 18, TextAlignmentOptions.Left, FontStyles.Bold);
         title.margin = new Vector4(12f, 0f, 0f, 0f);
-        var author = CreateText(card.transform, "BY " + (entry.author ?? "Unknown"), new Vector2(-50f, 10f), new Vector2(390f, 22f), 13, TextAlignmentOptions.Left);
+        var author = CreateText(card.transform, entry.local ? "LOCAL" : "BY " + (entry.author ?? "Unknown"), new Vector2(-50f, 10f), new Vector2(390f, 22f), 13, TextAlignmentOptions.Left);
         author.margin = new Vector4(12f, 0f, 0f, 0f);
-        var data = (entry.difficulty ?? "?").ToUpperInvariant() + "  |  " + (entry.length ?? "?").ToUpperInvariant() + "  |  " + (entry.type ?? "?").ToUpperInvariant() + "\n" + (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry));
+        var data = entry.local ? (string.IsNullOrWhiteSpace(entry.info) ? "No description." : entry.info) + "\n" +
+            (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry)) :
+            (entry.difficulty ?? "?").ToUpperInvariant() + "  |  " + (entry.length ?? "?").ToUpperInvariant() + "  |  " + (entry.type ?? "?").ToUpperInvariant() + "\n" + (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry));
         var details = CreateText(card.transform, data, new Vector2(-50f, -32f), new Vector2(390f, 42f), 12, TextAlignmentOptions.Left);
         details.margin = new Vector4(12f, 0f, 0f, 0f);
         details.enableWordWrapping = true;
@@ -240,7 +415,22 @@ internal sealed class CustomLevelBrowserUi
         }
         var play = CreatePlayButton(card.transform, new Vector2(220f, 0f), new Vector2(50f, 50f));
         play.onClick.AddListener(() => plugin.StartCatalogCustomLevel(entry.code, entry.name ?? "Untitled"));
-        plugin.StartCoroutine(LoadCover(entry.name, image));
+        if (entry.local)
+        {
+            var remove = CreateDeleteButton(card.transform, new Vector2(160f, 0f), new Vector2(50f, 50f));
+            remove.onClick.AddListener(() => DeleteLocalLevel(entry));
+        }
+        if (!entry.local) plugin.StartCoroutine(LoadCover(entry.name, image));
+    }
+
+    private void DeleteLocalLevel(CatalogEntry entry)
+    {
+        var saved = new List<CatalogEntry>(localLevels);
+        if (!saved.Remove(entry)) return;
+        localLevels = saved.ToArray();
+        levels = localLevels;
+        SaveLocalLevels();
+        Rebuild(true);
     }
 
     private IEnumerator LoadCover(string levelName, Image image)
@@ -322,15 +512,34 @@ internal sealed class CustomLevelBrowserUi
         return button;
     }
 
-    private TMP_InputField CreateInput(Transform parent, Vector2 position, Vector2 size, string placeholder)
+    private Button CreateDeleteButton(Transform parent, Vector2 position, Vector2 size)
+    {
+        var button = CreateButton(parent, "", position, size);
+        var background = button.GetComponent<Image>();
+        background.sprite = null;
+        background.material = null;
+        background.color = new Color(0.62f, 0.1f, 0.1f, 1f);
+        if (binIcon == null) return button;
+        var icon = new GameObject("Delete Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        icon.transform.SetParent(button.transform, false);
+        Rect(icon.GetComponent<RectTransform>(), Vector2.zero, size);
+        var iconImage = icon.GetComponent<Image>();
+        iconImage.sprite = binIcon;
+        iconImage.color = Color.white;
+        iconImage.raycastTarget = false;
+        return button;
+    }
+
+    private TMP_InputField CreateInput(Transform parent, Vector2 position, Vector2 size, string placeholder, int characterLimit = 80)
     {
         var go = new GameObject("Search", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline), typeof(TMP_InputField));
         go.transform.SetParent(parent, false); Rect(go.GetComponent<RectTransform>(), position, size);
         var image = go.GetComponent<Image>(); image.color = new Color(0.17f, 0.17f, 0.17f, 0.7f);
         var outline = go.GetComponent<Outline>(); outline.effectColor = new Color(0.58f, 0.58f, 0.58f, 0.95f); outline.effectDistance = new Vector2(1f, -1f);
-        var field = go.GetComponent<TMP_InputField>(); field.targetGraphic = image; field.characterLimit = 80;
-        var text = CreateText(go.transform, "", Vector2.zero, new Vector2(size.x - 16f, size.y), 15, TextAlignmentOptions.Left); text.margin = new Vector4(8f, 0f, 8f, 0f); field.textViewport = text.rectTransform; field.textComponent = text;
-        var hint = CreateText(go.transform, placeholder, Vector2.zero, new Vector2(size.x - 16f, size.y), 15, TextAlignmentOptions.Left); hint.margin = new Vector4(8f, 0f, 8f, 0f); hint.color = new Color(0.7f, 0.7f, 0.7f, 0.55f); field.placeholder = hint;
+        var field = go.GetComponent<TMP_InputField>(); field.targetGraphic = image; field.characterLimit = characterLimit;
+        if (size.y > 60f) field.lineType = TMP_InputField.LineType.MultiLineNewline;
+        var text = CreateText(go.transform, "", Vector2.zero, new Vector2(size.x - 16f, size.y), 15, TextAlignmentOptions.Left); text.margin = new Vector4(8f, 0f, 8f, 0f); text.enableWordWrapping = size.y > 60f; field.textViewport = text.rectTransform; field.textComponent = text;
+        var hint = CreateText(go.transform, placeholder, Vector2.zero, new Vector2(size.x - 16f, size.y), 15, TextAlignmentOptions.Left); hint.margin = new Vector4(8f, 0f, 8f, 0f); hint.color = new Color(0.7f, 0.7f, 0.7f, 0.55f); hint.enableWordWrapping = size.y > 60f; field.placeholder = hint;
         return field;
     }
 

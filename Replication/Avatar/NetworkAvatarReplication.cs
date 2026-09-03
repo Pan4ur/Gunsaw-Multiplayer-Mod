@@ -95,7 +95,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private float vehicleHeadFromRotation;
     private float vehicleHeadStartedAt;
     private bool hasRemoteVehicleHeadRotation;
-    private Vector2 vehicleArmsTarget;
     private float vehicleArmsTargetRotation;
     private Vector2 vehicleArmsLocalPosition;
     private float vehicleArmsLocalRotation;
@@ -103,11 +102,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private float vehicleArmsFromLocalRotation;
     private float vehicleArmsStartedAt;
     private bool hasVehicleArmsTarget;
-    private Vector2 vehicleTailTarget;
-    private float vehicleTailTargetRotation;
     private readonly List<VehicleTailTarget> vehicleTailTargets = [];
     private readonly List<VehicleTailTransformTarget> vehicleTailTransformTargets = [];
-    private bool hasVehicleRigTarget;
     private static NetworkAvatarReplication instance;
     internal static NetworkAvatarReplication Instance => instance;
     private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
@@ -144,7 +140,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private BodyScript startingAmmoAppliedBody;
     private BodyScript pendingRespawnLoadoutBody;
     private BodyScript pendingRespawnLoadoutSource;
-    private bool remoteDeathDropSpawned;
     private int appliedDismembermentHash = int.MinValue;
     private float pendingRemoteDamage;
     private ushort outgoingGrabPeerId;
@@ -1051,7 +1046,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         appliedInventory = "";
         lastSerializedInventory = "";
         nextFullInventory = 0f;
-        remoteDeathDropSpawned = false;
         appliedDismembermentHash = int.MinValue;
         pendingRemoteDamage = 0f;
         remoteCanBeGrabbed = false;
@@ -1634,7 +1628,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 {
                     if (MultiplayerSession.IsHost) ScoreboardSystem.NoteHostPlayerRespawn(remotePeerId);
                     ClearReplicaBloodEffects(remoteBody);
-                    remoteDeathDropSpawned = false;
                     pendingRemoteDamage = 0f;
                 }
                 remoteBody.burnIntensity = reader.ReadSingle();
@@ -1975,8 +1968,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
             vehicleTailTransformTargets[index] = state;
         }
-        
-        hasVehicleRigTarget = true;
     }
 
     private void DetachRemoteAvatar()
@@ -2070,7 +2061,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         vehicleArmsLocalRotation = localRotation;
         vehicleArmsStartedAt = Time.unscaledTime;
         hasVehicleArmsTarget = true;
-        hasVehicleRigTarget = true;
     }
 
     private void ApplyVehicleArmsTarget()
@@ -2580,7 +2570,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void SpawnRemoteDeathDropIfNeeded(float amount)
     {
         pendingRemoteDamage += amount;
-        remoteDeathDropSpawned = true;
     }
 
     internal static bool BlockNetworkPlayerDrop(BodyScript body, bool allWeapons)

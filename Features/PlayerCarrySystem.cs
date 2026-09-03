@@ -13,7 +13,6 @@ internal static class PlayerCarrySystem
     private static bool restoreCarrierWeaponPending;
     private static readonly Dictionary<BodyScript, float> pickupCrouchUntil = new();
     private static BodyScript collisionCarrier, collisionTarget;
-    private static bool allowCarryDirectionChange;
     private static readonly Dictionary<BodyScript, List<CarryBodyPart>> targetPoses = new();
     private static readonly Dictionary<BodyScript, List<bool>> targetLimbAnimation = new();
     private static readonly Dictionary<BodyScript, bool> targetOriginalDirections = new();
@@ -31,7 +30,6 @@ internal static class PlayerCarrySystem
     internal static string Prompt { get; private set; } = "";
     internal static bool IsLocalCarrier => carrying && carrierId == MultiplayerSession.LocalPeerId;
     internal static bool IsCarriedTarget(BodyScript body) => carrying && body != null && body == BodyForPeer(targetId);
-    internal static bool AllowDirectionChange => allowCarryDirectionChange;
     internal static bool MustLockRemoteCarryPose(BodyScript body) =>
         carrying && body != null && body == BodyForPeer(targetId) &&
         NetworkAvatarRegistry.IsRemoteAvatarBody(body);
@@ -769,7 +767,7 @@ internal static class PlayerCarryWeaponPatch
 [HarmonyPatch(typeof(BodyScript), "SwitchDir")]
 internal static class PlayerCarryDirectionPatch
 {
-    private static bool Prefix(BodyScript __instance) => !PlayerCarrySystem.IsCarriedTarget(__instance) || PlayerCarrySystem.AllowDirectionChange;
+    private static bool Prefix(BodyScript __instance) => !PlayerCarrySystem.IsCarriedTarget(__instance);
 }
 
 [HarmonyPatch(typeof(BodyScript), "Update")]
