@@ -91,6 +91,7 @@ internal static partial class MultiplayerSession
     private static string hostScene = "";
     private static string pendingScene = "";
     private static bool pendingSceneReload;
+    private static int pendingSceneCustomLevelTransferId;
     private static bool autoRestartSceneReload;
     private static bool pendingSceneAdvanced;
     private static int hostSceneEpoch;
@@ -99,6 +100,7 @@ internal static partial class MultiplayerSession
     private static string lastReceivedHostScene = "";
     private static string hostCustomLevel = "";
     private static string pendingCustomLevel = "";
+    private static int pendingCustomLevelTransferId;
     private static readonly PeerRegistry peers = new PeerRegistry();
     private static readonly Queue<ushort> disconnectedPeers = new Queue<ushort>();
     private static int peerListRevision;
@@ -139,6 +141,7 @@ internal static partial class MultiplayerSession
     private static readonly Dictionary<int, NpcTransfer> npcTransfers = new Dictionary<int, NpcTransfer>();
     private static CustomLevelTransfer customLevelTransfer;
     private static int customLevelTransferId;
+    private static int hostCustomLevelTransferId;
     private static long nextPingTicks;
     private static long pendingPingTicks;
     private static bool hostDisconnectPending;
@@ -361,14 +364,16 @@ internal static partial class MultiplayerSession
         Send(new ScenePacket(scene + "\n" + epoch), 0, false);
     }
 
-    internal static void NotifyHostSceneReload(string scene)
+    internal static void NotifyHostSceneReload(string scene, bool waitForCustomLevel = false)
     {
         if (!isHost || string.IsNullOrEmpty(scene)) return;
         ObserverSystem.BroadcastResetForLevelChange();
         hostScene = scene;
         var autoRestart = autoRestartSceneReload;
         autoRestartSceneReload = false;
-        Send(new ScenePacket(scene + "\n" + (hostSceneEpoch + 1) + (autoRestart ? "\nA" : "\nR")), 0, false);
+        var customLevelSuffix = waitForCustomLevel && hostCustomLevelTransferId != 0
+            ? "\nC" + hostCustomLevelTransferId : "";
+        Send(new ScenePacket(scene + "\n" + (hostSceneEpoch + 1) + (autoRestart ? "\nA" : "\nR") + customLevelSuffix), 0, false);
     }
 
     internal static void MarkNextSceneReloadAutoRestart()
@@ -393,31 +398,36 @@ internal static partial class MultiplayerSession
         levelCode = levelCode.Trim();
         lock (statusLock) hostCustomLevel = levelCode;
         hostScene = "LevelLoader";
-        QueueCustomLevelTransfer(levelCode);
+        hostCustomLevelTransferId = QueueCustomLevelTransfer(levelCode);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart));
     }
 
-    internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced)
+    internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced,
+        out int customLevelTransferId)
     {
         lock (statusLock)
         {
             scene = pendingScene;
             reload = pendingSceneReload;
             epochAdvanced = pendingSceneAdvanced;
+            customLevelTransferId = pendingSceneCustomLevelTransferId;
             pendingScene = "";
             pendingSceneReload = false;
             pendingSceneAdvanced = false;
+            pendingSceneCustomLevelTransferId = 0;
             return !string.IsNullOrEmpty(scene);
         }
     }
 
-    internal static bool TryTakeCustomLevel(out string levelJson)
+    internal static bool TryTakeCustomLevel(out string levelJson, out int transferId)
     {
         lock (statusLock)
         {
             levelJson = pendingCustomLevel;
+            transferId = pendingCustomLevelTransferId;
             pendingCustomLevel = "";
+            pendingCustomLevelTransferId = 0;
             return !string.IsNullOrEmpty(levelJson);
         }
     }

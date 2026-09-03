@@ -110,16 +110,24 @@ internal static partial class MultiplayerSession
                         lastReceivedHostScene = payload;
                         var scene = payload;
                         var reload = false;
+                        var customLevelTransferId = 0;
                         var split = payload.IndexOf('\n');
                         if (split > 0)
                         {
                             scene = payload.Substring(0, split);
                             var rest = payload.Substring(split + 1);
-                            if (rest.EndsWith("\nR", StringComparison.Ordinal) || rest.EndsWith("\nA", StringComparison.Ordinal))
+                            var fields = rest.Split('\n');
+                            rest = fields[0];
+                            for (var index = 1; index < fields.Length; index++)
                             {
-                                reload = true;
-                                if (rest.EndsWith("\nA", StringComparison.Ordinal)) ScoreboardSystem.PreserveForNextScene();
-                                rest = rest.Substring(0, rest.Length - 2);
+                                if (fields[index] == "R") reload = true;
+                                else if (fields[index] == "A")
+                                {
+                                    reload = true;
+                                    ScoreboardSystem.PreserveForNextScene();
+                                }
+                                else if (fields[index].StartsWith("C", StringComparison.Ordinal))
+                                    int.TryParse(fields[index].Substring(1), out customLevelTransferId);
                             }
                             int epoch;
                             if (int.TryParse(rest, out epoch) && epoch != expectedSceneEpoch)
@@ -130,6 +138,7 @@ internal static partial class MultiplayerSession
                         }
                         pendingScene = scene;
                         pendingSceneReload = reload;
+                        pendingSceneCustomLevelTransferId = customLevelTransferId;
                     }
                 }
             }
@@ -960,7 +969,11 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(chunk, 0, data, destination, chunk.Length);
                 destination += chunk.Length;
             }
-            if (destination == data.Length) pendingCustomLevel = Encoding.UTF8.GetString(data);
+            if (destination == data.Length)
+            {
+                pendingCustomLevel = Encoding.UTF8.GetString(data);
+                pendingCustomLevelTransferId = transferId;
+            }
             customLevelTransfer = null;
         }
     }

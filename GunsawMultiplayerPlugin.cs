@@ -83,7 +83,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private string customLevelCode = "";
     internal ConnectionMode createConnectionMode = ConnectionMode.Relay;
     private string receivedCustomLevelJson = "";
+    private int receivedCustomLevelTransferId;
     private bool waitingForCustomLevel;
+    private int waitingForCustomLevelTransferId;
     private string requestedHostScene = "";
     private float customLevelPhysicsRefreshUntil;
     private float nextCustomLevelPhysicsRefresh;
@@ -255,8 +257,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void KeepMultiplayerRunningInBackground()
     {
         Application.runInBackground = true;
-        if (MultiplayerSession.IsConnected && !Application.isFocused)
-            MultiplayerTimeControl.KeepMultiplayerActive();
+        if (headlessMode)
+        {
+            var manager = GameManager.main;
+            if (manager != null) manager.paused = false;
+            Time.timeScale = 1f;
+            Physics2D.simulationMode = SimulationMode2D.FixedUpdate;
+            return;
+        }
+        
+        MultiplayerTimeControl.KeepMultiplayerActive();
     }
 
     internal static WorldReplication World;
@@ -358,22 +368,28 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
 
         string incomingCustomLevel;
-        if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel))
+        int incomingCustomLevelTransferId;
+        if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel, out incomingCustomLevelTransferId))
         {
             RPCManager.CheckInstance();
             RPCManager.instance?.UpdateCustomLevel(incomingCustomLevel);
             CustomLevelProgress.SetActive(incomingCustomLevel);
             receivedCustomLevelJson = Compression.Decompress(incomingCustomLevel);
-            if (waitingForCustomLevel)
+            receivedCustomLevelTransferId = incomingCustomLevelTransferId;
+            if (waitingForCustomLevel && (waitingForCustomLevelTransferId == 0 ||
+                waitingForCustomLevelTransferId == incomingCustomLevelTransferId))
             {
                 waitingForCustomLevel = false;
+                waitingForCustomLevelTransferId = 0;
                 StartCustomLevelLocally(receivedCustomLevelJson);
             }
         }
 
         string sceneToLoad;
         bool sceneReload, sceneEpochAdvanced;
-        if (MultiplayerSession.TryTakeScene(out sceneToLoad, out sceneReload, out sceneEpochAdvanced))
+        int sceneCustomLevelTransferId;
+        if (MultiplayerSession.TryTakeScene(out sceneToLoad, out sceneReload, out sceneEpochAdvanced,
+            out sceneCustomLevelTransferId))
         {
             var activeScene = SceneManager.GetActiveScene().name;
             var mustReload = sceneReload || (sceneEpochAdvanced && sceneToLoad == activeScene);
@@ -386,17 +402,27 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             ObserverSystem.ResetForLevelChange(mustReload);
             if (sceneToLoad == "LevelLoader")
             {
-                if (!string.IsNullOrEmpty(receivedCustomLevelJson))
+                if (sceneCustomLevelTransferId != 0 &&
+                    receivedCustomLevelTransferId != sceneCustomLevelTransferId)
+                {
+                    waitingForCustomLevel = true;
+                    waitingForCustomLevelTransferId = sceneCustomLevelTransferId;
+                    status = "Receiving custom level from host...";
+                }
+                else if (!string.IsNullOrEmpty(receivedCustomLevelJson))
                     StartCustomLevelLocally(receivedCustomLevelJson);
                 else
                 {
                     waitingForCustomLevel = true;
+                    waitingForCustomLevelTransferId = sceneCustomLevelTransferId;
                     status = "Receiving custom level from host...";
                 }
                 return;
             }
             waitingForCustomLevel = false;
+            waitingForCustomLevelTransferId = 0;
             receivedCustomLevelJson = "";
+            receivedCustomLevelTransferId = 0;
             status = mustReload ? "Host restarted the level. Reloading..." :
                 "Loading host scene " + sceneToLoad + "...";
             SceneManager.LoadScene(sceneToLoad);
@@ -805,6 +831,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         hostRelayKey = "";
         requestedHostScene = "";
         waitingForCustomLevel = false;
+        waitingForCustomLevelTransferId = 0;
+        receivedCustomLevelTransferId = 0;
         nextHeartbeat = 0f;
         lastHostedPeerListRevision = -1;
         status = "Lobby closed.";
@@ -897,7 +925,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         joinedLobbyId = "";
         requestedHostScene = "";
         waitingForCustomLevel = false;
+        waitingForCustomLevelTransferId = 0;
         receivedCustomLevelJson = "";
+        receivedCustomLevelTransferId = 0;
         status = "Left lobby.";
         RefreshLobbies();
     }
@@ -1142,8 +1172,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             if (string.IsNullOrWhiteSpace(levelJson)) throw new InvalidDataException("no default map is loaded");
             customLevelJson = levelJson;
-            MultiplayerSession.NotifyHostSceneReload("LevelLoader");
             MultiplayerSession.StartHostCustomLevel(levelJson, Compression.Compress(levelJson));
+            MultiplayerSession.NotifyHostSceneReload("LevelLoader", true);
             StartCustomLevelLocally(levelJson);
         }
         catch (Exception exception) { SendHeadlessChat("Could not load map: " + exception.Message); }
@@ -1241,6 +1271,21 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return "";
     }
 
+    private static void ApplyHeadlessBooleanOption(string flag, ref bool value)
+    {
+        var text = CommandLineValue(flag);
+        bool parsed;
+        if (bool.TryParse(text, out parsed))
+        {
+            value = parsed;
+            return;
+        }
+        if (text == "1") { value = true; return; }
+        if (text == "0") { value = false; return; }
+        if (HasCommandLineFlag("--no-" + flag.Substring(2))) { value = false; return; }
+        if (HasCommandLineFlag(flag)) value = true;
+    }
+
     private void ApplyHeadlessCommandLineOptions()
     {
         var value = CommandLineValue("--master");
@@ -1257,11 +1302,36 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (!string.IsNullOrWhiteSpace(value)) createMaxPlayers = value;
         value = CommandLineValue("--respawn-seconds");
         if (!string.IsNullOrWhiteSpace(value)) createRespawnTime = value;
-        if (HasCommandLineFlag("--pvp")) createPvp = true;
-        if (HasCommandLineFlag("--can-grab")) createCanGrab = true;
-        if (HasCommandLineFlag("--grab-only-unconscious")) { createCanGrab = true; createGrabOnlyUnconscious = true; }
-        if (HasCommandLineFlag("--allow-respawn")) createAllowRespawn = true;
-        if (HasCommandLineFlag("--respawn-at-start")) createRespawnAtStart = true;
+        value = CommandLineValue("--lives");
+        if (!string.IsNullOrWhiteSpace(value)) createNumberOfLives = value;
+        value = CommandLineValue("--teams-cfg");
+        if (!string.IsNullOrWhiteSpace(value)) createTeamsCfg = value;
+        value = CommandLineValue("--initial-scale");
+        if (!string.IsNullOrWhiteSpace(value)) createInitialScale = value;
+        value = CommandLineValue("--starting-weapon");
+        if (!string.IsNullOrWhiteSpace(value)) createStartingWeapon = value;
+        value = CommandLineValue("--respawn-weapon");
+        if (!string.IsNullOrWhiteSpace(value)) createRespawnWeapon = value;
+        value = CommandLineValue("--starting-ammo");
+        if (!string.IsNullOrWhiteSpace(value)) createStartingAmmo = value;
+        value = CommandLineValue("--respawn-ammo");
+        if (!string.IsNullOrWhiteSpace(value)) createRespawnAmmo = value;
+        value = CommandLineValue("--connection");
+        ConnectionMode connectionMode;
+        if (Enum.TryParse(value, true, out connectionMode)) createConnectionMode = connectionMode;
+        ApplyHeadlessBooleanOption("--pvp", ref createPvp);
+        ApplyHeadlessBooleanOption("--can-grab", ref createCanGrab);
+        ApplyHeadlessBooleanOption("--grab-only-unconscious", ref createGrabOnlyUnconscious);
+        ApplyHeadlessBooleanOption("--allow-respawn", ref createAllowRespawn);
+        ApplyHeadlessBooleanOption("--auto-restart", ref createAutoRestart);
+        ApplyHeadlessBooleanOption("--respawn-at-start", ref createRespawnAtStart);
+        ApplyHeadlessBooleanOption("--player-collisions", ref createPlayerCollisions);
+        ApplyHeadlessBooleanOption("--cheats", ref createCheats);
+        ApplyHeadlessBooleanOption("--allow-swap", ref createAllowSwap);
+        ApplyHeadlessBooleanOption("--allow-scale-changing", ref createAllowScaleChanging);
+        ApplyHeadlessBooleanOption("--allow-observer", ref createAllowObserver);
+        ApplyHeadlessBooleanOption("--teams", ref createTeams);
+        if (createGrabOnlyUnconscious) createCanGrab = true;
         Logger.LogInfo("Headless settings: lobby=" + lobbyName + ", host=" + playerName + ", max=" + createMaxPlayers + ".");
     }
 

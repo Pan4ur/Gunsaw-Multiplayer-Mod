@@ -24,7 +24,7 @@ internal static partial class MultiplayerSession
         foreach (var target in targets) SendPacket(packet, target);
     }
 
-    private static void QueueCustomLevelTransfer(string levelCode, ushort targetId = 0)
+    private static int QueueCustomLevelTransfer(string levelCode, ushort targetId = 0)
     {
         var data = Encoding.UTF8.GetBytes(levelCode);
         const int chunkSize = 60 * 1024;
@@ -39,6 +39,7 @@ internal static partial class MultiplayerSession
             SendPacket(PacketCodec.Encode(new CustomLevelPacket(transferId, (ushort)index,
                 (ushort)chunkCount, data.Length, chunk)), targetId);
         }
+        return transferId;
     }
 
     internal static bool TryTakeIdentity(out ushort peerId, out string identity)
