@@ -326,12 +326,22 @@ internal static partial class MultiplayerSession
     internal static void NoteHostSceneHandle(int handle)
     {
         if (!isHost || handle == 0) return;
+        string customScene = "";
+        int epoch = 0;
         lock (statusLock)
         {
             if (handle == lastHostSceneHandle) return;
             lastHostSceneHandle = handle;
             hostSceneEpoch++;
+            if (!string.IsNullOrEmpty(hostCustomLevel))
+            {
+                customScene = hostScene;
+                epoch = hostSceneEpoch;
+            }
         }
+        
+        if (!string.IsNullOrEmpty(customScene))
+            Send(new ScenePacket(customScene + "\n" + epoch), 0, false);
     }
 
     internal static int SnapshotEpoch { get { lock (statusLock) return hostSceneEpoch; } }
@@ -386,7 +396,6 @@ internal static partial class MultiplayerSession
         QueueCustomLevelTransfer(levelCode);
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart));
-        Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), 0, false);
     }
 
     internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced)
