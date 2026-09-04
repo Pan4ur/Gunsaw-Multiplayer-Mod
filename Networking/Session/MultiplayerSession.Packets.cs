@@ -573,6 +573,7 @@ internal static partial class MultiplayerSession
         if (packet.PeerId == 0 || packet.PeerId == localPeerId) return;
         lock (statusLock)
         {
+            TouchPeerLocked(packet.PeerId, null);
             PeerState peer;
             if (peers.TryGet(packet.PeerId, out peer)) peer.PingMs = packet.PingMs;
         }
