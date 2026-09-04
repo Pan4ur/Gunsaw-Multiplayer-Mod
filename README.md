@@ -7,7 +7,7 @@ I only recently learned that another multiplayer project for Gunsaw has been in 
 
 ![icon](img/preview.gif)
 
-https://youtu.be/aYmxX_OQOis
+https://youtu.be/aYmxX_OQOis | https://youtu.be/p0NstRIiTQ8?si=8Da7j7REXki45iwn
 
 MP Features:
 
@@ -30,9 +30,21 @@ MP Features:
 - /spawn returns you to the map spawn point
 - The Host can ban players with /ban
 - Custom levels are automatically transferred from the Host to clients
-- A new NPC Spawner object is available in the level editor
+- Custom level browser with online and local level libraries
+- Players can suggest custom levels to the Host
+- Custom level ranks
+- Team mode with team selection, team scores and team spawn points
+- Configurable starting and respawn weapons and ammo
+- Configurable number of lives per level
 - P2P and Relay connection modes
 - Discord RPC
+
+Props:
+- NPC spawner
+- Arsenal
+- Logic gates (nand, and, or, xor, t-trigger, d-trigger, clock, rnd...)
+- Lamps now have an id to toggle
+- Player spawn points now have a team filed (color)
 
 ## Installation
 
@@ -66,11 +78,7 @@ MP Features:
 - TAB - Open player list
 - C - Carry player (You need to aim at him with your sights)
 - E - Reactivate one-time triggers
-
-### Debug binds
-- END + SPACE + S - Net/CPU profiler
-- END + SPACE + R - Sleeping objects debug
-- END + SPACE + C + S - CS Expierience
+- B - Play a whine
 
 ## Crashes
 
@@ -98,7 +106,7 @@ This mode launches Gunsaw without graphics in minimized mode. As a result, GPU u
 Open a terminal in the game directory and run Gunsaw.exe with the required arguments:
 
 ```powershell
-.\Gunsaw.exe -batchmode -nographics -headlessLobby -headlessMap ".\default_map.txt" -logFile - --master "https://gunsawudp.e621.su" --name "HEADLESS LOBBY" --host "HOST" --max-players 16 --pvp --can-grab --allow-respawn --respawn-seconds 5 --respawn-at-start 2>&1 | Tee-Object -FilePath ".\headless.log"
+.\Gunsaw.exe -batchmode -nographics -headlessLobby -headlessMap ".\default_map.txt" -logFile - --master "https://pl.expie.fun" --name "HEADLESS LOBBY" --host "HOST" --max-players 16 --pvp --can-grab --allow-respawn --respawn-seconds 5 --respawn-at-start 2>&1 | Tee-Object -FilePath ".\headless.log"
 ```
 
 CTRL + C to stop
