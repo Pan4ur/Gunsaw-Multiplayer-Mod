@@ -135,6 +135,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static PlayerScript localPlayerInstance;
     private static Transform localGlobalBody;
     private static BodyScript initialScaleAppliedBody;
+    private static float initialScaleBase = float.NaN;
     private static float appliedInitialScale = float.NaN;
     private BodyScript startingLoadoutAppliedBody;
     private BodyScript startingAmmoAppliedBody;
@@ -1781,12 +1782,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (!MultiplayerSession.IsActive)
         {
             initialScaleAppliedBody = null;
+            initialScaleBase = float.NaN;
             appliedInitialScale = float.NaN;
             return;
         }
         var target = MultiplayerSession.InitialScale;
         if (body == initialScaleAppliedBody && Mathf.Abs(appliedInitialScale - target) < 0.001f) return;
-        if (!AvatarScaleHandler.TrySet(body, target)) return;
+        if (body != initialScaleAppliedBody) initialScaleBase = body.characterScale;
+        if (float.IsNaN(initialScaleBase) || initialScaleBase <= 0f) return;
+        if (!AvatarScaleHandler.TrySet(body, initialScaleBase * target)) return;
         initialScaleAppliedBody = body;
         appliedInitialScale = target;
     }
