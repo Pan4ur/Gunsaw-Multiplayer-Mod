@@ -21,7 +21,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text customLevelActionText;
     private Button closeLobbyButton;
     private GameObject serverBrowserPanel;
-    private TMP_Text serverBrowserState;
+    private TMP_Text serverBrowserTitle, serverBrowserState;
+    private Button serverBrowserRefresh;
     private Transform serverRows;
     private bool serverBrowserOpen;
     private int renderedServerListHash;
@@ -29,6 +30,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text customLevelSuggestionText;
     private CustomLevelSuggestionPacket pendingCustomLevelSuggestion;
     private Transform lobbyRows;
+    private TMP_Text publicLobbiesTitle;
+    private Button refreshLobbiesButton;
     private CustomLevelBrowserUi customLevelBrowser;
     private int renderedLobbyHash;
     private MainMenuManager menu;
@@ -298,6 +301,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
         // PUBLIC LOBBIES
         var publicGroup = CreateGroup(panel.transform, "PUBLIC LOBBIES", new Vector2(-2.5f, -251.25f), new Vector2(1265f, 372.5f));
+        publicLobbiesTitle = publicGroup.GetComponentInChildren<TMP_Text>();
         statusText = CreateText(
             publicGroup.transform,
             "",
@@ -306,8 +310,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             14,
             TextAlignmentOptions.Center);
 
-        var refresh = CreateButton(publicGroup.transform, "REFRESH", new Vector2(540f, 160f), new Vector2(150f, 38f));
-        refresh.onClick.AddListener(plugin.RefreshLobbies);
+        refreshLobbiesButton = CreateButton(publicGroup.transform, "REFRESH", new Vector2(540f, 160f), new Vector2(150f, 38f));
+        refreshLobbiesButton.onClick.AddListener(plugin.RefreshLobbies);
 
         lobbyRows = CreateScrollArea(publicGroup.transform, new Vector2(0f, -20f), new Vector2(1240f, 300f));
 
@@ -324,9 +328,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         serverBrowserPanel = CreatePanel(root.transform, Vector2.zero, new Vector2(760f, 650f));
         serverBrowserPanel.name = "Lobby Server Browser";
         serverBrowserPanel.GetComponent<Image>().color = new Color(0.04f, 0.04f, 0.04f, 0.98f);
-        CreateText(serverBrowserPanel.transform, "LOBBY SERVERS", new Vector2(0f, 285f), new Vector2(600f, 44f), 25, TextAlignmentOptions.Center, FontStyles.UpperCase);
-        var refresh = CreateButton(serverBrowserPanel.transform, "REFRESH", new Vector2(-220f, 285f), new Vector2(150f, 40f));
-        refresh.onClick.AddListener(plugin.RefreshServerList);
+        serverBrowserTitle = CreateText(serverBrowserPanel.transform, "LOBBY SERVERS", new Vector2(0f, 285f), new Vector2(600f, 44f), 25, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        serverBrowserRefresh = CreateButton(serverBrowserPanel.transform, "REFRESH", new Vector2(-220f, 285f), new Vector2(150f, 40f));
+        serverBrowserRefresh.onClick.AddListener(plugin.RefreshServerList);
         var close = CreateButton(serverBrowserPanel.transform, "CLOSE", new Vector2(220f, 285f), new Vector2(150f, 40f));
         close.onClick.AddListener(() => SetServerBrowserOpen(false));
         serverBrowserState = CreateText(serverBrowserPanel.transform, "Loading servers...", new Vector2(0f, 240f), new Vector2(680f, 30f), 14, TextAlignmentOptions.Center);
@@ -350,6 +354,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void RebuildServerRows()
     {
         if (serverRows == null || serverBrowserState == null) return;
+        serverBrowserTitle.text = "LOBBY SERVERS";
+        serverBrowserRefresh.gameObject.SetActive(true);
         serverBrowserState.text = plugin.serverListLoading ? "Parsing server list..." :
             !string.IsNullOrEmpty(plugin.serverListError) ? "Could not load servers: " + plugin.serverListError :
             plugin.servers.Count == 0 ? "No servers found." : "";
@@ -647,12 +653,6 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     }
 
     private static void SetRect(RectTransform rect, Vector2 position, Vector2 size) { rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f); rect.pivot = new Vector2(0.5f, 0.5f); rect.anchoredPosition = position; rect.sizeDelta = size; }
-    private static void ScreenAnchor(RectTransform rect, Vector2 anchor, Vector2 pivot, Vector2 position)
-    {
-        rect.anchorMin = rect.anchorMax = anchor;
-        rect.pivot = pivot;
-        rect.anchoredPosition = position;
-    }
 
     private void FitPanelToScreen()
     {
@@ -667,6 +667,28 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
     private void RebuildLobbyRows()
     {
+        if (MultiplayerSession.IsActive)
+        {
+            publicLobbiesTitle.text = "LOBBY PLAYERS";
+            refreshLobbiesButton.gameObject.SetActive(false);
+            var peerIds = MultiplayerSession.PeerIds();
+            var playerHash = MultiplayerSession.PeerListRevision * 31 + (MultiplayerSession.IsHost ? 1 : 0);
+            playerHash = playerHash * 31 + MultiplayerSession.PingMs;
+            foreach (var peerId in peerIds)
+                playerHash = playerHash * 31 + peerId * 31 + MultiplayerSession.PeerPing(peerId) + MultiplayerSession.PlayerName(peerId).GetHashCode();
+            if (playerHash == renderedLobbyHash) return;
+            renderedLobbyHash = playerHash;
+            statusText.text = "CURRENT LOBBY  -  " + (peerIds.Length + 1) + " PLAYER" + (peerIds.Length == 0 ? "" : "S");
+            for (var index = lobbyRows.childCount - 1; index >= 0; index--) Destroy(lobbyRows.GetChild(index).gameObject);
+            AddCurrentLobbyPlayerRow(MultiplayerSession.LocalPlayerName, MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs,
+                MultiplayerSession.IsHost);
+            foreach (var peerId in peerIds)
+                AddCurrentLobbyPlayerRow(MultiplayerSession.PlayerName(peerId), peerId == MultiplayerSession.HostPeerId ? 0 : MultiplayerSession.PeerPing(peerId),
+                    peerId == MultiplayerSession.HostPeerId);
+            return;
+        }
+        publicLobbiesTitle.text = "PUBLIC LOBBIES";
+        refreshLobbiesButton.gameObject.SetActive(true);
         var canJoin = plugin.CanJoinLobby;
         var hash = plugin.lobbies.Count + (canJoin ? 1 : 0) + (MultiplayerSession.IsActive ? 7 : 0);
         foreach (var lobby in plugin.lobbies)
@@ -685,5 +707,16 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             if (joined) join.onClick.AddListener(plugin.LeaveLobby);
             else join.onClick.AddListener(() => plugin.JoinLobby(id));
         }
+    }
+
+    private void AddCurrentLobbyPlayerRow(string name, int pingMs, bool host)
+    {
+        var row = new GameObject("Lobby Player", typeof(RectTransform), typeof(LayoutElement));
+        row.transform.SetParent(lobbyRows, false);
+        row.GetComponent<LayoutElement>().preferredHeight = 46f;
+        var displayName = (host ? "[HOST] " : "") + (name ?? "Player");
+        var pingColor = ColorUtility.ToHtmlStringRGB(PingColor(pingMs));
+        CreateText(row.transform, displayName + "  <color=#" + pingColor + ">" + FormatPing(pingMs) + "</color>",
+            new Vector2(-110f, 0f), new Vector2(900f, 42f), 17, TextAlignmentOptions.Left, FontStyles.Bold);
     }
 }
