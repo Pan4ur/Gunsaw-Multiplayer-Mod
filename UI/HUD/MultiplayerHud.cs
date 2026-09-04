@@ -15,7 +15,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private int chatCaretPosition;
     private bool chatOpen;
     private bool focusChat;
-    private bool waitForChatOpenKeyRelease;
     private bool replicationDebugOverlayEnabled;
     private bool networkStatsVisible;
     private GameObject networkStatsObject;
@@ -62,7 +61,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
             chatOpen = true;
             IsTyping = true;
             focusChat = true;
-            waitForChatOpenKeyRelease = true;
             input = savedChatDraft;
             chatCaretPosition = Mathf.Clamp(savedChatCaretPosition, 0, input.Length);
             UpdateChatSuggestions();
@@ -148,7 +146,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
             chatOpen = true;
             IsTyping = true;
             focusChat = true;
-            waitForChatOpenKeyRelease = true;
             input = "";
             chatCaretPosition = 0;
             savedChatDraft = "";
@@ -158,8 +155,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
             return;
         }
         if (!chatOpen) return;
-        if (waitForChatOpenKeyRelease && !Input.GetKey(Controls.keys[Controls.OPEN_CHAT]))
-            waitForChatOpenKeyRelease = false;
         if (Input.GetKeyDown(Controls.keys[Controls.CLOSE_CHAT]))
         { // Lets hope that bind is not typable
             CloseChat();
@@ -170,7 +165,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             CompleteChatInput();
             return;
         }
-        if (!waitForChatOpenKeyRelease && chatOpenKeyDown)
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
             Submit();
     }
 
@@ -475,7 +470,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         chatOpen = false;
         focusChat = false;
-        waitForChatOpenKeyRelease = false;
         IsTyping = false;
         savedChatWasOpen = false;
         savedChatDraft = "";
@@ -489,7 +483,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
         savedChatCaretPosition = Mathf.Clamp(chatCaretPosition, 0, input.Length);
         savedChatWasOpen = chatOpen;
         focusChat = false;
-        waitForChatOpenKeyRelease = false;
         IsTyping = false;
     }
 
