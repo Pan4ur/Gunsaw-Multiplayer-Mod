@@ -1,11 +1,7 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 
 internal static partial class MultiplayerSession
 {
@@ -504,7 +500,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             HasHeader(packet, npcSpeechHeader) ||
             HasHeader(packet, worldEnvironmentHeader) ||
             HasHeader(packet, worldInteractionHeader) ||
-            HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader) ||
+            HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader) || HasHeader(packet, playerGruntHeader) ||
             HasHeader(packet, playerTeleportHeader) || HasHeader(packet, vehicleEjectHeader) ||
             HasHeader(packet, vehicleImpactHeader) || HasHeader(packet, missionFinishedHeader) ||
             HasHeader(packet, observerHeader) || HasHeader(packet, observerKillHeader);

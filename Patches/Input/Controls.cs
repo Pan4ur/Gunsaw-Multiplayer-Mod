@@ -6,15 +6,16 @@ using TMPro;
 // Stores constants to use across all patches and precaches them
 public static class Controls
 {
-    public static readonly string[] newControls = new string[] { "Open chat", "Close chat", "See players", "Markers" };
-    public static readonly int[] defaultValues = new int[] { (int)KeyCode.Return, (int)KeyCode.Escape, (int)KeyCode.Tab, (int)KeyCode.M };
+    public static readonly string[] newControls = new string[] { "Open chat", "Close chat", "See players", "Markers", "Whine" };
+    public static readonly int[] defaultValues = new int[] { (int)KeyCode.Return, (int)KeyCode.Escape, (int)KeyCode.Tab, (int)KeyCode.M, (int)KeyCode.B };
 
-    public static KeyCode[] keys = new KeyCode[] { KeyCode.Return, KeyCode.Escape, KeyCode.Tab, KeyCode.M };
+    public static KeyCode[] keys = new KeyCode[] { KeyCode.Return, KeyCode.Escape, KeyCode.Tab, KeyCode.M, KeyCode.B };
 
     public const int OPEN_CHAT = 0;
     public const int CLOSE_CHAT = 1;
     public const int SEE_PLAYER = 2;
     public const int TOGGLE_PLAYER_MARKERS = 3;
+    public const int PAIN_SOUND = 4;
 }
 
 // Adding GameObject of controls and their value in ControlBinder.texts, also sets default values of PlayerPrefs if it missing

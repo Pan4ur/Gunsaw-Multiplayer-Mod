@@ -74,6 +74,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] worldInteractionHeader = PacketHeader.Create(PacketType.WorldInteraction);
     private static readonly byte[] playerDamageHeader = PacketHeader.Create(PacketType.PlayerDamage);
     private static readonly byte[] pvpDamageHeader = PacketHeader.Create(PacketType.PvpDamage);
+    private static readonly byte[] playerGruntHeader = PacketHeader.Create(PacketType.PlayerGrunt);
     private static readonly byte[] settingsHeader = PacketHeader.Create(PacketType.Settings);
     private static readonly byte[] pingHeader = PacketHeader.Create(PacketType.Ping);
     private static readonly byte[] pongHeader = PacketHeader.Create(PacketType.Pong);
@@ -119,6 +120,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<WorldInteractionPacket>> worldInteractions = new Queue<PeerPacket<WorldInteractionPacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> playerDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> pvpDamage = new Queue<PeerPacket<PlayerDamagePacket>>();
+    private static readonly Queue<ushort> playerGrunts = new Queue<ushort>();
     private static readonly Queue<PeerPacket<ShotVisualPacket>> shotVisuals = new Queue<PeerPacket<ShotVisualPacket>>();
     private static readonly Queue<PeerPacket<ReloadEffectPacket>> reloadEffects = new Queue<PeerPacket<ReloadEffectPacket>>();
     private static readonly Queue<PeerPacket<ProjectileImpactPacket>> projectileImpacts = new Queue<PeerPacket<ProjectileImpactPacket>>();

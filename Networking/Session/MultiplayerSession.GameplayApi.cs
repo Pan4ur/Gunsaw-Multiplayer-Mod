@@ -163,6 +163,15 @@ internal static partial class MultiplayerSession
         }
     }
 
+    internal static bool TryTakePlayerGrunt(out ushort peerId)
+    {
+        lock (statusLock)
+        {
+            peerId = playerGrunts.Count == 0 ? (ushort)0 : playerGrunts.Dequeue();
+            return peerId != 0;
+        }
+    }
+
     internal static bool TryTakeShotVisual(out ushort peerId, out ShotVisualPacket packet)
     {
         lock (statusLock)
