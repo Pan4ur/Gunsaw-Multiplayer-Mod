@@ -52,7 +52,7 @@ Props:
 2. Extract the game to C:\Games\Gunsaw (or another folder)
 3. Start the unmodified game once, then close it
 4. Install [BepInEx](https://github.com/bepinex/bepinex/releases) into the game folder — the folder that contains the `Gunsaw.exe`
-5. Download `GunsawMultiplayer.dll` from releases
+5. Download `GunsawMultiplayer.dll` from [releases](https://github.com/Pan4ur/Gunsaw-Multiplayer-Mod/releases)
 6. Copy the `GunsawMultiplayer.dll` to ```<Gunsaw folder>\BepInEx\plugins\GunsawMultiplayer.dll```
 7. Start Gunsaw, open the **Multiplayer** menu at bottom-left corner, and create or join a lobby
 8. Smash your friends in every way possible
