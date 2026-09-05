@@ -103,6 +103,18 @@ internal sealed class BinaryLogicGateRuntime : LogicRuntimeBase
 
     private void Activate(int id)
     {
+        ReceiveActivation(id);
+    }
+
+    internal override void AddActivationRoutes(LogicTickService service, int targetIndex)
+    {
+        if (data == null) return;
+        service.AddActivationReceiver(data.inputA, this, targetIndex);
+        service.AddActivationReceiver(data.inputB, this, targetIndex);
+    }
+
+    internal override void ReceiveActivation(int id)
+    {
         if (data == null) return;
         if (id == data.inputA) inputAHigh = true;
         if (id == data.inputB) inputBHigh = true;

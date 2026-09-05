@@ -48,6 +48,18 @@ internal sealed class DFlipFlopRuntime : LogicRuntimeBase
 
     private void Activate(int id)
     {
+        ReceiveActivation(id);
+    }
+
+    internal override void AddActivationRoutes(LogicTickService service, int targetIndex)
+    {
+        if (data == null) return;
+        service.AddActivationReceiver(data.d, this, targetIndex);
+        service.AddActivationReceiver(data.clock, this, targetIndex);
+    }
+
+    internal override void ReceiveActivation(int id)
+    {
         if (data == null) return;
         if (id == data.d) dHigh = true;
         if (id == data.clock) clockHigh = true;

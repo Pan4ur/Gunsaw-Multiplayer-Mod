@@ -114,6 +114,7 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
     private SpriteRenderer housingRenderer;
 
     internal bool Powered => powered;
+    internal int ActivationId => activationId;
 
     internal void Configure(int id, float intensity, Color configuredColor)
     {
@@ -183,9 +184,11 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
     }
 }
 
-internal sealed class ToggleableLampActivationRelay : MonoBehaviour
+internal sealed class ToggleableLampActivationRelay : MonoBehaviour, IActivationIdReceiver
 {
     private ToggleableLampRuntime runtime;
+
+    public int ActivationId => runtime != null ? runtime.ActivationId : -1;
 
     internal void Configure(ToggleableLampRuntime value)
     {

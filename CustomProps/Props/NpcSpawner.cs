@@ -88,9 +88,10 @@ internal sealed class NpcSpawnerPropDefinition : CustomPropDefinition<NpcSpawner
 
 }
 
-internal sealed class NpcSpawnerRuntime : MonoBehaviour
+internal sealed class NpcSpawnerRuntime : MonoBehaviour, IActivationIdReceiver
 {
     private NpcSpawnerData data;
+    public int ActivationId => data != null ? data.activationId : -1;
     private float nextSpawn;
     private int spawnedTotal;
     private bool active;

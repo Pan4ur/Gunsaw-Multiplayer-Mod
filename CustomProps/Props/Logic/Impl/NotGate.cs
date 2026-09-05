@@ -33,6 +33,17 @@ internal sealed class NotGateRuntime : LogicRuntimeBase
 
     private void Activate(int id)
     {
+        ReceiveActivation(id);
+    }
+
+    internal override void AddActivationRoutes(LogicTickService service, int targetIndex)
+    {
+        if (data == null) return;
+        service.AddActivationReceiver(data.input, this, targetIndex);
+    }
+
+    internal override void ReceiveActivation(int id)
+    {
         if (data != null && id == data.input) inputHigh = true;
     }
 

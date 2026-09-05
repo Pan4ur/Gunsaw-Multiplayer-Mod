@@ -50,9 +50,10 @@ internal sealed class RandomIdRouterPropDefinition : CustomPropDefinition<Random
     }
 }
 
-internal sealed class RandomIdRouterRuntime : MonoBehaviour
+internal sealed class RandomIdRouterRuntime : MonoBehaviour, IActivationIdReceiver
 {
     private RandomIdRouterData data;
+    public int ActivationId => data != null ? data.activationId : -1;
     private bool routing;
 
     internal void Configure(RandomIdRouterData value)
