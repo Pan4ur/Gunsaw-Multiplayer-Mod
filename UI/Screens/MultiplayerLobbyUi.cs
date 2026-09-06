@@ -20,6 +20,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private Button lobbyActionButton, p2pButton, relayButton, autoButton;
     private TMP_Text customLevelActionText;
     private Button closeLobbyButton;
+    private bool showingLeaveLobbyButton;
     private GameObject serverBrowserPanel;
     private TMP_Text serverBrowserTitle, serverBrowserState;
     private Button serverBrowserRefresh;
@@ -99,12 +100,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         customLevelText.text = string.IsNullOrEmpty(plugin.customLevelJson) ? "CUSTOM LEVEL: NOT LOADED" : "CUSTOM LEVEL: LOADED";
         if (lobbyGroupTitle != null) lobbyGroupTitle.text = viewingLobbySettings ? "CURRENT LOBBY" : "NEW LOBBY";
         if (lobbyActionText != null) lobbyActionText.text = MultiplayerSession.IsHosting ? "APPLY SETTINGS" : "CREATE LOBBY";
+        SetLobbyActionButtons(viewingLobbySettings);
         if (lobbyActionButton != null) lobbyActionButton.interactable = !viewingLobbySettings;
         if (p2pButton != null) p2pButton.interactable = !viewingLobbySettings;
         if (relayButton != null) relayButton.interactable = !viewingLobbySettings;
         if (autoButton != null) autoButton.interactable = !viewingLobbySettings;
         if (customLevelActionText != null) customLevelActionText.text = MultiplayerSession.IsHosting ? "START" : MultiplayerSession.IsConnected ? "SUGGEST" : "START";
-        if (closeLobbyButton != null) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
         if (serverBrowserOpen) RebuildServerRows();
         RebuildLobbyRows();
         plugin.SaveLobbyPreferences();
@@ -134,6 +135,39 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         allowScaleChangingToggle.interactable = interactable;
         allowObserverToggle.interactable = interactable;
         teamsToggle.interactable = interactable;
+    }
+
+    private void SetLobbyActionButtons(bool joinedAsClient)
+    {
+        if (lobbyActionButton == null || closeLobbyButton == null) return;
+        if (!joinedAsClient) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
+        if (showingLeaveLobbyButton == joinedAsClient) return;
+        showingLeaveLobbyButton = joinedAsClient;
+        var closeRect = closeLobbyButton.GetComponent<RectTransform>();
+        lobbyActionButton.gameObject.SetActive(!joinedAsClient);
+        closeLobbyButton.onClick.RemoveAllListeners();
+        if (joinedAsClient)
+        {
+            if (closeRect != null)
+            {
+                closeRect.anchoredPosition = new Vector2(0f, -172.5f);
+                closeRect.sizeDelta = new Vector2(580f, 46f);
+            }
+            var label = closeLobbyButton.GetComponentInChildren<TMP_Text>();
+            if (label != null) label.text = "LEAVE";
+            closeLobbyButton.interactable = true;
+            closeLobbyButton.onClick.AddListener(plugin.LeaveLobby);
+            return;
+        }
+        if (closeRect != null)
+        {
+            closeRect.anchoredPosition = new Vector2(155f, -172.5f);
+            closeRect.sizeDelta = new Vector2(280f, 46f);
+        }
+        var closeLabel = closeLobbyButton.GetComponentInChildren<TMP_Text>();
+        if (closeLabel != null) closeLabel.text = "CLOSE LOBBY";
+        closeLobbyButton.interactable = MultiplayerSession.IsHosting;
+        closeLobbyButton.onClick.AddListener(plugin.CloseHostedLobby);
     }
 
     private static void SetToggle(Toggle toggle, bool value)
@@ -692,7 +726,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var canJoin = plugin.CanJoinLobby;
         var hash = plugin.lobbies.Count + (canJoin ? 1 : 0) + (MultiplayerSession.IsActive ? 7 : 0);
         foreach (var lobby in plugin.lobbies)
-            hash = hash * 31 + (lobby.id ?? "").GetHashCode() + lobby.players + (plugin.IsJoinedLobby(lobby.id) ? 13 : 0);
+            hash = hash * 31 + (lobby.id ?? "").GetHashCode() + lobby.players;
         if (hash == renderedLobbyHash) return;
         renderedLobbyHash = hash;
         for (var i = lobbyRows.childCount - 1; i >= 0; i--) Destroy(lobbyRows.GetChild(i).gameObject);
@@ -701,11 +735,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             var row = new GameObject("Lobby", typeof(RectTransform), typeof(LayoutElement)); row.transform.SetParent(lobbyRows, false); row.GetComponent<LayoutElement>().preferredHeight = 46f;
             var info = CreateText(row.transform, lobby.name + "  |  " + lobby.hostName + "  |  " + lobby.map + "  |  " + (lobby.teams ? "TEAMS" : lobby.pvp ? "PVP" : "CO-OP") + "  |  " + lobby.players + "/" + lobby.maxPlayers, new Vector2(-135f, 0f), new Vector2(810f, 42f), 14); info.enableWordWrapping = false;
             var id = lobby.id;
-            var joined = plugin.IsJoinedLobby(id);
-            var join = CreateButton(row.transform, joined ? "LEAVE" : "JOIN", new Vector2(450f, 0f), new Vector2(140f, 40f));
-            join.interactable = joined || canJoin;
-            if (joined) join.onClick.AddListener(plugin.LeaveLobby);
-            else join.onClick.AddListener(() => plugin.JoinLobby(id));
+            var join = CreateButton(row.transform, "JOIN", new Vector2(450f, 0f), new Vector2(140f, 40f));
+            join.interactable = canJoin;
+            join.onClick.AddListener(() => plugin.JoinLobby(id));
         }
     }
 
