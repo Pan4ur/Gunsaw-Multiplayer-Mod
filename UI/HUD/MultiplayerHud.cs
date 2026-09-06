@@ -1,9 +1,13 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
 
 internal sealed class MultiplayerHud : MonoBehaviour
 {
+    private static readonly Regex tagRegex = new(@"<(/?)([A-Za-z][\w:-]*)[^>]*>", RegexOptions.Compiled);
+    private static readonly HashSet<string> selfClosingTags = ["br", "page", "space", "sprite"];
     private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban", "/scale", "/clearblood"];
     private static string savedChatDraft = "";
     private static int savedChatCaretPosition;
@@ -605,7 +609,66 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         if (string.IsNullOrWhiteSpace(value)) return "";
         var result = value.Replace("\r", " ").Replace("\n", " ").Trim();
-        return result.Length > 256 ? result.Substring(0, 256) : result;
+        var trimmed = result.Length > 256 ? result.Substring(0, 256) : result;
+        return CloseTags(trimmed);
+    }
+
+    private static string CloseTags(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return "";
+
+        var sb = new StringBuilder();
+        var stack = new List<string>();
+        int lastIndex = 0;
+
+        foreach (Match match in tagRegex.Matches(input))
+        {
+            sb.Append(input, lastIndex, match.Index - lastIndex);
+            lastIndex = match.Index + match.Length;
+
+            bool isClosing = match.Groups[1].Value == "/";
+            string tagName = match.Groups[2].Value;
+
+            if (selfClosingTags.Contains(tagName))
+            {
+                sb.Append(match.Value);
+                continue;
+            }
+
+            if (!isClosing)
+            {
+                sb.Append(match.Value);
+                stack.Add(tagName);
+            }
+            else
+            {
+                int matchIndex = stack.LastIndexOf(tagName);
+                if (matchIndex == -1)
+                    continue; // We found a stray closing tag, just drop it
+
+                for (int i = stack.Count - 1; i > matchIndex; i--)
+                    sb.Append(GetClosingTag(stack[i]));
+
+                sb.Append(match.Value);
+
+                stack.RemoveRange(matchIndex, stack.Count - matchIndex);
+            }
+        }
+
+        sb.Append(input, lastIndex, input.Length - lastIndex);
+
+        for (int i = stack.Count - 1; i >= 0; i--)
+            sb.Append(GetClosingTag(stack[i]));
+
+        return sb.ToString();
+
+        static string GetClosingTag(string tagName)
+        {
+            if (string.Equals(tagName, "alpha", StringComparison.OrdinalIgnoreCase))
+                return "<alpha=#FF>";
+            return $"</{tagName}>";
+        }
     }
 
     internal sealed class ChatEntry
