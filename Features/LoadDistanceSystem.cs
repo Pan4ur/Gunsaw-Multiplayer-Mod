@@ -112,10 +112,8 @@ internal static class LoadDistanceSystem
 
     internal static bool IsNpcNearLocalPlayer(Vector2 position)
     {
-        var player = PlayerScript.player;
-        var body = player == null ? null : player.bodyScript;
-        if (body == null || !body.gameObject.activeInHierarchy) return true;
-        var playerPosition =  GetPlayerPosition(body);
+        Vector2 playerPosition;
+        if (!TryGetLocalViewPosition(out playerPosition)) return true;
         return (position - playerPosition).sqrMagnitude < NpcPoseDistanceSqr;
     }
 
@@ -131,11 +129,30 @@ internal static class LoadDistanceSystem
 
     internal static bool IsWorldNearLocalPlayer(Rigidbody2D body)
     {
-        var player = PlayerScript.player;
-        var localBody = player == null ? null : player.bodyScript;
-        if (body == null || localBody == null) return true;
-        var localPosition = GetPlayerPosition(localBody);
+        Vector2 localPosition;
+        if (body == null || !TryGetLocalViewPosition(out localPosition)) return true;
         return (body.position - localPosition).sqrMagnitude < WorldSleepDistanceSqr(body);
+    }
+
+    internal static bool TryGetLocalViewPosition(out Vector2 position)
+    {
+        var target = NetworkAvatarReplication.SpectatorTargetBody();
+        if (target != null && target.gameObject.activeInHierarchy)
+        {
+            position = GetPlayerPosition(target);
+            return true;
+        }
+
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        if (body != null && body.gameObject.activeInHierarchy)
+        {
+            position = GetPlayerPosition(body);
+            return true;
+        }
+
+        position = default(Vector2);
+        return false;
     }
 
     internal static bool ShouldTickWorld(Component component)

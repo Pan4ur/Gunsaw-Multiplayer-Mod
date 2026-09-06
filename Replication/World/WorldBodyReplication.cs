@@ -506,10 +506,8 @@ public class WorldBodyReplication
     internal void FreezeFarClientProps()
     {
         if (MultiplayerSession.IsHost) return;
-        var player = PlayerScript.player;
-        var localBody = player == null ? null : player.bodyScript;
-        if (localBody == null) return;
-        var localPosition = localBody.rb == null ? (Vector2)localBody.transform.position : localBody.rb.position;
+        Vector2 localPosition;
+        if (!LoadDistanceSystem.TryGetLocalViewPosition(out localPosition)) return;
         foreach (var body in interactivePropBodies)
         {
             if (body == null) continue;

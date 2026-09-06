@@ -204,6 +204,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             ? "SPECTATING " + replica.remoteName : "NO ALIVE PLAYERS";
     }
 
+    internal static BodyScript SpectatorTargetBody()
+    {
+        if (instance == null || !instance.spectating || instance.CanRespawn || instance.spectatorPeerId == 0)
+            return null;
+        NetworkAvatarReplication replica;
+        return NetworkAvatarRegistry.replicas.TryGetValue(instance.spectatorPeerId, out replica) && replica != null ? replica.remoteBody : null;
+    }
+
     internal static string RespawnCountdownText()
     {
         var player = PlayerScript.player;
@@ -2737,6 +2745,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (screen == null) return;
         screen.targetVign = 0f;
         if (screen.vign != null) screen.vign.intensity.value = 0f;
+        screen.targetBlur = 4f;
+        screen.doFogBlur = true;
+        foreach (var source in player.GetComponents<AudioSource>())
+            if (source != null && source.clip != null && source.clip.name == "Underwater")
+                source.volume = 0f;
     }
 
     private static void RestoreSpectatorVisuals(PlayerScript player)
