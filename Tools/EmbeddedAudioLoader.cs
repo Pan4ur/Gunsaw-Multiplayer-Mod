@@ -8,10 +8,12 @@ internal class EmbeddedAudioLoader
     private static readonly Dictionary<string, AudioClip> Cache = new();
     
     internal static AudioClip RespawnSound;
+    internal static AudioClip SprayerSound;
 
     public static void Init()
     {
         GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.respawn.ogg", c => { RespawnSound = c; }));
+        GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.sprayer.ogg", c => { SprayerSound = c; }));
     }
 
     private static IEnumerator Load(string name, Action<AudioClip> onLoaded)

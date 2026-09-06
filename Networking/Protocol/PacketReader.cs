@@ -28,6 +28,15 @@ internal struct PacketReader
 
     internal bool ReadBoolean() => ReadByte() != 0;
 
+    internal byte[] ReadBytes(int length)
+    {
+        if (length < 0 || length > Remaining) throw new ArgumentOutOfRangeException(nameof(length));
+        var value = new byte[length];
+        if (length > 0) Buffer.BlockCopy(data, offset, value, 0, length);
+        offset += length;
+        return value;
+    }
+
     internal string ReadBinaryString()
     {
         var length = 0;

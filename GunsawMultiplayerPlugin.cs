@@ -195,6 +195,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createNumberOfLives = savedCreateNumberOfLives.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
         headlessMode = HasCommandLineFlag("-headlessLobby");
+        GraffitiSystem.Initialize(headlessMode);
         if (headlessMode)
         {
             HeadlessPresentation.Enable();

@@ -40,6 +40,7 @@ internal static partial class MultiplayerSession
     private const long P2PKeepAliveTicks = TimeSpan.TicksPerSecond * 10;
     private const long P2PProbeRetryTicks = TimeSpan.TicksPerMillisecond * 500;
     private const int UdpFragmentPayload = 1000;
+    private const int MaxFragmentTransfers = 128;
     private static int transportMessageSequence;
     private static readonly Dictionary<long, FragmentTransfer> fragmentTransfers = new();
     private static readonly ReliableChannel reliableChannel = new();
@@ -350,6 +351,7 @@ internal static partial class MultiplayerSession
     }
 
     internal static int SnapshotEpoch { get { lock (statusLock) return hostSceneEpoch; } }
+    internal static int CurrentSceneEpoch { get { lock (statusLock) return isHost ? hostSceneEpoch : (expectedSceneEpoch >= 0 ? expectedSceneEpoch : hostSceneEpoch); } }
 
     internal static bool IsSnapshotEpochCurrent(int epoch)
     {

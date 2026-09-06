@@ -6,16 +6,17 @@ using TMPro;
 // Stores constants to use across all patches and precaches them
 public static class Controls
 {
-    public static readonly string[] newControls = new string[] { "Open chat", "Close chat", "See players", "Markers", "Whine" };
-    public static readonly int[] defaultValues = new int[] { (int)KeyCode.Return, (int)KeyCode.Escape, (int)KeyCode.Tab, (int)KeyCode.M, (int)KeyCode.B };
+    public static readonly string[] newControls = new string[] { "Open chat", "Close chat", "See players", "Markers", "Whine", "Graffiti" };
+    public static readonly int[] defaultValues = new int[] { (int)KeyCode.Return, (int)KeyCode.Escape, (int)KeyCode.Tab, (int)KeyCode.M, (int)KeyCode.B, (int)KeyCode.T };
 
-    public static KeyCode[] keys = new KeyCode[] { KeyCode.Return, KeyCode.Escape, KeyCode.Tab, KeyCode.M, KeyCode.B };
+    public static KeyCode[] keys = new KeyCode[] { KeyCode.Return, KeyCode.Escape, KeyCode.Tab, KeyCode.M, KeyCode.B, KeyCode.T };
 
     public const int OPEN_CHAT = 0;
     public const int CLOSE_CHAT = 1;
     public const int SEE_PLAYER = 2;
     public const int TOGGLE_PLAYER_MARKERS = 3;
     public const int PAIN_SOUND = 4;
+    public const int GRAFFITI = 5;
 }
 
 // Adding GameObject of controls and their value in ControlBinder.texts, also sets default values of PlayerPrefs if it missing
@@ -38,6 +39,7 @@ internal static class ControlsGoCreator
 
         for (int i = 0; i < Controls.newControls.Length; i++)
         {
+            if (i == Controls.GRAFFITI) continue;
             Transform newField = UnityEngine.Object.Instantiate(fieldBase).transform;
             Vector3 newOffset = new Vector3(0, -50 + -50 * i);
             newField.SetParent(fieldOrigianl.transform);
@@ -62,6 +64,7 @@ internal static class ControlsGoCreator
 
         __instance.UpdateBindings();
     }
+
 }
 
 // Set default values

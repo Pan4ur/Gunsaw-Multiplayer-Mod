@@ -48,5 +48,6 @@ internal enum PacketType : byte
     HostPing = 0x2F,
     CustomLevelSuggestion = 0x30,
     PeerName = 0x31,
-    PlayerGrunt = 0x32
+    PlayerGrunt = 0x32,
+    Graffiti = 0x33
 }

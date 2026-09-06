@@ -183,6 +183,10 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             var fragmentLength = datagram.Length - payloadOffset;
             if (senderId == 0 || fragmentCount == 0 || fragmentIndex >= fragmentCount ||
                 totalLength < 0 || totalLength > 4 * 1024 * 1024 || fragmentLength < 0) continue;
+            var expectedFragmentCount = Math.Max(1, (totalLength + UdpFragmentPayload - 1) / UdpFragmentPayload);
+            if (fragmentCount != expectedFragmentCount) continue;
+            var expectedFragmentLength = Math.Min(UdpFragmentPayload, totalLength - fragmentIndex * UdpFragmentPayload);
+            if (fragmentLength != expectedFragmentLength) continue;
             Interlocked.Add(ref receivedBytes, datagram.Length);
             Interlocked.Increment(ref receivedPackets);
             if (fragmentCount == 1)
@@ -194,9 +198,16 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             }
             var key = ((long)senderId << 32) | (uint)messageId;
             FragmentTransfer transfer;
-            if (!fragmentTransfers.TryGetValue(key, out transfer) || transfer.TotalLength != totalLength ||
-                transfer.Fragments.Length != fragmentCount)
+            var hasTransfer = fragmentTransfers.TryGetValue(key, out transfer);
+            if (hasTransfer && (transfer.TotalLength != totalLength || transfer.Fragments.Length != fragmentCount))
             {
+                fragmentTransfers.Remove(key);
+                hasTransfer = false;
+            }
+            if (!hasTransfer)
+            {
+                CleanupFragmentTransfers();
+                if (fragmentTransfers.Count >= MaxFragmentTransfers) continue;
                 transfer = new FragmentTransfer(totalLength, fragmentCount);
                 fragmentTransfers[key] = transfer;
             }
@@ -650,6 +661,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
                 Buffer.BlockCopy(BitConverter.GetBytes(totalLength), 0, datagram, 15, sizeof(int));
                 if (length > 0) Buffer.BlockCopy(routedPacket, sourceOffset, datagram, 19, length);
                 client.Send(datagram, datagram.Length, relayEndpoint);
+                if (fragmentCount > 16 && (index & 3) == 3) Thread.Sleep(1);
                 Interlocked.Add(ref sentBytes, datagram.Length);
                 AddOutgoingTrafficBytes(trafficKind, datagram.Length);
                 Interlocked.Increment(ref sentPackets);
@@ -678,6 +690,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             Buffer.BlockCopy(BitConverter.GetBytes(totalLength), 0, datagram, 31, sizeof(int));
             if (length > 0) Buffer.BlockCopy(routedPacket, sourceOffset, datagram, 35, length);
             client.Send(datagram, datagram.Length, endpoint);
+            if (fragmentCount > 16 && (index & 3) == 3) Thread.Sleep(1);
             Interlocked.Add(ref sentBytes, datagram.Length);
             AddOutgoingTrafficBytes(trafficKind, datagram.Length);
             Interlocked.Increment(ref sentPackets);
@@ -720,7 +733,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
 
     private static void CleanupFragmentTransfers()
     {
-        if (fragmentTransfers.Count < 128) return;
+        if (fragmentTransfers.Count < MaxFragmentTransfers) return;
         var cutoff = DateTime.UtcNow.Ticks - TimeSpan.TicksPerSecond * 5;
         var stale = new List<long>();
         foreach (var pair in fragmentTransfers)

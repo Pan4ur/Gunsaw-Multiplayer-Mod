@@ -25,7 +25,7 @@ internal static class RPCSettings
         rpcToggle.transform.localPosition = new Vector3(crossToggle.transform.localPosition.x,
             crossToggle.transform.localPosition.y - 125f, crossToggle.transform.localPosition.z);
         Toggle rpcToggleToggle = rpcToggle.GetComponent<Toggle>();
-        rpcToggleToggle.isOn = 0 == PlayerPrefs.GetInt("rpcdisable");
+        rpcToggleToggle.SetIsOnWithoutNotify(0 == PlayerPrefs.GetInt("rpcdisable"));
         rpcToggleToggle.onValueChanged = new Toggle.ToggleEvent();
         rpcToggleToggle.onValueChanged.AddListener(ToggleRPC);
 

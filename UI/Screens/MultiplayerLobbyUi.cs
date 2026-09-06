@@ -69,7 +69,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         customLevelBrowser?.Tick();
 
         SetInput(nameInput, plugin.playerName);
-        var viewingLobbySettings = MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting;
+        var viewingLobbySettings = MultiplayerSession.IsActive && !MultiplayerSession.IsHost;
         SetInput(lobbyInput, viewingLobbySettings ? plugin.JoinedLobbyName : plugin.lobbyName);
         SetInput(maxPlayersInput, viewingLobbySettings ? MultiplayerSession.MaxPlayers.ToString() : plugin.createMaxPlayers);
         SetInput(respawnInput, viewingLobbySettings ? MultiplayerSession.RespawnTimeSeconds.ToString() : plugin.createRespawnTime);
@@ -177,6 +177,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
     private void Create(MainMenuManager menu)
     {
+        showingLeaveLobbyButton = false;
         template = menu.startText != null ? menu.startText : menu.curName;
         templateButton = FindNativeMenuButton(menu);
         if (template == null || templateButton == null) return;

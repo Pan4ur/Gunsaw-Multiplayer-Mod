@@ -503,6 +503,18 @@ internal static partial class MultiplayerSession
                     }
                 }
             }
+            else if (decodedPacket.Type == PacketType.Graffiti &&
+                     decodedPacket.Payload.Length >= GraffitiPacket.MetadataBytes + GraffitiSystem.MinImageBytes &&
+                     decodedPacket.Payload.Length <= GraffitiSystem.MaxPacketPayloadBytes &&
+                     GraffitiSystem.TryBeginReceive(senderId))
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    GraffitiSystem.Receive(senderId, GraffitiPacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
             else if (decodedPacket.Type == PacketType.Ping && packet.Length == pingHeader.Length + sizeof(long))
             {
                 var data = new byte[sizeof(long)];
