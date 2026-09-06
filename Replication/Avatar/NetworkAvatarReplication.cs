@@ -2673,8 +2673,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (body == null) return;
         if (CanRespawn || body.isAlive)
         {
-            if (spectating && CameraFollow.cam != null) CameraFollow.cam.target = body.transform;
-            RestoreSpectatorVisuals(player);
+            if (spectating)
+            {
+                if (CameraFollow.cam != null) CameraFollow.cam.target = body.transform;
+                RestoreSpectatorVisuals(player);
+            }
             spectating = false;
             spectatorPeerId = 0;
             return;
@@ -2991,6 +2994,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (body == null || body == oldBody || body.isPlayer || !body.isAlive ||
                 !body.gameObject.activeInHierarchy) continue;
             if (Vector2.Distance(position, body.transform.position) < 2.25f) return true;
+        }
+
+        // test anti nugget
+        foreach (var collider in Physics2D.OverlapPointAll(position))
+        {
+            if (collider == null || collider.isTrigger) continue;
+            if (oldBody != null && collider.transform.IsChildOf(oldBody.transform.root)) continue;
+            return true;
         }
         return false;
     }
