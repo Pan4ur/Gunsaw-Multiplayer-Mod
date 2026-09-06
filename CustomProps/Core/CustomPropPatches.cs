@@ -42,6 +42,24 @@ internal static class CustomPropEditorSavePatch
     }
 }
 
+[HarmonyPatch(typeof(LevelEditor), "DuplicateObject")]
+internal static class CustomPropEditorDuplicatePatch
+{
+    private static void Prefix(LevelEditor __instance)
+    {
+        var controller = CustomPropEditorController.Ensure(__instance);
+        if (controller != null)
+            controller.PrepareDuplicate();
+    }
+
+    private static void Postfix(LevelEditor __instance)
+    {
+        var controller = CustomPropEditorController.Ensure(__instance);
+        if (controller != null)
+            controller.DuplicateSelected();
+    }
+}
+
 [HarmonyPatch(typeof(LevelLoader), "Start")]
 internal static class CustomPropRuntimeLoadPatch
 {

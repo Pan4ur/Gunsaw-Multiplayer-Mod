@@ -144,32 +144,34 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
         foreach (var part in level.parts)
         {
-            if (part == null) continue;
-            if (part.path != RootPath || string.IsNullOrEmpty(part.team)) continue;
-            CustomPropPayload payload;
-            try { payload = JsonUtility.FromJson<CustomPropPayload>(part.team); }
-            catch { continue; }
-            if (payload == null || string.IsNullOrEmpty(payload.type)) continue;
-
-            ICustomPropDefinition definition;
-            object data = payload.data;
-            if (CustomPropRegistry.TryGet(payload.type, out definition))
-            {
-                var serializedData = payload.data;
-                data = definition.DeserializeData(serializedData);
-            }
-
-            result.Add(new CustomPropInstance
-            {
-                Uid = string.IsNullOrEmpty(payload.uid) ? Guid.NewGuid().ToString("N") : payload.uid,
-                TypeId = payload.type,
-                Data = data,
-                Position = part.pos,
-                Rotation = part.rot
-            });
+            var instance = ReadInstance(part);
+            if (instance != null) result.Add(instance);
         }
 
         return result;
+    }
+
+    private static CustomPropInstance ReadInstance(LevelPart part)
+    {
+        if (part == null || part.path != RootPath || string.IsNullOrEmpty(part.team)) return null;
+        CustomPropPayload payload;
+        try { payload = JsonUtility.FromJson<CustomPropPayload>(part.team); }
+        catch { return null; }
+        if (payload == null || string.IsNullOrEmpty(payload.type)) return null;
+
+        ICustomPropDefinition definition;
+        object data = payload.data;
+        if (CustomPropRegistry.TryGet(payload.type, out definition))
+            data = definition.DeserializeData(payload.data);
+
+        return new CustomPropInstance
+        {
+            Uid = string.IsNullOrEmpty(payload.uid) ? Guid.NewGuid().ToString("N") : payload.uid,
+            TypeId = payload.type,
+            Data = data,
+            Position = part.pos,
+            Rotation = part.rot
+        };
     }
 
     private static string RemoveCustomParts(string json)
@@ -270,6 +272,51 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             marker.GetComponent<LevelPartGame>().part = ToPart(marker.Instance);
             instances.Add(marker.Instance);
         }
+    }
+
+    internal void DuplicateSelected()
+    {
+        if (editor == null || selectedField == null) return;
+        var selected = selectedField.GetValue(editor) as GameObject;
+        var marker = selected == null ? null : selected.GetComponent<CustomPropMarker>();
+        var levelPart = marker == null ? null : marker.GetComponent<LevelPartGame>();
+        var source = marker == null ? null : marker.Instance ?? ReadInstance(levelPart == null ? null : levelPart.part);
+        if (source == null) return;
+
+        if (marker.Definition == null) CustomPropRegistry.TryGet(source.TypeId, out marker.Definition);
+        marker.Instance = CloneInstance(source, marker.Definition);
+        marker.Instance.Position = marker.transform.position;
+        marker.Instance.Rotation = marker.transform.eulerAngles.z;
+        levelPart.part = ToPart(marker.Instance);
+        markers.Add(marker);
+        RefreshInspectorImmediate();
+    }
+
+    internal void PrepareDuplicate()
+    {
+        if (editor == null || selectedField == null) return;
+        var selected = selectedField.GetValue(editor) as GameObject;
+        var marker = selected == null ? null : selected.GetComponent<CustomPropMarker>();
+        if (marker == null || marker.Instance == null) return;
+
+        if (shownMarker == marker) CommitFields();
+        marker.GetComponent<LevelPartGame>().part = ToPart(marker.Instance);
+    }
+
+    private static CustomPropInstance CloneInstance(CustomPropInstance source, ICustomPropDefinition definition)
+    {
+        var serializedData = definition == null
+            ? source.Data as string ?? string.Empty
+            : definition.SerializeData(source.Data);
+
+        return new CustomPropInstance
+        {
+            Uid = Guid.NewGuid().ToString("N"),
+            TypeId = source.TypeId,
+            Data = definition == null ? serializedData : definition.DeserializeData(serializedData),
+            Position = source.Position,
+            Rotation = source.Rotation
+        };
     }
 
     private void CreateButtons()
