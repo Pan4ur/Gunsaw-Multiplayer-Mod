@@ -34,9 +34,16 @@ internal static class BodyCrateCollisionPatch
 [HarmonyPatch(typeof(LevitatorScript), "FixedUpdate")]
 internal static class ClientLevitatorPropPatch
 {
-    private static void Prefix(LevitatorScript __instance)
+    private static bool Prefix(LevitatorScript __instance)
     {
+        if (__instance == null) return false;
+        if (__instance.refBody != null && !__instance.refBody.isAlive)
+        {
+            __instance.UnGrab();
+            return false;
+        }
         NetworkAvatarReplication.ValidateRemoteGrab(__instance);
+        return true;
     }
 
     private static void Postfix(LevitatorScript __instance)
@@ -130,8 +137,17 @@ internal static class ClientCrystalTongueRemotePlayerPatch
 [HarmonyPatch(typeof(LevitatorScript), "TryGrab")]
 internal static class MultiplayerPlayerGrabPatch
 {
+    private static bool Prefix(LevitatorScript __instance)
+    {
+        if (__instance == null) return false;
+        if (__instance.refBody == null || __instance.refBody.isAlive) return true;
+        __instance.UnGrab();
+        return false;
+    }
+
     private static void Postfix(LevitatorScript __instance)
     {
+        if (__instance == null || (__instance.refBody != null && !__instance.refBody.isAlive)) return;
         NetworkAvatarReplication.TryGrabRemotePlayer(__instance);
         NpcReplication.TryGrabClientCorpse(__instance);
     }
