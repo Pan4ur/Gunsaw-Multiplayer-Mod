@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering.Universal;
 
@@ -24,7 +22,8 @@ internal static class ToggleableLampSystem
                     Position = part.pos,
                     ActivationId = part.id,
                     Intensity = part.force.x,
-                    Color = LevelLoader.HexToColor(part.team)
+                    Color = LevelLoader.HexToColor(part.team),
+                    IsColored = IsColoredLampPath(part.path)
                 });
             }
         }
@@ -41,29 +40,52 @@ internal static class ToggleableLampSystem
                 path.IndexOf("Lamp", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
+    private static bool IsColoredLampPath(string path)
+    {
+        return !string.IsNullOrEmpty(path) &&
+               (path.Equals("Building/ColorLamp", StringComparison.OrdinalIgnoreCase) ||
+                path.EndsWith("/ColorLamp", StringComparison.OrdinalIgnoreCase));
+    }
+
     internal static void AttachRuntime()
     {
         if (pending.Count == 0) return;
-        var lamps = UnityEngine.Object.FindObjectsOfType<ColorLampTag>();
+        var coloredLamps = UnityEngine.Object.FindObjectsOfType<ColorLampTag>();
+        var regularLamps = UnityEngine.Object.FindObjectsOfType<Light2D>();
         var used = new HashSet<int>();
         foreach (var definition in pending)
         {
-            ColorLampTag best = null;
+            Component best = null;
             var bestDistance = float.MaxValue;
-            for (var index = 0; index < lamps.Length; index++)
+            if (definition.IsColored)
             {
-                var lamp = lamps[index];
-                if (lamp == null || used.Contains(lamp.GetInstanceID())) continue;
-                var distance = ((Vector2)lamp.transform.position - definition.Position).sqrMagnitude;
-                if (distance > 0.01f || distance >= bestDistance) continue;
-                best = lamp;
-                bestDistance = distance;
+                for (var index = 0; index < coloredLamps.Length; index++)
+                {
+                    var lamp = coloredLamps[index];
+                    if (lamp == null || used.Contains(lamp.GetInstanceID())) continue;
+                    var distance = ((Vector2)lamp.transform.position - definition.Position).sqrMagnitude;
+                    if (distance > 0.01f || distance >= bestDistance) continue;
+                    best = lamp;
+                    bestDistance = distance;
+                }
+            }
+            else
+            {
+                for (var index = 0; index < regularLamps.Length; index++)
+                {
+                    var lamp = regularLamps[index];
+                    if (lamp == null || used.Contains(lamp.GetInstanceID())) continue;
+                    var distance = ((Vector2)lamp.transform.position - definition.Position).sqrMagnitude;
+                    if (distance > 0.01f || distance >= bestDistance) continue;
+                    best = lamp;
+                    bestDistance = distance;
+                }
             }
             if (best == null) continue;
             used.Add(best.GetInstanceID());
             var runtime = best.GetComponent<ToggleableLampRuntime>();
             if (runtime == null) runtime = best.gameObject.AddComponent<ToggleableLampRuntime>();
-            runtime.Configure(definition.ActivationId, definition.Intensity, definition.Color);
+            runtime.Configure(definition.ActivationId, definition.Intensity, definition.Color, definition.IsColored);
             EnsureActivationRelay(best.transform, runtime);
         }
         pending.Clear();
@@ -101,6 +123,7 @@ internal static class ToggleableLampSystem
         internal int ActivationId;
         internal float Intensity;
         internal Color Color;
+        internal bool IsColored;
     }
 }
 
@@ -116,11 +139,12 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
     internal bool Powered => powered;
     internal int ActivationId => activationId;
 
-    internal void Configure(int id, float intensity, Color configuredColor)
+    internal void Configure(int id, float intensity, Color configuredColor, bool isColored)
     {
         activationId = id;
-        onIntensity = Mathf.Max(0f, intensity);
-        color = configuredColor;
+        var light = GetComponent<Light2D>();
+        onIntensity = isColored || light == null ? Mathf.Max(0f, intensity) : light.intensity;
+        color = isColored || light == null ? configuredColor : light.color;
         powered = true;
         FindVisualRenderers();
         Apply();
