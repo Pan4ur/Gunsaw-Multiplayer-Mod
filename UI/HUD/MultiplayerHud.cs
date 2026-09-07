@@ -3,17 +3,21 @@ using System.Text.RegularExpressions;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
+using UnityEngine.TextCore;
 
 internal sealed class MultiplayerHud : MonoBehaviour
 {
     private static readonly Regex tagRegex = new(@"<(/?)([A-Za-z][\w:-]*)[^>]*>", RegexOptions.Compiled);
     private static readonly HashSet<string> selfClosingTags = ["br", "page", "space", "sprite"];
     private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban", "/scale", "/clearblood"];
+    private static readonly Regex emojiRegex = new(@":([^:\s]*)(:?)\z", RegexOptions.Compiled);
+    private static readonly List<string> emojiNames = ["roza", "expie", "milky", "dune"];
     private static string savedChatDraft = "";
     private static int savedChatCaretPosition;
     private static bool savedChatWasOpen;
     private readonly List<ChatEntry> history = [];
     private readonly List<string> chatSuggestions = [];
+    private int chatAutocompletePosition;
     private string localName = "Player";
     private string input = "";
     private int chatCaretPosition;
@@ -35,6 +39,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private AudioSource hostFpsAlert;
     private AudioSource chatMessageSound;
     private GUIStyle hostFpsWarningStyle;
+    private TMP_SpriteAsset spriteAsset;
 
     internal static MultiplayerHud Instance { get; private set; }
 
@@ -60,6 +65,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         Instance = this;
         localName = SanitizeName(playerName);
+        if (spriteAsset == null)
+            CreateSpriteAsset();
         if (savedChatWasOpen && MultiplayerSession.IsConnected && (!chatOpen || input != savedChatDraft))
         {
             chatOpen = true;
@@ -448,6 +455,69 @@ internal sealed class MultiplayerHud : MonoBehaviour
         nextNetworkStatsUpdate = 0f;
     }
 
+    private void CreateSpriteAsset()
+    {
+        if (spriteAsset != null)
+        {
+            TMP_Settings.defaultSpriteAsset.fallbackSpriteAssets.Remove(spriteAsset);
+            Destroy(spriteAsset);
+        }
+
+        var atlas = EmbeddedTextureLoader.Load("GunsawMultiplayer.Assets.emoji.png", TextureFormat.RGBA32, true);
+        if (atlas == null)
+            return;
+
+        spriteAsset = ScriptableObject.CreateInstance<TMP_SpriteAsset>();
+        spriteAsset.name = "emoji";
+        spriteAsset.material = new Material(Shader.Find("TextMeshPro/Sprite")) { mainTexture = atlas };
+        spriteAsset.spriteSheet = atlas;
+
+        // Set version string to make TMP_SpriteAsset shut up.
+        // If you don't do this, you get a useless debug message from TMP_SpriteAsset.UpgradeSpriteAsset()
+        // Not only does that method not 'upgrade' anything, as there are no glyphs in the asset right now,
+        // but it will also later throw an exception since spriteInfoList is null.
+        // Intentionally using reflection here so that we don't need to publicize the entire TextMeshPro assembly
+        AccessTools.Field(typeof(TMP_SpriteAsset), "m_Version").SetValue(spriteAsset, "1.1.0");
+
+        const int glyphSize = 64;
+        int n = atlas.width / glyphSize;
+        for (int i = 0; i < n; i++)
+        {
+            float x = i * glyphSize;
+            float y = 0;
+
+            var glyph = new TMP_SpriteGlyph
+            {
+                index = (uint)i,
+                metrics = new GlyphMetrics(
+                    width: glyphSize,
+                    height: glyphSize,
+                    bearingX: 0,
+                    bearingY: glyphSize * 0.8f,
+                    advance: glyphSize),
+                glyphRect = new GlyphRect((int)x, (int)y, glyphSize, glyphSize),
+                scale = 1.5f,
+                sprite = Sprite.Create(
+                    atlas,
+                    new Rect(x, y, glyphSize, glyphSize),
+                    new Vector2(0.5f, 0.5f),
+                    100f)
+            };
+            spriteAsset.spriteGlyphTable.Add(glyph);
+
+            var character = new TMP_SpriteCharacter((uint)i, glyph)
+            {
+                name = emojiNames[i],
+                scale = 1f
+            };
+            spriteAsset.spriteCharacterTable.Add(character);
+        }
+
+        spriteAsset.UpdateLookupTables();
+
+        TMP_Settings.defaultSpriteAsset.fallbackSpriteAssets.Add(spriteAsset);
+    }
+
     internal void Submit()
     {
         var message = SanitizeMessage(input);
@@ -504,34 +574,59 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void UpdateChatSuggestions()
     {
         chatSuggestions.Clear();
-        if (!input.StartsWith("/", StringComparison.Ordinal)) return;
-
-        var separator = input.IndexOfAny([' ', '\t']);
-        if (separator < 0)
+        if (input.StartsWith("/", StringComparison.Ordinal))
         {
-            foreach (var command in chatCommands)
-                if (command.StartsWith(input, StringComparison.OrdinalIgnoreCase)) chatSuggestions.Add(command);
-            return;
-        }
-
-        var commandName = input.Substring(0, separator);
-        if (string.Equals(commandName, "/swap", StringComparison.OrdinalIgnoreCase))
-        {
-            var characterPrefix = input.Substring(separator).TrimStart();
-            foreach (var character in NetworkAvatarReplication.SwapCharacterNames())
+            chatAutocompletePosition = 0;
+            var separator = input.IndexOfAny([' ', '\t']);
+            if (separator < 0)
             {
-                if (character.StartsWith(characterPrefix, StringComparison.OrdinalIgnoreCase))
-                    chatSuggestions.Add("/swap " + character);
+                foreach (var command in chatCommands)
+                    if (command.StartsWith(input, StringComparison.OrdinalIgnoreCase)) chatSuggestions.Add(command);
+                return;
             }
-            return;
-        }
-        if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase)) return;
 
-        var namePrefix = input.Substring(separator).TrimStart();
-        AddPlayerSuggestion(MultiplayerSession.LocalPlayerName, commandName, namePrefix);
-        foreach (var peerId in MultiplayerSession.PeerIds())
-            AddPlayerSuggestion(MultiplayerSession.PlayerName(peerId), commandName, namePrefix);
+            var commandName = input.Substring(0, separator);
+            if (string.Equals(commandName, "/swap", StringComparison.OrdinalIgnoreCase))
+            {
+                var characterPrefix = input.Substring(separator).TrimStart();
+                foreach (var character in NetworkAvatarReplication.SwapCharacterNames())
+                {
+                    if (character.StartsWith(characterPrefix, StringComparison.OrdinalIgnoreCase))
+                        chatSuggestions.Add("/swap " + character);
+                }
+                return;
+            }
+            if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase)) return;
+
+            var namePrefix = input.Substring(separator).TrimStart();
+            AddPlayerSuggestion(MultiplayerSession.LocalPlayerName, commandName, namePrefix);
+            foreach (var peerId in MultiplayerSession.PeerIds())
+                AddPlayerSuggestion(MultiplayerSession.PlayerName(peerId), commandName, namePrefix);
+        }
+        else if (input.Contains(':'))
+        {
+            var match = emojiRegex.Match(input);
+            if (!match.Success) return;
+            var emojiName = match.Groups[1].Value;
+            bool isClosed = match.Groups[2].Length > 0;
+            if (isClosed)
+            {
+                var canonical = emojiNames.Find(e => string.Equals(e, emojiName, StringComparison.OrdinalIgnoreCase));
+                if (canonical == null) return;
+                var chatInput = ChatInput.Substring(0, match.Index);
+                chatInput += $"<sprite name=\"{canonical}\">";
+                ChatInput = chatInput;
+                SetChatCaretPosition(ChatInput.Length);
+            }
+            else
+            {
+                chatAutocompletePosition = match.Index;
+                foreach (var emoji in emojiNames)
+                    if (emoji.StartsWith(emojiName, StringComparison.OrdinalIgnoreCase))
+                        chatSuggestions.Add($":{emoji}:");
+            }
+        }
     }
 
     private void AddPlayerSuggestion(string playerName, string commandName, string namePrefix)
@@ -545,10 +640,12 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void CompleteChatInput()
     {
         if (chatSuggestions.Count == 0) return;
-        input = chatSuggestions[0];
-        if (string.Equals(input, "/tp", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(input, "/ban", StringComparison.OrdinalIgnoreCase)) input += " ";
-        UpdateChatSuggestions();
+        var chatInput = ChatInput.Substring(0, chatAutocompletePosition);
+        chatInput += chatSuggestions[0];
+        if (string.Equals(chatInput, "/tp", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(chatInput, "/ban", StringComparison.OrdinalIgnoreCase)) chatInput += " ";
+        ChatInput = chatInput;
+        SetChatCaretPosition(ChatInput.Length);
     }
 
     private void AddMessage(string sender, string message, bool local, ushort peerId = 0)
