@@ -16,6 +16,7 @@ internal static class CustomPropBootstrap
         CustomPropRegistry.Register(new AndGateDefinition());
         CustomPropRegistry.Register(new OrGateDefinition());
         CustomPropRegistry.Register(new XorGateDefinition());
+        CustomPropRegistry.Register(new XnorGateDefinition());
         CustomPropRegistry.Register(new NandGateDefinition());
         CustomPropRegistry.Register(new NorGateDefinition());
         CustomPropRegistry.Register(new EdgeDetectorDefinition());

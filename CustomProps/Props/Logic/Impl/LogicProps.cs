@@ -13,6 +13,7 @@ internal enum BinaryLogicOperation
     And,
     Or,
     Xor,
+    Xnor,
     Nand,
     Nor
 }
@@ -78,6 +79,11 @@ internal sealed class XorGateDefinition : BinaryLogicGateDefinition
     internal XorGateDefinition() : base("MP/Logic/XOR", "XOR", BinaryLogicOperation.Xor, "xor") { }
 }
 
+internal sealed class XnorGateDefinition : BinaryLogicGateDefinition
+{
+    internal XnorGateDefinition() : base("MP/Logic/XNOR", "XNOR", BinaryLogicOperation.Xnor, "xnor") { }
+}
+
 internal sealed class NandGateDefinition : BinaryLogicGateDefinition
 {
     internal NandGateDefinition() : base("MP/Logic/NAND", "NAND", BinaryLogicOperation.Nand, "nand") { }
@@ -134,6 +140,7 @@ internal sealed class BinaryLogicGateRuntime : LogicRuntimeBase
             case BinaryLogicOperation.And: high = a && b; break;
             case BinaryLogicOperation.Or: high = a || b; break;
             case BinaryLogicOperation.Xor: high = a ^ b; break;
+            case BinaryLogicOperation.Xnor: high = !(a ^ b); break;
             case BinaryLogicOperation.Nand: high = !(a && b); break;
             case BinaryLogicOperation.Nor: high = !(a || b); break;
             default: high = false; break;
