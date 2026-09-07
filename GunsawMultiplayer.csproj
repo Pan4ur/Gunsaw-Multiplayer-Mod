@@ -16,6 +16,7 @@
     <EmbeddedResource Include="CustomProps\Assets\logic-*.png" />
     <EmbeddedResource Include="Assets\play.png" />
     <EmbeddedResource Include="Assets\bin.png" />
+    <EmbeddedResource Include="Assets\emoji.png" />
     <EmbeddedResource Include="Assets\Sounds\respawn.ogg"
                       LogicalName="GunsawMultiplayer.Assets.Sounds.respawn.ogg" />
     <EmbeddedResource Include="Assets\Sounds\sprayer.ogg"
@@ -91,6 +92,10 @@
     </Reference>
     <Reference Include="Unity.TextMeshPro">
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.TextCoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp" Publicize="true">
