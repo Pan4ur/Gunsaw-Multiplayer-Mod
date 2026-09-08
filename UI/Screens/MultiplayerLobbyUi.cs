@@ -703,7 +703,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text CreateText(Transform parent, string value, Vector2 position, Vector2 size, float fontSize, TextAlignmentOptions alignment = TextAlignmentOptions.Left, FontStyles style = FontStyles.Normal)
     {
         var go = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI)); go.transform.SetParent(parent, false); SetRect((RectTransform)go.transform, position, size);
-        var text = go.GetComponent<TextMeshProUGUI>(); text.font = template.font; text.fontSharedMaterial = template.fontSharedMaterial; text.color = template.color; text.fontSize = fontSize; text.alignment = alignment; text.fontStyle = style; text.text = value; text.enableWordWrapping = false; return text;
+        var text = go.GetComponent<TextMeshProUGUI>(); text.font = template.font; text.fontSharedMaterial = template.fontSharedMaterial; text.spriteAsset = TMP_Settings.defaultSpriteAsset; text.richText = true; text.color = template.color; text.fontSize = fontSize; text.alignment = alignment; text.fontStyle = style; text.text = value; text.enableWordWrapping = false; return text;
     }
 
     private static void SetRect(RectTransform rect, Vector2 position, Vector2 size) { rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f); rect.pivot = new Vector2(0.5f, 0.5f); rect.anchoredPosition = position; rect.sizeDelta = size; }

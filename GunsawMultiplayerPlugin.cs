@@ -1,5 +1,6 @@
 using BepInEx;
 using BepInEx.Configuration;
+using DiscordIPC.Internal;
 using HarmonyLib;
 using System.Globalization;
 using System.IO.Compression;
@@ -1518,12 +1519,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private static string JsonString(string json, string name)
     {
-        var marker = "\"" + name + "\":\"";
-        var start = json.IndexOf(marker, StringComparison.Ordinal);
-        if (start < 0) return "";
-        start += marker.Length;
-        var end = json.IndexOf('"', start);
-        return end < 0 ? "" : json.Substring(start, end - start);
+        return JsonString(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
     }
 
     private static ConnectionMode ParseConnectionMode(string value)
@@ -1535,14 +1531,20 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private static List<LobbyInfo> ParseAndSortLobbies(string json)
     {
         var result = new List<LobbyInfo>();
-        var cursor = 0;
-        while (true)
+        var entries = MiniJson.Deserialize(json) as List<object>;
+        if (entries == null)
         {
-            var start = json.IndexOf("{\"id\":", cursor, StringComparison.Ordinal);
-            if (start < 0) break;
-            var end = json.IndexOf('}', start);
-            if (end < 0) break;
-            var item = json.Substring(start, end - start + 1);
+            var response = MiniJson.Deserialize(json) as Dictionary<string, object>;
+            object value = null;
+            if (response != null) response.TryGetValue("lobbies", out value);
+            entries = value as List<object>;
+        }
+        if (entries == null) return result;
+
+        foreach (var entry in entries)
+        {
+            var item = entry as Dictionary<string, object>;
+            if (item == null) continue;
             var lobby = new LobbyInfo();
             lobby.id = JsonString(item, "id");
             lobby.name = JsonString(item, "name");
@@ -1559,11 +1561,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             lobby.respawnAtStart = JsonBool(item, "respawnAtStart");
             lobby.playerCollisions = JsonBool(item, "playerCollisions");
             lobby.cheats = JsonBool(item, "cheats");
-            lobby.allowSwap = !item.Contains("\"allowSwap\":false");
+            lobby.allowSwap = JsonBool(item, "allowSwap", true);
             lobby.hostP2P = JsonBool(item, "HostP2P") || JsonBool(item, "hostP2P");
             lobby.connectionMode = ParseConnectionMode(JsonString(item, "connectionMode"));
             if (!string.IsNullOrEmpty(lobby.id)) result.Add(lobby);
-            cursor = end + 1;
         }
         result.Sort((x, y) => x.name.CompareTo(y.name));
         return result;
@@ -1571,14 +1572,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private static int JsonInt(string json, string name)
     {
-        var marker = "\"" + name + "\":";
-        var start = json.IndexOf(marker, StringComparison.Ordinal);
-        if (start < 0) return 0;
-        start += marker.Length;
-        var end = start;
-        while (end < json.Length && char.IsDigit(json[end])) end++;
-        int value;
-        return int.TryParse(json.Substring(start, end - start), out value) ? value : 0;
+        return JsonInt(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
     }
 
     private float ParseInitialScale()
@@ -1592,11 +1586,26 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private static bool JsonBool(string json, string name)
     {
-        var marker = "\"" + name + "\":";
-        var start = json.IndexOf(marker, StringComparison.Ordinal);
-        if (start < 0) return false;
-        start += marker.Length;
-        return json.Substring(start).StartsWith("true", StringComparison.OrdinalIgnoreCase);
+        return JsonBool(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
+    }
+
+    private static string JsonString(Dictionary<string, object> values, string name)
+    {
+        return values != null && values.TryGetValue(name, out var value) && value != null ? Convert.ToString(value, CultureInfo.InvariantCulture) ?? "" : "";
+    }
+
+    private static int JsonInt(Dictionary<string, object> values, string name)
+    {
+        if (values == null || !values.TryGetValue(name, out var value) || value == null) return 0;
+        try { return Convert.ToInt32(value, CultureInfo.InvariantCulture); }
+        catch (Exception) { return 0; }
+    }
+
+    private static bool JsonBool(Dictionary<string, object> values, string name, bool defaultValue = false)
+    {
+        if (values == null || !values.TryGetValue(name, out var value) || value == null) return defaultValue;
+        if (value is bool result) return result;
+        return bool.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out result) ? result : defaultValue;
     }
 
     private void SendHeartbeat()
