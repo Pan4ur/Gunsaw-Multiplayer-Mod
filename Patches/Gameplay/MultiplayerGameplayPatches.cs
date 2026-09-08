@@ -37,7 +37,7 @@ internal static class ClientLevitatorPropPatch
     private static bool Prefix(LevitatorScript __instance)
     {
         if (__instance == null) return false;
-        if (__instance.refBody != null && !__instance.refBody.isAlive)
+        if (ShouldReleaseGrab(__instance))
         {
             __instance.UnGrab();
             return false;
@@ -52,6 +52,13 @@ internal static class ClientLevitatorPropPatch
             GunsawMultiplayerPlugin.World.QueueLevitated(__instance.currentlyLevitating);
         NetworkAvatarReplication.QueueRemoteGrab(__instance);
         NpcReplication.QueueClientCorpseGrab(__instance);
+    }
+
+    internal static bool ShouldReleaseGrab(LevitatorScript levitator)
+    {
+        var body = levitator.refBody;
+        return body != null && (!body.isAlive ||
+            (GameManager.main != null && GameManager.main.hardMode && !body.IsConsc()));
     }
 }
 
@@ -140,14 +147,14 @@ internal static class MultiplayerPlayerGrabPatch
     private static bool Prefix(LevitatorScript __instance)
     {
         if (__instance == null) return false;
-        if (__instance.refBody == null || __instance.refBody.isAlive) return true;
+        if (!ClientLevitatorPropPatch.ShouldReleaseGrab(__instance)) return true;
         __instance.UnGrab();
         return false;
     }
 
     private static void Postfix(LevitatorScript __instance)
     {
-        if (__instance == null || (__instance.refBody != null && !__instance.refBody.isAlive)) return;
+        if (__instance == null || ClientLevitatorPropPatch.ShouldReleaseGrab(__instance)) return;
         NetworkAvatarReplication.TryGrabRemotePlayer(__instance);
         NpcReplication.TryGrabClientCorpse(__instance);
     }
