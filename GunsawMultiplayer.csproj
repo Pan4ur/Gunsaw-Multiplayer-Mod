@@ -9,6 +9,7 @@
     <AssemblyName>GunsawMultiplayer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="Examples\**\*.cs" />
     <EmbeddedResource Include="Assets\killmessages.json" />
     <EmbeddedResource Include="CustomProps\Assets\npc-spawner.png" />
     <EmbeddedResource Include="CustomProps\Assets\arsenal.png" />
