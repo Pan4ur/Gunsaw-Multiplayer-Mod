@@ -630,7 +630,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         ping = MultiplayerSession.PeerPing(replica.remotePeerId);
         var label = replica.remoteName + " [" + (ping < 0 ? "-" : ping.ToString()) + "]";
         if (!body.isAlive) return "DEAD " + label;
-        if (!body.IsConsc()) return "unconscious " + label;
+        if (!body.IsConsc()) return "K.O. " + label;
         return label;
     }
 

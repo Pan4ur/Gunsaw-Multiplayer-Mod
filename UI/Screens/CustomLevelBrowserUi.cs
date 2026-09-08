@@ -21,6 +21,8 @@ internal sealed class CustomLevelBrowserUi
     private readonly Transform rows;
     private readonly Sprite playIcon;
     private readonly Sprite binIcon;
+    private readonly Sprite editIcon;
+    private readonly Sprite configureIcon;
     private readonly Button onlineButton;
     private readonly Button localButton;
     private readonly Button addLocalButton;
@@ -39,6 +41,11 @@ internal sealed class CustomLevelBrowserUi
     private bool loading;
     private bool localMode;
     private string localCode = "";
+    private GameObject editLocalPanel;
+    private TMP_InputField editName;
+    private TMP_Text editCodeStatus;
+    private CatalogEntry editingEntry;
+    private string editCode = "";
     private string renderedSearch = "\u0000";
     private SortMode renderedSort = (SortMode)(-1);
     private bool renderedLocalMode;
@@ -73,6 +80,8 @@ internal sealed class CustomLevelBrowserUi
         buttonTemplate = sourceButton;
         playIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.play.png", 100f, new Vector2(0.5f, 0.5f));
         binIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.bin.png", 100f, new Vector2(0.5f, 0.5f));
+        editIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.edit.png", 100f, new Vector2(0.5f, 0.5f));
+        configureIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.configure.png", 100f, new Vector2(0.5f, 0.5f));
         panel = CreatePanel(parent, new Vector2(100f, 0f), new Vector2(600f, 920f));
         panel.transform.SetSiblingIndex(Mathf.Max(0, parent.childCount - 2));
         panel.name = "Custom Level Browser";
@@ -108,6 +117,7 @@ internal sealed class CustomLevelBrowserUi
         save.onClick.AddListener(SaveLocalLevel);
         cancel.onClick.AddListener(() => addLocalPanel.SetActive(false));
         addLocalPanel.SetActive(false);
+        CreateEditLocalPanel();
         LoadLocalLevels();
         SetMode(false);
         panel.SetActive(false);
@@ -120,7 +130,11 @@ internal sealed class CustomLevelBrowserUi
     internal void SetOpen(bool value)
     {
         open = value;
-        if (!value) addLocalPanel.SetActive(false);
+        if (!value)
+        {
+            addLocalPanel.SetActive(false);
+            if (editLocalPanel != null) editLocalPanel.SetActive(false);
+        }
         panel.SetActive(value);
         if (value)
         {
@@ -237,6 +251,85 @@ internal sealed class CustomLevelBrowserUi
         }
         GUIUtility.systemCopyBuffer = localCode;
         localCodeStatus.text = "Level code copied.";
+    }
+
+    private void CreateEditLocalPanel()
+    {
+        editLocalPanel = CreatePanel(panel.transform, Vector2.zero, new Vector2(510f, 400f));
+        editLocalPanel.name = "Edit Local Level";
+        CreateText(editLocalPanel.transform, "EDIT LOCAL LEVEL", new Vector2(0f, 150f), new Vector2(460f, 32f),
+            21, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        editName = CreateInput(editLocalPanel.transform, new Vector2(0f, 94f), new Vector2(440f, 40f), "Level name", 80);
+        editCodeStatus = CreateText(editLocalPanel.transform, "", new Vector2(0f, 30f), new Vector2(440f, 44f),
+            13, TextAlignmentOptions.Center);
+        editCodeStatus.enableWordWrapping = true;
+        var paste = CreateButton(editLocalPanel.transform, "REPLACE CODE", new Vector2(-92f, -28f), new Vector2(170f, 40f));
+        var copy = CreateButton(editLocalPanel.transform, "COPY CODE", new Vector2(92f, -28f), new Vector2(170f, 40f));
+        var save = CreateButton(editLocalPanel.transform, "SAVE", new Vector2(-75f, -136f), new Vector2(130f, 40f));
+        var cancel = CreateButton(editLocalPanel.transform, "CANCEL", new Vector2(75f, -136f), new Vector2(130f, 40f));
+        paste.onClick.AddListener(ReplaceEditedCode);
+        copy.onClick.AddListener(CopyEditedCode);
+        save.onClick.AddListener(SaveEditedLevel);
+        cancel.onClick.AddListener(() => editLocalPanel.SetActive(false));
+        editLocalPanel.SetActive(false);
+    }
+
+    private void OpenEditLocalLevel(CatalogEntry entry)
+    {
+        if (entry == null) return;
+        editingEntry = entry;
+        editName.text = entry.name ?? "";
+        editCode = entry.code ?? "";
+        editCodeStatus.text = "Current code: " + FormatSize(Encoding.UTF8.GetByteCount(editCode));
+        addLocalPanel.SetActive(false);
+        editLocalPanel.SetActive(true);
+        editName.ActivateInputField();
+    }
+
+    private void ReplaceEditedCode()
+    {
+        editCode = (GUIUtility.systemCopyBuffer ?? "").Trim();
+        editCodeStatus.text = string.IsNullOrEmpty(editCode) ? "Clipboard does not contain a level code." :
+            "Replacement code pasted: " + FormatSize(Encoding.UTF8.GetByteCount(editCode));
+    }
+
+    private void CopyEditedCode()
+    {
+        if (string.IsNullOrEmpty(editCode))
+        {
+            editCodeStatus.text = "No level code to copy.";
+            return;
+        }
+        GUIUtility.systemCopyBuffer = editCode;
+        editCodeStatus.text = "Level code copied.";
+    }
+
+    private void SaveEditedLevel()
+    {
+        if (editingEntry == null) return;
+        var name = editName.text.Trim();
+        var code = editCode.Trim();
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(code))
+        {
+            editCodeStatus.text = "Enter a level name and code.";
+            return;
+        }
+        try
+        {
+            var json = Compression.Decompress(code);
+            if (string.IsNullOrWhiteSpace(json) || JsonUtility.FromJson<Level>(json) == null)
+                throw new System.InvalidOperationException("The level code is invalid.");
+            editingEntry.name = name;
+            editingEntry.code = code;
+            editingEntry.date = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            SaveLocalLevels();
+            editLocalPanel.SetActive(false);
+            Rebuild(true);
+        }
+        catch (System.Exception exception)
+        {
+            editCodeStatus.text = "Could not save level: " + exception.Message;
+        }
     }
 
     private static string LocalLevelsPath => Path.Combine(Paths.ConfigPath, "GunsawMultiplayer.LocalLevels.txt");
@@ -417,6 +510,12 @@ internal sealed class CustomLevelBrowserUi
         play.onClick.AddListener(() => plugin.StartCatalogCustomLevel(entry.code, entry.name ?? "Untitled"));
         if (entry.local)
         {
+            var configure = CreateIconButton(card.transform, new Vector2(40f, 0f), new Vector2(50f, 50f),
+                configureIcon, new Color(0.15f, 0.32f, 0.62f, 1f), "Configure");
+            configure.onClick.AddListener(() => plugin.OpenCustomLevelEditor(entry.code, entry.name ?? "Untitled"));
+            var edit = CreateIconButton(card.transform, new Vector2(100f, 0f), new Vector2(50f, 50f), editIcon,
+                new Color(0.55f, 0.38f, 0.08f, 1f), "Edit");
+            edit.onClick.AddListener(() => OpenEditLocalLevel(entry));
             var remove = CreateDeleteButton(card.transform, new Vector2(160f, 0f), new Vector2(50f, 50f));
             remove.onClick.AddListener(() => DeleteLocalLevel(entry));
         }
@@ -431,6 +530,31 @@ internal sealed class CustomLevelBrowserUi
         levels = localLevels;
         SaveLocalLevels();
         Rebuild(true);
+    }
+
+    internal bool SaveLocalLevelFromEditor(string originalCode, string levelName, string replacementCode)
+    {
+        if (string.IsNullOrWhiteSpace(originalCode) || string.IsNullOrWhiteSpace(replacementCode)) return false;
+        CatalogEntry target = null;
+        foreach (var entry in localLevels)
+            if (entry != null && entry.code == originalCode && entry.name == levelName)
+            {
+                target = entry;
+                break;
+            }
+        if (target == null)
+            foreach (var entry in localLevels)
+                if (entry != null && entry.code == originalCode)
+                {
+                    target = entry;
+                    break;
+                }
+        if (target == null) return false;
+        target.code = replacementCode;
+        target.date = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+        SaveLocalLevels();
+        if (panel != null && localMode) Rebuild(true);
+        return true;
     }
 
     private IEnumerator LoadCover(string levelName, Image image)
@@ -496,35 +620,28 @@ internal sealed class CustomLevelBrowserUi
 
     private Button CreatePlayButton(Transform parent, Vector2 position, Vector2 size)
     {
-        var button = CreateButton(parent, "", position, size);
-        var background = button.GetComponent<Image>();
-        background.sprite = null;
-        background.material = null;
-        background.color = new Color(0.1f, 0.45f, 0.1f, 1f);
-        if (playIcon == null) return button;
-        var icon = new GameObject("Play Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        icon.transform.SetParent(button.transform, false);
-        Rect(icon.GetComponent<RectTransform>(), Vector2.zero, size);
-        var iconImage = icon.GetComponent<Image>();
-        iconImage.sprite = playIcon;
-        iconImage.color = Color.white;
-        iconImage.raycastTarget = false;
-        return button;
+        return CreateIconButton(parent, position, size, playIcon, new Color(0.1f, 0.45f, 0.1f, 1f), "Play");
     }
 
     private Button CreateDeleteButton(Transform parent, Vector2 position, Vector2 size)
+    {
+        return CreateIconButton(parent, position, size, binIcon, new Color(0.62f, 0.1f, 0.1f, 1f), "Delete");
+    }
+
+    private Button CreateIconButton(Transform parent, Vector2 position, Vector2 size, Sprite sprite, Color color,
+        string label)
     {
         var button = CreateButton(parent, "", position, size);
         var background = button.GetComponent<Image>();
         background.sprite = null;
         background.material = null;
-        background.color = new Color(0.62f, 0.1f, 0.1f, 1f);
-        if (binIcon == null) return button;
-        var icon = new GameObject("Delete Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        background.color = color;
+        if (sprite == null) return button;
+        var icon = new GameObject(label + " Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         icon.transform.SetParent(button.transform, false);
         Rect(icon.GetComponent<RectTransform>(), Vector2.zero, size);
         var iconImage = icon.GetComponent<Image>();
-        iconImage.sprite = binIcon;
+        iconImage.sprite = sprite;
         iconImage.color = Color.white;
         iconImage.raycastTarget = false;
         return button;

@@ -100,6 +100,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private bool gameplayTypesLogged;
     private string hostedLobbyId = "";
     private string hostedLobbyDisplayName = "";
+    private string editedLocalLevelCode = "";
+    private string editedLocalLevelName = "";
     private string hostRelayKey = "";
     private float nextHeartbeat;
     private int lastHostedPeerListRevision = -1;
@@ -742,6 +744,53 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             StartCustomLevel();
         }
         catch (Exception exception) { status = "Could not load custom level: " + exception.Message; }
+    }
+
+    internal void OpenCustomLevelEditor(string code, string levelName)
+    {
+        try
+        {
+            var levelJson = Compression.Decompress(code);
+            if (string.IsNullOrWhiteSpace(levelJson) || JsonUtility.FromJson<Level>(levelJson) == null)
+                throw new InvalidDataException("The level code is invalid.");
+            var loader = SceneLoader.main;
+            if (loader == null)
+                throw new InvalidOperationException("Scene loader is not ready.");
+            loader.levelEditString = levelJson;
+            editedLocalLevelCode = code;
+            editedLocalLevelName = levelName ?? "Untitled";
+            status = "Opening level editor: " + levelName;
+            loader.LoadScene("LevelEditor");
+        }
+        catch (Exception exception)
+        {
+            status = "Could not open level editor: " + exception.Message;
+        }
+    }
+
+    internal bool HasLocalLevelEditorTarget => !string.IsNullOrWhiteSpace(editedLocalLevelCode);
+
+    internal void SaveEditedLocalLevel(LevelEditor editor)
+    {
+        if (editor == null || !HasLocalLevelEditorTarget) return;
+        try
+        {
+            var replacementCode = Compression.Compress(editor.GetLevelCode());
+            if (multiplayerLobbyUi == null || !multiplayerLobbyUi.SaveEditedLocalLevel(editedLocalLevelCode,editedLocalLevelName, replacementCode))
+                throw new InvalidOperationException("The original local level was not found.");
+            editedLocalLevelCode = replacementCode;
+            editor.SetInfoText("Saved changes to " + editedLocalLevelName + ".");
+        }
+        catch (Exception exception)
+        {
+            editor.SetInfoText("Could not save changes: " + exception.Message);
+        }
+    }
+
+    internal void EndLocalLevelEditing()
+    {
+        editedLocalLevelCode = "";
+        editedLocalLevelName = "";
     }
 
     private void StartCustomLevelLocally(string levelJson)

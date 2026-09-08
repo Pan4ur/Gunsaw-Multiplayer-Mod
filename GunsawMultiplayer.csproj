@@ -17,6 +17,8 @@
     <EmbeddedResource Include="CustomProps\Assets\logic-*.png" />
     <EmbeddedResource Include="Assets\play.png" />
     <EmbeddedResource Include="Assets\bin.png" />
+    <EmbeddedResource Include="Assets\edit.png" />
+    <EmbeddedResource Include="Assets\configure.png" />
     <EmbeddedResource Include="Assets\emoji.png" />
     <EmbeddedResource Include="Assets\Sounds\respawn.ogg"
                       LogicalName="GunsawMultiplayer.Assets.Sounds.respawn.ogg" />

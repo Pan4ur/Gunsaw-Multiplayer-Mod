@@ -137,6 +137,11 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         teamsToggle.interactable = interactable;
     }
 
+    internal bool SaveEditedLocalLevel(string originalCode, string levelName, string replacementCode)
+    {
+        return customLevelBrowser != null && customLevelBrowser.SaveLocalLevelFromEditor(originalCode, levelName, replacementCode);
+    }
+
     private void SetLobbyActionButtons(bool joinedAsClient)
     {
         if (lobbyActionButton == null || closeLobbyButton == null) return;
