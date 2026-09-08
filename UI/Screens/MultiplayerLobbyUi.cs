@@ -349,6 +349,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         refreshLobbiesButton.onClick.AddListener(plugin.RefreshLobbies);
 
         lobbyRows = CreateScrollArea(publicGroup.transform, new Vector2(0f, -20f), new Vector2(1240f, 300f));
+        lobbyRows.parent.GetComponent<ScrollRect>().scrollSensitivity = 24f;
 
         tooltipPanel = CreatePanel(panel.transform, new Vector2(0f, -412f), new Vector2(1160f, 66f));
         tooltipPanel.GetComponent<Image>().color = new Color(0.04f, 0.04f, 0.04f, 0.96f);
@@ -562,6 +563,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var image = go.GetComponent<Image>(); image.color = new Color(0.17f, 0.17f, 0.17f, 0.215f);
         var outline = go.AddComponent<Outline>(); outline.effectColor = new Color(0.58f, 0.58f, 0.58f, 0.95f); outline.effectDistance = new Vector2(1f, -1f);
         var field = go.GetComponent<TMP_InputField>(); field.targetGraphic = image; field.characterLimit = limit;
+        EnsureScrollForwarder(go);
         var text = CreateText(go.transform, "", Vector2.zero, new Vector2(size.x - 16f, size.y), 16, TextAlignmentOptions.Left);
         text.margin = new Vector4(8f, 0f, 8f, 0f); text.enableWordWrapping = false;
         field.textViewport = text.rectTransform; field.textComponent = text;
@@ -586,6 +588,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         check.GetComponent<Image>().color = new Color(0.46f, 0.4f, 0.4f, 1f);
 
         var toggle = go.GetComponent<Toggle>();
+        EnsureScrollForwarder(go);
         toggle.targetGraphic = back.GetComponent<Image>();
         toggle.graphic = check.GetComponent<Image>();
 
@@ -599,6 +602,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void AddTooltip(GameObject target, string message, Color? color = null)
     {
         if (target == null) return;
+        EnsureScrollForwarder(target);
         var trigger = target.GetComponent<EventTrigger>() ?? target.AddComponent<EventTrigger>();
         trigger.triggers ??= new List<EventTrigger.Entry>();
 
@@ -678,7 +682,22 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var row = new GameObject("Rule", typeof(RectTransform), typeof(LayoutElement));
         row.transform.SetParent(parent, false);
         row.GetComponent<LayoutElement>().preferredHeight = 40f;
+        EnsureScrollForwarder(row);
         return row.transform;
+    }
+
+    private static void EnsureScrollForwarder(GameObject target)
+    {
+        if (target.GetComponent<ScrollForwarder>() == null) target.AddComponent<ScrollForwarder>();
+    }
+
+    private sealed class ScrollForwarder : MonoBehaviour, IScrollHandler
+    {
+        public void OnScroll(PointerEventData eventData)
+        {
+            var scroll = GetComponentInParent<ScrollRect>();
+            if (scroll != null) scroll.OnScroll(eventData);
+        }
     }
 
     private TMP_Text CreateText(Transform parent, string value, Vector2 position, Vector2 size, float fontSize, TextAlignmentOptions alignment = TextAlignmentOptions.Left, FontStyles style = FontStyles.Normal)
