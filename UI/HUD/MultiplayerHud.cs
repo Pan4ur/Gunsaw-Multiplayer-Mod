@@ -533,6 +533,9 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 CloseChat();
                 return;
             }
+            if (message.StartsWith(">", StringComparison.Ordinal))
+                message = "<color=#789922>" + message + "</color>";
+                
             AddMessage(localName, message, true, MultiplayerSession.LocalPeerId);
             ChatPacket packet;
             if (MultiplayerSession.IsConnected && ChatService.TryCreate(message, false, out packet)) MultiplayerSession.Send(packet);
