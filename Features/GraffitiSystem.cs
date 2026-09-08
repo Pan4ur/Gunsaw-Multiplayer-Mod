@@ -156,7 +156,10 @@ internal sealed class GraffitiSystem : MonoBehaviour
 
         if (hosting && GunsawMultiplayerPlugin.IsHeadlessMode)
         {
-            MultiplayerSession.Send(new GraffitiPacket(packet.SceneEpoch, senderId, packet.Id, packet.X, packet.Y, packet.Scale, packet.Rotation, packet.Image));
+            var p = new GraffitiPacket(packet.SceneEpoch, senderId, packet.Id, packet.X, packet.Y, packet.Scale, packet.Rotation, packet.Image);
+            foreach (var peerId in MultiplayerSession.PeerIds())
+                if (peerId != senderId) 
+                    MultiplayerSession.Send(p, peerId);
             return;
         }
 
