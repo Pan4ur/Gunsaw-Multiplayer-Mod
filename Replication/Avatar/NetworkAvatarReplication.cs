@@ -3495,17 +3495,21 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             state.WeaponSprite = SpriteId(weapon.stats.sprite);
         }
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
             instance == null || player == null || currentShooter != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
             if (replica != null && replica.remoteBody != null && replica.remoteBody.isAlive)
+            {
+                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId))
+                    continue;
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
                 {
                     if (collider == null || !collider.enabled) continue;
                     collider.enabled = false;
                     state.DisabledColliders.Add(collider);
                 }
+            }
         return state;
     }
 
@@ -3514,17 +3518,21 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var state = new ShotState { PreviousShooter = currentShooter };
         currentShooter = attacker;
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
             instance == null || player == null || attacker != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
             if (replica != null)
+            {
+                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId))
+                    continue;
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
                 {
                     if (collider == null || !collider.enabled) continue;
                     collider.enabled = false;
                     state.DisabledColliders.Add(collider);
                 }
+            }
         return state;
     }
 
@@ -4016,14 +4024,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static void ConfigureProjectileCollisions(Component projectile, BodyScript shooter)
     {
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
             instance == null || projectile == null || player == null ||
             shooter != player.bodyScript) return;
         foreach (var projectileCollider in projectile.GetComponentsInChildren<Collider2D>(true))
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
+        {
+        if (replica == null || (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId)))
+            continue;
         foreach (var remoteCollider in replica.remoteColliderTriggers.Keys)
             if (projectileCollider != null && remoteCollider != null)
                 Physics2D.IgnoreCollision(projectileCollider, remoteCollider, true);
+        }
     }
 
     private static BodyScript ProjectileOwner(GameObject projectile)
