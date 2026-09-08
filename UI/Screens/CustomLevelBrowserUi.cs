@@ -172,6 +172,12 @@ internal sealed class CustomLevelBrowserUi
 
     private void SetMode(bool useLocal)
     {
+        if (!useLocal)
+        {
+            addLocalPanel?.SetActive(false);
+            editLocalPanel?.SetActive(false);
+        }
+        
         localMode = useLocal;
         levels = localMode ? localLevels : onlineLevels;
         renderedSearch = "\u0000";
