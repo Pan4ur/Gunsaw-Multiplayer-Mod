@@ -83,6 +83,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool collisionRuleApplied;
     private bool collisionRulePlayerCollisions;
     private readonly Dictionary<SpriteRenderer, Sprite> originalDismemberSprites = new();
+    private readonly HashSet<int> displayedDismembermentEffects = new();
+    private bool dismembermentVisualsInitialized;
     private readonly List<Transform> staleWorldTargets = [];
     private readonly List<KeyValuePair<Transform, WorldTargetState>> orderedWorldTargets = [];
     private Rigidbody2D[] remoteRigidbodies = new Rigidbody2D[0];
@@ -1046,6 +1048,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         collisionRuleLocalBody = null;
         collisionRuleApplied = false;
         originalDismemberSprites.Clear();
+        displayedDismembermentEffects.Clear();
+        dismembermentVisualsInitialized = false;
         targets.Clear();
         worldTargets.Clear();
         localTargets.Clear();
@@ -3495,7 +3499,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             instance == null || player == null || currentShooter != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
-            if (replica != null)
+            if (replica != null && replica.remoteBody != null && replica.remoteBody.isAlive)
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
                 {
                     if (collider == null || !collider.enabled) continue;
@@ -5745,16 +5749,51 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     break;
                 }
             }
-            if (!triggered) continue;
+            var managerId = manager.GetInstanceID();
+            if (!triggered)
+            {
+                displayedDismembermentEffects.Remove(managerId);
+                continue;
+            }
+            var showEffect = dismembermentVisualsInitialized && displayedDismembermentEffects.Add(managerId);
             if (manager.dismemberJoint != null)
                 foreach (var joint in manager.dismemberJoint)
                     if (joint != null) joint.enabled = false;
-            if (manager.dismemberRender == null || manager.dismemberSprites == null) continue;
-            var count = Mathf.Min(manager.dismemberRender.Length, manager.dismemberSprites.Length);
-            for (var index = 0; index < count; index++)
-                if (manager.dismemberRender[index] != null)
-                    manager.dismemberRender[index].sprite = manager.dismemberSprites[index];
+            if (manager.dismemberRender != null && manager.dismemberSprites != null)
+            {
+                var count = Mathf.Min(manager.dismemberRender.Length, manager.dismemberSprites.Length);
+                for (var index = 0; index < count; index++)
+                    if (manager.dismemberRender[index] != null)
+                        manager.dismemberRender[index].sprite = manager.dismemberSprites[index];
+            }
+            if (showEffect) SpawnRemoteDismembermentEffects(manager);
         }
+        dismembermentVisualsInitialized = true;
+    }
+
+    private void SpawnRemoteDismembermentEffects(DismemberManager manager)
+    {
+        if (GunsawMultiplayerPlugin.IsHeadlessMode || remoteBody == null || remoteBody.isRobot) return;
+        var position = manager.transform.position;
+        Sound.Play(Resources.Load<AudioClip>("Sounds/dismember" + UnityEngine.Random.Range(1, 4)), position, false, false);
+        Sound.Play(Resources.Load<AudioClip>("Sounds/bloodDrip"), position, false, false, remoteBody.transform);
+        var blood = Resources.Load<GameObject>("Spawnables/BloodSplashGoreBleed");
+        if (blood != null) Destroy(Instantiate(blood, position, Quaternion.identity, remoteBody.transform), 10f);
+        if (manager.lethal)
+        {
+            var gib = Resources.Load<GameObject>(manager.doDeHead ? "Spawnables/BrainDestroyGib" : "Spawnables/GutGib");
+            if (gib != null) Instantiate(gib, position, Quaternion.identity);
+        }
+        var gore = Resources.Load<GameObject>("Spawnables/GoreChunk");
+        if (gore == null) return;
+        var chunk = Instantiate(gore, position, Quaternion.identity);
+        var particles = chunk.GetComponent<ParticleSystem>();
+        if (particles != null)
+        {
+            var main = particles.main;
+            main.startColor = remoteBody.bloodColor;
+        }
+        Destroy(chunk, 120f);
     }
 
     private void CacheDismembermentVisuals()
