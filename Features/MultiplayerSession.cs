@@ -88,6 +88,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] missionFinishedHeader = PacketHeader.Create(PacketType.MissionFinished);
     private static readonly byte[] observerHeader = PacketHeader.Create(PacketType.Observer);
     private static readonly byte[] observerKillHeader = PacketHeader.Create(PacketType.ObserverKill);
+    private static readonly byte[] graffitiHeader = PacketHeader.Create(PacketType.Graffiti);
     private static readonly byte[] playerPerformanceHeader = PacketHeader.Create(PacketType.PlayerPerformance);
     
     private static string hostScene = "";
