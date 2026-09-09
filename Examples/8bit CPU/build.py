@@ -870,8 +870,12 @@ def normalize_base(level):
     return level
 
 def compile_source(src):
-    body=Parser(lex(src.read_text())).parse();ir=NativeIRBuilder();ops=ir.finalize(body);cc=NativeCompiler(src.stem,ops);rom=cc.compile()
-    return rom,len(cc.groups),len(rom),{n:v.reg for n,v in cc.vars.items()}
+    body = Parser(lex(src.read_text(encoding='utf-8-sig'))).parse()
+    ir = NativeIRBuilder()
+    ops = ir.finalize(body)
+    cc = NativeCompiler(src.stem, ops)
+    rom = cc.compile()
+    return rom, len(cc.groups), len(rom), {n: v.reg for n, v in cc.vars.items()}
 
 def validate_rom_abi(level):
     owned=[406457,406458,406459,406460,406461,406463,406464,406465,406466,406468]
