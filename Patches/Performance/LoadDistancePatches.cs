@@ -142,17 +142,6 @@ internal static class MultiplayerJointTickCullPatch
     }
 }
 
-[HarmonyPatch(typeof(FireScript), "Update")]
-internal static class MultiplayerFireTickCullPatch
-{
-    private static bool Prefix(FireScript __instance)
-    {
-        if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHost)
-            return WorldReplication.ShouldTickClientFire(__instance);
-        return LoadDistanceSystem.ShouldTickWorld(__instance);
-    }
-}
-
 [HarmonyPatch(typeof(FireScript), "Awake")]
 internal static class MultiplayerFireRegistrationPatch
 {

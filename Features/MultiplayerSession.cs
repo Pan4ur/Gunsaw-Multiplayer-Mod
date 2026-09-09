@@ -82,6 +82,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
     private static readonly byte[] peerNameHeader = PacketHeader.Create(PacketType.PeerName);
     private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
+    private static readonly byte[] worldFireHeader = PacketHeader.Create(PacketType.WorldFire);
     private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
     private static readonly byte[] vehicleEjectHeader = PacketHeader.Create(PacketType.VehicleEject);
     private static readonly byte[] vehicleImpactHeader = PacketHeader.Create(PacketType.VehicleImpact);
@@ -114,6 +115,7 @@ internal static partial class MultiplayerSession
     private static readonly Dictionary<ushort, PlayerSpecialLinesPacket> playerSpecialLines = new Dictionary<ushort, PlayerSpecialLinesPacket>();
     private static readonly Queue<PeerPayload> worldSnapshots = new Queue<PeerPayload>();
     private static readonly Queue<PeerPayload> worldEnvironments = new Queue<PeerPayload>();
+    private static readonly Queue<PeerPacket<WorldFirePacket>> worldFires = new Queue<PeerPacket<WorldFirePacket>>();
     private static readonly Queue<PeerPacket<WorldInputPacket>> worldInputs = new Queue<PeerPacket<WorldInputPacket>>();
     private static readonly Queue<PeerPacket<WorldDamagePacket>> worldDamage = new Queue<PeerPacket<WorldDamagePacket>>();
     private static readonly Queue<PeerPayload> npcSnapshots = new Queue<PeerPayload>();

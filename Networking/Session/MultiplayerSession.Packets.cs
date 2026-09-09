@@ -217,6 +217,15 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(packet, worldEnvironmentHeader.Length, data, 0, data.Length);
                 EnqueueLatestPayload(worldEnvironments, senderId, data);
             }
+            else if (!isHost && decodedPacket.Type == PacketType.WorldFire)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueEvent(worldFires, senderId, WorldFirePacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
             else if (isHost && decodedPacket.Type == PacketType.WorldInput)
             {
                 try
@@ -734,6 +743,7 @@ internal static partial class MultiplayerSession
         receivedSnapshotSequences.Clear();
         worldSnapshots.Clear();
         worldEnvironments.Clear();
+        worldFires.Clear();
         worldInputs.Clear();
         worldDamage.Clear();
         npcSnapshots.Clear();

@@ -49,5 +49,6 @@ internal enum PacketType : byte
     CustomLevelSuggestion = 0x30,
     PeerName = 0x31,
     PlayerGrunt = 0x32,
-    Graffiti = 0x33
+    Graffiti = 0x33,
+    WorldFire = 0x34
 }

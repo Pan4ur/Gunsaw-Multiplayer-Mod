@@ -145,12 +145,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void SetLobbyActionButtons(bool joinedAsClient)
     {
         if (lobbyActionButton == null || closeLobbyButton == null) return;
-        if (!joinedAsClient) closeLobbyButton.interactable = MultiplayerSession.IsHosting;
-        if (showingLeaveLobbyButton == joinedAsClient) return;
-        showingLeaveLobbyButton = joinedAsClient;
         var closeRect = closeLobbyButton.GetComponent<RectTransform>();
         lobbyActionButton.gameObject.SetActive(!joinedAsClient);
-        closeLobbyButton.onClick.RemoveAllListeners();
         if (joinedAsClient)
         {
             if (closeRect != null)
@@ -161,6 +157,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             var label = closeLobbyButton.GetComponentInChildren<TMP_Text>();
             if (label != null) label.text = "LEAVE";
             closeLobbyButton.interactable = true;
+            if (showingLeaveLobbyButton == joinedAsClient) return;
+            showingLeaveLobbyButton = true;
+            closeLobbyButton.onClick.RemoveAllListeners();
             closeLobbyButton.onClick.AddListener(plugin.LeaveLobby);
             return;
         }
@@ -172,6 +171,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var closeLabel = closeLobbyButton.GetComponentInChildren<TMP_Text>();
         if (closeLabel != null) closeLabel.text = "CLOSE LOBBY";
         closeLobbyButton.interactable = MultiplayerSession.IsHosting;
+        if (showingLeaveLobbyButton == joinedAsClient) return;
+        showingLeaveLobbyButton = false;
+        closeLobbyButton.onClick.RemoveAllListeners();
         closeLobbyButton.onClick.AddListener(plugin.CloseHostedLobby);
     }
 

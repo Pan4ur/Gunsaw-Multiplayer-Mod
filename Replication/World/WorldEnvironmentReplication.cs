@@ -83,30 +83,6 @@ public class WorldEnvironmentReplication
         }
     }
     
-    internal void DiscoverWorldFires()
-    {
-        if (MultiplayerSession.IsHost) WorldReplication.Instance.fires.Clear();
-        foreach (var fire in WorldReplication.FindObjectsOfType<FireScript>())
-            RegisterWorldFireInternal(fire);
-    }
-    
-    internal void RefreshKnownWorldFires()
-    {
-        if (MultiplayerSession.IsHost) return;
-        foreach (var pair in WorldReplication.Instance.fires)
-        {
-            var fire = pair.Value;
-            if (fire == null) continue;
-            if (!WorldReplication.Instance.clientFireSettings.ContainsKey(fire)) WorldReplication.Instance.clientFireSettings[fire] = new WorldReplication.FireLocalSettings
-            {
-                enabled = fire.enabled,
-                active = fire.gameObject.activeSelf
-            };
-
-            fire.enabled = WorldReplication.ShouldTickClientFire(fire);
-        }
-    }
-    
     internal void ProcessPendingRuntimeFires()
     {
         if (!MultiplayerSession.IsHost || WorldReplication.Instance.pendingRuntimeFires.Count == 0) return;
@@ -120,20 +96,9 @@ public class WorldEnvironmentReplication
             var id = "runtime-fire/" + (++WorldReplication.Instance.nextRuntimeFireId).ToString();
             WorldReplication.Instance.fireIds[fire] = id;
             WorldReplication.Instance.fires[id] = fire;
+            SendFireState(id, fire);
         }
         foreach (var fire in ready) WorldReplication.Instance.pendingRuntimeFires.Remove(fire);
-    }
-    
-    internal void RegisterWorldFireInternal(FireScript fire)
-    {
-        if (fire == null || WorldReplication.IsGameplayOwned(fire)) return;
-        string id;
-        if (!WorldReplication.Instance.fireIds.TryGetValue(fire, out id))
-        {
-            id = WorldReplication.Instance.ComponentId(fire);
-            WorldReplication.Instance.fireIds[fire] = id;
-        }
-        WorldReplication.Instance.fires[id] = fire;
     }
     
     internal void RefreshMechanismAudio()
@@ -350,14 +315,6 @@ public class WorldEnvironmentReplication
                 }
                 WorldReplication.Instance.clientCreatedFires.Add(fire);
             }
-            else if (!WorldReplication.Instance.clientFireSettings.ContainsKey(fire))
-            {
-                WorldReplication.Instance.clientFireSettings[fire] = new WorldReplication.FireLocalSettings
-                {
-                    enabled = fire.enabled,
-                    active = fire.gameObject.activeSelf
-                };
-            }
             WorldReplication.Instance.fireIds[fire] = id;
             WorldReplication.Instance.fires[id] = fire;
         }
@@ -368,9 +325,63 @@ public class WorldEnvironmentReplication
         fire.canIgnite = canIgnite;
         fire.damageMult = damageMult;
         fire.fuelConsMult = fuelConsMult;
-        fire.enabled = WorldReplication.ShouldTickClientFire(fire);
         var particles = fire.GetComponent<ParticleSystem>();
         if (particles != null && !particles.isPlaying) particles.Play();
+    }
+
+    internal void ApplyFire(WorldFirePacket packet)
+    {
+        if (string.IsNullOrEmpty(packet.Id)) return;
+        if (packet.Exists)
+        {
+            ApplyFireState(packet.Id, new Vector2(packet.PositionX, packet.PositionY), packet.Rotation,
+                packet.Fuel, packet.CanIgnite, packet.DamageMult, packet.FuelConsMult);
+            if (!string.IsNullOrEmpty(packet.ParentId) &&
+                WorldReplication.Instance.bodies.bodies.TryGetValue(packet.ParentId, out var parent) &&
+                parent != null &&
+                WorldReplication.Instance.fires.TryGetValue(packet.Id, out var syncedFire) && syncedFire != null)
+            {
+                syncedFire.transform.SetParent(parent.transform, false);
+                syncedFire.transform.localPosition = new Vector3(packet.LocalPositionX, packet.LocalPositionY, 0f);
+                syncedFire.transform.localRotation = Quaternion.Euler(0f, 0f, packet.LocalRotation);
+            }
+
+            return;
+        }
+
+        if (!WorldReplication.Instance.fires.TryGetValue(packet.Id, out var fire))
+            return;
+       
+        WorldReplication.Instance.fires.Remove(packet.Id);
+       
+        if (fire == null) 
+            return;
+        
+        WorldReplication.Instance.fireIds.Remove(fire);
+        
+        if (WorldReplication.Instance.clientCreatedFires.Remove(fire)) 
+            WorldReplication.Destroy(fire.gameObject);
+        else 
+            fire.gameObject.SetActive(false);
+    }
+
+    internal void SendFireStates(ushort peerId = 0)
+    {
+        foreach (var pair in WorldReplication.Instance.fires)
+            SendFireState(pair.Key, pair.Value, peerId);
+    }
+
+    internal void SendFireState(string id, FireScript f, ushort peerId = 0)
+    {
+        if (f == null || string.IsNullOrEmpty(id)) return;
+        var pos = f.transform.position;
+        var parent = f.transform.parent;
+        var parentBody = parent == null ? null : parent.GetComponentInParent<Rigidbody2D>();
+        var parentId = parentBody == null ? "" : WorldReplication.Instance.Id(parentBody);
+        var localPosition = parentBody == null ? Vector3.zero : parentBody.transform.InverseTransformPoint(pos);
+        var localRotation = parentBody == null ? 0f : f.transform.eulerAngles.z - parentBody.transform.eulerAngles.z;
+        MultiplayerSession.Send(new WorldFirePacket(true, id, pos.x, pos.y, f.transform.eulerAngles.z, f.fuel,
+            f.canIgnite, f.damageMult, f.fuelConsMult, parentId, localPosition.x, localPosition.y, localRotation), peerId);
     }
 
     internal void ApplyClientLampBreak(string id, Vector2 point)
@@ -515,21 +526,7 @@ public class WorldEnvironmentReplication
                 if (writtenGlass++ >= ushort.MaxValue) break;
                 writer.Write(WorldReplication.Instance.WireId(id));
             }
-            var fireCount = 0;
-            foreach (var pair in WorldReplication.Instance.fires) if (pair.Value != null && fireCount < ushort.MaxValue) fireCount++;
-            writer.Write((ushort)fireCount);
-            var writtenFires = 0;
-            foreach (var pair in WorldReplication.Instance.fires)
-            {
-                var fire = pair.Value;
-                if (fire == null || writtenFires >= fireCount) continue;
-                writer.Write(WorldReplication.Instance.WireId(pair.Key)); BinaryWriterRaw.WriteSingle(writer, fire.transform.position.x);
-                BinaryWriterRaw.WriteSingle(writer, fire.transform.position.y);
-                BinaryWriterRaw.WriteSingle(writer, fire.transform.eulerAngles.z);
-                BinaryWriterRaw.WriteSingle(writer, fire.fuel); writer.Write(fire.canIgnite);
-                BinaryWriterRaw.WriteSingle(writer, fire.damageMult);
-                BinaryWriterRaw.WriteSingle(writer, fire.fuelConsMult); writtenFires++;
-            }
+            writer.Write((ushort)0);
             var audioCount = 0;
             foreach (var pair in WorldReplication.Instance.mechanismAudio) if (pair.Value != null && audioCount < ushort.MaxValue) audioCount++;
             writer.Write((ushort)audioCount);
@@ -591,7 +588,6 @@ public class WorldEnvironmentReplication
             var glassCount = reader.ReadUInt16();
             for (var index = 0; index < glassCount; index++)
                 ApplyGlassState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()));
-            seenSnapshotFires.Clear();
             var fireCount = reader.ReadUInt16();
             for (var index = 0; index < fireCount; index++)
             {
@@ -599,10 +595,8 @@ public class WorldEnvironmentReplication
                 var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 var rotation = reader.ReadSingle(); var fuel = reader.ReadSingle(); var canIgnite = reader.ReadBoolean();
                 var damageMult = reader.ReadSingle(); var fuelConsMult = reader.ReadSingle();
-                seenSnapshotFires.Add(id);
                 ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
             }
-            RemoveMissingFires(seenSnapshotFires);
             seenSnapshotAudio.Clear();
             var audioCount = reader.ReadUInt16();
             for (var index = 0; index < audioCount; index++)

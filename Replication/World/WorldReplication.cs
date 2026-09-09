@@ -76,7 +76,6 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly Dictionary<string, FireScript> fires = new();
     internal readonly Dictionary<FireScript, int> pendingRuntimeFires = new();
     internal int nextRuntimeFireId;
-    internal readonly Dictionary<FireScript, FireLocalSettings> clientFireSettings = new();
     internal readonly HashSet<FireScript> clientCreatedFires = [];
     internal readonly Dictionary<string, AudioSource> mechanismAudio = new();
     internal readonly Dictionary<AudioSource, string> mechanismAudioIds = new();
@@ -94,7 +93,6 @@ internal sealed class WorldReplication : MonoBehaviour
     private readonly Dictionary<string, float> lastChangedBodyAt = new();
     internal float nextSnapshot;
     private float nextReliableEnvironment;
-    private float nextFireRefresh;
     private float nextFullWorldSnapshot;
     private bool wasConnected;
     private bool wasHost;
@@ -222,14 +220,6 @@ internal sealed class WorldReplication : MonoBehaviour
             wasHost = isHost;
             if (!discoveredScene) DiscoverScene();
 
-            if (Time.unscaledTime >= nextFireRefresh)
-            {
-                nextFireRefresh = Time.unscaledTime + 0.1f;
-                var fireRefreshStarted = MultiplayerPerformance.StartPhase();
-                enviroment.RefreshKnownWorldFires();
-                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldFireRefresh, fireRefreshStarted);
-            }
-
             enviroment.ProcessPendingRuntimeFires();
             if (isHost)
             {
@@ -290,6 +280,9 @@ internal sealed class WorldReplication : MonoBehaviour
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
             }
 
+            WorldFirePacket firePacket;
+            while (MultiplayerSession.TryTakeWorldFire(out firePacket)) enviroment.ApplyFire(firePacket);
+
             var lodFreezeStarted = MultiplayerPerformance.StartPhase();
             bodies.FreezeFarClientProps();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldClientLodFreeze, lodFreezeStarted);
@@ -319,7 +312,6 @@ internal sealed class WorldReplication : MonoBehaviour
         enviroment.RefreshActivationZones();
         enviroment.RefreshGlasses();
         enviroment.RefreshDrones();
-        enviroment.DiscoverWorldFires();
         RefreshClientSaws();
         RefreshWorldControllers();
         enviroment.RefreshMechanismAudio();
@@ -571,12 +563,6 @@ internal sealed class WorldReplication : MonoBehaviour
         lamps.Clear();
         lampIds.Clear();
         destroyedLamps.Clear();
-        foreach (var pair in clientFireSettings)
-        {
-            if (pair.Key == null) continue;
-            pair.Key.gameObject.SetActive(pair.Value.active);
-            pair.Key.enabled = pair.Value.enabled;
-        }
         foreach (var fire in clientCreatedFires)
             if (fire != null) Destroy(fire.gameObject);
         foreach (var pair in clientHiddenObjects)
@@ -589,7 +575,6 @@ internal sealed class WorldReplication : MonoBehaviour
         networkCrateDebrisBodies.Clear();
         networkCrateDebrisDamageUntil.Clear();
         environmentSentPeers.Clear();
-        clientFireSettings.Clear();
         clientCreatedFires.Clear();
         pendingRuntimeFires.Clear();
         nextRuntimeFireId = 0;
@@ -623,7 +608,6 @@ internal sealed class WorldReplication : MonoBehaviour
         lastChangedBodyAt.Clear();
         nextFullWorldSnapshot = 0f;
         nextReliableEnvironment = 0f;
-        nextFireRefresh = 0f;
         weapons.nextDroppedWeaponIndicatorUpdate = 0f;
         nextActivitySample = 0f;
         sentPacketsWindow = sentStatesWindow = receivedPacketsWindow = receivedStatesWindow = 0;
@@ -686,6 +670,7 @@ internal sealed class WorldReplication : MonoBehaviour
         var env = enviroment.SerializeEnvironment();
         lastSerializedEnvironment = env;
         MultiplayerSession.Send(new WorldEnvironmentPacket(env), peerId);
+        enviroment.SendFireStates(peerId);
     }
 
     private bool IsIdleVehiclePart(Rigidbody2D body)
@@ -1461,28 +1446,6 @@ internal sealed class WorldReplication : MonoBehaviour
         instance.pendingRuntimeFires[fire] = Time.frameCount;
     }
 
-    internal static bool ShouldTickClientFire(FireScript fire)
-    {
-        if (fire == null) return false;
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
-
-        if (fire.GetComponentInParent<BodyScript>() != null) return true;
-
-        var player = PlayerScript.player;
-        var body = player == null ? null : player.bodyScript;
-        if (body == null) return false;
-
-        const float activationDistanceSqr = 9f;
-        foreach (var limb in body.GetComponentsInChildren<LimbScript>(true))
-        {
-            if (limb != null && ((Vector2)limb.transform.position -
-                (Vector2)fire.transform.position).sqrMagnitude <= activationDistanceSqr)
-                return true;
-        }
-        return body.rb != null && (body.rb.position - (Vector2)fire.transform.position)
-            .sqrMagnitude <= activationDistanceSqr;
-    }
-
     internal void RegisterLevelLoaderWorldObjects()
     {
         if (!MultiplayerSession.IsConnected) return;
@@ -1887,11 +1850,6 @@ internal sealed class WorldReplication : MonoBehaviour
         public float expiresAt;
     }
 
-    internal struct FireLocalSettings
-    {
-        public bool enabled;
-        public bool active;
-    }
 }
 
 internal sealed class RuntimeSpawnedCrate : MonoBehaviour { }

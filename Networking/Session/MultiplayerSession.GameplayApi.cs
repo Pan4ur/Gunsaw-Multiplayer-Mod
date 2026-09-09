@@ -163,6 +163,16 @@ internal static partial class MultiplayerSession
         }
     }
 
+    internal static bool TryTakeWorldFire(out WorldFirePacket packet)
+    {
+        lock (statusLock)
+        {
+            var item = worldFires.Count == 0 ? null : worldFires.Dequeue();
+            packet = item == null ? default(WorldFirePacket) : item.Packet;
+            return item != null;
+        }
+    }
+
     internal static bool TryTakePlayerGrunt(out ushort peerId)
     {
         lock (statusLock)

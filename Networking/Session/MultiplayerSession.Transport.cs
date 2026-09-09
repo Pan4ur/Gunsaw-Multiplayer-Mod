@@ -510,6 +510,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             HasHeader(packet, worldDamageHeader) || HasHeader(packet, npcDamageHeader) || HasHeader(packet, npcGrabHeader) ||
             HasHeader(packet, npcSpeechHeader) ||
             HasHeader(packet, worldEnvironmentHeader) ||
+            HasHeader(packet, worldFireHeader) ||
             HasHeader(packet, worldInteractionHeader) ||
             HasHeader(packet, playerDamageHeader) || HasHeader(packet, pvpDamageHeader) || HasHeader(packet, playerGruntHeader) ||
             HasHeader(packet, playerTeleportHeader) || HasHeader(packet, vehicleEjectHeader) ||
