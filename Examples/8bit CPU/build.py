@@ -512,9 +512,165 @@ def bundle_ops(ops):
         pass
     return groups,old_to_group
 
+
+def expr_vars(e):
+    if e is None:return set()
+    if isinstance(e,Var):return {e.name}
+    if isinstance(e,(Num,BoolLit,Member)):return set()
+    if isinstance(e,CallExpr):
+        out=set()
+        for a in e.args:out|=expr_vars(a)
+        return out
+    if isinstance(e,Unary):return expr_vars(e.x)
+    if isinstance(e,Cast):return expr_vars(e.x)
+    if isinstance(e,Binary):return expr_vars(e.a)|expr_vars(e.b)
+    return set()
+
+def pure_stmt_use_def(s):
+    if isinstance(s,Block):
+        use=set();defs=set()
+        for x in s.items:
+            u,d=pure_stmt_use_def(x);use|=u-defs;defs|=d
+        return use,defs
+    if isinstance(s,Assign):
+        use=expr_vars(s.expr)
+        if s.op!='=':use.add(s.name)
+        return use,{s.name}
+    if isinstance(s,IncDec):return {s.name},{s.name}
+    if isinstance(s,If):
+        cu=expr_vars(s.cond);tu,td=pure_stmt_use_def(s.then_s)
+        if s.else_s is None:
+            return cu|tu|td,set()
+        eu,ed=pure_stmt_use_def(s.else_s)
+        return cu|tu|eu|(td^ed),td&ed
+    return set(),set()
+
+def op_use_def(o):
+    if o.kind=='decl':return expr_vars(o.data.init),{o.data.name}
+    if o.kind=='assign':
+        use=expr_vars(o.data.expr)
+        if o.data.op!='=':use.add(o.data.name)
+        return use,{o.data.name}
+    if o.kind=='incdec':return {o.data.name},{o.data.name}
+    if o.kind=='call':
+        use=set()
+        for a in o.data.args:use|=expr_vars(a)
+        return use,set()
+    if o.kind=='brfalse':return expr_vars(o.data[0]),set()
+    if o.kind=='pure_if':return pure_stmt_use_def(o.data)
+    return set(),set()
+
+def stmt_assigned_vars(s):
+    if isinstance(s,Block):
+        out=set()
+        for x in s.items:out|=stmt_assigned_vars(x)
+        return out
+    if isinstance(s,(Assign,IncDec)):return {s.name}
+    if isinstance(s,If):
+        out=stmt_assigned_vars(s.then_s)
+        if s.else_s is not None:out|=stmt_assigned_vars(s.else_s)
+        return out
+    return set()
+
+def op_defined_vars(o):
+    if o.kind=='decl':return {o.data.name}
+    if o.kind in ('assign','incdec'):return {o.data.name}
+    if o.kind=='pure_if':return stmt_assigned_vars(o.data)
+    return set()
+
+def rematerializable_expr(e):
+    if isinstance(e,(Num,BoolLit,Var)):return True
+    if isinstance(e,Unary):return rematerializable_expr(e.x)
+    if isinstance(e,Cast):return rematerializable_expr(e.x)
+    if isinstance(e,Binary):return rematerializable_expr(e.a) and rematerializable_expr(e.b)
+    if isinstance(e,CallExpr):
+        return e.obj=='Coord' and e.method in ('Make','X','Y') and all(rematerializable_expr(a) for a in e.args)
+    return False
+
+def replace_expr_var(e,name,repl):
+    if isinstance(e,Var):return copy.deepcopy(repl) if e.name==name else e
+    if isinstance(e,Unary):e.x=replace_expr_var(e.x,name,repl);return e
+    if isinstance(e,Cast):e.x=replace_expr_var(e.x,name,repl);return e
+    if isinstance(e,Binary):
+        e.a=replace_expr_var(e.a,name,repl);e.b=replace_expr_var(e.b,name,repl);return e
+    if isinstance(e,CallExpr):
+        e.args=[replace_expr_var(a,name,repl) for a in e.args];return e
+    return e
+
+def replace_stmt_var(s,name,repl):
+    if isinstance(s,Block):
+        for x in s.items:replace_stmt_var(x,name,repl)
+    elif isinstance(s,Assign):s.expr=replace_expr_var(s.expr,name,repl)
+    elif isinstance(s,If):
+        s.cond=replace_expr_var(s.cond,name,repl);replace_stmt_var(s.then_s,name,repl)
+        if s.else_s is not None:replace_stmt_var(s.else_s,name,repl)
+    elif isinstance(s,While):
+        s.cond=replace_expr_var(s.cond,name,repl);replace_stmt_var(s.body,name,repl)
+    return s
+
+def replace_op_var(o,name,repl):
+    if o.kind=='decl':
+        if o.data.init is not None:o.data.init=replace_expr_var(o.data.init,name,repl)
+    elif o.kind=='assign':o.data.expr=replace_expr_var(o.data.expr,name,repl)
+    elif o.kind=='call':o.data.args=[replace_expr_var(a,name,repl) for a in o.data.args]
+    elif o.kind=='brfalse':o.data=(replace_expr_var(o.data[0],name,repl),o.data[1])
+    elif o.kind=='pure_if':replace_stmt_var(o.data,name,repl)
+
+def rematerialize_locals(ops):
+    changed=True
+    while changed:
+        changed=False
+        defs=[op_defined_vars(o) for o in ops]
+        for i,o in enumerate(ops):
+            if o.kind!='decl' or o.data.init is None:continue
+            name=o.data.name;init=o.data.init
+            if not rematerializable_expr(init):continue
+            if any(name in defs[j] for j in range(i+1,len(ops))):continue
+            deps=expr_vars(init)
+            if any(any(d in defs[j] for d in deps) for j in range(i+1,len(ops))):continue
+            used=False
+            for j in range(i+1,len(ops)):
+                u,_=op_use_def(ops[j])
+                if name in u:
+                    replace_op_var(ops[j],name,init);used=True
+            if used:
+                o.data.init=None
+                changed=True
+                break
+    return ops
+
+def group_liveness(groups,old2g):
+    uses=[];defs=[]
+    for g in groups:
+        gu=set();gd=set()
+        for _,o in g:
+            u,d=op_use_def(o);gu|=u-gd;gd|=d
+        uses.append(gu);defs.append(gd)
+    succ=[]
+    for gi,g in enumerate(groups):
+        o=g[-1][1]
+        if o.kind=='goto':ss={old2g[o.data]}
+        elif o.kind=='brfalse':
+            ss={old2g[o.data[1]]}
+            if gi+1<len(groups):ss.add(gi+1)
+        elif o.kind in ('return','halt'):ss=set()
+        else:ss={gi+1} if gi+1<len(groups) else set()
+        succ.append(ss)
+    live_in=[set() for _ in groups];live_out=[set() for _ in groups]
+    changed=True
+    while changed:
+        changed=False
+        for gi in range(len(groups)-1,-1,-1):
+            out=set()
+            for sj in succ[gi]:out|=live_in[sj]
+            inn=uses[gi]|(out-defs[gi])
+            if out!=live_out[gi] or inn!=live_in[gi]:
+                live_out[gi]=out;live_in[gi]=inn;changed=True
+    return live_in,live_out
+
 class NativeCompiler:
     def __init__(self,name,ops):
-        self.name=name;self.oldops=ops;self.groups,self.old2g=bundle_ops(ops);self.net=Net(name);self.vars={};self.env=None;self.state_index=0
+        self.name=name;self.oldops=rematerialize_locals(ops);self.groups,self.old2g=bundle_ops(self.oldops);self.net=Net(name);self.vars={};self.var_types={};self.env=None;self.state_index=0
         if len(self.groups)>128:raise ValueError(f'{name}: {len(self.groups)} wide states; maximum 128')
         self.state=[]
         for v in range(len(self.groups)):
@@ -527,9 +683,16 @@ class NativeCompiler:
         for o in self.oldops:
             if o.kind=='decl':
                 d=o.data
-                if d.name not in [x.name for x in decl]:decl.append(d)
-        if len(decl)>8:raise ValueError(f'{self.name}: {len(decl)} variables; native register file has 8. Simplify source.')
-        for r,d in enumerate(decl):self.vars[d.name]=VarInfo(d.typ,r)
+                if d.name not in self.var_types:
+                    decl.append(d);self.var_types[d.name]=d.typ
+        self.live_in,self.live_out=group_liveness(self.groups,self.old2g)
+        stored=set()
+        for xs in self.live_out:stored|=xs
+        stored &= self.var_types.keys()
+        reg_decl=[d for d in decl if d.name in stored]
+        if len(reg_decl)>8:
+            raise ValueError(f'{self.name}: {len(reg_decl)} values are live across wide-state boundaries; native register file has 8. Simplify source.')
+        for r,d in enumerate(reg_decl):self.vars[d.name]=VarInfo(d.typ,r)
     def cbyte(self,v):
         v&=255;return Value('byte',[VCC if (v>>b)&1 else GND for b in range(8)])
     def cbool(self,v):return Value('bool',[VCC if v else GND]+[GND]*7)
@@ -537,7 +700,12 @@ class NativeCompiler:
         if n not in self.vars:raise NameError(n)
         q=REGQ[self.vars[n].reg]
         return Value(self.vars[n].typ,q if self.vars[n].typ=='byte' else [q[0]]+[GND]*7)
-    def getvar(self,n):return self.env.get(n,self.varval(n))
+    def getvar(self,n):
+        if self.env is not None and n in self.env:return self.env[n]
+        return self.varval(n)
+    def envval(self,env,n):
+        if n in env:return env[n]
+        return self.varval(n)
     def boolsig(self,v):
         if v.typ=='bool':return v.bits[0]
         return self.net.ors(v.bits,f'S{self.state_index}/nz')
@@ -595,6 +763,24 @@ class NativeCompiler:
             self.net.route_bits(VR_RADDR,en,a.bits,f'S{self.state_index}/VRADDR')
             self.net.term(VR_P0 if plane==0 else VR_P1,en)
         return Value('bool',[GPU_READ]+[GND]*7)
+    def literal_int(self,e):
+        if isinstance(e,Num):return e.value & 255
+        if isinstance(e,Unary) and e.op=='~':
+            v=self.literal_int(e.x);return None if v is None else (~v)&255
+        if isinstance(e,Binary):
+            a=self.literal_int(e.a);b=self.literal_int(e.b)
+            if a is None or b is None:return None
+            if e.op=='<<':return (a<<b)&255
+            if e.op=='>>':return (a>>b)&255
+            if e.op=='&':return a&b
+            if e.op=='|':return a|b
+            if e.op=='^':return a^b
+            if e.op=='+':return (a+b)&255
+            if e.op=='-':return (a-b)&255
+        return None
+    def const_bits(self,bits):
+        if not all(x in (GND,VCC) for x in bits):return None
+        return sum((1<<i) for i,x in enumerate(bits) if x==VCC)
     def expr(self,e):
         if isinstance(e,Num):return self.cbyte(e.value)
         if isinstance(e,BoolLit):return self.cbool(e.value)
@@ -627,7 +813,30 @@ class NativeCompiler:
             if e.op=='~':return Value('byte',self.alu_or_fallback(v.bits,[GND]*8,'NOT',f'S{self.state_index}/inv'))
             if e.op=='-':return Value('byte',self.alu_or_fallback([GND]*8,v.bits,'SUB',f'S{self.state_index}/neg'))
         if isinstance(e,Binary):
-            a=self.expr(e.a);b=self.expr(e.b);op=e.op;n=f'S{self.state_index}/EX{self.net.i}'
+            op=e.op;n=f'S{self.state_index}/EX{self.net.i}'
+            if op in ('==','!='):
+                zero_left=isinstance(e.a,Num) and e.a.value==0
+                zero_right=isinstance(e.b,Num) and e.b.value==0
+                other=e.b if zero_left else (e.a if zero_right else None)
+                if isinstance(other,Binary) and other.op=='&':
+                    ma=self.literal_int(other.a);mb=self.literal_int(other.b)
+                    if ma is not None and ma!=0 and (ma&(ma-1))==0:
+                        mask=ma;value_expr=other.b
+                    elif mb is not None and mb!=0 and (mb&(mb-1))==0:
+                        mask=mb;value_expr=other.a
+                    else:mask=None
+                    if mask is not None:
+                        bit=(mask.bit_length()-1);sig=self.expr(value_expr).bits[bit]
+                        if op=='==':sig=self.net.NOT(sig,n+'/bitzero')
+                        return Value('bool',[sig]+[GND]*7)
+            a=self.expr(e.a);b=self.expr(e.b)
+            ca=self.const_bits(a.bits);cb=self.const_bits(b.bits)
+            if ca is not None and cb is not None:
+                if op=='+':return self.cbyte(ca+cb)
+                if op=='-':return self.cbyte(ca-cb)
+                if op=='&':return self.cbyte(ca&cb)
+                if op=='|':return self.cbyte(ca|cb)
+                if op=='^':return self.cbyte(ca^cb)
             if op=='+':return Value('byte',self.alu_or_fallback(a.bits,b.bits,'ADD',n))
             if op=='-':return Value('byte',self.alu_or_fallback(a.bits,b.bits,'SUB',n))
             if op=='&':return Value('byte',self.alu_or_fallback(a.bits,b.bits,'AND',n))
@@ -656,9 +865,11 @@ class NativeCompiler:
         if isinstance(s,Block):
             for x in s.items:env=self.symbolic_pure(x,env);self.env=env
         elif isinstance(s,Assign):
-            cur=self.getvar(s.name);v=self.expr(s.expr)
-            if s.op=='+=':v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'ADD',f'S{self.state_index}/pa'))
-            elif s.op=='-=':v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'SUB',f'S{self.state_index}/ps'))
+            v=self.expr(s.expr)
+            if s.op in ('+=','-='):
+                cur=self.getvar(s.name)
+                if s.op=='+=':v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'ADD',f'S{self.state_index}/pa'))
+                else:v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'SUB',f'S{self.state_index}/ps'))
             env=dict(env);env[s.name]=v
         elif isinstance(s,IncDec):
             cur=self.getvar(s.name);one=self.cbyte(1)
@@ -669,10 +880,11 @@ class NativeCompiler:
             te=self.symbolic_pure(s.then_s,dict(base));self.env=base
             ee=self.symbolic_pure(s.else_s,dict(base)) if s.else_s else dict(base)
             out=dict(base)
-            for n in self.vars:
-                tv=te.get(n,base.get(n,self.varval(n)));ev=ee.get(n,base.get(n,self.varval(n)))
+            for n in set(base)|set(te)|set(ee):
+                tv=self.envval(te,n);ev=self.envval(ee,n)
                 if tv.bits!=ev.bits:
-                    out[n]=Value(self.vars[n].typ,self.mux(c,tv.bits,ev.bits,f'S{self.state_index}/IF/{n}'))
+                    typ=self.var_types.get(n,tv.typ)
+                    out[n]=Value(typ,self.mux(c,tv.bits,ev.bits,f'S{self.state_index}/IF/{n}'))
             env=out
         else:raise TypeError('non-pure in pure_if')
         self.env=old;return env
@@ -755,9 +967,11 @@ class NativeCompiler:
                 if o.kind=='decl':
                     v=self.cbyte(0) if o.data.init is None else self.expr(o.data.init);self.env[o.data.name]=v
                 elif o.kind=='assign':
-                    cur=self.getvar(o.data.name);v=self.expr(o.data.expr)
-                    if o.data.op=='+=':v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'ADD',f'S{gi}/addas'))
-                    elif o.data.op=='-=':v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'SUB',f'S{gi}/subas'))
+                    v=self.expr(o.data.expr)
+                    if o.data.op in ('+=','-='):
+                        cur=self.getvar(o.data.name)
+                        if o.data.op=='+=':v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'ADD',f'S{gi}/addas'))
+                        else:v=Value('byte',self.alu_or_fallback(cur.bits,v.bits,'SUB',f'S{gi}/subas'))
                     self.env[o.data.name]=v
                 elif o.kind=='incdec':
                     cur=self.getvar(o.data.name);one=self.cbyte(1)
