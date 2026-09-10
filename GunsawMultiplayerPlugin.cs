@@ -113,6 +113,14 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private int headlessFixedTicksAtLastSample;
     private float headlessTpsSampleTime = -1f;
     private int headlessTps;
+    private float headlessLastFixedTickTime = -1f;
+    private float headlessTickIntervalTotalMs;
+    private float headlessTickIntervalMaxMs;
+    private int headlessTickIntervalCount;
+    private int headlessLateTickCount;
+    private float headlessTickIntervalAverageMs;
+    private float headlessTickJitterMs;
+    private int headlessLateTickPercent;
     private Timer headlessKeepAliveTimer;
     private int headlessKeepAliveInFlight;
     private string headlessDefaultMapJson = "";
@@ -1048,7 +1056,20 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void FixedUpdate()
     {
         PlayerCarrySystem.FixedTick();
-        if (headlessMode) Interlocked.Increment(ref headlessFixedTicks);
+        if (headlessMode)
+        {
+            var now = Time.realtimeSinceStartup;
+            if (headlessLastFixedTickTime >= 0f)
+            {
+                var intervalMs = (now - headlessLastFixedTickTime) * 1000f;
+                headlessTickIntervalTotalMs += intervalMs;
+                headlessTickIntervalMaxMs = Mathf.Max(headlessTickIntervalMaxMs, intervalMs);
+                headlessTickIntervalCount++;
+                if (intervalMs > Time.fixedDeltaTime * 1500f) headlessLateTickCount++;
+            }
+            headlessLastFixedTickTime = now;
+            Interlocked.Increment(ref headlessFixedTicks);
+        }
     }
 
     internal bool TryHandleLobbyChatCommand(ushort senderId, string message)
@@ -1064,7 +1085,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             UpdateHeadlessTps();
             var stats = MultiplayerSession.DebugStats();
-            SendHeadlessChat("TPS: " + headlessTps + " | RX: " + (stats.ReceivedBytesPerSecond / 1024f).ToString("0.0") +
+            SendHeadlessChat("TPS: " + headlessTps + " | tick interval: avg " + headlessTickIntervalAverageMs.ToString("0.0", CultureInfo.InvariantCulture) +
+                " ms | max " + headlessTickIntervalMaxMs.ToString("0.0", CultureInfo.InvariantCulture) + " ms | jitter " +
+                headlessTickJitterMs.ToString("0.0", CultureInfo.InvariantCulture) + " ms | late ticks: " + headlessLateTickPercent + "% | RX: " + (stats.ReceivedBytesPerSecond / 1024f).ToString("0.0") +
                 " KiB/s | TX: " + (stats.SentBytesPerSecond / 1024f).ToString("0.0") + " KiB/s");
             return true;
         }
@@ -1127,6 +1150,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (elapsed < 0.25f) return;
         var ticks = Interlocked.CompareExchange(ref headlessFixedTicks, 0, 0);
         headlessTps = Mathf.RoundToInt((ticks - headlessFixedTicksAtLastSample) / elapsed);
+        if (headlessTickIntervalCount > 0)
+        {
+            headlessTickIntervalAverageMs = headlessTickIntervalTotalMs / headlessTickIntervalCount;
+            headlessTickJitterMs = headlessTickIntervalMaxMs - headlessTickIntervalAverageMs;
+            headlessLateTickPercent = Mathf.RoundToInt(headlessLateTickCount * 100f / headlessTickIntervalCount);
+        }
+        else
+        {
+            headlessTickIntervalAverageMs = 0f;
+            headlessTickJitterMs = 0f;
+            headlessLateTickPercent = 0;
+        }
+        headlessTickIntervalTotalMs = 0f;
+        headlessTickIntervalMaxMs = 0f;
+        headlessTickIntervalCount = 0;
+        headlessLateTickCount = 0;
         headlessFixedTicksAtLastSample = ticks;
         headlessTpsSampleTime = now;
     }

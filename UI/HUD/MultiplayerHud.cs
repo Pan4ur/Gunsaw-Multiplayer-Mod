@@ -220,6 +220,12 @@ internal sealed class MultiplayerHud : MonoBehaviour
             HostFpsPacket packet;
             while (MultiplayerSession.TryTakeHostFps(out senderId, out packet)) hostFps = packet.FPS;
         }
+        if (MultiplayerSession.IsHost)
+        {
+            lowHostFpsSince = -1f;
+            nextHostFpsSoundAt = 0f;
+            return;
+        }
         if (hostFps > 0 && hostFps < 50)
         {
             if (lowHostFpsSince < 0f) lowHostFpsSince = Time.unscaledTime;
@@ -253,7 +259,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!MultiplayerSession.IsActive || !HostFpsWarningActive) return;
+        if (!MultiplayerSession.IsActive || MultiplayerSession.IsHost || !HostFpsWarningActive) return;
         if (hostFpsWarningStyle == null)
         {
             hostFpsWarningStyle = new GUIStyle(GUI.skin.label)
