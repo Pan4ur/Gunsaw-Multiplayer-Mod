@@ -32,6 +32,9 @@ internal sealed class CustomLevelBrowserUi
     private readonly TMP_Text localCodeStatus;
     private readonly Dictionary<string, Sprite> covers = new Dictionary<string, Sprite>(System.StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> coverFiles = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+    private readonly List<LevelCard> levelCards = new List<LevelCard>();
+    private readonly Queue<string> coverQueue = new Queue<string>();
+    private readonly HashSet<string> queuedCovers = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
     private static CatalogEntry[] cachedLevels = new CatalogEntry[0];
     private CatalogEntry[] onlineLevels = new CatalogEntry[0];
     private CatalogEntry[] localLevels = new CatalogEntry[0];
@@ -49,6 +52,8 @@ internal sealed class CustomLevelBrowserUi
     private string renderedSearch = "\u0000";
     private SortMode renderedSort = (SortMode)(-1);
     private bool renderedLocalMode;
+    private Coroutine rebuildRoutine;
+    private Coroutine coverLoadRoutine;
 
     private enum SortMode { Date, Size, Difficulty, Length, Type }
 
@@ -64,6 +69,18 @@ internal sealed class CustomLevelBrowserUi
         public string info;
         public string date;
         public bool local;
+    }
+
+    private sealed class LevelCard
+    {
+        internal GameObject root;
+        internal Image image;
+        internal TMP_Text title;
+        internal TMP_Text author;
+        internal TMP_Text details;
+        internal TMP_Text rank;
+        internal GameObject localActions;
+        internal CatalogEntry entry;
     }
 
     internal static void CacheCatalog(string source)
@@ -132,6 +149,12 @@ internal sealed class CustomLevelBrowserUi
         open = value;
         if (!value)
         {
+            if (rebuildRoutine != null) plugin.StopCoroutine(rebuildRoutine);
+            rebuildRoutine = null;
+            if (coverLoadRoutine != null) plugin.StopCoroutine(coverLoadRoutine);
+            coverLoadRoutine = null;
+            coverQueue.Clear();
+            queuedCovers.Clear();
             addLocalPanel.SetActive(false);
             if (editLocalPanel != null) editLocalPanel.SetActive(false);
         }
@@ -451,13 +474,26 @@ internal sealed class CustomLevelBrowserUi
         renderedSearch = query;
         renderedSort = sortMode;
         renderedLocalMode = localMode;
-        for (var index = rows.childCount - 1; index >= 0; index--) UnityEngine.Object.Destroy(rows.GetChild(index).gameObject);
         var filtered = new List<CatalogEntry>();
         foreach (var entry in levels)
             if (entry != null && Matches(entry, query)) filtered.Add(entry);
         filtered.Sort(Compare);
-        foreach (var entry in filtered) CreateLevelCard(entry);
+        if (rebuildRoutine != null) plugin.StopCoroutine(rebuildRoutine);
+        rebuildRoutine = plugin.StartCoroutine(RebuildRows(filtered));
+    }
+
+    private IEnumerator RebuildRows(List<CatalogEntry> filtered)
+    {
+        foreach (var card in levelCards) card.root.SetActive(false);
+        for (var index = 0; index < filtered.Count; index++)
+        {
+            var card = index < levelCards.Count ? levelCards[index] : CreateLevelCard();
+            BindLevelCard(card, filtered[index]);
+            card.root.SetActive(true);
+            if ((index & 3) == 3) yield return null;
+        }
         if (!loading) stateText.text = filtered.Count + " of " + levels.Length + " levels";
+        rebuildRoutine = null;
     }
 
     private bool Matches(CatalogEntry entry, string query)
@@ -485,47 +521,70 @@ internal sealed class CustomLevelBrowserUi
 
     private static int CodeSize(CatalogEntry entry) => Encoding.UTF8.GetByteCount(entry.code ?? "");
 
-    private void CreateLevelCard(CatalogEntry entry)
+    private LevelCard CreateLevelCard()
     {
-        var card = new GameObject("Level", typeof(RectTransform), typeof(LayoutElement), typeof(Image), typeof(Outline));
-        card.transform.SetParent(rows, false);
-        card.GetComponent<LayoutElement>().preferredHeight = 118f;
-        var image = card.GetComponent<Image>();
-        image.color = CoverColor(entry.type);
-        var outline = card.GetComponent<Outline>();
+        var root = new GameObject("Level", typeof(RectTransform), typeof(LayoutElement), typeof(Image), typeof(Outline));
+        root.transform.SetParent(rows, false);
+        root.GetComponent<LayoutElement>().preferredHeight = 118f;
+        var image = root.GetComponent<Image>();
+        var outline = root.GetComponent<Outline>();
         outline.effectColor = new Color(0.78f, 0.78f, 0.78f, 0.7f);
         outline.effectDistance = new Vector2(1f, -1f);
-        var shade = new GameObject("Shade", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); shade.transform.SetParent(card.transform, false); var shadeRect = shade.GetComponent<RectTransform>(); shadeRect.anchorMin = Vector2.zero; shadeRect.anchorMax = Vector2.one; shadeRect.offsetMin = Vector2.zero; shadeRect.offsetMax = Vector2.zero; shade.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.48f);
-        var title = CreateText(card.transform, entry.name ?? "Untitled", new Vector2(-50f, 35f), new Vector2(390f, 30f), 18, TextAlignmentOptions.Left, FontStyles.Bold);
+        var shade = new GameObject("Shade", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); shade.transform.SetParent(root.transform, false); var shadeRect = shade.GetComponent<RectTransform>(); shadeRect.anchorMin = Vector2.zero; shadeRect.anchorMax = Vector2.one; shadeRect.offsetMin = Vector2.zero; shadeRect.offsetMax = Vector2.zero; shade.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.48f);
+        var title = CreateText(root.transform, "", new Vector2(-50f, 35f), new Vector2(390f, 30f), 18, TextAlignmentOptions.Left, FontStyles.Bold);
         title.margin = new Vector4(12f, 0f, 0f, 0f);
-        var author = CreateText(card.transform, entry.local ? "LOCAL" : "BY " + (entry.author ?? "Unknown"), new Vector2(-50f, 10f), new Vector2(390f, 22f), 13, TextAlignmentOptions.Left);
+        var author = CreateText(root.transform, "", new Vector2(-50f, 10f), new Vector2(390f, 22f), 13, TextAlignmentOptions.Left);
         author.margin = new Vector4(12f, 0f, 0f, 0f);
-        var data = entry.local ? (string.IsNullOrWhiteSpace(entry.info) ? "No description." : entry.info) + "\n" +
-            (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry)) :
-            (entry.difficulty ?? "?").ToUpperInvariant() + "  |  " + (entry.length ?? "?").ToUpperInvariant() + "  |  " + (entry.type ?? "?").ToUpperInvariant() + "\n" + (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry));
-        var details = CreateText(card.transform, data, new Vector2(-50f, -32f), new Vector2(390f, 42f), 12, TextAlignmentOptions.Left);
+        var details = CreateText(root.transform, "", new Vector2(-50f, -32f), new Vector2(390f, 42f), 12, TextAlignmentOptions.Left);
         details.margin = new Vector4(12f, 0f, 0f, 0f);
         details.enableWordWrapping = true;
+        var rank = CreateText(root.transform, "", new Vector2(145f, 0f), new Vector2(42f, 50f), 42, TextAlignmentOptions.Center, FontStyles.Bold);
+        var card = new LevelCard { root = root, image = image, title = title, author = author, details = details, rank = rank };
+        var play = CreatePlayButton(root.transform, new Vector2(220f, 0f), new Vector2(50f, 50f));
+        play.onClick.AddListener(() => { if (card.entry != null) plugin.StartCatalogCustomLevel(card.entry.code, card.entry.name ?? "Untitled"); });
+        var actions = new GameObject("Local Actions", typeof(RectTransform));
+        actions.transform.SetParent(root.transform, false);
+        var configure = CreateIconButton(actions.transform, new Vector2(40f, 0f), new Vector2(50f, 50f),
+            configureIcon, new Color(0.15f, 0.32f, 0.62f, 1f), "Configure");
+        configure.onClick.AddListener(() => { if (card.entry != null) plugin.OpenCustomLevelEditor(card.entry.code, card.entry.name ?? "Untitled"); });
+        var edit = CreateIconButton(actions.transform, new Vector2(100f, 0f), new Vector2(50f, 50f), editIcon,
+            new Color(0.55f, 0.38f, 0.08f, 1f), "Edit");
+        edit.onClick.AddListener(() => OpenEditLocalLevel(card.entry));
+        var remove = CreateDeleteButton(actions.transform, new Vector2(160f, 0f), new Vector2(50f, 50f));
+        remove.onClick.AddListener(() => { if (card.entry != null) DeleteLocalLevel(card.entry); });
+        card.localActions = actions;
+        levelCards.Add(card);
+        return card;
+    }
+
+    private void BindLevelCard(LevelCard card, CatalogEntry entry)
+    {
+        card.entry = entry;
+        card.image.sprite = null;
+        card.image.color = CoverColor(entry.type);
+        card.title.text = entry.name ?? "Untitled";
+        card.author.text = entry.local ? "LOCAL" : "BY " + (entry.author ?? "Unknown");
+        card.details.text = entry.local ? (string.IsNullOrWhiteSpace(entry.info) ? "No description." : entry.info) + "\n" +
+            (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry)) :
+            (entry.difficulty ?? "?").ToUpperInvariant() + "  |  " + (entry.length ?? "?").ToUpperInvariant() + "  |  " + (entry.type ?? "?").ToUpperInvariant() + "\n" + (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry));
         var rank = CustomLevelProgress.Rank(entry.code);
+        card.rank.gameObject.SetActive(!string.IsNullOrEmpty(rank));
         if (!string.IsNullOrEmpty(rank))
         {
-            var rankText = CreateText(card.transform, rank, new Vector2(145f, 0f), new Vector2(42f, 50f), 42, TextAlignmentOptions.Center, FontStyles.Bold);
-            rankText.color = CustomLevelProgress.RankColor(entry.code);
+            card.rank.text = rank;
+            card.rank.color = CustomLevelProgress.RankColor(entry.code);
         }
-        var play = CreatePlayButton(card.transform, new Vector2(220f, 0f), new Vector2(50f, 50f));
-        play.onClick.AddListener(() => plugin.StartCatalogCustomLevel(entry.code, entry.name ?? "Untitled"));
-        if (entry.local)
+        card.localActions.SetActive(entry.local);
+        if (!entry.local)
         {
-            var configure = CreateIconButton(card.transform, new Vector2(40f, 0f), new Vector2(50f, 50f),
-                configureIcon, new Color(0.15f, 0.32f, 0.62f, 1f), "Configure");
-            configure.onClick.AddListener(() => plugin.OpenCustomLevelEditor(entry.code, entry.name ?? "Untitled"));
-            var edit = CreateIconButton(card.transform, new Vector2(100f, 0f), new Vector2(50f, 50f), editIcon,
-                new Color(0.55f, 0.38f, 0.08f, 1f), "Edit");
-            edit.onClick.AddListener(() => OpenEditLocalLevel(entry));
-            var remove = CreateDeleteButton(card.transform, new Vector2(160f, 0f), new Vector2(50f, 50f));
-            remove.onClick.AddListener(() => DeleteLocalLevel(entry));
+            Sprite cover;
+            if (covers.TryGetValue(entry.name, out cover))
+            {
+                card.image.sprite = cover;
+                card.image.color = Color.white;
+            }
+            else QueueCover(entry.name);
         }
-        if (!entry.local) plugin.StartCoroutine(LoadCover(entry.name, image));
     }
 
     private void DeleteLocalLevel(CatalogEntry entry)
@@ -563,14 +622,28 @@ internal sealed class CustomLevelBrowserUi
         return true;
     }
 
-    private IEnumerator LoadCover(string levelName, Image image)
+    private void QueueCover(string levelName)
     {
-        if (image == null || string.IsNullOrWhiteSpace(levelName)) yield break;
+        if (string.IsNullOrWhiteSpace(levelName) || covers.ContainsKey(levelName) || !queuedCovers.Add(levelName)) return;
+        coverQueue.Enqueue(levelName);
+        if (coverLoadRoutine == null) coverLoadRoutine = plugin.StartCoroutine(LoadCovers());
+    }
+
+    private IEnumerator LoadCovers()
+    {
+        while (coverQueue.Count > 0)
+        {
+            var levelName = coverQueue.Dequeue();
+            yield return LoadCover(levelName);
+        }
+        coverLoadRoutine = null;
+    }
+
+    private IEnumerator LoadCover(string levelName)
+    {
         Sprite cover;
         if (covers.TryGetValue(levelName, out cover))
         {
-            image.sprite = cover;
-            image.color = Color.white;
             yield break;
         }
         var fileName = FindCoverName(levelName);
@@ -582,11 +655,12 @@ internal sealed class CustomLevelBrowserUi
             if (!ImageConversion.LoadImage(texture, request.downloadHandler.data)) { UnityEngine.Object.Destroy(texture); yield break; }
             cover = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
             covers[levelName] = cover;
-            if (image != null)
-            {
-                image.sprite = cover;
-                image.color = Color.white;
-            }
+            foreach (var card in levelCards)
+                if (card.entry != null && string.Equals(card.entry.name, levelName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    card.image.sprite = cover;
+                    card.image.color = Color.white;
+                }
         }
     }
 
