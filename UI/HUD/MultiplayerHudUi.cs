@@ -87,12 +87,18 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         if (!hud.ChatOpen) chatWasOpen = false;
         input.gameObject.SetActive(hud.ChatOpen);
         chatHint.gameObject.SetActive(!hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player || PlayerScript.player.canvasVisible));
-        commandHints.gameObject.SetActive(hud.ChatOpen && hud.ChatSuggestions.Count > 0);
-        if (!hud.ChatOpen) chatHint.text = "Press " + Controls.keys[Controls.OPEN_CHAT] + " to open the chat";
-        if (hud.ChatOpen && hud.ChatSuggestions.Count > 0)
-            commandHints.text = string.Join("    ", hud.ChatSuggestions);
+        commandHints.gameObject.SetActive(hud.ChatOpen);
+      
+        if (!hud.ChatOpen) 
+            chatHint.text = "Press " + Controls.keys[Controls.OPEN_CHAT] + " to open the chat";
+        
         if (hud.ChatOpen)
         {
+            if (hud.ChatSuggestions.Count > 0)
+                commandHints.text = string.Join("    ", hud.ChatSuggestions);
+            else
+                commandHints.text = "Type / to view the list of commands";
+            
             if (!input.isFocused) input.ActivateInputField();
             if (input.text != hud.ChatInput)
             {

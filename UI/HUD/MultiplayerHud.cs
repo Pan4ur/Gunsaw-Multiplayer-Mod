@@ -560,15 +560,6 @@ internal sealed class MultiplayerHud : MonoBehaviour
         chatSuggestions.Clear();
     }
 
-    private void PreserveChatDraft()
-    {
-        savedChatDraft = input;
-        savedChatCaretPosition = Mathf.Clamp(chatCaretPosition, 0, input.Length);
-        savedChatWasOpen = chatOpen;
-        focusChat = false;
-        IsTyping = false;
-    }
-
     internal int ChatCaretPosition => Mathf.Clamp(chatCaretPosition, 0, input.Length);
 
     internal void SetChatCaretPosition(int value)
@@ -590,7 +581,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
             if (separator < 0)
             {
                 foreach (var command in chatCommands)
-                    if (command.StartsWith(input, StringComparison.OrdinalIgnoreCase)) chatSuggestions.Add(command);
+                    if (command.StartsWith(input, StringComparison.OrdinalIgnoreCase)) 
+                        chatSuggestions.Add(command);
                 return;
             }
 

@@ -185,6 +185,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void Create(MainMenuManager menu)
     {
         showingLeaveLobbyButton = false;
+        renderedLobbyHash = int.MinValue;
+        renderedServerListHash = int.MinValue;
         template = menu.startText != null ? menu.startText : menu.curName;
         templateButton = FindNativeMenuButton(menu);
         if (template == null || templateButton == null) return;

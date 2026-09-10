@@ -633,6 +633,7 @@ internal sealed class CustomLevelBrowserUi
     {
         while (coverQueue.Count > 0)
         {
+            if (panel == null || !open) break;
             var levelName = coverQueue.Dequeue();
             yield return LoadCover(levelName);
         }
@@ -650,13 +651,15 @@ internal sealed class CustomLevelBrowserUi
         using (var request = UnityWebRequest.Get(CoversUrl + Uri.EscapeDataString(fileName) + ".png"))
         {
             yield return request.SendWebRequest();
+            if (panel == null || !open) yield break;
             if (request.isNetworkError || request.isHttpError) yield break;
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             if (!ImageConversion.LoadImage(texture, request.downloadHandler.data)) { UnityEngine.Object.Destroy(texture); yield break; }
             cover = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
             covers[levelName] = cover;
             foreach (var card in levelCards)
-                if (card.entry != null && string.Equals(card.entry.name, levelName, System.StringComparison.OrdinalIgnoreCase))
+                if (card.root != null && card.root.activeInHierarchy && card.image != null && card.entry != null &&
+                    string.Equals(card.entry.name, levelName, System.StringComparison.OrdinalIgnoreCase))
                 {
                     card.image.sprite = cover;
                     card.image.color = Color.white;

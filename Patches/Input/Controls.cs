@@ -41,7 +41,7 @@ internal static class ControlsGoCreator
         {
             if (i == Controls.GRAFFITI) continue;
             Transform newField = UnityEngine.Object.Instantiate(fieldBase).transform;
-            Vector3 newOffset = new Vector3(0, -50 + -50 * i);
+            Vector3 newOffset = new Vector3(0, -43 + -43 * i);
             newField.SetParent(fieldOrigianl.transform);
             newField.localScale = Vector3.one;
             newField.localPosition = newOffset;
