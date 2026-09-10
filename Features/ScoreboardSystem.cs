@@ -166,9 +166,11 @@ internal static class ScoreboardSystem
     internal static bool IsMvp(ushort peerId)
     {
         if (!scores.TryGetValue(peerId, out var candidate) || candidate.Kills <= 0) return false;
+        var candidateAimScore = (candidate.Accuracy + candidate.HeadshotRatio) / 2f;
         foreach (var pair in scores)
         {
             if (pair.Value.Kills > candidate.Kills) return false;
+            if (pair.Value.Kills == candidate.Kills && (pair.Value.Accuracy + pair.Value.HeadshotRatio) / 2f > candidateAimScore) return false;
         }
         return true;
     }
