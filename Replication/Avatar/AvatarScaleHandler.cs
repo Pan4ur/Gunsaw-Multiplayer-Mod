@@ -3,7 +3,7 @@ using UnityEngine;
 internal static class AvatarScaleHandler
 {
     private const float Minimum = 0.25f;
-    private const float Maximum = 2f;
+    private const float Maximum = 3f;
 
     internal static float Clamp(float value) => Mathf.Clamp(value, Minimum, Maximum);
     

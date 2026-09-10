@@ -25,7 +25,8 @@ internal sealed class ChatCommandSystem
     private bool Kill()
     {
         if (!NetworkAvatarReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
-            plugin.status = "You are dead already (maybe inside only?)";
+            MultiplayerHud.AddSystemMessage("You are dead already.");
+        
         return true;
     }
 
@@ -33,20 +34,20 @@ internal sealed class ChatCommandSystem
     {
         if (!string.IsNullOrWhiteSpace(message.Substring(6)))
         {
-            plugin.status = "Usage: /spawn";
+            MultiplayerHud.AddSystemMessage("Usage: /spawn.");
             return true;
         }
         var body = PlayerScript.player?.bodyScript;
         if (body == null || !body.isAlive)
         {
-            plugin.status = "You cannot use /spawn while dead.";
+            MultiplayerHud.AddSystemMessage("You cannot use /spawn while dead.");
             return true;
         }
         if (!CustomLevelSpawnSelection.TryGetRandomSpawnPosition(out var position) &&
             (NetworkAvatarReplication.Instance == null ||
              !NetworkAvatarReplication.Instance.TryGetLocalSpawnPosition(out position)))
         {
-            plugin.status = "The map spawn point is not available yet.";
+            MultiplayerHud.AddSystemMessage("The map spawn point is not available yet.");
             return true;
         }
         body.transform.position = position;
@@ -57,7 +58,7 @@ internal sealed class ChatCommandSystem
             body.rb.angularVelocity = 0f;
         }
         PlayTeleportEffect(position);
-        plugin.status = "Teleported to a map spawn point.";
+        MultiplayerHud.AddSystemMessage("Teleported to a map spawn point.");
         return true;
     }
 
@@ -65,13 +66,13 @@ internal sealed class ChatCommandSystem
     {
         if (MultiplayerSession.IsActive && !MultiplayerSession.AllowSwap)
         {
-            plugin.status = "/swap is disabled in this lobby.";
+            MultiplayerHud.AddSystemMessage("/swap is disabled in this lobby.");
             return true;
         }
         var character = message.Length > 5 ? message.Substring(5).Trim() : "";
         if (!NetworkAvatarReplication.TrySetPendingRespawnCharacter(character, out var characterName))
         {
-            plugin.status = "Usage: /swap <character name>";
+            MultiplayerHud.AddSystemMessage("Usage: /swap <character name>");
             return true;
         }
         if (MultiplayerSession.IsHost)
@@ -80,7 +81,6 @@ internal sealed class ChatCommandSystem
         {
             ChatPacket packet;
             if (ChatService.TryCreate("/swap " + characterName, false, out packet)) MultiplayerSession.Send(packet);
-            plugin.status = "You will respawn as " + characterName + ".";
         }
         return true;
     }
@@ -88,31 +88,29 @@ internal sealed class ChatCommandSystem
     private bool Teleport(string message)
     {
         if (!MultiplayerSession.IsConnected)
-        {
-            plugin.status = "/tp is only available in a CO-OP lobby.";
             return true;
-        }
+        
         if (MultiplayerSession.PvpEnabled)
         {
-            plugin.status = "/tp is disabled in PVP lobbies.";
+            MultiplayerHud.AddSystemMessage("/tp is disabled in PVP lobbies.");
             return true;
         }
         var playerName = message.Length > 3 ? message.Substring(3).Trim() : "";
         if (string.IsNullOrEmpty(playerName))
         {
-            plugin.status = "Usage: /tp <player name>";
+            MultiplayerHud.AddSystemMessage("Usage: /tp <player name>");
             return true;
         }
         var targetPeerId = FindPeerId(playerName, true);
         if (targetPeerId == 0)
         {
-            plugin.status = "Player " + playerName + " is not in the lobby.";
+            MultiplayerHud.AddSystemMessage("Player " + playerName + " is not in the lobby.");
             return true;
         }
         if (!MultiplayerSession.IsHost)
         {
             MultiplayerSession.Send(new TeleportRequestPacket(targetPeerId));
-            plugin.status = "Teleporting to " + playerName + "...";
+            MultiplayerHud.AddSystemMessage("Teleporting to " + playerName + "...");
             return true;
         }
         var target = targetPeerId == MultiplayerSession.LocalPeerId
@@ -121,13 +119,14 @@ internal sealed class ChatCommandSystem
         var local = PlayerScript.player?.bodyScript;
         if (target == null || !target.isAlive || local == null)
         {
-            plugin.status = "Player " + playerName + " is unavailable.";
+            MultiplayerHud.AddSystemMessage("Player " + playerName + " is unavailable.");
             return true;
         }
         local.transform.position = target.transform.position;
         if (local.rb != null) { local.rb.velocity = Vector2.zero; local.rb.angularVelocity = 0f; }
         PlayTeleportEffect(local.transform.position);
         plugin.status = "Teleported to " + playerName + ".";
+        MultiplayerHud.AddSystemMessage("Teleported to " + playerName + ".");
         return true;
     }
 
@@ -135,22 +134,23 @@ internal sealed class ChatCommandSystem
     {
         if (!plugin.CanBanPlayers)
         {
-            plugin.status = "Only the lobby host can use /ban.";
+            MultiplayerHud.AddSystemMessage("Only the lobby host can use /ban.");
             return true;
         }
         var playerName = message.Length > 4 ? message.Substring(4).Trim() : "";
         if (string.IsNullOrEmpty(playerName))
         {
-            plugin.status = "Usage: /ban <player name>";
+            MultiplayerHud.AddSystemMessage("Usage: /ban <player name>");
             return true;
         }
         var peerId = FindPeerId(playerName, false);
         if (peerId == 0)
         {
-            plugin.status = "Player " + playerName + " is not in the lobby.";
+            MultiplayerHud.AddSystemMessage("Player " + playerName + " is not in the lobby.");
             return true;
         }
-        plugin.status = "Banning " + playerName + "...";
+        
+        MultiplayerHud.AddSystemMessage("Eliminating " + playerName + "...");
         plugin.BanPlayerFromCommand(playerName, peerId);
         return true;
     }
@@ -159,29 +159,30 @@ internal sealed class ChatCommandSystem
     {
         if (MultiplayerSession.IsActive && !MultiplayerSession.AllowScaleChanging)
         {
-            plugin.status = "/scale is disabled in this lobby.";
+            MultiplayerHud.AddSystemMessage("/scale is disabled in this lobby.");
             return true;
         }
         var value = message.Length > 6 ? message.Substring(6).Trim() : "";
         float scale;
         if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out scale) || AvatarScaleHandler.Incorrect(scale))
         {
-            plugin.status = "Usage: /scale <0.25-2.0>";
+            MultiplayerHud.AddSystemMessage("Usage: /scale <0.25-3.0>");
             return true;
         }
 
         var body = PlayerScript.player?.bodyScript;
         if (body == null || !body.isAlive)
         {
-            plugin.status = "You cannot use /scale while dead.";
+            MultiplayerHud.AddSystemMessage("You cannot use /scale while dead.");
             return true;
         }
         if (!AvatarScaleHandler.TrySet(body, scale))
         {
-            plugin.status = "Character scale is unavailable right now.";
+            MultiplayerHud.AddSystemMessage("Character scale is unavailable right now.");
             return true;
         }
-        plugin.status = "Character scale set to " + scale.ToString("0.##", CultureInfo.InvariantCulture) + ".";
+
+        MultiplayerHud.AddSystemMessage("Character scale set to " + scale.ToString("0.##", CultureInfo.InvariantCulture) + ".");
         return true;
     }
 
