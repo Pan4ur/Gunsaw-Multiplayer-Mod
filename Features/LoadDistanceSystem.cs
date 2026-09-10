@@ -3,7 +3,7 @@ using UnityEngine;
 // https://youtu.be/-jC1soxzOYg
 internal static class LoadDistanceSystem
 {
-    // Mechs now tick at the default distance specified in the settings - 1800 (sqr m)
+    // Mechs now tick at the default distance specified in the settings - 2400 (sqr m)
     // I think most custom maps are designed around this distance
     // This should also prevent the bug we had today, where we had to move close to the elevator
     // ourselves to make it start moving.
@@ -46,7 +46,7 @@ internal static class LoadDistanceSystem
         if (active)
         {
             wasActive = true;
-            hostSimulationActive = MultiplayerSession.IsConnected && MultiplayerSession.IsHost;
+            hostSimulationActive = MultiplayerSession.IsHosting && MultiplayerSession.IsHost;
             activeDistanceSqr = DefaultTickDistanceSqr;
             ResourceManager.maxDistance = float.PositiveInfinity;
             ObjectUnloader.dist = float.PositiveInfinity;
@@ -229,7 +229,13 @@ internal static class LoadDistanceSystem
     internal static bool TryApplyObjectUnloader(ObjectUnloader unloader)
     {
         if (!IsHostSimulationActive() || unloader == null) return false;
-        ApplyWorldBody(unloader.GetComponent<Rigidbody2D>());
+        var body = unloader.GetComponent<Rigidbody2D>();
+        ApplyWorldBody(body);
+        var active = body == null || !IsSimulationCulled(body);
+        var sprite = unloader.GetComponent<SpriteRenderer>();
+        if (sprite != null) sprite.enabled = active;
+        var crate = unloader.GetComponent<CrateScript>();
+        if (crate != null) crate.enabled = active;
         return true;
     }
 
@@ -263,20 +269,26 @@ internal static class LoadDistanceSystem
         if (localPlayer != null)
             AddPlayerPosition(localPlayer.bodyScript);
 
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarRegistry.replicas)
         {
-            var body = remote.Body;
+            if (remote.Value == null)
+                continue;
+            
+            var body = remote.Value.remoteBody;
             if (body != null && body.inVehicle)
             {
-                playerPositions.Add((Vector2)body.transform.position);
+                playerPositions.Add(body.transform.position);
                 continue;
             }
 
-            if (remote.HasAuthoritativePosition)
-                playerPositions.Add(remote.AuthoritativePosition);
+            if (remote.Value.hasAuthoritativePosition)
+                playerPositions.Add(remote.Value.lastAuthoritativePosition);
             else
                 AddPlayerPosition(body, true);
         }
+
+        if (playerPositions.Count == 0 && Camera.main != null)
+            playerPositions.Add(Camera.main.transform.position);
     }
 
     private static void AddPlayerPosition(BodyScript body, bool allowInactive = false)
@@ -292,7 +304,7 @@ internal static class LoadDistanceSystem
 
     private static bool IsNearAnyPlayer(Vector2 position, float distanceSqr)
     {
-        if (playerPositions.Count == 0) return true;
+        if (playerPositions.Count == 0) return !IsHostSimulationActive();
         foreach (var playerPosition in playerPositions)
             if ((position - playerPosition).sqrMagnitude < distanceSqr) return true;
         return false;
@@ -336,19 +348,6 @@ internal static class LoadDistanceSystem
         return false;
     }
 
-    private static GameObject NpcRoot(BodyScript body)
-    {
-        var current = body.transform;
-        while (current.parent != null)
-        {
-            var parent = current.parent;
-            var bodies = parent.GetComponentsInChildren<BodyScript>(true);
-            if (bodies.Length != 1 || bodies[0] != body) break;
-            current = parent;
-        }
-        return current.gameObject;
-    }
-
     private static void SetSimulation(Rigidbody2D body, bool simulated)
     {
         if (body == null) return;
@@ -387,8 +386,6 @@ internal static class LoadDistanceSystem
         if (body.inVehicle)
             return body.transform.position;
 
-        return body.rb != null
-            ? body.rb.position
-            : (Vector2)body.transform.position;
+        return body.rb != null ? body.rb.position : body.transform.position;
     }
 }

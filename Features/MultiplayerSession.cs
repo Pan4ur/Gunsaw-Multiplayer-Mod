@@ -406,6 +406,7 @@ internal static partial class MultiplayerSession
         lock (statusLock) hostCustomLevel = levelCode;
         hostScene = "LevelLoader";
         hostCustomLevelTransferId = QueueCustomLevelTransfer(levelCode);
+        RefreshHostBrutalMode();
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart));
     }
@@ -488,13 +489,10 @@ internal static partial class MultiplayerSession
 
     internal static void SyncBrutalMode()
     {
-        if (isHost)
-        {
-            BrutalModeEnabled = ReadBrutalMode();
-            return;
-        }
+        if (isHost) return;
         var manager = GameManager.main;
-        if (manager != null && IsConnected) manager.hardMode = BrutalModeEnabled;
+        if (manager != null && IsConnected && manager.hardMode != BrutalModeEnabled)
+            manager.hardMode = BrutalModeEnabled;
     }
 
     private static void RefreshHostBrutalMode()
@@ -510,11 +508,6 @@ internal static partial class MultiplayerSession
             return peers.TryGet(hostPeerId, out host) ? host.PingMs : -1;
         } } }
     internal static string LocalPlayerName { get { lock (statusLock) return localPlayerName; } }
-    internal static string RemotePlayerName { get { lock (statusLock)
-        {
-            foreach (var peer in peers.All) return peer.Name;
-            return "";
-        } } }
     internal static ushort LocalPeerId { get { lock (statusLock) return localPeerId; } }
     internal static ushort HostPeerId { get { lock (statusLock) return hostPeerId; } }
     internal static int MaxPlayers { get { lock (statusLock) return maxPlayers; } }

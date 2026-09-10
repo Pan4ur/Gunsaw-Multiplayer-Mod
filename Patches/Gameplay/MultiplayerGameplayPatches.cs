@@ -212,8 +212,17 @@ internal static class MultiplayerPlayerSlowmoPatch
 [HarmonyPatch(typeof(GameManager), "Update")]
 internal static class MultiplayerGameManagerFocusPatch
 {
+    private static readonly HashSet<int> initializedAiObjects = new HashSet<int>();
+    private static int initializedAiScene = int.MinValue;
+
     private static void Prefix()
     {
+        var scene = SceneManager.GetActiveScene().handle;
+        if (scene != initializedAiScene)
+        {
+            initializedAiScene = scene;
+            initializedAiObjects.Clear();
+        }
         LoadDistanceSystem.Apply();
         MultiplayerTimeControl.KeepMultiplayerActive();
     }
@@ -222,6 +231,37 @@ internal static class MultiplayerGameManagerFocusPatch
     {
         LoadDistanceSystem.Apply();
     }
+
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var setActive = AccessTools.Method(typeof(GameObject), nameof(GameObject.SetActive), new[] { typeof(bool) });
+        var replacement = AccessTools.Method(typeof(MultiplayerGameManagerFocusPatch), nameof(SetAiActive));
+        var aiSetActiveCalls = 0;
+        foreach (var instruction in instructions)
+        {
+            if (aiSetActiveCalls < 2 && instruction.Calls(setActive))
+            {
+                instruction.operand = replacement;
+                aiSetActiveCalls++;
+            }
+            yield return instruction;
+        }
+    }
+
+    private static void SetAiActive(GameObject gameObject, bool requested)
+    {
+        if (gameObject == null) return;
+        if (!MultiplayerSession.IsActive)
+        {
+            if (gameObject.activeSelf != requested) 
+                gameObject.SetActive(requested);
+            return;
+        }
+        if (!initializedAiObjects.Add(gameObject.GetInstanceID())) return;
+        if (gameObject.activeSelf != requested) gameObject.SetActive(requested);
+    }
+
 }
 
 [HarmonyPatch(typeof(GameManager), "MainMenu")]

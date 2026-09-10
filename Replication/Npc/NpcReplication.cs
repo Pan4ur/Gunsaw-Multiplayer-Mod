@@ -1630,6 +1630,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 proxy.LocalPhysics = false;
                 FreezeProxy(proxy);
             }
+            if (IsDead(proxy)) continue;
             var bodiesStarted = MultiplayerPerformance.StartPhase();
             foreach (var pair in proxy.BodyTargets)
             {
@@ -1676,6 +1677,18 @@ internal sealed class NpcReplication : MonoBehaviour
             proxy.CompletedTransformTargets.Clear();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
         }
+    }
+
+    private static bool IsDead(NpcProxy proxy)
+    {
+        if (proxy.LastHostAlive || proxy.Body == null || proxy.Body.rb == null)
+            return false;
+        
+        PoseTarget target;
+        if (!proxy.BodyTargets.TryGetValue(proxy.Body.rb, out target))
+            return true;
+        
+        return (target.Target.Position - proxy.Body.rb.position).sqrMagnitude <= 0.04f;
     }
 
     private static void CacheFireVisuals(NpcProxy proxy)

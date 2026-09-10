@@ -39,7 +39,4 @@ internal sealed class PeerState
     internal string Name = "Player";
     internal long LastPacketTicks;
     internal int PingMs = -1;
-    internal IPEndPoint DirectEndpoint;
-    internal long LastProbeTicks;
-    internal long LastDirectPacketTicks;
 }

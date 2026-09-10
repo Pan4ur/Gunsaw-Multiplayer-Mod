@@ -8,7 +8,6 @@ public class WorldBodyReplication
     internal readonly Dictionary<ulong, string> idsByWire = new();
     internal readonly HashSet<Rigidbody2D> interactivePropBodies = new();
     internal readonly HashSet<Rigidbody2D> frozenFarClientProps = new();
-    private readonly Dictionary<Rigidbody2D, Vector2> frozenFarPropPositions = new();
     private readonly Dictionary<Rigidbody2D, Vector2> lodPositions = new();
     internal readonly Dictionary<Rigidbody2D, WorldReplication.State> received = new();
     internal readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
@@ -84,7 +83,6 @@ public class WorldBodyReplication
         WorldReplication.Instance.bodyLayouts.Remove(body);
         interactivePropBodies.Remove(body);
         frozenFarClientProps.Remove(body);
-        frozenFarPropPositions.Remove(body);
         lodPositions.Remove(body);
         received.Remove(body);
         locallyControlledUntil.Remove(body);
@@ -279,8 +277,7 @@ public class WorldBodyReplication
         
         if (!MultiplayerSession.IsHost && !state.vehiclePart && frozenFarClientProps.Contains(body))
         {
-            frozenFarPropPositions[body] = state.position;
-            body.simulated = false;
+            if (body.simulated) body.simulated = false;
             return;
         }
 
@@ -526,14 +523,15 @@ public class WorldBodyReplication
             if ((position - localPosition).sqrMagnitude < LoadDistanceSystem.WorldDistanceSqr)
             {
                 frozenFarClientProps.Remove(body);
-                frozenFarPropPositions.Remove(body);
                 continue;
             }
-            frozenFarClientProps.Add(body);
-            frozenFarPropPositions[body] = position;
-            body.velocity = Vector2.zero;
-            body.angularVelocity = 0f;
-            body.simulated = false;
+            if (frozenFarClientProps.Add(body) || body.simulated || body.bodyType != RigidbodyType2D.Static)
+            {
+                if (body.velocity != Vector2.zero) body.velocity = Vector2.zero;
+                if (!Mathf.Approximately(body.angularVelocity, 0f)) body.angularVelocity = 0f;
+                if (body.bodyType != RigidbodyType2D.Static) body.bodyType = RigidbodyType2D.Static;
+                body.simulated = false;
+            }
         }
     }
     

@@ -227,11 +227,14 @@ internal static class PlayerCarrySystem
         var camera = Camera.main;
         if (camera == null) return 0;
         var point = (Vector2)camera.ScreenToWorldPoint(Input.mousePosition);
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarRegistry.replicas)
         {
-            var body = remote.Body;
+            if (remote.Value == null)
+                continue;
+            
+            var body = remote.Value.remoteBody;
             if (body == null || !body.isAlive || Vector2.Distance(local.transform.position, body.transform.position) > 2.4f) continue;
-            if (PointerOverBody(body, point)) return remote.PeerId;
+            if (PointerOverBody(body, point)) return remote.Key;
         }
         return 0;
     }
