@@ -51,18 +51,29 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateNameTags();
         UpdateCoopMarkers();
         UpdateChatBubbles(hud);
-        UpdateSpectator();
-        UpdateStatusPrompts();
-        
-        if (!string.IsNullOrEmpty(ArsenalMenu.Prompt))
+        var inLobby = SceneManager.GetActiveScene().name == "LevelSelect";
+        if (inLobby)
         {
-            activationText.text = ArsenalMenu.Prompt;
-            activationText.gameObject.SetActive(true);
+            spectatorText.gameObject.SetActive(false);
+            spectatorHint.gameObject.SetActive(false);
+            respawnText.gameObject.SetActive(false);
+            activationText.gameObject.SetActive(false);
         }
-        else if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) && !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
+        else
         {
-            activationText.text = PlayerCarrySystem.Prompt;
-            activationText.gameObject.SetActive(true);
+            UpdateSpectator();
+            UpdateStatusPrompts();
+
+            if (!string.IsNullOrEmpty(ArsenalMenu.Prompt))
+            {
+                activationText.text = ArsenalMenu.Prompt;
+                activationText.gameObject.SetActive(true);
+            }
+            else if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) && !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
+            {
+                activationText.text = PlayerCarrySystem.Prompt;
+                activationText.gameObject.SetActive(true);
+            }
         }
         
         UpdateFinalLeaderboard();
