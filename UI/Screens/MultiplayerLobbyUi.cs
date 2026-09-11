@@ -271,11 +271,11 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var startingWeaponRow = CreateSettingsRow(settings);
         CreateText(startingWeaponRow, "STARTING WEAPON", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
         startingWeaponInput = CreateInput(startingWeaponRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 512, value => plugin.createStartingWeapon = value);
-        AddTooltip(startingWeaponRow.gameObject, "STARTING WEAPON: Weapons assigned when a player joins. Use Default, None;None;None, or three names separated by semicolons.");
+        AddTooltip(startingWeaponRow.gameObject, "STARTING WEAPON: Weapons assigned when a player joins. Use Default, None;None;None, three names separated by semicolons, or Random. Random[in=Name;Name] includes only listed weapons; Random[ex=Name;Name] excludes them.");
         var respawnWeaponRow = CreateSettingsRow(settings);
         CreateText(respawnWeaponRow, "RESPAWN WEAPON", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
         respawnWeaponInput = CreateInput(respawnWeaponRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 512, value => plugin.createRespawnWeapon = value);
-        AddTooltip(respawnWeaponRow.gameObject, "RESPAWN WEAPON: Weapons assigned after respawn. Use Default, None;None;None, or three names separated by semicolons.");
+        AddTooltip(respawnWeaponRow.gameObject, "RESPAWN WEAPON: Weapons assigned after respawn. Use Default, None;None;None, three names separated by semicolons, or Random. Random[in=Name;Name] includes only listed weapons; Random[ex=Name;Name] excludes them.");
         var startingAmmoRow = CreateSettingsRow(settings);
         CreateText(startingAmmoRow, "STARTING AMMO", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
         startingAmmoInput = CreateInput(startingAmmoRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 32, value => plugin.createStartingAmmo = value);
@@ -573,9 +573,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var outline = go.AddComponent<Outline>(); outline.effectColor = new Color(0.58f, 0.58f, 0.58f, 0.95f); outline.effectDistance = new Vector2(1f, -1f);
         var field = go.GetComponent<TMP_InputField>(); field.targetGraphic = image; field.characterLimit = limit;
         EnsureScrollForwarder(go);
-        var text = CreateText(go.transform, "", Vector2.zero, new Vector2(size.x - 16f, size.y), 16, TextAlignmentOptions.Left);
+        var viewport = new GameObject("Text Viewport", typeof(RectTransform), typeof(RectMask2D));
+        viewport.transform.SetParent(go.transform, false);
+        SetRect(viewport.GetComponent<RectTransform>(), Vector2.zero, new Vector2(size.x - 12f, size.y - 4f));
+        var text = CreateText(viewport.transform, "", Vector2.zero, new Vector2(size.x - 12f, size.y - 4f), 16, TextAlignmentOptions.Left);
         text.margin = new Vector4(8f, 0f, 8f, 0f); text.enableWordWrapping = false;
-        field.textViewport = text.rectTransform; field.textComponent = text;
+        field.textViewport = viewport.GetComponent<RectTransform>(); field.textComponent = text;
         field.onValueChanged.AddListener(value => changed(value));
         return field;
     }

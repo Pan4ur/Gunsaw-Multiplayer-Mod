@@ -169,9 +169,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         savedCreateInitialScale = Config.Bind("Lobby", "InitialScale", createInitialScale,
             "Character scale assigned when a player joins or respawns.");
         savedCreateStartingWeapon = Config.Bind("Lobby", "StartingWeapon", createStartingWeapon,
-            "Weapons assigned when a player joins, in Slot1;Slot2;Slot3 format.");
+            "Weapons assigned when a player joins, in Slot1;Slot2;Slot3 format. Also supports random: Random, Random[in=Name;Name], and Random[ex=Name;Name].");
         savedCreateRespawnWeapon = Config.Bind("Lobby", "RespawnWeapon", createRespawnWeapon,
-            "Weapons assigned when a player respawns, in Slot1;Slot2;Slot3 format.");
+            "Weapons assigned when a player respawns, in Slot1;Slot2;Slot3 format. Also supports random: Random, Random[in=Name;Name], and Random[ex=Name;Name].");
         savedCreateStartingAmmo = Config.Bind("Lobby", "StartingAmmo", createStartingAmmo,
             "Ammo assigned when a player joins, in Pistol;Rifle;Heavy;Grenade format.");
         savedCreateRespawnAmmo = Config.Bind("Lobby", "RespawnAmmo", createRespawnAmmo,
