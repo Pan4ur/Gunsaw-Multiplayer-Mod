@@ -714,7 +714,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         NetworkAvatarRegistry.CleanupDisconnectedReplicas();
-        if (!MultiplayerSession.IsConnected) return;
+        if (!MultiplayerSession.IsConnected)
+        {
+            if (MultiplayerSession.IsHosting && PlayerScript.player != null)
+            {
+                LobbyHealthRule.Apply(PlayerScript.player.bodyScript, MultiplayerSession.HealthFactor);
+                LobbyRegenRule.Apply(PlayerScript.player.bodyScript, MultiplayerSession.RegenFactor);
+            }
+            return;
+        }
 
         EnsureLocalPlayerSingleton();
         MultiplayerSession.UpdatePing();
@@ -724,6 +732,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         localGlobalBody = PlayerScript.globalBody == null
             ? player.bodyScript.transform : PlayerScript.globalBody;
         ApplyInitialLobbyScale(player.bodyScript);
+        LobbyHealthRule.Apply(player.bodyScript, MultiplayerSession.HealthFactor);
+        LobbyRegenRule.Apply(player.bodyScript, MultiplayerSession.RegenFactor);
         ApplyPendingRespawnLobbyLoadout(player.bodyScript);
         ApplyStartingLobbyLoadout(player.bodyScript);
         ApplyStartingLobbyAmmo(player.bodyScript);
@@ -2810,6 +2820,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         newBody.team = "goodguys";
         newBody.crateDamage = true;
         newBody.healthRegen = newBody.regenOnSwap;
+        LobbyRegenRule.Apply(newBody, MultiplayerSession.RegenFactor);
+        LobbyHealthRule.RestoreFull(newBody);
         newBody.isWalking = false;
         newBody.EnterFullControl();
         foreach (var chatter in avatar.GetComponentsInChildren<Chatter>(true)) DestroyImmediate(chatter);
@@ -2868,6 +2880,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             EnsurePlayerAmmoDisplaySlots(localPlayerInstance);
 
             ReviveRespawnBody(newBody);
+            LobbyRegenRule.Apply(newBody, MultiplayerSession.RegenFactor);
+            LobbyHealthRule.RestoreFull(newBody);
             newBody.isPlayer = true;
             newBody.team = "goodguys";
            
@@ -2887,6 +2901,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             newBody.OnAmmoChanged.AddListener(localPlayerInstance.BodyAmmoChanged);
             localPlayerInstance.BodyWeaponChanged();
             localPlayerInstance.BodyAmmoChanged();
+            localPlayerInstance.curHealthShow = newBody.health;
+            localPlayerInstance.curStaminaShow = newBody.stamina;
             RebindLimbDamageIndicators(localPlayerInstance, newBody, oldBody);
             localPlayerInstance.UnDie();
             pendingRespawnLoadoutBody = newBody;
@@ -3026,8 +3042,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static void ReviveRespawnBody(BodyScript body)
     {
         if (body == null) return;
-        if (body.maxHealth <= 0f) body.maxHealth = 100f;
-        body.health = body.maxHealth;
+        LobbyHealthRule.RestoreFull(body);
         body.CurrentState = 0;
         body.controlState = BodyScript.RagdollState.FullControl;
         body.isAlive = true;

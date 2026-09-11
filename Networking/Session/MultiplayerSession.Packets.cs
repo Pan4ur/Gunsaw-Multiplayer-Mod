@@ -40,7 +40,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart, HealthFactor, RegenFactor), senderId);
                 SendPeerNames(senderId);
                 Send(new PeerNamePacket(senderId, connectedName));
                 TeamSystem.SendAll(senderId);
@@ -317,6 +317,8 @@ internal static partial class MultiplayerSession
                 RespawnWeapon = settings.RespawnWeapon;
                 StartingAmmo = settings.StartingAmmo;
                 RespawnAmmo = settings.RespawnAmmo;
+                HealthFactor = settings.HealthFactor;
+                RegenFactor = settings.RegenFactor;
                 LobbySettingsReceived = true;
                 TeamSystem.Configure(TeamsEnabled, TeamsCfg);
                 lock (statusLock)

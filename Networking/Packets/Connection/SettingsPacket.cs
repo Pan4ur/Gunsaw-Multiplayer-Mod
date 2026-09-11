@@ -22,8 +22,10 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly string RespawnAmmo;
     internal readonly ushort NumberOfLives;
     internal readonly bool AutoRestart;
+    internal readonly float HealthFactor;
+    internal readonly float RegenFactor;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f)
     {
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -47,6 +49,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         RespawnAmmo = respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
         NumberOfLives = numberOfLives;
         AutoRestart = autoRestart;
+        HealthFactor = LobbyHealthRule.Clamp(healthFactor);
+        RegenFactor = LobbyRegenRule.Clamp(regenFactor);
     }
 
     public PacketType Type => PacketType.Settings;
@@ -75,6 +79,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteBinaryString(RespawnAmmo);
         writer.WriteUInt16(NumberOfLives);
         writer.WriteByte(AutoRestart ? (byte)1 : (byte)0);
+        writer.WriteSingle(HealthFactor);
+        writer.WriteSingle(RegenFactor);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -91,6 +97,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         var respawnAmmo = reader.Remaining > 0 ? reader.ReadBinaryString() : LobbyAmmoRules.RespawnDefault;
         var lives = reader.Remaining >= sizeof(ushort) ? reader.ReadUInt16() : (ushort)0;
         var autoRestart = reader.Remaining >= 1 && reader.ReadByte() != 0;
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart);
+        var healthFactor = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
+        var regenFactor = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor);
     }
 }

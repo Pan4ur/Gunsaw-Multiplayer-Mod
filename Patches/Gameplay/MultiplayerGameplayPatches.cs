@@ -166,6 +166,10 @@ internal static class MultiplayerPlayerSlowmoPatch
     private static bool Prefix(PlayerScript __instance, out MultiplayerTimeControl.SlowmoKeyState __state)
     {
         __state = default(MultiplayerTimeControl.SlowmoKeyState);
+        if (MultiplayerSession.IsActive && __instance != null)
+            LobbyHealthRule.Apply(__instance.bodyScript, MultiplayerSession.HealthFactor);
+        if (MultiplayerSession.IsActive && __instance != null)
+            LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
         if (MultiplayerSession.IsConnected)
         {
             NetworkAvatarReplication.EnsurePlayerSingletonForUpdate();
@@ -179,16 +183,18 @@ internal static class MultiplayerPlayerSlowmoPatch
         {
             var pl = __instance;
             var body = pl == null ? null : pl.bodyScript;
-            if (pl != null && body != null && body.maxHealth > 0f)
+            if (pl != null && body != null && body.maxHealth > 0f && !float.IsNaN(body.maxHealth) && !float.IsInfinity(body.maxHealth))
             {
+                if (float.IsNaN(pl.curHealthShow) || float.IsInfinity(pl.curHealthShow)) pl.curHealthShow = body.health;
+                if (float.IsNaN(pl.curStaminaShow) || float.IsInfinity(pl.curStaminaShow)) pl.curStaminaShow = body.stamina;
                 pl.curHealthShow = Mathf.Lerp(pl.curHealthShow, body.health, 8f * Time.deltaTime);
                 pl.curStaminaShow = Mathf.Lerp(pl.curStaminaShow, body.stamina, 8f * Time.deltaTime);
 
                 if (pl.healthText != null)
-                    pl.healthText.text = pl.curHealthShow > 0f ? Mathf.Round(pl.curHealthShow / body.maxHealth * 100f) + "%" : "--";
+                    pl.healthText.text = pl.curHealthShow > 0f ? Mathf.Round(Mathf.Clamp01(pl.curHealthShow / body.maxHealth) * 100f) + "%" : "--";
 
                 if (pl.staminaText != null)
-                    pl.staminaText.text = pl.curStaminaShow > 0f ? Mathf.Round(pl.curStaminaShow / body.maxHealth * 100f) + "%" : "K/O";
+                    pl.staminaText.text = pl.curStaminaShow > 0f ? Mathf.Round(Mathf.Clamp01(pl.curStaminaShow / body.maxHealth) * 100f) + "%" : "K/O";
             }
 
             return false;

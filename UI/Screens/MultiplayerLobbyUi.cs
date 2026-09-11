@@ -11,7 +11,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GameObject panel;
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, regenFactorInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
@@ -74,6 +74,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetInput(maxPlayersInput, viewingLobbySettings ? MultiplayerSession.MaxPlayers.ToString() : plugin.createMaxPlayers);
         SetInput(respawnInput, viewingLobbySettings ? MultiplayerSession.RespawnTimeSeconds.ToString() : plugin.createRespawnTime);
         SetInput(numberOfLivesInput, viewingLobbySettings ? MultiplayerSession.NumberOfLives.ToString() : plugin.createNumberOfLives);
+        SetInput(healthFactorInput, viewingLobbySettings ? MultiplayerSession.HealthFactor.ToString("0.##") : plugin.createHealthFactor);
+        SetInput(regenFactorInput, viewingLobbySettings ? MultiplayerSession.RegenFactor.ToString("0.##") : plugin.createRegenFactor);
         SetInput(serverInput, plugin.lobbyServerAddress);
         SetToggle(pvpToggle, viewingLobbySettings ? MultiplayerSession.PvpEnabled : plugin.createPvp);
         SetToggle(grabToggle, viewingLobbySettings ? MultiplayerSession.CanGrabPlayers : plugin.createCanGrab);
@@ -117,6 +119,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         maxPlayersInput.interactable = interactable;
         respawnInput.interactable = interactable && allowRespawn;
         numberOfLivesInput.interactable = interactable && allowRespawn;
+        healthFactorInput.interactable = interactable;
+        regenFactorInput.interactable = interactable;
         initialScaleInput.interactable = interactable;
         startingWeaponInput.interactable = interactable;
         respawnWeaponInput.interactable = interactable;
@@ -248,6 +252,14 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         CreateText(livesRow, "NUMBER OF LIVES", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         numberOfLivesInput = CreateInput(livesRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 5, value => plugin.createNumberOfLives = value);
         AddTooltip(livesRow.gameObject, "NUMBER OF LIVES: 0 gives unlimited respawns. With 1 or more, each death uses a life; after the last life, the player spectates until the level reloads.");
+        var healthFactorRow = CreateSettingsRow(settings);
+        CreateText(healthFactorRow, "HEALTH FACTOR", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        healthFactorInput = CreateInput(healthFactorRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createHealthFactor = value);
+        AddTooltip(healthFactorRow.gameObject, "HEALTH FACTOR: Multiplies every player's maximum health. Allowed range: 0.01 to 10.");
+        var regenFactorRow = CreateSettingsRow(settings);
+        CreateText(regenFactorRow, "REGEN FACTOR", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        regenFactorInput = CreateInput(regenFactorRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.createRegenFactor = value);
+        AddTooltip(regenFactorRow.gameObject, "REGEN FACTOR: Multiplies every player's health regeneration speed. 0 disables regeneration. Allowed range: 0 to 10.");
         respawnAtStartToggle = CreateToggle(CreateSettingsRow(settings), "RESPAWN AT START", Vector2.zero, new Vector2(520f, 40f), value => plugin.createRespawnAtStart = value);
         AddTooltip(respawnAtStartToggle.gameObject, "RESPAWN AT START: Applies to ALLOW RESPAWN. When enabled, players spawn at a player spawn point placed by the map author. If there are several, one is chosen at random. Some custom maps may accidentally contain too many spawn points and become impossible to complete without removing the extra points. When disabled, players respawn at the position of their corpse.");
         playerCollisionsToggle = CreateToggle(CreateSettingsRow(settings), "PLAYER COLLISIONS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createPlayerCollisions = value);
