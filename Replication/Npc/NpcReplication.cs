@@ -82,6 +82,28 @@ internal sealed class NpcReplication : MonoBehaviour
 
     internal static bool IsEvaluatingAuthoritativePose { get; private set; }
 
+    internal static void AlertForRemoteShot(ushort peerId, Vector2 position)
+    {
+        var instance = Instance;
+        var shooter = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        if (!MultiplayerSession.IsHost || instance == null || shooter == null || !shooter.isAlive) return;
+        var maxAlertDistance = GameManager.main == null ? 0f : GameManager.main.maxAlertDist;
+        foreach (var body in instance.hostNpcs.Values)
+        {
+            if (body == null || !body.isAlive || body.team == shooter.team) continue;
+            if (Vector2.Distance(body.transform.position, shooter.transform.position) > 40f) continue;
+            var layout = instance.HostLayout(body);
+            foreach (var ai in layout.AiControllers)
+            {
+                if (ai == null || ai.body != body) continue;
+                ai.alerted = true;
+                if (ai.targetBody == shooter) ai.lastSeen = shooter.transform.position;
+                if (Vector2.Distance(body.transform.position, position) < maxAlertDistance) ai.targetX = position.x;
+                ai.CustomLook(position, 5f);
+            }
+        }
+    }
+
     internal int TotalNpcCount => MultiplayerSession.IsHost ? hostNpcs.Count : clientProxies.Count;
 
     internal int LastSnapshotNpcCount => lastStateCount;

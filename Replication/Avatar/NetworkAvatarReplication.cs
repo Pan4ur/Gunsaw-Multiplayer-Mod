@@ -785,6 +785,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         ShotVisualPacket shotVisual;
         while (MultiplayerSession.TryTakeShotVisual(out senderId, out shotVisual))
         {
+            if (MultiplayerSession.IsHost && !shotVisual.IsNpcShot)
+                NpcReplication.AlertForRemoteShot(senderId, new Vector2(shotVisual.OriginX, shotVisual.OriginY));
             var shooter = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (shooter != null) shooter.PlayRemoteShot(shotVisual);
         }
