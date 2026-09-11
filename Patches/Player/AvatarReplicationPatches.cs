@@ -30,6 +30,15 @@ internal static class LocalCharacterCreationPatch
         if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
         NetworkAvatarReplication.RestoreCharacterSelection();
     }
+
+    private static void Postfix(PlayerScript __instance)
+    {
+        if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
+        if (__instance == null || __instance.bodyScript == null) return;
+        LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
+        LobbyHealthRule.RestoreFull(__instance.bodyScript);
+        __instance.curHealthShow = __instance.bodyScript.maxHealth;
+    }
 }
 
 [HarmonyPatch(typeof(WeaponBackShow), "WepChanged")]

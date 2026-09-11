@@ -62,7 +62,11 @@ internal static class LocalLevelEditorSavePatch
         if (labelText != null) labelText.text = "Save";
         var saveButton = saveObject.GetComponent<Button>();
         saveButton.onClick = new Button.ButtonClickedEvent();
-        saveButton.onClick.AddListener(() => plugin.SaveEditedLocalLevel(editor));
+        saveButton.onClick.AddListener(() =>
+        {
+            if (plugin.HasLocalLevelEditorTarget) plugin.SaveEditedLocalLevel(editor);
+            else CustomLevelBrowserUi.OpenEditorSaveDialog(plugin, editor, saveButton, clipboardCaption);
+        });
         return;
     }
 }

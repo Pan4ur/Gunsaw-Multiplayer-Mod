@@ -56,7 +56,14 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             if (root != null && root.activeSelf) root.SetActive(false);
             return;
         }
-        if (root == null) Create(menu);
+        if (root == null || customLevelBrowser == null || !customLevelBrowser.IsReady)
+        {
+            if (root != null) Destroy(root);
+            root = null;
+            panel = null;
+            customLevelBrowser = null;
+            Create(menu);
+        }
         if (root == null) return;
         if (!root.activeSelf) root.SetActive(true);
         if (panel.activeSelf != plugin.visible) panel.SetActive(plugin.visible);

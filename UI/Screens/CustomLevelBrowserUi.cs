@@ -54,6 +54,8 @@ internal sealed class CustomLevelBrowserUi
     private bool renderedLocalMode;
     private Coroutine rebuildRoutine;
     private Coroutine coverLoadRoutine;
+    private bool editorSaveDialog;
+    private LevelEditor editorSaveTarget;
 
     private enum SortMode { Date, Size, Difficulty, Length, Type }
 
@@ -88,6 +90,28 @@ internal sealed class CustomLevelBrowserUi
         var parsed = ParseCatalog(source);
         if (parsed.Length == 0) throw new System.InvalidOperationException("The catalog contains no levels.");
         cachedLevels = parsed;
+    }
+
+    internal static void OpenEditorSaveDialog(GunsawMultiplayerPlugin plugin, LevelEditor editor, Button buttonTemplate, TMP_Text textTemplate)
+    {
+        if (plugin == null || editor == null || buttonTemplate == null || textTemplate == null || textTemplate.canvas == null) return;
+        foreach (var existing in Resources.FindObjectsOfTypeAll<Transform>())
+            if (existing != null && existing.name == "Editor Local Level Save" && existing.gameObject.scene == editor.gameObject.scene) return;
+        var dialog = new CustomLevelBrowserUi(plugin, textTemplate.canvas.transform, textTemplate, buttonTemplate);
+        dialog.panel.name = "Editor Local Level Save";
+        dialog.editorSaveDialog = true;
+        dialog.editorSaveTarget = editor;
+        dialog.panelRect.anchoredPosition = Vector2.zero;
+        dialog.panelRect.sizeDelta = new Vector2(510f, 430f);
+        foreach (Transform child in dialog.panel.transform)
+            if (child.gameObject != dialog.addLocalPanel) child.gameObject.SetActive(false);
+        dialog.panel.SetActive(true);
+        dialog.localName.text = "";
+        dialog.localDescription.text = "";
+        dialog.localCode = Compression.Compress(editor.GetLevelCode());
+        dialog.localCodeStatus.text = "Level code is ready to save.";
+        dialog.addLocalPanel.SetActive(true);
+        dialog.localName.ActivateInputField();
     }
 
     internal CustomLevelBrowserUi(GunsawMultiplayerPlugin owner, Transform parent, TMP_Text textTemplate, Button sourceButton)
@@ -132,7 +156,7 @@ internal sealed class CustomLevelBrowserUi
         var save = CreateButton(addLocalPanel.transform, "SAVE", new Vector2(-75f, -158f), new Vector2(130f, 40f));
         var cancel = CreateButton(addLocalPanel.transform, "CANCEL", new Vector2(75f, -158f), new Vector2(130f, 40f));
         save.onClick.AddListener(SaveLocalLevel);
-        cancel.onClick.AddListener(() => addLocalPanel.SetActive(false));
+        cancel.onClick.AddListener(CloseAddLocalLevel);
         addLocalPanel.SetActive(false);
         CreateEditLocalPanel();
         LoadLocalLevels();
@@ -144,8 +168,11 @@ internal sealed class CustomLevelBrowserUi
 
     internal bool IsOpen => open;
 
+    internal bool IsReady => panel != null && panelRect != null && addLocalPanel != null && localName != null && localDescription != null && localCodeStatus != null;
+
     internal void SetOpen(bool value)
     {
+        if (!IsReady) return;
         open = value;
         if (!value)
         {
@@ -255,6 +282,12 @@ internal sealed class CustomLevelBrowserUi
             localLevels = saved.ToArray();
             SaveLocalLevels();
             levels = localLevels;
+            if (editorSaveDialog)
+            {
+                editorSaveTarget?.SetInfoText("Saved new local level: " + name + ".");
+                UnityEngine.Object.Destroy(panel);
+                return;
+            }
             addLocalPanel.SetActive(false);
             Rebuild(true);
         }
@@ -262,6 +295,16 @@ internal sealed class CustomLevelBrowserUi
         {
             stateText.text = "Could not save level: " + exception.Message;
         }
+    }
+
+    private void CloseAddLocalLevel()
+    {
+        if (editorSaveDialog)
+        {
+            UnityEngine.Object.Destroy(panel);
+            return;
+        }
+        addLocalPanel.SetActive(false);
     }
 
     private void PasteLocalCode()

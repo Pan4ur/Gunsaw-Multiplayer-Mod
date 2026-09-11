@@ -13,19 +13,11 @@ internal static class LobbyHealthRule
     {
         if (body == null) return;
         factor = Clamp(factor);
-        if (body.maxHealth <= 0f)
-        {
-            if (body.health <= 0f)
-                return;
-            
-            body.maxHealth = body.health;
-        }
         var state = body.gameObject.GetComponent<LobbyHealthFactorState>();
-        var baseHealth = state == null ? body.maxHealth : state.BaseMaxHealth;
         if (state == null) state = body.gameObject.AddComponent<LobbyHealthFactorState>();
-        state.BaseMaxHealth = baseHealth;
+        if (state.BaseMaxHealth <= 0f) state.BaseMaxHealth = 100f;
         if (state.BaseDyingStateThreshold == 0f) state.BaseDyingStateThreshold = body.dyingStateTreshold;
-        body.maxHealth = baseHealth * factor;
+        body.maxHealth = state.BaseMaxHealth * factor;
         body.dyingStateTreshold = state.BaseDyingStateThreshold * factor;
         body.health = Mathf.Min(body.health, body.maxHealth);
     }
@@ -34,6 +26,8 @@ internal static class LobbyHealthRule
     {
         Apply(body, MultiplayerSession.HealthFactor);
         body.health = body.maxHealth;
+        var player = PlayerScript.player;
+        if (player != null && player.bodyScript == body) player.curHealthShow = body.maxHealth;
     }
 }
 
