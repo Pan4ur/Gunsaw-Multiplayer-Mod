@@ -2429,7 +2429,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var appliedAmount = Mathf.Min(amount, Mathf.Max(0f, body.health));
             body.health -= amount;
             if (body == PlayerScript.player?.bodyScript)
+            {
                 ScoreboardSystem.RecordLocalDamageReceived(appliedAmount);
+                if (MissionManager.main != null)
+                    MissionManager.main.damageReceived += appliedAmount;
+            }
             applyingNetworkPlayerDamage = true;
             try // TODO Debug exception handling
             {
