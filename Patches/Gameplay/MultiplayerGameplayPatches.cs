@@ -967,6 +967,26 @@ internal static class IncineratorDeathCausePatch
     }
 }
 
+[HarmonyPatch(typeof(Incinerator), "OnTriggerEnter2D")]
+internal static class IncineratorPartCleanupPatch
+{
+    private static void Postfix(Collider2D collision)
+    {
+        var limb = collision == null ? null : collision.GetComponent<LimbScript>();
+        var body = limb == null ? null : limb.body;
+        if (body == null || body.isPlayer || body.gameObject.activeSelf) return;
+
+        foreach (var detachedLimb in UnityEngine.Object.FindObjectsOfType<LimbScript>())
+            if (detachedLimb != null && detachedLimb.body == body)
+                detachedLimb.gameObject.SetActive(false);
+
+        if (body.tails == null) return;
+        foreach (var tail in body.tails)
+            if (tail != null && !tail.IsChildOf(body.transform))
+                tail.gameObject.SetActive(false);
+    }
+}
+
 [HarmonyPatch(typeof(BloodBars), "FixedUpdate")]
 internal static class MultiplayerDamageBarsPatch
 {
