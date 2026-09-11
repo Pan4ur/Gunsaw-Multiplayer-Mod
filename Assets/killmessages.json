@@ -189,6 +189,16 @@
         "%killer% executed %player% using %weapon%.",
         "%player% was ripped and smashed apart by %killer% with %weapon%."
       ]
+    },
+    {
+      "name": "telekinesis",
+      "messages": [
+        "%killer% slammed %player% into a wall with telekinesis.",
+        "%killer% turned %player% into a telekinetic projectile.",
+        "%player% was crushed by %killer%'s telekinesis.",
+        "%killer% abused telekinesis on %player%.",
+        "%killer% hurled %player% to their death with telekinesis."
+      ]
     }
   ]
 }

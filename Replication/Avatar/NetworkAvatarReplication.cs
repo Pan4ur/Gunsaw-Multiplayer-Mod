@@ -113,6 +113,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<int, ushort> lastDamageSourcePeerIds = new();
     private static readonly Dictionary<int, string> lastDamageWeapons = new();
     private static readonly Dictionary<int, float> lastDamageSourceTimes = new();
+    private static readonly Dictionary<int, float> lastGrabSourceTimes = new();
     private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses = new();
     private static readonly Dictionary<int, float> environmentalDeathCauseTimes = new();
     private static readonly Dictionary<int, PlayerDeathCause> deathCauses = new();
@@ -377,6 +378,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (source != null && source != victim) SetDamageSource(victim, source, WeaponName(source.weapon));
     }
 
+    private static void RecordGrabSource(BodyScript victim, BodyScript source)
+    {
+        if (victim == null || source == null || source == victim) return;
+        SetDamageSource(victim, source, WeaponName(source.weapon));
+        lastGrabSourceTimes[victim.GetInstanceID()] = Time.unscaledTime;
+    }
+
     internal static BodyScript DamageSourceFor(BodyScript victim)
     {
         if (victim == null) return null;
@@ -442,6 +450,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         lastDamageSourcePeerIds.Remove(id);
         lastDamageWeapons.Remove(id);
         lastDamageSourceTimes.Remove(id);
+        lastGrabSourceTimes.Remove(id);
     }
 
     private static string ActiveWeaponName(BodyScript source)
@@ -461,8 +470,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (body == null) return;
         var id = body.GetInstanceID();
         float damageTime;
+        float grabTime;
+        var hasGrabSource = lastGrabSourceTimes.TryGetValue(id, out grabTime) && Time.unscaledTime - grabTime <= 5f;
         if (!lastDamageSourceTimes.TryGetValue(id, out damageTime) ||
-            Time.unscaledTime - damageTime > 0.25f)
+            (Time.unscaledTime - damageTime > 0.25f && !hasGrabSource))
         {
             lastDamageSources.Remove(id);
             lastDamageSourceNames.Remove(id);
@@ -485,6 +496,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             else if (body.oxygen <= 0.01f && body.forcedOxyLoss > 0) cause = PlayerDeathCause.Suffocation;
             else if (body.fallDamageCooldown > 0f) cause = PlayerDeathCause.Fall;
         }
+        if (hasGrabSource && cause == PlayerDeathCause.Fall) cause = PlayerDeathCause.Telekinesis;
         deathCauses[id] = cause;
     }
 
@@ -797,7 +809,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         PlayerGrabPacket playerGrab;
         while (MultiplayerSession.TryTakePlayerGrab(out senderId, out playerGrab))
-            ReceivePlayerGrab(playerGrab);
+            ReceivePlayerGrab(senderId, playerGrab);
         UpdateLocalRespawn(player);
         player = PlayerScript.player;
         if (player == null) return;
@@ -3439,7 +3451,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         instance.outgoingGrabPeerId = 0;
     }
 
-    private void ReceivePlayerGrab(PlayerGrabPacket packet)
+    private void ReceivePlayerGrab(ushort senderId, PlayerGrabPacket packet)
     {
         if (!MultiplayerSession.CanGrabPlayers || !packet.IsGrabbing)
         {
@@ -3457,6 +3469,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             !IsFinite(command.LocalPoint.x) || !IsFinite(command.LocalPoint.y)) return;
         incomingGrab = command;
         incomingGrabUntil = Time.unscaledTime + 0.15f;
+        RecordGrabSource(PlayerScript.player?.bodyScript, NetworkAvatarRegistry.GetOrCreateReplica(senderId)?.remoteBody);
     }
 
     private void ApplyIncomingGrab()
