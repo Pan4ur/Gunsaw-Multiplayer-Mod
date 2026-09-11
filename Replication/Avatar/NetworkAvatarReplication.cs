@@ -2696,8 +2696,35 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 ? Time.unscaledTime + MultiplayerSession.RespawnTimeSeconds
                 : -1f;
         }
+        TeleportRespawnBodyToNpc(body);
         if (CanRespawn && respawnAt >= 0f && Time.unscaledTime >= respawnAt)
             RespawnLocalPlayer(player, body);
+    }
+
+    private void TeleportRespawnBodyToNpc(BodyScript body)
+    {
+        if (MultiplayerSession.RespawnAtStart || MultiplayerSession.PvpEnabled || !CanRespawn ||
+            respawnAt < 0f || body == null || body.isAlive || !Input.GetMouseButtonDown(0)) return;
+        var camera = Camera.main;
+        if (camera == null) return;
+        var point = (Vector2) camera.ScreenToWorldPoint(Input.mousePosition);
+        foreach (var collider in Physics2D.OverlapPointAll(point))
+        {
+            var npc = collider == null ? null : collider.GetComponentInParent<BodyScript>();
+            if (npc == null || npc.isPlayer || !npc.gameObject.activeInHierarchy) continue;
+            Vector3 position;
+            if (!TryFindRespawnPositionNearBody(npc, body, out position)) return;
+            var offset = position - body.transform.position;
+            body.transform.root.position += offset;
+            foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
+            {
+                if (rigidbody == null) continue;
+                rigidbody.velocity = Vector2.zero;
+                rigidbody.angularVelocity = 0f;
+            }
+            localDeathPosition = position;
+            return;
+        }
     }
 
     private bool CanRespawn => MultiplayerSession.AllowRespawn &&
@@ -3018,33 +3045,34 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             if (player == null || player == oldBody || !player.isPlayer || !player.isAlive ||
                 !player.gameObject.activeInHierarchy) continue;
+            if (TryFindRespawnPositionNearBody(player, oldBody, out position)) return true;
+        }
+        position = default(Vector3);
+        return false;
+    }
+
+    private static bool TryFindRespawnPositionNearBody(BodyScript target, BodyScript oldBody, out Vector3 position)
+    {
+        if (target != null)
             for (var index = 0; index < 8; index++)
             {
                 var angle = index * Mathf.PI * 0.25f;
                 var offset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0f) * 2.5f;
-                var candidate = player.transform.position + offset;
+                var candidate = target.transform.position + offset;
                 if (!IsRespawnPositionBlocked(candidate, oldBody))
                 {
                     position = candidate;
                     return true;
                 }
             }
-        }
         position = default(Vector3);
         return false;
     }
 
     private static bool IsRespawnPositionBlocked(Vector3 position, BodyScript oldBody)
     {
-        foreach (var body in FindObjectsOfType<BodyScript>())
-        {
-            if (body == null || body == oldBody || body.isPlayer || !body.isAlive ||
-                !body.gameObject.activeInHierarchy) continue;
-            if (Vector2.Distance(position, body.transform.position) < 2.25f) return true;
-        }
-
         // test anti nugget
-        foreach (var collider in Physics2D.OverlapPointAll(position))
+        foreach (var collider in Physics2D.OverlapPointAll(position + Vector3.up * 0.01f))
         {
             if (collider == null || collider.isTrigger) continue;
             if (oldBody != null && collider.transform.IsChildOf(oldBody.transform.root)) continue;
