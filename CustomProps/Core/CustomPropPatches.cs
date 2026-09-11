@@ -70,7 +70,9 @@ internal static class CustomPropRuntimeLoadPatch
 
     private static void Postfix()
     {
+        WeaponPropRespawnSystem.AttachRuntime();
         ToggleableLampSystem.AttachRuntime();
+        
         CustomPropEditorController.CreateRuntime();
     }
 }
@@ -92,6 +94,7 @@ internal static class CustomPropEditorSelectPartPatch
             controller.RefreshInspectorImmediate();
             controller.EnableTeamFieldForPlayerSpawn();
             controller.EnableIdFieldForColoredLamp();
+            controller.EnableRespawnTimeForWeapon();
         }
     }
 }

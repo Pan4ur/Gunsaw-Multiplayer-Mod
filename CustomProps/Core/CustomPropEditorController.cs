@@ -67,6 +67,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             ? (loader == null ? string.Empty : loader.levelCode)
             : SceneLoader.main.levelEditString;
         runtimeSourceJson = json ?? string.Empty;
+        WeaponPropRespawnSystem.Prepare(runtimeSourceJson);
         ToggleableLampSystem.PrepareRuntime(runtimeSourceJson);
         runtimeInstances.AddRange(ReadInstances(runtimeSourceJson));
         var cleaned = RemoveCustomParts(runtimeSourceJson);
@@ -412,7 +413,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             editor.teamField.onEndEdit.AddListener(value => CommitFields());
             editor.teamField.onEndEdit.AddListener(value => CommitPlayerSpawnTeam());
         }
-        if (editor.forceXField != null) editor.forceXField.onEndEdit.AddListener(value => CommitFields());
+        if (editor.forceXField != null)
+        {
+            editor.forceXField.onEndEdit.AddListener(value => CommitFields());
+            editor.forceXField.onEndEdit.AddListener(value => CommitWeaponRespawnTime());
+        }
         if (editor.forceYField != null) editor.forceYField.onEndEdit.AddListener(value => CommitFields());
         if (editor.sizeXField != null) editor.sizeXField.onEndEdit.AddListener(value => CommitFields());
         if (editor.sizeYField != null) editor.sizeYField.onEndEdit.AddListener(value => CommitFields());
@@ -470,6 +475,38 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         if (int.TryParse(editor.idField.text, out id)) levelPart.part.id = Mathf.Max(0, id);
     }
 
+    internal void EnableRespawnTimeForWeapon()
+    {
+        if (editor == null || editor.forceXField == null) return;
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        if (!WeaponPropRespawnSystem.IsWeaponSpawn(levelPart)) return;
+        levelPart.showForce = true;
+        editor.forceXField.text = WeaponPropRespawnSystem.EditorTime(levelPart.part).ToString();
+        SetEditable(editor.forceXField);
+       
+        if (editor.forceYField != null)
+            editor.forceYField.gameObject.SetActive(false);
+            
+        if (editor.forceName != null)
+            editor.forceName.text = "Respawn time";
+    }
+
+    internal void CommitWeaponRespawnTime()
+    {
+        if (editor == null || editor.forceXField == null)
+            return;
+            
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        if (!WeaponPropRespawnSystem.IsWeaponSpawn(levelPart)) 
+            return;
+            
+        float value;
+        if (float.TryParse(editor.forceXField.text, out value)) 
+            WeaponPropRespawnSystem.SetEditorTime(levelPart.part, value);
+    }
+    
     private static bool IsColoredLamp(LevelPartGame levelPart)
     {
         return levelPart != null && levelPart.part != null &&
