@@ -827,7 +827,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             createNumberOfLives = numberOfLives.ToString();
             int maxPlayers;
             if (!int.TryParse(createMaxPlayers, out maxPlayers)) maxPlayers = 4;
-            maxPlayers = Mathf.Clamp(maxPlayers, 2, 16);
+            maxPlayers = Mathf.Clamp(maxPlayers, 2, 64);
             createMaxPlayers = maxPlayers.ToString();
             var body = JsonUtility.ToJson(new CreateLobbyRequest { name = lobbyName, hostName = playerName,
                 map = "Host chooses level", maxPlayers = maxPlayers, hostPort = 27016, pvp = createPvp,
@@ -863,7 +863,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createNumberOfLives = numberOfLives.ToString();
         int maxPlayers;
         if (!int.TryParse(createMaxPlayers, out maxPlayers)) maxPlayers = MultiplayerSession.MaxPlayers;
-        maxPlayers = Mathf.Clamp(maxPlayers, 2, 16);
+        maxPlayers = Mathf.Clamp(maxPlayers, 2, 64);
         createMaxPlayers = maxPlayers.ToString();
         if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
             createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
@@ -1036,7 +1036,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "hostRelayKey");
             var relayAddress = JsonString(response, "relayAddress");
-            var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 16);
+            var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 64);
             if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayAddress();
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
             RunOnMainThread(() =>
@@ -1437,9 +1437,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "relayKey");
             var relayAddress = JsonString(response, "relayAddress");
-            var peerId = (ushort)Mathf.Clamp(JsonInt(response, "peerId"), 2, 16);
-            var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 16);
-            var maxPlayers = Mathf.Clamp(JsonInt(response, "maxPlayers"), 2, 16);
+            var peerId = (ushort)Mathf.Clamp(JsonInt(response, "peerId"), 2, 64);
+            var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 64);
+            var maxPlayers = Mathf.Clamp(JsonInt(response, "maxPlayers"), 2, 64);
             var modeText = JsonString(response, "connectionMode");
             var mode = string.IsNullOrEmpty(modeText) ? listedMode : ParseConnectionMode(modeText);
             if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayAddress();
@@ -1455,7 +1455,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RunOnMainThread(() =>
             {
                 SetJoinInProgress(false);
-                status = "Could not join lobby: " + GetDirectoryErrorMessage(exception.Message);            });
+                status = "Could not join lobby: " + GetDirectoryErrorMessage(exception.Message);
+            });
         }
     }
 

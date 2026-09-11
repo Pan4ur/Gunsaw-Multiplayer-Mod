@@ -208,7 +208,7 @@ internal static partial class MultiplayerSession
             hostPeerId = localPeerId;
             hostSceneEpoch = 0;
             lastHostSceneHandle = 0;
-            maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
+            maxPlayers = Math.Max(2, Math.Min(64, lobbyMaxPlayers));
             connectionMode = mode;
             relayFallback = mode == ConnectionMode.Relay;
             p2pHelloSent = true;
@@ -273,7 +273,7 @@ internal static partial class MultiplayerSession
                 localPlayerName = NormalizePlayerName(playerName);
                 localPeerId = assignedPeerId;
                 hostPeerId = assignedHostPeerId == 0 ? (ushort)1 : assignedHostPeerId;
-                maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
+                maxPlayers = Math.Max(2, Math.Min(64, lobbyMaxPlayers));
                 connectionMode = mode;
                 relayFallback = mode == ConnectionMode.Relay;
                 p2pHelloSent = false;
@@ -785,7 +785,7 @@ internal static partial class MultiplayerSession
         RespawnAmmo = respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
         TeamSystem.Configure(TeamsEnabled, TeamsCfg);
         RefreshHostBrutalMode();
-        lock (statusLock) maxPlayers = Math.Max(2, Math.Min(16, lobbyMaxPlayers));
+        lock (statusLock) maxPlayers = Math.Max(2, Math.Min(64, lobbyMaxPlayers));
         Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart));
         return true;

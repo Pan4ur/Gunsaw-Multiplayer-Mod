@@ -320,7 +320,7 @@ internal static partial class MultiplayerSession
                 LobbySettingsReceived = true;
                 TeamSystem.Configure(TeamsEnabled, TeamsCfg);
                 lock (statusLock)
-                    maxPlayers = Math.Max(2, Math.Min(16, (int)settings.MaxPlayers));
+                    maxPlayers = Math.Max(2, Math.Min(64, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings updated.");
             }
             else if (decodedPacket.Type == PacketType.Team)
