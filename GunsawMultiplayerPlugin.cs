@@ -54,6 +54,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<string> savedCreateHealthFactor;
     private ConfigEntry<string> savedCreateRegenFactor;
     private ConfigEntry<string> savedCreateMaxPlayers;
+    private readonly List<LobbyPreset> lobbyPresets = new List<LobbyPreset>();
     internal bool visible;
     internal string status = "Select an option.";
     internal string updateStatus = "Checking for updates..."; 
@@ -215,6 +216,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createHealthFactor = savedCreateHealthFactor.Value;
         createRegenFactor = savedCreateRegenFactor.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
+        LoadLobbyPresets();
         headlessMode = HasCommandLineFlag("-headlessLobby");
         GraffitiSystem.Initialize(headlessMode);
         if (headlessMode)
@@ -521,6 +523,149 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
         if (changed) Config.Save();
     }
+
+    internal IReadOnlyList<LobbyPreset> LobbyPresets => lobbyPresets;
+
+    internal void SaveLobbyPreset(string name)
+    {
+        name = (name ?? "").Trim();
+        if (name.Length == 0) throw new InvalidOperationException("Preset name is empty.");
+        if (name.Length > 32) name = name.Substring(0, 32);
+        var preset = CreateLobbyPreset(name);
+        var index = lobbyPresets.FindIndex(item => string.Equals(item.name, name, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0) lobbyPresets[index] = preset;
+        else lobbyPresets.Add(preset);
+        SaveLobbyPresets();
+    }
+
+    internal void ApplyLobbyPreset(LobbyPreset preset)
+    {
+        if (preset == null) return;
+        createPvp = preset.pvp;
+        createCanGrab = preset.canGrab;
+        createGrabOnlyUnconscious = preset.grabOnlyUnconscious;
+        createAllowRespawn = preset.allowRespawn;
+        createAutoRestart = preset.autoRestart;
+        createRespawnAtStart = preset.respawnAtStart;
+        createPlayerCollisions = preset.playerCollisions;
+        createCheats = preset.cheats;
+        createAllowSwap = preset.allowSwap;
+        createAllowScaleChanging = preset.allowScaleChanging;
+        createAllowObserver = preset.allowObserver;
+        createTeams = preset.teams;
+        createTeamsCfg = preset.teamsCfg ?? "";
+        createInitialScale = preset.initialScale ?? "1.0";
+        createStartingWeapon = preset.startingWeapon ?? "Default";
+        createRespawnWeapon = preset.respawnWeapon ?? "Default";
+        createStartingAmmo = preset.startingAmmo ?? LobbyAmmoRules.StartingDefault;
+        createRespawnAmmo = preset.respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
+        createRespawnTime = preset.respawnTime ?? "5";
+        createNumberOfLives = preset.numberOfLives ?? "0";
+        createHealthFactor = preset.healthFactor ?? "1.0";
+        createRegenFactor = preset.regenFactor ?? "1.0";
+        createMaxPlayers = preset.maxPlayers ?? "4";
+        createConnectionMode = preset.connectionMode;
+        SaveLobbyPreferences();
+    }
+
+    internal void DeleteLobbyPreset(LobbyPreset preset)
+    {
+        if (preset == null || !lobbyPresets.Remove(preset)) return;
+        SaveLobbyPresets();
+    }
+
+    private LobbyPreset CreateLobbyPreset(string name)
+    {
+        return new LobbyPreset
+        {
+            name = name, pvp = createPvp, canGrab = createCanGrab, grabOnlyUnconscious = createGrabOnlyUnconscious,
+            allowRespawn = createAllowRespawn, autoRestart = createAutoRestart, respawnAtStart = createRespawnAtStart,
+            playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
+            allowScaleChanging = createAllowScaleChanging, allowObserver = createAllowObserver, teams = createTeams,
+            teamsCfg = createTeamsCfg, initialScale = createInitialScale, startingWeapon = createStartingWeapon,
+            respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
+            respawnTime = createRespawnTime, numberOfLives = createNumberOfLives, healthFactor = createHealthFactor,
+            regenFactor = createRegenFactor, maxPlayers = createMaxPlayers, connectionMode = createConnectionMode
+        };
+    }
+
+    private void LoadLobbyPresets()
+    {
+        lobbyPresets.Clear();
+        try
+        {
+            if (!File.Exists(LobbyPresetsPath)) return;
+            foreach (var line in File.ReadAllLines(LobbyPresetsPath))
+            {
+                var fields = line.Split('|');
+                if (fields.Length != 25) continue;
+                var preset = new LobbyPreset
+                {
+                    name = DecodeLobbyPresetValue(fields[0]),
+                    pvp = DecodeLobbyPresetBool(fields[1]),
+                    canGrab = DecodeLobbyPresetBool(fields[2]),
+                    grabOnlyUnconscious = DecodeLobbyPresetBool(fields[3]),
+                    allowRespawn = DecodeLobbyPresetBool(fields[4]),
+                    autoRestart = DecodeLobbyPresetBool(fields[5]),
+                    respawnAtStart = DecodeLobbyPresetBool(fields[6]),
+                    playerCollisions = DecodeLobbyPresetBool(fields[7]),
+                    cheats = DecodeLobbyPresetBool(fields[8]),
+                    allowSwap = DecodeLobbyPresetBool(fields[9]),
+                    allowScaleChanging = DecodeLobbyPresetBool(fields[10]),
+                    allowObserver = DecodeLobbyPresetBool(fields[11]),
+                    teams = DecodeLobbyPresetBool(fields[12]),
+                    teamsCfg = DecodeLobbyPresetValue(fields[13]),
+                    initialScale = DecodeLobbyPresetValue(fields[14]),
+                    startingWeapon = DecodeLobbyPresetValue(fields[15]),
+                    respawnWeapon = DecodeLobbyPresetValue(fields[16]),
+                    startingAmmo = DecodeLobbyPresetValue(fields[17]),
+                    respawnAmmo = DecodeLobbyPresetValue(fields[18]),
+                    respawnTime = DecodeLobbyPresetValue(fields[19]),
+                    numberOfLives = DecodeLobbyPresetValue(fields[20]),
+                    healthFactor = DecodeLobbyPresetValue(fields[21]),
+                    regenFactor = DecodeLobbyPresetValue(fields[22]),
+                    maxPlayers = DecodeLobbyPresetValue(fields[23])
+                };
+                if (Enum.TryParse(DecodeLobbyPresetValue(fields[24]), out ConnectionMode mode)) preset.connectionMode = mode;
+                if (!string.IsNullOrWhiteSpace(preset.name)) lobbyPresets.Add(preset);
+            }
+        }
+        catch (Exception exception) { Logger.LogWarning("Could not load lobby presets: " + exception.Message); }
+    }
+
+    private void SaveLobbyPresets()
+    {
+        Directory.CreateDirectory(Paths.ConfigPath);
+        var lines = new List<string>(lobbyPresets.Count);
+        foreach (var preset in lobbyPresets)
+        {
+            lines.Add(string.Join("|", new[]
+            {
+                EncodeLobbyPresetValue(preset.name), EncodeLobbyPresetValue(preset.pvp.ToString()), EncodeLobbyPresetValue(preset.canGrab.ToString()),
+                EncodeLobbyPresetValue(preset.grabOnlyUnconscious.ToString()), EncodeLobbyPresetValue(preset.allowRespawn.ToString()), EncodeLobbyPresetValue(preset.autoRestart.ToString()),
+                EncodeLobbyPresetValue(preset.respawnAtStart.ToString()), EncodeLobbyPresetValue(preset.playerCollisions.ToString()), EncodeLobbyPresetValue(preset.cheats.ToString()),
+                EncodeLobbyPresetValue(preset.allowSwap.ToString()), EncodeLobbyPresetValue(preset.allowScaleChanging.ToString()), EncodeLobbyPresetValue(preset.allowObserver.ToString()),
+                EncodeLobbyPresetValue(preset.teams.ToString()), EncodeLobbyPresetValue(preset.teamsCfg), EncodeLobbyPresetValue(preset.initialScale),
+                EncodeLobbyPresetValue(preset.startingWeapon), EncodeLobbyPresetValue(preset.respawnWeapon), EncodeLobbyPresetValue(preset.startingAmmo),
+                EncodeLobbyPresetValue(preset.respawnAmmo), EncodeLobbyPresetValue(preset.respawnTime), EncodeLobbyPresetValue(preset.numberOfLives),
+                EncodeLobbyPresetValue(preset.healthFactor), EncodeLobbyPresetValue(preset.regenFactor), EncodeLobbyPresetValue(preset.maxPlayers),
+                EncodeLobbyPresetValue(preset.connectionMode.ToString())
+            }));
+        }
+        File.WriteAllLines(LobbyPresetsPath, lines.ToArray());
+    }
+
+    private static string LobbyPresetsPath => Path.Combine(Paths.ConfigPath, "GunsawMultiplayer.LobbyPresets.txt");
+
+    private static string EncodeLobbyPresetValue(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? ""));
+
+    private static string DecodeLobbyPresetValue(string value)
+    {
+        try { return Encoding.UTF8.GetString(Convert.FromBase64String(value)); }
+        catch { return ""; }
+    }
+
+    private static bool DecodeLobbyPresetBool(string value) => bool.TryParse(DecodeLobbyPresetValue(value), out var result) && result;
 
 
     internal void RefreshLobbies()
@@ -1870,40 +2015,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return value;
     }
 
-    private void SpawnNamedWeapon(string weaponName, string fallbackName, string alternateName = "")
-    {
-        var player = PlayerScript.player;
-        if (player == null || player.bodyScript == null) return;
-        var presets = Resources.FindObjectsOfTypeAll<WeaponPreset>();
-        WeaponPreset weapon = null;
-        foreach (var preset in presets)
-            if (preset != null && preset.sprite != null &&
-                (string.Equals(preset.name, weaponName, StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(preset.name, alternateName, StringComparison.OrdinalIgnoreCase)))
-            {
-                weapon = preset;
-                break;
-            }
-        if (weapon == null)
-            foreach (var preset in presets)
-                if (preset != null && preset.sprite != null && preset.shootType == 1 &&
-                    !string.IsNullOrEmpty(preset.name) &&
-                    preset.name.IndexOf(fallbackName, StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    weapon = preset;
-                    break;
-                }
-        if (weapon == null) { status = weaponName + " preset not found."; return; }
-        var prefab = Resources.Load<GameObject>("Spawnables/PickupWeapon");
-        if (prefab == null) { status = "Pickup weapon prefab not found."; return; }
-        var position = player.bodyScript.transform.position + new Vector3(0f, 2f, 0f);
-        var pickup = Instantiate(prefab, position, Quaternion.identity).GetComponent<DroppedWeapon>();
-        if (pickup == null) { status = "Pickup component not found."; return; }
-        pickup.ChangeWeapon(weapon, weapon.magSize);
-        WorldReplication.Instance.weapons.RegisterDroppedWeapon(pickup);
-        status = "Spawned " + weapon.name + ".";
-    }
-
     [Serializable]
     internal sealed class ServerInfo
     {
@@ -1994,5 +2105,35 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool hostP2P;
         public string connectionMode = "Relay";
         public string modVersion = "";
+    }
+    
+    [Serializable]
+    internal sealed class LobbyPreset
+    {
+        public string name = "";
+        public bool pvp;
+        public bool canGrab;
+        public bool grabOnlyUnconscious;
+        public bool allowRespawn;
+        public bool autoRestart;
+        public bool respawnAtStart;
+        public bool playerCollisions;
+        public bool cheats;
+        public bool allowSwap;
+        public bool allowScaleChanging;
+        public bool allowObserver;
+        public bool teams;
+        public string teamsCfg = "";
+        public string initialScale = "1.0";
+        public string startingWeapon = "Default";
+        public string respawnWeapon = "Default";
+        public string startingAmmo = LobbyAmmoRules.StartingDefault;
+        public string respawnAmmo = LobbyAmmoRules.RespawnDefault;
+        public string respawnTime = "5";
+        public string numberOfLives = "0";
+        public string healthFactor = "1.0";
+        public string regenFactor = "1.0";
+        public string maxPlayers = "4";
+        public ConnectionMode connectionMode = ConnectionMode.Relay;
     }
 }

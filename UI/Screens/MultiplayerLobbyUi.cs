@@ -18,6 +18,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text lobbyActionText;
     private TMP_Text lobbyGroupTitle;
     private Button lobbyActionButton, p2pButton, relayButton, autoButton;
+    private Button presetsButton;
     private TMP_Text customLevelActionText;
     private Button closeLobbyButton;
     private bool showingLeaveLobbyButton;
@@ -36,6 +37,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private CustomLevelBrowserUi customLevelBrowser;
     private int renderedLobbyHash;
     private MainMenuManager menu;
+    private GameObject presetsPanel;
+    private TMP_InputField presetNameInput;
+    private Transform presetRows;
 
     internal void Configure(GunsawMultiplayerPlugin owner)
     {
@@ -104,6 +108,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (lobbyActionText != null) lobbyActionText.text = MultiplayerSession.IsHosting ? "APPLY SETTINGS" : "CREATE LOBBY";
         SetLobbyActionButtons(viewingLobbySettings);
         if (lobbyActionButton != null) lobbyActionButton.interactable = !viewingLobbySettings;
+        if (presetsButton != null) presetsButton.interactable = !viewingLobbySettings;
+        if (viewingLobbySettings && presetsPanel != null) presetsPanel.SetActive(false);
         if (p2pButton != null) p2pButton.interactable = !viewingLobbySettings;
         if (relayButton != null) relayButton.interactable = !viewingLobbySettings;
         if (autoButton != null) autoButton.interactable = !viewingLobbySettings;
@@ -230,6 +236,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         lobbyInput = CreateInput(lobbyGroup.transform, new Vector2(55f, 127.5f), new Vector2(460f, 42f), 48, value => plugin.lobbyName = value);
 
         var settings = CreateSettingsScroll(lobbyGroup.transform, new Vector2(0f, 0f), new Vector2(580f, 195f));
+        var presetsRow = CreateSettingsRow(settings);
+        presetsButton = CreateButton(presetsRow, "PRESETS", Vector2.zero, new Vector2(360f, 36f));
+        presetsButton.onClick.AddListener(OpenPresets);
         pvpToggle = CreateToggle(CreateSettingsRow(settings), "PVP", Vector2.zero, new Vector2(520f, 40f), value => plugin.createPvp = value);
         AddTooltip(pvpToggle.gameObject, "PVP: Enables damage between players. Some functions, such as teammate position markers or the /tp command, will not work in this mode.");
         grabToggle = CreateToggle(CreateSettingsRow(settings), "CAN GRAB", Vector2.zero, new Vector2(520f, 40f), value => plugin.createCanGrab = value);
@@ -378,6 +387,63 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         tooltipText.enableWordWrapping = true;
         tooltipText.raycastTarget = false;
         tooltipPanel.SetActive(false);
+        CreatePresetManager();
+    }
+
+    private void CreatePresetManager()
+    {
+        presetsPanel = CreatePanel(root.transform, Vector2.zero, new Vector2(680f, 610f));
+        presetsPanel.name = "Lobby Presets";
+        presetsPanel.GetComponent<Image>().color = new Color(0.04f, 0.04f, 0.04f, 0.98f);
+        CreateText(presetsPanel.transform, "PRESETS", new Vector2(0f, 255f), new Vector2(600f, 40f), 25, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        CreateText(presetsPanel.transform, "PRESET NAME", new Vector2(-210f, 202f), new Vector2(180f, 30f), 14);
+        presetNameInput = CreateInput(presetsPanel.transform, new Vector2(20f, 202f), new Vector2(340f, 40f), 32, _ => { });
+        var save = CreateButton(presetsPanel.transform, "SAVE", new Vector2(265f, 202f), new Vector2(95f, 40f));
+        save.onClick.AddListener(() =>
+        {
+            try
+            {
+                plugin.SaveLobbyPreset(presetNameInput.text);
+                RebuildPresetRows();
+            }
+            catch (Exception exception) { plugin.status = exception.Message; }
+        });
+        var close = CreateButton(presetsPanel.transform, "CLOSE", new Vector2(245f, 255f), new Vector2(120f, 40f));
+        close.onClick.AddListener(() => presetsPanel.SetActive(false));
+        presetRows = CreateScrollArea(presetsPanel.transform, new Vector2(0f, -50f), new Vector2(620f, 430f));
+        presetsPanel.SetActive(false);
+    }
+
+    private void OpenPresets()
+    {
+        if (presetsPanel == null || MultiplayerSession.IsActive && !MultiplayerSession.IsHost) return;
+        presetsPanel.SetActive(true);
+        RebuildPresetRows();
+    }
+
+    private void RebuildPresetRows()
+    {
+        if (presetRows == null) return;
+        for (var index = presetRows.childCount - 1; index >= 0; index--) Destroy(presetRows.GetChild(index).gameObject);
+        foreach (var preset in plugin.LobbyPresets)
+        {
+            var row = new GameObject("Preset", typeof(RectTransform), typeof(LayoutElement));
+            row.transform.SetParent(presetRows, false);
+            row.GetComponent<LayoutElement>().preferredHeight = 46f;
+            CreateText(row.transform, preset.name, new Vector2(-175f, 0f), new Vector2(250f, 36f), 16, TextAlignmentOptions.Left, FontStyles.Bold);
+            var apply = CreateButton(row.transform, "APPLY", new Vector2(105f, 0f), new Vector2(120f, 38f));
+            apply.onClick.AddListener(() =>
+            {
+                plugin.ApplyLobbyPreset(preset);
+                presetsPanel.SetActive(false);
+            });
+            var delete = CreateButton(row.transform, "DELETE", new Vector2(245f, 0f), new Vector2(120f, 38f));
+            delete.onClick.AddListener(() =>
+            {
+                plugin.DeleteLobbyPreset(preset);
+                RebuildPresetRows();
+            });
+        }
     }
 
     private void CreateServerBrowser()
