@@ -1997,7 +1997,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             string.IsNullOrEmpty(uri.Host)) return false;
         if (uri.Scheme == Uri.UriSchemeHttp)
         {
-            var builder = new UriBuilder(uri) { Scheme = Uri.UriSchemeHttps };
+            var builder = new UriBuilder(uri) { Scheme = uri.Scheme };
             if (uri.IsDefaultPort) builder.Port = -1;
             uri = builder.Uri;
         }
@@ -2011,7 +2011,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         Uri uri;
         if (Uri.TryCreate(value, UriKind.Absolute, out uri))
-            return uri.IsDefaultPort ? uri.Host : uri.Host + ":" + uri.Port;
+        {
+            var prefix = uri.Scheme == "https" ? "" : uri.Scheme + "://";
+            var suffix = uri.IsDefaultPort ? "" : ":" + uri.Port;
+            return $"{prefix}{uri.Host}{suffix}";
+        }
         return value;
     }
 
