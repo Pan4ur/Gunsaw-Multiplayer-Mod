@@ -102,7 +102,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
         if (noticeRoot != null) 
             noticeRoot.SetActive(Time.unscaledTime < noImagesNoticeUntil);
         
-        if (activeScene.name == "LevelSelect" || activeScene.name == "LevelLoader" || Camera.main == null)
+        if (activeScene.name == "LevelSelect" || Camera.main == null)
         {
             Cancel();
             return;
