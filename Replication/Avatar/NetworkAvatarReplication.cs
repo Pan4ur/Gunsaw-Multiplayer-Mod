@@ -3745,6 +3745,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var range = rocket == null ? grenade.range : rocket.range;
         var force = rocket == null ? grenade.force : rocket.force;
         var damage = rocket == null ? grenade.damage : rocket.damage;
+        damage *= 2f; // Not vanilla but fun
         var fireAmount = rocket == null ? grenade.fireAmount : rocket.fireAmount;
         var sound = rocket == null ? grenade.explosionSound : rocket.sound;
         var impactEffect = rocket == null ? grenade.objOnDestroy : rocket.objOnDestroy;
