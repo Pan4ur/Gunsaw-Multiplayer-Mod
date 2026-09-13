@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Globalization;
 using UnityEngine;
@@ -1008,6 +1009,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         remotePrefabPath = prefabPath;
         remoteBody = avatar.GetComponentInChildren<BodyScript>();
         if (remoteBody == null) { Destroy(avatar); return; }
+        InitializeSeasonalHats(avatar);
         RemoveReplicaScarfArtifacts(avatar);
         remoteBody.WakeUp();
         remoteBody.isPlayer = true;
@@ -5824,6 +5826,31 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         renderer.color = parentRenderer == null ? Color.white : parentRenderer.color;
         renderer.sortingLayerID = parentRenderer == null ? 0 : parentRenderer.sortingLayerID;
         renderer.sortingOrder = parentRenderer == null ? 1 : parentRenderer.sortingOrder + 1;
+    }
+
+    private static void InitializeSeasonalHats(GameObject avatar)
+    {
+        if (avatar == null) return;
+        foreach (var hat in avatar.GetComponentsInChildren<SantaHatScript>(true))
+        {
+            if (DateTime.Now.Month != hat.month || PlayerPrefs.GetInt("seasonalHats") != 1)
+            {
+                DestroyImmediate(hat.gameObject);
+                continue;
+            }
+
+            var renderer = hat.GetComponent<SpriteRenderer>();
+            
+            if (renderer != null)
+                renderer.enabled = true;
+            
+            if (hat.transform.childCount == 0)
+                continue;
+            
+            var pompom = hat.transform.GetChild(0).GetComponent<SpriteRenderer>();
+            if (pompom != null)
+                pompom.enabled = true;
+        }
     }
 
     private static void RemoveReplicaScarfArtifacts(GameObject avatar)
