@@ -1126,11 +1126,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
     }
 
-    internal bool IsJoinedLobby(string id)
-    {
-        return !string.IsNullOrEmpty(id) && string.Equals(joinedLobbyId, id, StringComparison.Ordinal);
-    }
-
     internal string JoinedLobbyName
     {
         get

@@ -159,6 +159,66 @@ internal sealed class WorldReplication : MonoBehaviour
         weapons = new DroppedWeaponReplication();
     }
 
+    internal void BroadcastExplosion(GameObject explosion, Vector2 pos, float range, float force, ushort shooterId, bool playSound)
+    {
+        if (!MultiplayerSession.IsHost || range <= 0f || force <= 0f) return;
+        var body = explosion == null ? null : explosion.GetComponent<Rigidbody2D>();
+        var srcId = body == null ? 0UL : WireId(Id(body));
+        MultiplayerSession.Send(new WorldExplosionPacket(srcId, pos.x, pos.y, range, force, shooterId, playSound));
+    }
+
+    private void ApplyRemoteBarrelExplosion(WorldExplosionPacket packet)
+    {
+        var pos = new Vector2(packet.PositionX, packet.PositionY);
+        if (float.IsNaN(pos.x) || float.IsInfinity(pos.x) || float.IsNaN(pos.y) || float.IsInfinity(pos.y)
+            || float.IsNaN(packet.Range) || float.IsInfinity(packet.Range) || float.IsNaN(packet.Force) 
+            || float.IsInfinity(packet.Force) || packet.Range <= 0f || packet.Force <= 0f)
+            return;
+
+        var player = PlayerScript.player;
+        var localBody = player == null ? null : player.bodyScript;
+        if (localBody == null || packet.ShooterId == MultiplayerSession.LocalPeerId) return;
+
+        Rigidbody2D barrelBody = null;
+        var barrelId = ResolveWireId(packet.SourceId);
+        if (!string.IsNullOrEmpty(barrelId)) bodies.bodies.TryGetValue(barrelId, out barrelBody);
+        var explosionObject = barrelBody == null ? null : barrelBody.gameObject;
+
+        foreach (var collider in Physics2D.OverlapCircleAll(pos, packet.Range))
+        {
+            if (collider == null || !collider.TryGetComponent<Rigidbody2D>(out var rigidbody) ||
+                !IsLocalPlayerRigidbody(rigidbody, localBody)) continue;
+
+            var blocked = false;
+            foreach (var hit in Physics2D.LinecastAll(pos, collider.transform.position, LayerMask.GetMask("Ground")))
+            {
+                if (hit.collider == null || hit.collider.gameObject == explosionObject || hit.collider.gameObject == rigidbody.gameObject)
+                    continue;
+                blocked = true;
+                break;
+            }
+            if (blocked) 
+                continue;
+
+            var dir = (Vector2)collider.transform.position - pos;
+            dir = dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector2.up;
+            rigidbody.AddForce(dir * packet.Force * rigidbody.mass, ForceMode2D.Impulse);
+            rigidbody.AddTorque(UnityEngine.Random.Range(-packet.Force, packet.Force), ForceMode2D.Impulse);
+        }
+
+        if (packet.PlaySound)
+            Sound.Play(Resources.Load<AudioClip>("Sounds/ExplosionBad"), pos);
+        
+        player.actTin += 15f - Vector2.Distance(localBody.transform.position, pos);
+    }
+
+    private static bool IsLocalPlayerRigidbody(Rigidbody2D rigidbody, BodyScript localBody)
+    {
+        if (rigidbody.GetComponent<BodyScript>() == localBody) return true;
+        var limb = rigidbody.GetComponent<LimbScript>();
+        return limb != null && limb.body == localBody;
+    }
+
     internal void RegisterDestroyedCrateDebris(CrateScript crate, Rigidbody2D[] debrisBodies)
     {
         if (!MultiplayerSession.IsHost || crate == null || crate.breakType != CrateScript.BreakType.None ||
@@ -282,6 +342,9 @@ internal sealed class WorldReplication : MonoBehaviour
 
             WorldFirePacket firePacket;
             while (MultiplayerSession.TryTakeWorldFire(out firePacket)) enviroment.ApplyFire(firePacket);
+
+            WorldExplosionPacket explosionPacket;
+            while (MultiplayerSession.TryTakeWorldExplosion(out explosionPacket)) ApplyRemoteBarrelExplosion(explosionPacket);
 
             var lodFreezeStarted = MultiplayerPerformance.StartPhase();
             bodies.FreezeFarClientProps();

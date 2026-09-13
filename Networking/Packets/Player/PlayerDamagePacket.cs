@@ -1,8 +1,7 @@
 internal enum PlayerDamageEffect : byte
 {
     Damage = 0,
-    Wound = 1,
-    Explosion = 2
+    Wound = 1
 }
 
 internal readonly struct PlayerDamagePacket : INetworkPacket
@@ -23,10 +22,6 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
     internal readonly string WoundSprite;
     internal readonly bool HasSplash;
     internal readonly bool CreateScreenCrack;
-    internal readonly float ExplosionX;
-    internal readonly float ExplosionY;
-    internal readonly float ExplosionRange;
-    internal readonly float ExplosionForce;
     internal readonly float BaseDamage;
     internal readonly bool BodyColliderHit;
     
@@ -35,8 +30,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         short limbIndex = 0,
         float localPointX = 0f, float localPointY = 0f, float directionX = 0f, float directionY = 0f,
         string weaponSprite = "", string woundSprite = "", bool hasSplash = false,
-        bool createScreenCrack = false, float explosionX = 0f, float explosionY = 0f,
-        float explosionRange = 0f, float explosionForce = 0f, string sourceName = "", string sourceWeapon = "",
+        bool createScreenCrack = false, string sourceName = "", string sourceWeapon = "",
         float baseDamage = 0f, bool bodyColliderHit = false)
     {
         Amount = amount;
@@ -55,10 +49,6 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         WoundSprite = woundSprite ?? "";
         HasSplash = hasSplash;
         CreateScreenCrack = createScreenCrack;
-        ExplosionX = explosionX;
-        ExplosionY = explosionY;
-        ExplosionRange = explosionRange;
-        ExplosionForce = explosionForce;
         BaseDamage = baseDamage;
         BodyColliderHit = bodyColliderHit;
     }
@@ -99,10 +89,6 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
             bodyColliderHit: bodyColliderHit
         );
 
-    internal static PlayerDamagePacket Explosion(float positionX, float positionY, float range, float force)
-        => new PlayerDamagePacket(0f, false, PlayerDamageEffect.Explosion, false, explosionX: positionX,
-            explosionY: positionY, explosionRange: range, explosionForce: force);
-
     public PacketType Type => PacketType.PlayerDamage;
 
     public void Write(ref PacketWriter writer)
@@ -128,12 +114,6 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                 writer.WriteBoolean(CreateScreenCrack);
                 writer.WriteSingle(BaseDamage);
                 writer.WriteBoolean(BodyColliderHit);
-                break;
-            case PlayerDamageEffect.Explosion:
-                writer.WriteSingle(ExplosionX);
-                writer.WriteSingle(ExplosionY);
-                writer.WriteSingle(ExplosionRange);
-                writer.WriteSingle(ExplosionForce);
                 break;
         }
     }
@@ -178,8 +158,6 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                     bodyColliderHit
                 );
             }
-            case PlayerDamageEffect.Explosion:
-                return Explosion(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
             default: throw new System.IO.InvalidDataException("Unknown player damage effect.");
         }
     }

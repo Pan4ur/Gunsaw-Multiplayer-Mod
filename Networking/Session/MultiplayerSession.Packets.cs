@@ -226,6 +226,15 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception) { }
             }
+            else if (!isHost && decodedPacket.Type == PacketType.WorldExplosion && senderId == hostPeerId)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueEvent(worldExplosions, senderId, WorldExplosionPacket.Read(ref reader));
+                }
+                catch (System.Exception) { }
+            }
             else if (isHost && decodedPacket.Type == PacketType.WorldInput)
             {
                 try
@@ -746,6 +755,7 @@ internal static partial class MultiplayerSession
         worldSnapshots.Clear();
         worldEnvironments.Clear();
         worldFires.Clear();
+        worldExplosions.Clear();
         worldInputs.Clear();
         worldDamage.Clear();
         npcSnapshots.Clear();

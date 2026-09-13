@@ -173,6 +173,16 @@ internal static partial class MultiplayerSession
         }
     }
 
+    internal static bool TryTakeWorldExplosion(out WorldExplosionPacket packet)
+    {
+        lock (statusLock)
+        {
+            var item = worldExplosions.Count == 0 ? null : worldExplosions.Dequeue();
+            packet = item == null ? default(WorldExplosionPacket) : item.Packet;
+            return item != null;
+        }
+    }
+
     internal static bool TryTakePlayerGrunt(out ushort peerId)
     {
         lock (statusLock)

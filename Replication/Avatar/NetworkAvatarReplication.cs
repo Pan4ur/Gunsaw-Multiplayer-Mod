@@ -2417,12 +2417,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             CameraFollow.cam.AddRot(UnityEngine.Random.Range(-amount, amount) * 0.2f);
         }
         
-        if (effectType == PlayerDamageEffect.Explosion)
-        {
-            ApplyExplosionImpulse(body, playerDamage);
-            return;
-        }
-        
         MusicManager.main.intensity += amount * 0.5f;
         if (Time.unscaledTime < localRespawnProtectionUntil) return;
         
@@ -2450,45 +2444,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         
         if (effectType == PlayerDamageEffect.Wound) ApplyNetworkWound(body, playerDamage);
-    }
-
-    private static void ApplyExplosionImpulse(BodyScript body, PlayerDamagePacket packet)
-    {
-        var position = new Vector2(packet.ExplosionX, packet.ExplosionY);
-        var range = packet.ExplosionRange;
-        var force = packet.ExplosionForce;
-        
-        if (!IsFinite(position.x) || !IsFinite(position.y) || !IsFinite(range) || !IsFinite(force) ||
-            range <= 0f || force <= 0f) return;
-        
-        range = Mathf.Min(range, 100f);
-        force = Mathf.Min(force, 1000f);
-
-        if (body.rb != null) body.lastMoveDir = body.rb.velocity;
-        body.EnterHalfControl();
-
-        var affected = new HashSet<Rigidbody2D>();
-        if (body.rb != null && affected.Add(body.rb))
-            ApplyExplosionForce(body.rb, body.rb.position, position, range, force);
-        
-        foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
-        {
-            if (collider == null) continue;
-            var rigidbody = collider.attachedRigidbody;
-            if (rigidbody == null || !affected.Add(rigidbody)) continue;
-            ApplyExplosionForce(rigidbody, collider.transform.position, position, range, force);
-        }
-    }
-
-    private static bool ApplyExplosionForce(Rigidbody2D rigidbody, Vector2 targetPosition,
-        Vector2 origin, float range, float force)
-    {
-        var offset = targetPosition - origin;
-        if (offset.sqrMagnitude > range * range) return false;
-        var direction = offset.sqrMagnitude > 0.0001f ? offset.normalized : Vector2.up;
-        rigidbody.AddForce(direction * (force * rigidbody.mass), ForceMode2D.Impulse);
-        rigidbody.AddTorque(UnityEngine.Random.Range(-force, force), ForceMode2D.Impulse);
-        return true;
     }
 
     internal static bool BlockLocalRespawnDeath(BodyScript body)
@@ -4109,41 +4064,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         Destroy(visual, 20f);
     }
 
-    internal static void ReplicateExplosionImpulse(GameObject explosionObject, Vector2 position,
-        float range, float force)
+    internal static void ReplicateExplosion(GameObject explosionObject, Vector2 position,
+        float range, float force, bool playExplosionSound)
     {
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || !IsFinite(position.x) ||
             !IsFinite(position.y) || !IsFinite(range) || !IsFinite(force) || range <= 0f || force <= 0f)
             return;
-        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
-        {
-            if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0 ||
-                replica.remotePeerId == replicatedExplosionImpulseExclusionPeerId ||
-                !BodyMayBeAffectedByExplosion(replica.remoteBody, explosionObject, position, range)) continue;
-            MultiplayerSession.Send(PlayerDamagePacket.Explosion(position.x, position.y, range, force),
-                replica.remotePeerId);
-        }
-    }
-
-    private static bool BodyMayBeAffectedByExplosion(BodyScript body, GameObject explosionObject,
-        Vector2 position, float range)
-    {
-        foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
-        {
-            if (collider == null || collider.attachedRigidbody == null ||
-                ((Vector2)collider.transform.position - position).sqrMagnitude > range * range) continue;
-            var blocked = false;
-            foreach (var hit in Physics2D.LinecastAll(position, collider.transform.position,
-                LayerMask.GetMask("Ground")))
-            {
-                if (hit.collider == null || hit.collider.gameObject == explosionObject ||
-                    hit.collider.gameObject == collider.attachedRigidbody.gameObject) continue;
-                blocked = true;
-                break;
-            }
-            if (!blocked) return true;
-        }
-        return false;
+        GunsawMultiplayerPlugin.World?.BroadcastExplosion(explosionObject, position, range, force,
+            replicatedExplosionImpulseExclusionPeerId, playExplosionSound);
     }
 
     internal static void ConfigureProjectileCollisions(Component projectile, BodyScript shooter)

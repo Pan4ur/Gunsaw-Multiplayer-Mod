@@ -1372,7 +1372,8 @@ internal static class MultiplayerExplosionPatch
         if (NetworkAvatarReplication.ShouldSuppressClientProjectileFires(projectile)) fireAmount = 0;
         __state = NetworkAvatarReplication.BeginProjectileExplosion(projectile);
         NetworkAvatarReplication.ReplicateProjectileImpact(projectile, pos);
-        NetworkAvatarReplication.ReplicateExplosionImpulse(projectile, pos, range, force);
+        var barrel = explosionObj == null ? null : explosionObj.GetComponent<CrateScript>();
+        NetworkAvatarReplication.ReplicateExplosion(explosionObj, pos, range, force, barrel != null && barrel.breakType == CrateScript.BreakType.Explode);
     }
 
     private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)
