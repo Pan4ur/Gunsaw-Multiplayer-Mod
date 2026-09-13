@@ -2328,6 +2328,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static void RouteRemotePlayerDamage(NetworkAvatarReplication replica, float amount, bool critical)
     {
+        if (ShouldCancelExplosionDamage()) return;
         if (replica != null && TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId)) return;
         if (replica != null && KartPassengers.IsProtectedPassenger(replica.remoteBody))
         {
@@ -2350,6 +2351,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (localPlayer == null || currentShooter != localPlayer.bodyScript) return;
         MultiplayerSession.Send(new PvpDamagePacket(amount, critical), replica.remotePeerId);
     }
+
+    internal static bool ShouldCancelExplosionDamage() =>
+        !MultiplayerSession.IsHost && activeShotState?.IsExplosion == true && PlayerScript.player != null && currentShooter == PlayerScript.player.bodyScript;
 
     private static void SendRemotePlayerDamage(ushort targetPeerId, float amount, bool critical, BodyScript source)
     {
