@@ -763,8 +763,21 @@ internal static class MultiplayerWorldButtonPatch
 
     private static void Postfix(ButtonScript __instance)
     {
+        if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost && __instance != null && __instance.activateOnce) return;
         if (GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.NotifyButtonActivated(__instance);
+    }
+}
+
+[HarmonyPatch(typeof(ButtonScript), "Activated")]
+internal static class MultiplayerOneTimeButtonPatch
+{
+    private static bool Prefix(ButtonScript __instance)
+    {
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || __instance == null || !__instance.activateOnce)
+            return true;
+            
+        return !OneTimeButtonReactivation.TryHandleActivation(__instance);
     }
 }
 
@@ -849,8 +862,7 @@ internal static class ClientNpcDeathPatch
             deathCause = NetworkAvatarReplication.DeathCauseFor(__instance);
         var weaponName = NetworkAvatarReplication.DamageWeaponFor(__instance);
         var killerName = killer == null ? NetworkAvatarReplication.DamageSourceNameFor(__instance) : DeathDisplayName(killer);
-        var message = KillMessageService.Create(deathCause, victimName,
-            killerName, weaponName);
+        var message = KillMessageService.Create(deathCause, victimName, killerName, weaponName);
         MultiplayerHud.AddSystemMessage(message);
         ChatPacket packet;
         if (ChatService.TryCreate(message, true, out packet)) MultiplayerSession.Send(packet);

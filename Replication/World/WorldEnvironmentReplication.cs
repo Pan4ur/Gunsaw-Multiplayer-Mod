@@ -157,6 +157,7 @@ public class WorldEnvironmentReplication
         WorldReplication.Instance.receivedButtonActivations[id] = activations;
         if (hadPrevious && activations > previous && button != null && button.activateSound != null)
             Sound.Play(button.activateSound, button.transform.position, false, false, null, 1f, 1f);
+        if (button != null && button.activateOnce && activations > 0) OneTimeButtonReactivation.SetInactive(button);
         if (!exists && button != null) SetButtonInactive(button);
     }
     
@@ -168,8 +169,12 @@ public class WorldEnvironmentReplication
         if (!WorldReplication.Instance.buttons.TryGetValue(id, out button) || button == null || remotePlayer == null ||
             !remotePlayer.isAlive || (remotePlayer.transform.position - button.transform.position).sqrMagnitude > 25f ||
             (WorldReplication.Instance.nextButtonActivation.TryGetValue(id, out allowedAt) && Time.unscaledTime < allowedAt)) return;
-        WorldReplication.Instance.nextButtonActivation[id] = Time.unscaledTime + 0.15f;
-        button.Activated();
+        WorldReplication.Instance.nextButtonActivation[id] = Time.unscaledTime + (button.activateOnce ? 1f : 0.15f);
+        if (button.activateOnce && OneTimeButtonReactivation.IsUsed(button))
+        {
+            if (OneTimeButtonReactivation.CanReactivate(button)) OneTimeButtonReactivation.Reactivate(button);
+        }
+        else button.Activated();
         WorldReplication.Instance.nextSnapshot = 0f; // Sending new world state
     }
     
@@ -262,6 +267,32 @@ public class WorldEnvironmentReplication
         if (WorldReplication.Instance.promptZone == null || !Input.GetKeyDown(player.keys["Use"])) return;
         if (MultiplayerSession.IsHost) WorldReplication.Instance.ActivateLocalZone(WorldReplication.Instance.promptZone, true);
         else WorldReplication.Instance.QueueZoneActivation(WorldReplication.Instance.promptZone, true);
+    }
+
+    internal void UpdateButtonReactivationPrompt()
+    {
+        var world = WorldReplication.Instance;
+        world.promptButton = null;
+        if (world.promptZone != null) return;
+        var player = PlayerScript.player;
+        var body = player == null ? null : player.bodyScript;
+        if (body == null || !body.isAlive) return;
+        foreach (var pair in world.buttons)
+        {
+            var button = pair.Value;
+            if (button == null || !button.activateOnce ||
+                (!MultiplayerSession.IsHost && (!world.receivedButtonActivations.TryGetValue(pair.Key, out var activations) || activations == 0)) ||
+                (MultiplayerSession.IsHost && (!OneTimeButtonReactivation.IsUsed(button) || !OneTimeButtonReactivation.CanReactivate(button))) ||
+                ((Vector2)button.transform.position - (Vector2)body.transform.position).sqrMagnitude > 4f) continue;
+            world.promptButton = button;
+            break;
+        }
+        if (world.promptButton == null || !Input.GetKeyDown(player.keys["Use"])) return;
+       
+        if (MultiplayerSession.IsHost) 
+            OneTimeButtonReactivation.Reactivate(world.promptButton);
+        else 
+            world.QueueButtonActivation(world.promptButton);
     }
     
     internal void ApplyGlassDamage(string id, ushort peerId, float damage, Vector3 bulletPosition)

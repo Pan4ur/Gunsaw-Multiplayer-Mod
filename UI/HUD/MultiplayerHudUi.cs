@@ -259,7 +259,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var countdown = NetworkAvatarReplication.RespawnCountdownText();
         respawnText.gameObject.SetActive(!string.IsNullOrEmpty(countdown));
         if (!string.IsNullOrEmpty(countdown)) respawnText.text = countdown;
-        activationText.text = "PRESS [USE] TO ACTIVATE";
+        activationText.text = "PRESS [USE] TO REACTIVATE";
         activationText.gameObject.SetActive((WorldReplication.Instance != null && WorldReplication.Instance.HasActivationPrompt) ||
             !string.IsNullOrEmpty(PlayerCarrySystem.Prompt) || !string.IsNullOrEmpty(ArsenalMenu.Prompt));
     }

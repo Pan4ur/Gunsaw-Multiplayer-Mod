@@ -60,7 +60,8 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly HashSet<string> activatedZoneIds = [];
     internal readonly HashSet<string> localZonePrompts = [];
     internal ActivateZoneScript promptZone;
-    internal bool HasActivationPrompt => promptZone != null && MultiplayerSession.IsConnected;
+    internal ButtonScript promptButton;
+    internal bool HasActivationPrompt => (promptZone != null || promptButton != null) && MultiplayerSession.IsConnected;
     internal readonly Dictionary<string, GlassScript> glasses = new();
     internal readonly Dictionary<GlassScript, string> glassIds = new();
     internal readonly HashSet<string> destroyedGlass = [];
@@ -285,6 +286,7 @@ internal sealed class WorldReplication : MonoBehaviour
             {
                 var zonePromptStarted = MultiplayerPerformance.StartPhase();
                 enviroment.UpdateZonePrompt();
+                enviroment.UpdateButtonReactivationPrompt();
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, zonePromptStarted);
                 var inputStarted = MultiplayerPerformance.StartPhase();
                 byte[] interaction;
@@ -297,6 +299,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
             var clientZonePromptStarted = MultiplayerPerformance.StartPhase();
             enviroment.UpdateZonePrompt();
+            enviroment.UpdateButtonReactivationPrompt();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, clientZonePromptStarted);
             if (!lampHistoryRequested)
             {
@@ -604,6 +607,7 @@ internal sealed class WorldReplication : MonoBehaviour
         initializedBodies.Clear();
         buttons.Clear();
         buttonIds.Clear();
+        OneTimeButtonReactivation.Clear();
         buttonActivations.Clear();
         receivedButtonActivations.Clear();
         nextButtonActivation.Clear();
@@ -616,6 +620,7 @@ internal sealed class WorldReplication : MonoBehaviour
         activatedZoneIds.Clear();
         localZonePrompts.Clear();
         promptZone = null;
+        promptButton = null;
         glasses.Clear();
         glassIds.Clear();
         destroyedGlass.Clear();
