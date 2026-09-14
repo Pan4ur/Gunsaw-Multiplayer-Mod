@@ -120,6 +120,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<int, PlayerDeathCause> deathCauses = new();
     private static readonly Dictionary<int, float> localKillBloodTimes = new();
     private static readonly HashSet<int> announcedDeaths = [];
+    private static readonly HashSet<string> exhaustedLivesLobbies = [];
     private static BodyScript suppressNpcKillEffectFor;
     private bool coordinator;
     internal ushort remotePeerId;
@@ -222,6 +223,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (instance == null || !instance.CanRespawn || instance.respawnAt < 0f ||
             player == null || player.bodyScript == null || player.bodyScript.isAlive) return "";
         return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(instance.respawnAt - Time.unscaledTime));
+    }
+
+    internal static void ResetExhaustedLives()
+    {
+        exhaustedLivesLobbies.Remove(MultiplayerSession.LobbyId);
     }
 
     internal static bool TrySetPendingRespawnCharacter(string character, out string characterName)
@@ -2632,7 +2638,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (livesRule != MultiplayerSession.NumberOfLives)
         {
             livesRule = MultiplayerSession.NumberOfLives;
-            remainingLives = livesRule;
+            remainingLives = exhaustedLivesLobbies.Contains(MultiplayerSession.LobbyId) ? 0 : livesRule;
         }
         if (scene.handle != localSpawnScene)
         {
@@ -2641,12 +2647,18 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             localDeathPosition = localSpawnPosition;
             localWasAlive = body.isAlive;
             respawnAt = -1f;
-            remainingLives = MultiplayerSession.NumberOfLives;
+            remainingLives = exhaustedLivesLobbies.Contains(MultiplayerSession.LobbyId) ? 0 : MultiplayerSession.NumberOfLives;
         }
 
         if (body.isAlive)
         {
             localWasAlive = true;
+            if (MultiplayerSession.NumberOfLives > 0 && remainingLives == 0)
+            {
+                localWasAlive = false;
+                body.Death();
+                return;
+            }
             respawnAt = -1f;
             return;
         }
@@ -2657,6 +2669,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             localWasAlive = false;
             localDeathPosition = body.transform.position;
             if (MultiplayerSession.NumberOfLives > 0) remainingLives = Mathf.Max(0, remainingLives - 1);
+            if (remainingLives == 0) exhaustedLivesLobbies.Add(MultiplayerSession.LobbyId);
             respawnAt = CanRespawn
                 ? Time.unscaledTime + MultiplayerSession.RespawnTimeSeconds
                 : -1f;
@@ -4391,21 +4404,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             yield return null;
         }
         if (visual != null) Destroy(visual);
-    }
-
-    private static void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect, AudioClip explosionSound)
-    {
-        if (impactEffect != null)
-        {
-            var effect = Instantiate(impactEffect, position, Quaternion.identity);
-            foreach (var projectile in effect.GetComponentsInChildren<RocketProjectile>(true)) projectile.enabled = false;
-            foreach (var grenade in effect.GetComponentsInChildren<GrenadeScript>(true)) grenade.enabled = false;
-            foreach (var collider in effect.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
-            foreach (var rigidbody in effect.GetComponentsInChildren<Rigidbody2D>(true)) rigidbody.simulated = false;
-            Destroy(effect, 60f);
-        }
-        if (explosionSound != null) Sound.Play(explosionSound, position);
-        CreateRemoteExplosionCracks(new ProjectileImpactPacket(position.x, position.y, ""));
     }
 
     private void PlayRemoteProjectileImpact(ProjectileImpactPacket packet)

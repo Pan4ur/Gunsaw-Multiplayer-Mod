@@ -178,6 +178,7 @@ internal static partial class MultiplayerSession
     private static int sentOtherBytesPerSecond;
     private static string localPlayerName = "Player";
     private static ushort localPeerId;
+    private static string lobbyId = "";
     private static ushort hostPeerId;
     private static int maxPlayers = 2;
     private const long PeerTimeoutTicks = TimeSpan.TicksPerSecond * 30;
@@ -215,6 +216,7 @@ internal static partial class MultiplayerSession
         }
         isHost = true;
         socket = ConnectRelay(relayAddress, lobbyId, relayKey);
+        MultiplayerSession.lobbyId = lobbyId ?? "";
         if (connectionMode != ConnectionMode.Relay) EnableP2P();
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -283,6 +285,7 @@ internal static partial class MultiplayerSession
             CanGrabPlayers = false;
             GrabOnlyUnconscious = false;
             AllowRespawn = false;
+            MultiplayerSession.lobbyId = lobbyId ?? "";
             RespawnTimeSeconds = 0;
             RespawnAtStart = false;
             PlayerCollisions = true;
@@ -373,6 +376,7 @@ internal static partial class MultiplayerSession
     {
         if (!isHost || string.IsNullOrEmpty(scene)) return;
         ObserverSystem.BroadcastResetForLevelChange();
+        NetworkAvatarReplication.ResetExhaustedLives();
         hostScene = scene;
         var autoRestart = autoRestartSceneReload;
         autoRestartSceneReload = false;
@@ -458,6 +462,7 @@ internal static partial class MultiplayerSession
     internal static bool AllowRespawn { get; private set; }
     internal static int RespawnTimeSeconds { get; private set; }
     internal static int NumberOfLives { get; private set; }
+    internal static string LobbyId => lobbyId;
     internal static bool AutoRestart { get; private set; }
     internal static float HealthFactor { get; private set; } = LobbyHealthRule.DefaultFactor;
     internal static float RegenFactor { get; private set; } = LobbyRegenRule.DefaultFactor;

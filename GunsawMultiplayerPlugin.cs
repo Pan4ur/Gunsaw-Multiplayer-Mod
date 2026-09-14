@@ -430,6 +430,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 return;
             }
             requestedHostScene = sceneToLoad;
+            if (mustReload) NetworkAvatarReplication.ResetExhaustedLives();
             ObserverSystem.ResetForLevelChange(mustReload);
             if (sceneToLoad == "LevelLoader")
             {
