@@ -409,7 +409,10 @@ internal sealed class NpcReplication : MonoBehaviour
                     var limb = layout.Limbs[index];
                     if (limb == null || !limb.gameObject.activeInHierarchy) continue;
                     try { limb.OnWillRenderObject(); }
-                    catch (Exception) { }
+                    catch (Exception e)
+                    {
+                        GunsawMultiplayerPlugin.LogInfo("NPC pose animation failed for " + body.name + ": " + e.GetType().Name + ": " + e.Message);
+                    }
                 }
             }
             finally { IsEvaluatingAuthoritativePose = false; }
@@ -812,9 +815,9 @@ internal sealed class NpcReplication : MonoBehaviour
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateApply, applyStarted);
             }
         }
-        catch (EndOfStreamException) { }
-        catch (FormatException) { }
-        catch (IOException) { }
+        catch (EndOfStreamException e) { GunsawMultiplayerPlugin.LogInfo("Dropped truncated NPC snapshot: " + e.Message); }
+        catch (FormatException e) { GunsawMultiplayerPlugin.LogInfo("Dropped malformed NPC snapshot: " + e.Message); }
+        catch (IOException e) { GunsawMultiplayerPlugin.LogInfo("Dropped unreadable NPC snapshot: " + e.Message); }
     }
 
     private NpcState ReadState(BinaryReader reader)
@@ -928,9 +931,9 @@ internal sealed class NpcReplication : MonoBehaviour
                 ApplyState(proxy, state);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStatePose, poseStarted);
             }
-            catch (Exception ignored)
+            catch (Exception e)
             {
-
+                GunsawMultiplayerPlugin.LogInfo("Could not apply NPC state " + state.Id + ": " + e.GetType().Name + ": " + e.Message);
             }
         }
 
@@ -1057,7 +1060,10 @@ internal sealed class NpcReplication : MonoBehaviour
         if (body != null && (body.limbs == null || body.limbs.Count == 0))
         {
             try { body.WakeUp(); }
-            catch (Exception) { }
+            catch (Exception e)
+            {
+                GunsawMultiplayerPlugin.LogInfo("Could not wake NPC proxy " + id + ": " + e.GetType().Name + ": " + e.Message);
+            }
         }
         InitializeSeasonalHats(root);
         ClearWeaponBackShows(body);

@@ -430,7 +430,11 @@ internal sealed class CustomLevelBrowserUi
             }
             localLevels = valid.ToArray();
         }
-        catch { localLevels = new CatalogEntry[0]; }
+        catch (System.Exception e)
+        {
+            localLevels = new CatalogEntry[0];
+            GunsawMultiplayerPlugin.LogInfo("Could not load local levels: " + e.GetType().Name + ": " + e.Message);
+        }
     }
 
     private void SaveLocalLevels()
@@ -448,7 +452,11 @@ internal sealed class CustomLevelBrowserUi
     private static string DecodeLocalValue(string value)
     {
         try { return Encoding.UTF8.GetString(Convert.FromBase64String(value)); }
-        catch { return ""; }
+        catch (System.Exception e)
+        {
+            GunsawMultiplayerPlugin.LogInfo("Invalid encoded local-level value: " + e.Message);
+            return "";
+        }
     }
 
     private static CatalogEntry[] ParseCatalog(string source)

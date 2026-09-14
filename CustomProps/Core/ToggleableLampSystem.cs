@@ -27,9 +27,9 @@ internal static class ToggleableLampSystem
                 });
             }
         }
-        catch (Exception exception)
+        catch (Exception e)
         {
-            Debug.LogWarning("Failed to prepare toggleable lamps: " + exception.Message);
+            GunsawMultiplayerPlugin.LogInfo("Failed to prepare toggleable lamps: " + e.Message);
         }
     }
 

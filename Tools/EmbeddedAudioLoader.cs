@@ -32,7 +32,7 @@ internal class EmbeddedAudioLoader
         {
             if (stream == null)
             {
-                Debug.LogError("[GunsawMP] Embedded audio not found: " + name);
+                GunsawMultiplayerPlugin.LogInfo("Embedded audio not found: " + name);
                 onLoaded?.Invoke(null);
                 yield break;
             }
@@ -60,7 +60,7 @@ internal class EmbeddedAudioLoader
 
             if (request.isNetworkError || request.isHttpError)
             {
-                Debug.LogError("[GunsawMP] Failed to load audio: " + request.error);
+                GunsawMultiplayerPlugin.LogInfo("Failed to load audio: " + request.error);
                 onLoaded?.Invoke(null);
                 TryDelete(tempPath);
                 yield break;

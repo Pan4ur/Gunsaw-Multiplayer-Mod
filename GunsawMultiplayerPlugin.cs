@@ -237,7 +237,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             }
             catch (Exception exception)
             {
-                Logger.LogError("Headless lobby could not load map: " + exception.Message);
+                Logger.LogInfo("Headless lobby could not load map: " + exception.Message);
                 customLevelJson = "";
             }
         }
@@ -261,11 +261,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         KeepMultiplayerRunningInBackground();
         if (headlessMode)
         {
-            if (string.IsNullOrEmpty(customLevelJson)) { Logger.LogError("Headless lobby disabled: no valid map."); return; }
+            if (string.IsNullOrEmpty(customLevelJson)) { Logger.LogInfo("Headless lobby disabled: no valid map."); return; }
             Logger.LogInfo("Starting headless lobby.");
             if (SceneManager.GetActiveScene().name != "LevelSelect") SceneManager.LoadScene("LevelSelect");
             CreateLobby();
         }
+    }
+
+    internal static void LogInfo(string m)
+    {
+        Instance?.Logger.LogInfo(m);
     }
 
     private void OnApplicationFocus(bool focused)
@@ -343,7 +348,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 StartCustomLevelLocally(customLevelJson);
                 Logger.LogInfo("Headless lobby custom level started.");
             }
-            catch (Exception exception) { Logger.LogError("Headless lobby could not start map: " + exception.Message); }
+            catch (Exception exception) { Logger.LogInfo("Headless lobby could not start map: " + exception.Message); }
         }
         if (Time.unscaledTime < customLevelPhysicsRefreshUntil &&
             Time.unscaledTime >= nextCustomLevelPhysicsRefresh)
@@ -630,7 +635,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 if (!string.IsNullOrWhiteSpace(preset.name)) lobbyPresets.Add(preset);
             }
         }
-        catch (Exception exception) { Logger.LogWarning("Could not load lobby presets: " + exception.Message); }
+        catch (Exception exception) { Logger.LogInfo("Could not load lobby presets: " + exception.Message); }
     }
 
     private void SaveLobbyPresets()
@@ -662,7 +667,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private static string DecodeLobbyPresetValue(string value)
     {
         try { return Encoding.UTF8.GetString(Convert.FromBase64String(value)); }
-        catch { return ""; }
+        catch (Exception exception)
+        {
+            LogInfo("Invalid encoded lobby-preset field: " + exception.Message);
+            return "";
+        }
     }
 
     private static bool DecodeLobbyPresetBool(string value) => bool.TryParse(DecodeLobbyPresetValue(value), out var result) && result;
@@ -1107,7 +1116,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             catch (Exception exception)
             {
                 result = "UPDATE CHECK FAILED: " + exception.Message;
-                Logger.LogWarning(result);
+                Logger.LogInfo(result);
             }
             RunOnMainThread(() =>
             {
@@ -1170,7 +1179,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         string error;
         if (!MultiplayerSession.Connect(address, lobbyId, relayKey, playerName, peerId, hostPeerId, maxPlayers,
-            mode, Logger, out error))
+            mode, out error))
         {
             SetJoinInProgress(false);
             joinedLobbyId = "";
@@ -1200,7 +1209,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
                     createGrabOnlyUnconscious, createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
                     createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, healthFactor, regenFactor,
-                    playerName, hostPeerId, maxPlayers, createConnectionMode, Logger);
+                    playerName, hostPeerId, maxPlayers, createConnectionMode);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
                 if (headlessMode) StartHeadlessKeepAlive(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
                 if (headlessMode) headlessStartPending = true;
@@ -1287,7 +1296,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 HttpAt(directoryUrl, "PUT", "/v1/lobbies/" + lobbyId,
                     "{\"players\":" + players + ",\"map\":\"LevelLoader\"}", "Bearer " + relayKey);
             }
-            catch (Exception exception) { Logger.LogWarning("Headless keep-alive failed: " + exception.Message); }
+            catch (Exception exception) { Logger.LogInfo("Headless keep-alive failed: " + exception.Message); }
             finally { Interlocked.Exchange(ref headlessKeepAliveInFlight, 0); }
         }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
     }
@@ -1882,7 +1891,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try { Http("PUT", "/v1/lobbies/" + hostedLobbyId, "{\"players\":" + players + ",\"map\":\"" + EscapeJson(scene) + "\"}", "Bearer " + hostRelayKey); }
-            catch (Exception exception) { Logger.LogWarning("Lobby heartbeat failed: " + exception.Message); }
+            catch (Exception exception) { Logger.LogInfo("Lobby heartbeat failed: " + exception.Message); }
         });
     }
 
@@ -1894,7 +1903,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try { Http("DELETE", "/v1/lobbies/" + lobbyId + "/peers/" + peerId, null, "Bearer " + relayKey); }
-            catch (Exception exception) { Logger.LogWarning("Lobby peer removal failed: " + exception.Message); }
+            catch (Exception exception) { Logger.LogInfo("Lobby peer removal failed: " + exception.Message); }
         });
     }
 
@@ -1937,7 +1946,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             });
             Http("PUT", "/v1/lobbies/" + hostedLobbyId, body, "Bearer " + hostRelayKey);
         }
-        catch (Exception exception) { Logger.LogWarning("Could not update hosted lobby: " + exception.Message); }
+        catch (Exception exception) { Logger.LogInfo("Could not update hosted lobby: " + exception.Message); }
     }
 
     private void DeleteHostedLobby(string lobbyId, string relayKey)
@@ -1945,7 +1954,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try { Http("DELETE", "/v1/lobbies/" + lobbyId, null, "Bearer " + relayKey); }
-            catch (Exception exception) { Logger.LogWarning("Could not remove hosted lobby: " + exception.Message); }
+            catch (Exception exception) { Logger.LogInfo("Could not remove hosted lobby: " + exception.Message); }
         });
     }
 

@@ -1076,8 +1076,13 @@ internal sealed class WorldReplication : MonoBehaviour
 
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotParse, parseStarted);
         }
-        catch (EndOfStreamException)
+        catch (EndOfStreamException e)
         {
+            GunsawMultiplayerPlugin.LogInfo("Dropped truncated world snapshot: " + e.Message);
+        }
+        catch (Exception e)
+        {
+            GunsawMultiplayerPlugin.LogInfo("Could not apply world snapshot: " + e.GetType().Name + ": " + e.Message);
         }
     }
 
@@ -1305,7 +1310,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 }
             }
         }
-        catch (EndOfStreamException) { }
+        catch (EndOfStreamException e)
+        {
+            GunsawMultiplayerPlugin.LogInfo("Dropped truncated world input: " + e.Message);
+        }
     }
 
     private void ApplyDamage(WorldDamagePacket packet)
@@ -1441,7 +1449,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 finally { remoteBody.isPlayer = wasPlayer; }
             }
         }
-        catch (EndOfStreamException) { }
+        catch (EndOfStreamException e)
+        {
+            GunsawMultiplayerPlugin.LogInfo("Dropped truncated world interaction: " + e.Message);
+        }
     }
 
     private void ApplyRemoteLampBreak(byte[] data)
@@ -1455,7 +1466,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 enviroment.ApplyRemoteLampBreak(id, new Vector2(reader.ReadSingle(), reader.ReadSingle()));
             }
         }
-        catch (Exception) { }
+        catch (Exception e)
+        {
+            GunsawMultiplayerPlugin.LogInfo("Could not apply remote lamp break: " + e.GetType().Name + ": " + e.Message);
+        }
     }
 
     private void RequestLampHistory()

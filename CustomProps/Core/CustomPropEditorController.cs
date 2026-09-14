@@ -83,7 +83,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             ICustomPropDefinition definition;
             if (!CustomPropRegistry.TryGet(instance.TypeId, out definition))
             {
-                Debug.LogWarning("Unknown custom prop type: " + instance.TypeId);
+                GunsawMultiplayerPlugin.LogInfo("Unknown custom prop type: " + instance.TypeId);
                 continue;
             }
 

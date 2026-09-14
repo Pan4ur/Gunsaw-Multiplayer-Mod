@@ -28,7 +28,7 @@ internal static class PreventAbomination
 
         if (!found)
         {
-            UnityEngine.Debug.LogError("[GunsawMP] Failed to patch prevent abomination");
+            GunsawMultiplayerPlugin.LogInfo("Failed to patch prevent abomination");
         }
     }
 

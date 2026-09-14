@@ -238,10 +238,10 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
     {
         if (p2pKey == null || p2pKey.Length != P2PKeySize)
         {
-            LogP2PWarning("P2P unavailable: UDP relay did not provide a valid P2P key.");
+            GunsawMultiplayerPlugin.LogInfo("P2P unavailable: UDP relay did not provide a valid P2P key.");
             return;
         }
-        LogP2PInfo("P2P enabled; waiting for relay candidates.");
+        GunsawMultiplayerPlugin.LogInfo("P2P enabled; waiting for relay candidates.");
         SendControlToRelay(UdpP2PEnable);
     }
 
@@ -293,8 +293,8 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             }
             if (shouldProbe) peer.NextProbeTicks = DateTime.UtcNow.Ticks + P2PProbeRetryTicks;
         }
-        LogP2PInfo("P2P candidate for peer " + peerId + ": " + endpoint +
-            (alternateEndpoint == null ? "" : " (alternate byte order: " + alternateEndpoint + ")") + ".");
+        GunsawMultiplayerPlugin.LogInfo("P2P candidate for peer " + peerId + ": " + endpoint +
+         (alternateEndpoint == null ? "" : " (alternate byte order: " + alternateEndpoint + ")") + ".");
         if (shouldProbe) SendDirectProbe(peerId);
     }
 
@@ -305,13 +305,13 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
         senderId = BitConverter.ToUInt16(datagram, 5);
         if (senderId == 0 || senderId == localPeerId)
         {
-            LogP2PWarning("P2P direct packet rejected from " + remote + ": invalid peer ID " + senderId + ".");
+            GunsawMultiplayerPlugin.LogInfo("P2P direct packet rejected from " + remote + ": invalid peer ID " + senderId + ".");
             return false;
         }
         for (var index = 0; index < P2PKeySize; index++)
             if (datagram[7 + index] != p2pKey[index])
             {
-                LogP2PWarning("P2P direct packet rejected from " + remote + ": lobby key mismatch.");
+                GunsawMultiplayerPlugin.LogInfo("P2P direct packet rejected from " + remote + ": lobby key mismatch.");
                 return false;
             }
         var wasConnected = false;
@@ -320,7 +320,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             P2PPeer peer;
             if (!p2pPeers.TryGetValue(senderId, out peer))
             {
-                LogP2PWarning("P2P direct packet rejected from " + remote + ": peer " + senderId + " has no candidate.");
+                GunsawMultiplayerPlugin.LogInfo("P2P direct packet rejected from " + remote + ": peer " + senderId + " has no candidate.");
                 return false;
             }
 
@@ -330,7 +330,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             peer.NextProbeTicks = 0;
             p2pPeers[senderId] = peer;
         }
-        if (!wasConnected) LogP2PInfo("P2P direct path authenticated with peer " + senderId + " from " + remote + ".");
+        if (!wasConnected) GunsawMultiplayerPlugin.LogInfo("P2P direct path authenticated with peer " + senderId + " from " + remote + ".");
         if (BitConverter.ToInt32(datagram, 23) == 0 && BitConverter.ToUInt16(datagram, 27) == 0 &&
             BitConverter.ToUInt16(datagram, 29) == 1 && BitConverter.ToInt32(datagram, 31) == 0)
         {
@@ -398,18 +398,6 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
     private static bool EndpointsEqual(IPEndPoint left, IPEndPoint right)
     {
         return left != null && right != null && left.Port == right.Port && left.Address.Equals(right.Address);
-    }
-
-    private static void LogP2PInfo(string message)
-    {
-        sessionLogger?.LogInfo(message);
-        MultiplayerDiagnosticLog.Write(isHost, "INFO", message);
-    }
-
-    private static void LogP2PWarning(string message)
-    {
-        sessionLogger?.LogWarning(message);
-        MultiplayerDiagnosticLog.Write(isHost, "WARN", message);
     }
 
     private static void SendPacket(byte[] packet, ushort targetId = 0, bool? priority = null, bool allowReliable = true, bool sendImmediately = false)
@@ -603,8 +591,16 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
                     if (prioritySendQueue.Count > 0) packet = prioritySendQueue.Dequeue();
                     else if (sendQueue.Count > 0) packet = sendQueue.Dequeue();
                 }
-                if (packet != null) SendPacketBlocking(client, cancellation, packet);
-                ResendReliablePackets(client, cancellation);
+                try
+                {
+                    if (packet != null) SendPacketBlocking(client, cancellation, packet);
+                    ResendReliablePackets(client, cancellation);
+                }
+                catch (Exception exception)
+                {
+                    GunsawMultiplayerPlugin.LogInfo("UDP sender skipped a packet: " + exception.GetType().Name + ": " + exception.Message);
+                    if (relayConnected) SetStatus("UDP send error; see multiplayer log.");
+                }
                 if (packet == null) sendSignal.WaitOne(25);
             }
         }

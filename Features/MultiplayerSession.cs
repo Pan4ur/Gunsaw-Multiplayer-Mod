@@ -1,5 +1,4 @@
 using BepInEx;
-using BepInEx.Logging;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -14,7 +13,6 @@ internal enum ConnectionMode
 
 internal static partial class MultiplayerSession
 {
-    private static ManualLogSource sessionLogger;
     private static UdpClient socket;
     private static volatile bool relayConnected;
     private static IPEndPoint relayEndpoint;
@@ -187,11 +185,10 @@ internal static partial class MultiplayerSession
     internal static void StartHost(string lobbyId, string relayKey, string relayAddress, bool pvpEnabled,
         bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool autoRestart, int respawnTimeSeconds, int numberOfLives,
         bool respawnAtStart, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool allowObserver, bool teams, string teamsCfg, string startingWeapon, string respawnWeapon, string startingAmmo, string respawnAmmo, float healthFactor, float regenFactor, string playerName, ushort assignedPeerId, int lobbyMaxPlayers,
-        ConnectionMode mode, ManualLogSource logger)
+        ConnectionMode mode)
     {
         CloseSocket();
         ResetNetworkStats();
-        sessionLogger = logger;
         lock (statusLock)
         {
             peers.Clear();
@@ -217,7 +214,6 @@ internal static partial class MultiplayerSession
             p2pConnectStartedTicks = DateTime.UtcNow.Ticks;
         }
         isHost = true;
-        MultiplayerDiagnosticLog.StartSession(true);
         socket = ConnectRelay(relayAddress, lobbyId, relayKey);
         if (connectionMode != ConnectionMode.Relay) EnableP2P();
         PvpEnabled = pvpEnabled;
@@ -248,19 +244,18 @@ internal static partial class MultiplayerSession
         ResetPing();
         ThreadPool.QueueUserWorkItem(_ => Receive(null));
         RPCManager.CheckInstance();
-        logger.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
+        GunsawMultiplayerPlugin.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
     }
 
     internal static bool Connect(string relayAddress, string lobbyId, string relayKey, string playerName,
         ushort assignedPeerId, ushort assignedHostPeerId, int lobbyMaxPlayers, ConnectionMode mode,
-        ManualLogSource logger, out string error)
+        out string error)
     {
         error = "";
         try
         {
             CloseSocket();
             ResetNetworkStats();
-            sessionLogger = logger;
             lock (statusLock)
             {
                 peers.Clear();
@@ -284,7 +279,6 @@ internal static partial class MultiplayerSession
                 p2pConnectStartedTicks = DateTime.UtcNow.Ticks;
             }
             isHost = false;
-            MultiplayerDiagnosticLog.StartSession(false);
             PvpEnabled = false;
             CanGrabPlayers = false;
             GrabOnlyUnconscious = false;
@@ -306,14 +300,14 @@ internal static partial class MultiplayerSession
             else EnableP2P();
             ThreadPool.QueueUserWorkItem(_ => Receive(null));
             RPCManager.CheckInstance();
-            logger.LogInfo("UDP relay handshake sent to " + relayAddress + ".");
+            GunsawMultiplayerPlugin.LogInfo("UDP relay handshake sent to " + relayAddress + ".");
             return true;
         }
         catch (Exception e)
         {
             CloseSocket();
             error = "UDP connection failed: " + e.Message;
-            logger.LogError(error);
+            GunsawMultiplayerPlugin.LogInfo(error);
             return false;
         }
     }
@@ -667,11 +661,11 @@ internal static partial class MultiplayerSession
         if (connectionMode == ConnectionMode.Auto)
         {
             relayFallback = true;
-            LogP2PWarning("P2P direct connection timed out; falling back to relay.");
+            GunsawMultiplayerPlugin.LogInfo("P2P direct connection timed out; falling back to relay.");
             SendInitialHello();
             return;
         }
-        LogP2PWarning("P2P direct connection timed out.");
+        GunsawMultiplayerPlugin.LogInfo("P2P direct connection timed out.");
         DropRelay(true, "P2P connection timed out. Try Auto or Relay mode.");
     }
 
@@ -867,46 +861,6 @@ internal static partial class MultiplayerSession
         internal TPacket Packet;
     }
 
-}
-
-internal static class MultiplayerDiagnosticLog
-{
-    private static readonly object fileLock = new object();
-
-    internal static void StartSession(bool host)
-    {
-        try
-        {
-            lock (fileLock)
-                File.WriteAllText(PathFor(host), Timestamp() + " session started (" +
-                    (host ? "host" : "client") + ")." + Environment.NewLine);
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
-
-    internal static void Write(bool host, string level, string message)
-    {
-        try
-        {
-            lock (fileLock)
-                File.AppendAllText(PathFor(host), Timestamp() + " [" + level + "] " +
-                    (message ?? "") + Environment.NewLine);
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-    }
-
-    private static string PathFor(bool host)
-    {
-        return Path.Combine(Paths.BepInExRootPath,
-            "GunsawMultiplayer-" + (host ? "host" : "client") + ".log");
-    }
-
-    private static string Timestamp()
-    {
-        return DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-    }
 }
 
 internal struct NetworkDebugStats

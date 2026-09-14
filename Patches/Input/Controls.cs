@@ -29,7 +29,7 @@ internal static class ControlsGoCreator
         GameObject labelOrigianl = GameObject.Find("Canvas/Settings/ControlSettings/MainName (13)");
         if (null == fieldOrigianl || null == labelOrigianl)
         {
-            UnityEngine.Debug.LogError("[GunsawMP] Unable to create controls");
+            GunsawMultiplayerPlugin.LogInfo("Unable to create controls");
             return;
         }
         // Creating clone of original fields, because new fields will get set as a children of original

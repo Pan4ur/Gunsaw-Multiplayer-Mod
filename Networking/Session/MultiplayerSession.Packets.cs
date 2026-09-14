@@ -205,26 +205,26 @@ internal static partial class MultiplayerSession
                     playerSpecialLines[senderId] = lines;
                 }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.WorldSnapshot)
+            else if (!isHost && decodedPacket.Type == PacketType.WorldSnapshot && senderId == hostPeerId)
             {
                 var data = new byte[packet.Length - worldHeader.Length];
                 Buffer.BlockCopy(packet, worldHeader.Length, data, 0, data.Length);
                 EnqueueLatestPayload(worldSnapshots, senderId, data);
             }
-            else if (!isHost && decodedPacket.Type == PacketType.WorldEnvironment)
+            else if (!isHost && decodedPacket.Type == PacketType.WorldEnvironment && senderId == hostPeerId)
             {
                 var data = new byte[packet.Length - worldEnvironmentHeader.Length];
                 Buffer.BlockCopy(packet, worldEnvironmentHeader.Length, data, 0, data.Length);
                 EnqueueLatestPayload(worldEnvironments, senderId, data);
             }
-            else if (!isHost && decodedPacket.Type == PacketType.WorldFire)
+            else if (!isHost && decodedPacket.Type == PacketType.WorldFire && senderId == hostPeerId)
             {
                 try
                 {
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueEvent(worldFires, senderId, WorldFirePacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.WorldExplosion && senderId == hostPeerId)
             {
@@ -233,7 +233,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueEvent(worldExplosions, senderId, WorldExplosionPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (isHost && decodedPacket.Type == PacketType.WorldInput)
             {
@@ -242,7 +242,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueLatestWorldInput(senderId, WorldInputPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (isHost && decodedPacket.Type == PacketType.WorldDamage)
             {
@@ -251,7 +251,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueWorldDamage(senderId, WorldDamagePacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.NpcSnapshot)
             {
@@ -262,7 +262,7 @@ internal static partial class MultiplayerSession
             else if (!isHost && decodedPacket.Type == PacketType.NpcSpeech)
             {
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueueEvent(npcSpeech, senderId, NpcSpeechPacket.Read(ref reader)); }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (isHost && decodedPacket.Type == PacketType.NpcDamage)
             {
@@ -271,7 +271,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueNpcDamage(senderId, NpcDamagePacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (isHost && decodedPacket.Type == PacketType.WorldInteraction)
             {
@@ -280,7 +280,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueWorldInteraction(senderId, WorldInteractionPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.PlayerDamage)
             {
@@ -289,7 +289,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueuePlayerDamage(senderId, PlayerDamagePacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.PvpDamage)
             {
@@ -298,9 +298,9 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueuePvpDamage(senderId, PlayerDamagePacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.Settings)
+            else if (!isHost && decodedPacket.Type == PacketType.Settings && senderId == hostPeerId)
             {
                 if (decodedPacket.Payload.Length < 11) continue;
                 var reader = new PacketReader(decodedPacket.Payload);
@@ -341,7 +341,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     TeamSystem.Receive(senderId, TeamPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.Observer)
             {
@@ -364,7 +364,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     ObserverSystem.QueueState(ObserverStatePacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.ShotVisual)
             {
@@ -373,7 +373,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueShotVisual(senderId, ShotVisualPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.ReloadEffect)
             {
@@ -382,7 +382,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueReloadEffect(senderId, ReloadEffectPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.ProjectileImpact)
             {
@@ -391,7 +391,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueProjectileImpact(senderId, ProjectileImpactPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.VelvetWeb)
             {
@@ -400,7 +400,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueVelvetWeb(senderId, VelvetWebPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.PlayerTeleport)
             {
@@ -409,7 +409,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueuePlayerTeleport(senderId, PlayerTeleportPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.VehicleEject)
             {
@@ -418,7 +418,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueVehicleEject(senderId, VehicleEjectPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.VehicleImpact)
             {
@@ -427,7 +427,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueVehicleImpact(senderId, VehicleImpactPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.MissionFinished)
             {
@@ -436,7 +436,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueMissionFinished(senderId, MissionFinishedPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.PlayerPerformance && (isHost || senderId == 1))
             {
@@ -445,27 +445,27 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueuePlayerPerformance(senderId, PlayerPerformancePacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (isHost && decodedPacket.Type == PacketType.PlayerKill)
             {
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueuePlayerKill(senderId, PlayerKillPacket.Read(ref reader)); }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.PlayerCarry && (isHost || senderId == 1))
             {
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueuePlayerCarry(senderId, PlayerCarryPacket.Read(ref reader)); }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.HostFps && senderId == 1)
             {
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueueHostFps(senderId, HostFpsPacket.Read(ref reader)); }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.WorldInteraction && senderId == hostPeerId)
             {
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueueWorldInteraction(senderId, WorldInteractionPacket.Read(ref reader)); }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.HostPing && senderId == hostPeerId)
             {
@@ -475,7 +475,7 @@ internal static partial class MultiplayerSession
                     var hostPing = HostPingPacket.Read(ref reader);
                     ApplyHostPing(hostPing);
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (isHost && decodedPacket.Type == PacketType.TeleportRequest)
             {
@@ -484,7 +484,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueTeleportRequest(senderId, TeleportRequestPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.PlayerGrab)
             {
@@ -493,7 +493,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueuePlayerGrab(senderId, PlayerGrabPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (isHost && decodedPacket.Type == PacketType.NpcGrab)
             {
@@ -502,7 +502,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     EnqueueNpcGrab(senderId, NpcGrabPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.Chat && decodedPacket.Payload.Length > sizeof(int) + 1)
             {
@@ -533,7 +533,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     GraffitiSystem.Receive(senderId, GraffitiPacket.Read(ref reader));
                 }
-                catch (System.Exception) { }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.Ping && packet.Length == pingHeader.Length + sizeof(long))
             {
@@ -569,6 +569,11 @@ internal static partial class MultiplayerSession
         catch (IOException) { DropRelay(!isHost, "Relay connection closed."); }
         catch (SocketException) { DropRelay(!isHost, "UDP relay connection closed."); }
         catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            GunsawMultiplayerPlugin.LogInfo("UDP receiver stopped after an unexpected error: " + exception.GetType().Name + ": " + exception.Message);
+            DropRelay(!isHost, "Network protocol error; see multiplayer log.");
+        }
     }
 
     private static bool Matches(byte[] packet, byte[] expected)
@@ -588,6 +593,11 @@ internal static partial class MultiplayerSession
     private static void SetStatus(string value)
     {
         lock (statusLock) status = value;
+    }
+
+    private static void LogPacketDrop(PacketType type, ushort senderId, int payloadLength, Exception e)
+    {
+        GunsawMultiplayerPlugin.LogInfo("Dropped " + type + " packet from peer " + senderId + " (" + payloadLength + " bytes): " + e.GetType().Name + ": " + e.Message);
     }
 
     private static void ResetPing()

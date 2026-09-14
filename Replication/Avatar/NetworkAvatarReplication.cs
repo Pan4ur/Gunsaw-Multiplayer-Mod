@@ -984,7 +984,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var prefab = Resources.Load<GameObject>(prefabPath);
         if (prefab == null)
         {
-            Debug.LogError("[Gunsaw MP] Remote character prefab not found: " + prefabPath);
+            GunsawMultiplayerPlugin.LogInfo("Remote character prefab not found: " + prefabPath);
             return;
         }
 
@@ -1042,7 +1042,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         UpdateRemotePhysicsMode();
         CacheDismembermentVisuals();
         CreateRemoteLevitLine(avatar.transform);
-        Debug.Log("[Gunsaw MP] Spawned remote avatar for " + name + ".");
+        GunsawMultiplayerPlugin.LogInfo("Spawned remote avatar for " + name + ".");
     }
 
     internal void DestroyRemote()
@@ -2795,7 +2795,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (prefab == null)
         {
             localRespawnPending = false;
-            Debug.LogError("[Gunsaw MP] Could not respawn player: character prefab is missing.");
+            GunsawMultiplayerPlugin.LogInfo("Could not respawn player: character prefab is missing.");
             return;
         }
         if (!string.IsNullOrEmpty(pendingRespawnCharacterPrefab))
@@ -2817,7 +2817,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             Destroy(avatar);
             localRespawnPending = false;
-            Debug.LogError("[Gunsaw MP] Could not respawn player: character body is invalid.");
+            GunsawMultiplayerPlugin.LogInfo("Could not respawn player: character body is invalid.");
             return;
         }
 
@@ -2836,7 +2836,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             Destroy(avatar);
             localRespawnPending = false;
-            Debug.LogError("[Gunsaw MP] Could not respawn player: character has no initialized limbs.");
+            GunsawMultiplayerPlugin.LogInfo("Could not respawn player: character has no initialized limbs.");
             return;
         }
         
@@ -2917,7 +2917,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (localPlayerInstance.bloodBars != null)
                 localPlayerInstance.bloodBars.body = newBody;
             
-            Debug.Log("[Gunsaw MP] Local player respawned at " +
+        GunsawMultiplayerPlugin.LogInfo("Local player respawned at " +
                 (MultiplayerSession.RespawnAtStart ? "level start." : "death position."));
         }
         finally

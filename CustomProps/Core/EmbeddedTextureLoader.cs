@@ -29,7 +29,7 @@ internal static class EmbeddedTextureLoader
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
         if (stream == null)
         {
-            Debug.LogError("[GunsawMP] Embedded texture not found: " + resourceName);
+            GunsawMultiplayerPlugin.LogInfo("Embedded texture not found: " + resourceName);
             return null;
         }
 
