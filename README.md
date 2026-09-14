@@ -133,7 +133,7 @@ CTRL + C to stop
 
 - !tps - Displays server statistics
 - !vote restart - Voting for level restart
-- !vote change <level name> - Voting for level change. Works with built in <campaign1, actualLevel1, ...> and from [gunsaw-level-codes](gunsaw-level-codes) <Foundry, Leapy jump - CART trials, ...>
+- !vote change <level name> - Voting for level change. Works with built in <campaign1, actualLevel1, ...> and from [gunsaw-level-codes](https://gunsaw-level-codes.jimmyking.dev/) <Foundry, Leapy jump - CART trials, ...>
 - !votedefault - Voting for load level from headlessMap file
 - !help - Displays all commands
 
