@@ -127,6 +127,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private float lastRemoteHealth;
     private bool lastRemoteAlive = true;
     private static BodyScript currentShooter;
+    private static BodyScript currentSoundBody;
+    private static readonly Dictionary<uint, AudioClip> playerSoundClips = new();
+    private static bool playerSoundClipsLoaded;
+    private static readonly List<string> animatedSoundNames = new();
+    private static readonly Dictionary<string, ushort> animatedSoundIds = new(StringComparer.Ordinal);
+    private static bool animatedSoundCatalogBuilt;
+    private static int currentFootstepSurface = -1;
     private static ShotState activeShotState;
     private static RocketProjectile activeRocketProjectile;
     private static BodyScript replicatedExplosionShooter;
@@ -802,6 +809,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         {
             var reloader = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
             if (reloader != null) reloader.PlayRemoteReloadEffect(reloadEffect);
+        }
+        PlayerSoundPacket playerSound;
+        while (MultiplayerSession.TryTakePlayerSound(out senderId, out playerSound))
+        {
+            var source = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
+            if (source != null) source.PlayRemotePlayerSound(playerSound);
         }
         ProjectileImpactPacket projectileImpact;
         while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
@@ -3638,6 +3651,62 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         EndWeaponShot(state);
     }
 
+    internal static void BeginPlayerSound(BodyScript body, int footstepSurface = -1)
+    {
+        currentSoundBody = body;
+        currentFootstepSurface = footstepSurface;
+    }
+
+    internal static void EndPlayerSound(BodyScript body)
+    {
+        if (currentSoundBody == body)
+        {
+            currentSoundBody = null;
+            currentFootstepSurface = -1;
+        }
+    }
+
+    internal static float PlayPlayerActionSound(AudioClip clip, Vector2 position, bool twoDimensional = false, bool pitchShift = false, Transform parent = null, float volume = 1f, float pitch = 1f)
+    {
+        var result = Sound.Play(clip, position, twoDimensional, pitchShift, parent, volume, pitch);
+        var player = PlayerScript.player;
+        if (clip != null && currentSoundBody != null && MultiplayerSession.IsConnected && player != null && currentSoundBody == player.bodyScript && !string.IsNullOrWhiteSpace(clip.name))
+            MultiplayerSession.Send(new PlayerSoundPacket(currentFootstepSurface < 0 ? PlayerActionSoundId(clip.name) : 0x80000000u | (uint)currentFootstepSurface, position.x, position.y, (byte)Mathf.Clamp(Mathf.RoundToInt(volume * 64f), 0, 255), (byte)Mathf.Clamp(Mathf.RoundToInt(pitch * 64f), 0, 255)));
+        return result;
+    }
+
+    internal static void ReplicateFootstep(BodyScript body, SType surface)
+    {
+        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript || body.controlState != BodyScript.RagdollState.FullControl || body.inVehicle) return;
+        MultiplayerSession.Send(new PlayerSoundPacket(0x80000000u | (uint)surface, body.transform.position.x, body.transform.position.y, 38, 64));
+    }
+    private static void BuildAnimatedSoundCatalog()
+    {
+        if (animatedSoundCatalogBuilt) return;
+        animatedSoundCatalogBuilt = true;
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var clip in Resources.FindObjectsOfTypeAll<AnimationClip>())
+        {
+            if (clip == null) continue;
+            foreach (var animationEvent in clip.events)
+                if (animationEvent.functionName == "DoSound" && !string.IsNullOrWhiteSpace(animationEvent.stringParameter))
+                    names.Add(animationEvent.stringParameter);
+        }
+        animatedSoundNames.AddRange(names);
+        animatedSoundNames.Sort(StringComparer.Ordinal);
+        for (ushort index = 0; index < animatedSoundNames.Count && index < ushort.MaxValue; index++)
+            animatedSoundIds[animatedSoundNames[index]] = index;
+    }
+
+    internal static void ReplicateAnimatedSound(AnimatedBodyScript animatedBody, string soundName)
+    {
+        var body = animatedBody == null ? null : animatedBody.GetComponentInParent<BodyScript>();
+        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        BuildAnimatedSoundCatalog();
+        ushort soundId;
+        if (!animatedSoundIds.TryGetValue(soundName ?? "", out soundId)) return;
+        MultiplayerSession.Send(new PlayerSoundPacket(0x20000000u | soundId, body.transform.position.x, body.transform.position.y, 64, 64));
+    }
     internal static void PrepareNpcTarget(AIScript ai)
     {
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || instance == null ||
@@ -4203,6 +4272,70 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         );
     }
 
+    private static uint PlayerSoundId(string value)
+    {
+        unchecked
+        {
+            var hash = 2166136261u;
+            foreach (var character in value) hash = (hash ^ char.ToLowerInvariant(character)) * 16777619u;
+            return hash;
+        }
+    }
+
+    private static uint PlayerActionSoundId(string name)
+    {
+        if (name == "Kick") return 0x40000001u;
+        if (name == "Hit") return 0x40000002u;
+        if (name == "boneCrunch") return 0x40000003u;
+        return PlayerSoundId(name) & 0x0fffffffu;
+    }
+
+    private static void LoadPlayerSoundClips()
+    {
+        if (playerSoundClipsLoaded) return;
+        playerSoundClipsLoaded = true;
+        foreach (var clip in Resources.LoadAll<AudioClip>("Sounds"))
+            if (clip != null) playerSoundClips[PlayerSoundId(clip.name) & 0x0fffffffu] = clip;
+    }
+
+    private void PlayRemotePlayerSound(PlayerSoundPacket packet)
+    {
+        if ((packet.SoundId & 0xf0000000u) == 0x80000000u)
+        {
+            var clip = ResourceManager.main == null ? null : ResourceManager.main.FootSound((SType)(packet.SoundId & 0xff));
+            if (clip != null) 
+                Sound.Play(clip, new Vector2(packet.PositionX, packet.PositionY), false, true, null, packet.Volume / 64f, packet.Pitch / 64f);
+            return;
+        }
+        
+        if ((packet.SoundId & 0xffff0000u) == 0x20000000u)
+        {
+            BuildAnimatedSoundCatalog();
+            var index = (ushort)packet.SoundId;
+            if (index < animatedSoundNames.Count)
+            {
+                var clip = Resources.Load<AudioClip>("Sounds/" + animatedSoundNames[index]);
+                if (clip != null) 
+                    Sound.Play(clip, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f);
+            }
+            return;
+        }      
+        
+        if ((packet.SoundId & 0xff000000u) == 0x40000000u)
+        {
+            var name = packet.SoundId == 0x40000001u ? "Kick" : packet.SoundId == 0x40000002u ? "Hit" : "boneCrunch";
+            var clip = Resources.Load<AudioClip>("Sounds/" + name);
+            if (clip != null) 
+                Sound.Play(clip, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f);
+            return;
+        }
+        
+        LoadPlayerSoundClips();
+        AudioClip sound;
+        if (playerSoundClips.TryGetValue(packet.SoundId, out sound) && sound != null)
+            Sound.Play(sound, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f);
+    }   
+    
     private void PlayRemoteShot(ShotVisualPacket packet)
     {
         var origin = new Vector2(packet.OriginX, packet.OriginY);
@@ -6231,14 +6364,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     
     private static bool TakeBodyColliderHit(ShotState state, ushort targetPeerId, LimbScript limb)
     {
-        if (state == null ||
-            targetPeerId == 0 ||
-            limb == null)
+        if (state == null || targetPeerId == 0 || limb == null)
             return false;
 
-        if (!state.PendingBodyColliderHits.TryGetValue(
-                targetPeerId,
-                out var queue))
+        if (!state.PendingBodyColliderHits.TryGetValue(targetPeerId, out var queue))
             return false;
 
         if (queue.Count == 0)

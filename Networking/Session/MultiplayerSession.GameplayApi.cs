@@ -237,6 +237,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakeReloadEffect(out ushort peerId, out ReloadEffectPacket packet)
         => TryTakePacket(reloadEffects, out peerId, out packet);
 
+    internal static bool TryTakePlayerSound(out ushort peerId, out PlayerSoundPacket packet)
+        => TryTakePacket(playerSounds, out peerId, out packet);
+
     internal static bool TryTakeProjectileImpact(out ushort peerId, out ProjectileImpactPacket packet)
         => TryTakePacket(projectileImpacts, out peerId, out packet);
 

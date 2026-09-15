@@ -127,6 +127,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<ushort> playerGrunts = new Queue<ushort>();
     private static readonly Queue<PeerPacket<ShotVisualPacket>> shotVisuals = new Queue<PeerPacket<ShotVisualPacket>>();
     private static readonly Queue<PeerPacket<ReloadEffectPacket>> reloadEffects = new Queue<PeerPacket<ReloadEffectPacket>>();
+    private static readonly Queue<PeerPacket<PlayerSoundPacket>> playerSounds = new Queue<PeerPacket<PlayerSoundPacket>>();
     private static readonly Queue<PeerPacket<ProjectileImpactPacket>> projectileImpacts = new Queue<PeerPacket<ProjectileImpactPacket>>();
     private static readonly Queue<PeerPacket<VelvetWebPacket>> velvetWebs = new Queue<PeerPacket<VelvetWebPacket>>();
     private static readonly Queue<PeerPacket<PlayerTeleportPacket>> playerTeleports = new Queue<PeerPacket<PlayerTeleportPacket>>();
@@ -879,3 +880,4 @@ internal struct NetworkDebugStats
     internal int SentOtherBytesPerSecond;
     internal float PacketLossPercent;
 }
+

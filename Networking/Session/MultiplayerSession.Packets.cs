@@ -384,6 +384,17 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
+            else if (decodedPacket.Type == PacketType.PlayerSound)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    var sound = PlayerSoundPacket.Read(ref reader);
+                    if (sound.SoundId == 0 || (float.IsNaN(sound.PositionX) || float.IsInfinity(sound.PositionX)) || (float.IsNaN(sound.PositionY) || float.IsInfinity(sound.PositionY))) continue;
+                    EnqueuePlayerSound(senderId, sound);
+                }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
+            }            
             else if (decodedPacket.Type == PacketType.ProjectileImpact)
             {
                 try
@@ -778,6 +789,7 @@ internal static partial class MultiplayerSession
         playerGrunts.Clear();
         shotVisuals.Clear();
         reloadEffects.Clear();
+        playerSounds.Clear();
         projectileImpacts.Clear();
         velvetWebs.Clear();
         playerTeleports.Clear();
@@ -864,6 +876,9 @@ internal static partial class MultiplayerSession
 
     private static void EnqueueReloadEffect(ushort peerId, ReloadEffectPacket packet)
         => EnqueueEvent(reloadEffects, peerId, packet);
+
+    private static void EnqueuePlayerSound(ushort peerId, PlayerSoundPacket packet)
+        => EnqueueEvent(playerSounds, peerId, packet);
 
     private static void EnqueueNpcDamage(ushort peerId, NpcDamagePacket packet)
         => EnqueueEvent(npcDamage, peerId, packet);
@@ -1032,5 +1047,4 @@ internal static partial class MultiplayerSession
             customLevelTransfer = null;
         }
     }
-
 }

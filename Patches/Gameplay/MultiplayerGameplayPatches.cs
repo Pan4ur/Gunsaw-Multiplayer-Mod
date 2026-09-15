@@ -1126,7 +1126,7 @@ internal static class MultiplayerWeaponShotPatch
             !NpcReplication.IsClientProxy(__instance.body));
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
     {
         NetworkAvatarReplication.CompleteWeaponShot(__state, __exception == null);
         return __exception;
@@ -1147,6 +1147,7 @@ internal static class MultiplayerWeaponShotPatch
             });
 
         var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceAtPositionWithPropAuthority));
+        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.PlayPlayerActionSound));
         var compareTag = AccessTools.Method(typeof(GameObject), nameof(GameObject.CompareTag), new[] { typeof(string) });
         var notifyLamp = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.NotifyShotLamp));
         var destroy = AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Destroy), new[] { typeof(UnityEngine.Object) });
@@ -1158,6 +1159,11 @@ internal static class MultiplayerWeaponShotPatch
             {
                 instruction.opcode = OpCodes.Call;
                 instruction.operand = replacement;
+            }
+            else if (instruction.operand is System.Reflection.MethodInfo method && method.DeclaringType == typeof(Sound) && method.Name == nameof(Sound.Play))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = soundReplacement;
             }
             if (!instruction.Calls(destroy) || index < 9 ||
                 patched[index - 6].opcode != OpCodes.Ldstr || (string)patched[index - 6].operand != "Lamp" ||
@@ -1180,11 +1186,13 @@ internal static class MultiplayerPlayerKickDelayedPatch
     private static void Prefix(BodyScript __instance, out NetworkAvatarReplication.ShotState __state)
     {
         __state = NetworkAvatarReplication.BeginMeleeAttack(__instance);
+        NetworkAvatarReplication.BeginPlayerSound(__instance);
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
     {
         NetworkAvatarReplication.EndMeleeAttack(__state);
+        NetworkAvatarReplication.EndPlayerSound(__instance);
         return __exception;
     }
 
@@ -1201,6 +1209,7 @@ internal static class MultiplayerPlayerKickDelayedPatch
             });
 
         var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceWithPropAuthority));
+        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.PlayPlayerActionSound));
 
         foreach (var instruction in instructions)
         {
@@ -1208,6 +1217,11 @@ internal static class MultiplayerPlayerKickDelayedPatch
             {
                 instruction.opcode = OpCodes.Call;
                 instruction.operand = replacement;
+            }
+            else if (instruction.operand is System.Reflection.MethodInfo method && method.DeclaringType == typeof(Sound) && method.Name == nameof(Sound.Play))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = soundReplacement;
             }
 
             yield return instruction;
@@ -1266,11 +1280,13 @@ internal static class MultiplayerPlayerKickPatch
     private static void Prefix(BodyScript __instance, out NetworkAvatarReplication.ShotState __state)
     {
         __state = NetworkAvatarReplication.BeginMeleeAttack(__instance);
+        NetworkAvatarReplication.BeginPlayerSound(__instance);
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
     {
         NetworkAvatarReplication.EndMeleeAttack(__state);
+        NetworkAvatarReplication.EndPlayerSound(__instance);
         return __exception;
     }
     
@@ -1287,6 +1303,7 @@ internal static class MultiplayerPlayerKickPatch
             });
 
         var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceWithPropAuthority));
+        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.PlayPlayerActionSound));
 
         foreach (var instruction in instructions)
         {
@@ -1294,6 +1311,11 @@ internal static class MultiplayerPlayerKickPatch
             {
                 instruction.opcode = OpCodes.Call;
                 instruction.operand = replacement;
+            }
+            else if (instruction.operand is System.Reflection.MethodInfo method && method.DeclaringType == typeof(Sound) && method.Name == nameof(Sound.Play))
+            {
+                instruction.opcode = OpCodes.Call;
+                instruction.operand = soundReplacement;
             }
 
             yield return instruction;
@@ -1390,7 +1412,7 @@ internal static class MultiplayerExplosionPatch
         NetworkAvatarReplication.ReplicateExplosion(explosionObj, pos, range, force, barrel != null && barrel.breakType == CrateScript.BreakType.Explode);
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
     {
         NetworkAvatarReplication.EndWeaponShot(__state);
         NetworkAvatarReplication.ScheduleExplosionCrackCleanup();
@@ -1505,4 +1527,19 @@ internal static class ClientMissionEnemyCountPatch
     {
         return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost;
     }
+}
+
+[HarmonyPatch(typeof(BodyScript), "DoStepSound")]
+internal static class MultiplayerStepSoundPatch
+{
+    private static void Postfix(BodyScript __instance, SType ___currentSurface)
+    {
+        NetworkAvatarReplication.ReplicateFootstep(__instance, ___currentSurface);
+    }
+}
+
+[HarmonyPatch(typeof(AnimatedBodyScript), "DoSound")]
+internal static class MultiplayerAnimatedSoundPatch
+{
+    private static void Postfix(AnimatedBodyScript __instance, string name) => NetworkAvatarReplication.ReplicateAnimatedSound(__instance, name);
 }

@@ -51,5 +51,6 @@ internal enum PacketType : byte
     PlayerGrunt = 0x32,
     Graffiti = 0x33,
     WorldFire = 0x34,
-    WorldExplosion = 0x35
+    WorldExplosion = 0x35,
+    PlayerSound = 0x36
 }
