@@ -31,6 +31,16 @@ internal static class BodyCrateCollisionPatch
     }
 }
 
+[HarmonyPatch(typeof(BodyScript), "FixedUpdate")]
+internal static class LeglessBodyStandGuardPatch
+{
+    private static void Prefix(BodyScript __instance)
+    {
+        if (MultiplayerSession.IsActive && __instance != null && __instance.isPlayer && __instance.isAlive && __instance.noLegs)
+            __instance.shockTime = Mathf.Max(__instance.shockTime, 0.5f);
+    }
+}
+
 [HarmonyPatch(typeof(LevitatorScript), "FixedUpdate")]
 internal static class ClientLevitatorPropPatch
 {
