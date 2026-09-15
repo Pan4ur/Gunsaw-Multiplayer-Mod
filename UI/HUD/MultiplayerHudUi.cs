@@ -2,10 +2,13 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 internal sealed class MultiplayerHudUi : MonoBehaviour
 {
     private const float ChatMsgLifetime = 5f;
+    private static readonly Regex hexColorTagRegex = new(@"<color\s*=\s*#(?<rgb>[0-9a-f]{6})(?<alpha>[0-9a-f]{2})?\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private GameObject root, hostPanel, playersPanel, chatPanel, finalLeaderboardPanel;
     private TMP_Text template, playersText, chatText, chatHint, commandHints, statsText, spectatorText, spectatorHint, respawnText, activationText, finalLeaderboardHeader;
     private TMP_InputField input;
@@ -690,7 +693,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             if (!hud.ChatOpen && age > ChatMsgLifetime) continue;
             var line = "[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message;
             if (!hud.ChatOpen)
-                line = "<color=#FFFFFF" + Mathf.RoundToInt(MessageAlpha(age, ChatMsgLifetime) * 255f).ToString("X2") + ">" + line + "</color>";
+                line = ApplyChatFade(line, MessageAlpha(age, ChatMsgLifetime));
             text += line + "\n";
         }
         if (text != renderedChatText)
@@ -722,6 +725,18 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             return Mathf.Clamp01((lifetime - age) / fade);
         
         return 1f;
+    }
+
+    private static string ApplyChatFade(string line, float alpha)
+    {
+        var fadeAlpha = Mathf.RoundToInt(Mathf.Clamp01(alpha) * 255f);
+        var fadedLine = hexColorTagRegex.Replace(line, match =>
+        {
+            var srcAlpha = match.Groups["alpha"].Success ? int.Parse(match.Groups["alpha"].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture) : 255;
+            var combinedAlpha = Mathf.RoundToInt(srcAlpha * fadeAlpha / 255f);
+            return "<color=#" + match.Groups["rgb"].Value + combinedAlpha.ToString("X2") + ">";
+        });
+        return "<color=#FFFFFF" + fadeAlpha.ToString("X2") + ">" + fadedLine + "</color>";
     }
 
     private static bool HasActiveChatAnimation(MultiplayerHud hud)
