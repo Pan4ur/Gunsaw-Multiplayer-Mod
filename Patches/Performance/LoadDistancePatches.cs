@@ -19,6 +19,15 @@ internal static class MultiplayerNpcBodyFixedUpdateCullPatch
     }
 }
 
+[HarmonyPatch(typeof(BodyScript), "EnterHalfControl")]
+internal static class NpcHalfControlCulledStatePatch
+{
+    private static void Postfix(BodyScript __instance)
+    {
+        LoadDistanceSystem.MemorizeNpcHalfControl(__instance);
+    }
+}
+
 [HarmonyPatch(typeof(BodyScript), "Update")]
 internal static class MultiplayerNpcBodyUpdateCullPatch
 {

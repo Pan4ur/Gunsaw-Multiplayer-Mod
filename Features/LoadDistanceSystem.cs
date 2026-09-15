@@ -226,6 +226,25 @@ internal static class LoadDistanceSystem
         return false;
     }
 
+    // TODO tessssst
+    internal static void MemorizeNpcHalfControl(BodyScript body)
+    {
+        if (body == null || body.limbs == null || !IsNpcSimulationCulled(body)) 
+            return;
+        
+        foreach (var limb in body.limbs)
+        {
+            var rb = limb == null ? null : limb.rb;
+            if (rb == null || !rb.simulated || !savedSimulationStates.ContainsKey(rb))
+                continue;
+            
+            savedSimulationStates[rb] = true;
+            rb.velocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+            rb.simulated = false;
+        }
+    }
+
     internal static bool TryApplyObjectUnloader(ObjectUnloader unloader)
     {
         if (!IsHostSimulationActive() || unloader == null) return false;
