@@ -51,6 +51,7 @@ internal static class ClientLevitatorPropPatch
         if (GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.QueueLevitated(__instance.currentlyLevitating);
         NetworkAvatarReplication.QueueRemoteGrab(__instance);
+        NetworkAvatarReplication.ReplicateTelekinesis(__instance);
         NpcReplication.QueueClientCorpseGrab(__instance);
     }
 
@@ -1542,4 +1543,16 @@ internal static class MultiplayerStepSoundPatch
 internal static class MultiplayerAnimatedSoundPatch
 {
     private static void Postfix(AnimatedBodyScript __instance, string name) => NetworkAvatarReplication.ReplicateAnimatedSound(__instance, name);
+}
+
+[HarmonyPatch(typeof(DroppedWeapon), "PickupWeapon")]
+internal static class MultiplayerWeaponPickupSoundPatch
+{
+    private static void Postfix(BodyScript body) => NetworkAvatarReplication.ReplicateWeaponPickup(body);
+}
+
+[HarmonyPatch(typeof(BodyScript), "DoGrunt")]
+internal static class MultiplayerPainSoundPatch
+{
+    private static void Postfix(BodyScript __instance) => NetworkAvatarReplication.ReplicatePain(__instance);
 }

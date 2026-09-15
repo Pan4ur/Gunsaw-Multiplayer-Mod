@@ -134,6 +134,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<string, ushort> animatedSoundIds = new(StringComparer.Ordinal);
     private static bool animatedSoundCatalogBuilt;
     private static int currentFootstepSurface = -1;
+    private static float nextTelekinesisSound;
+    private AudioSource remoteTelekinesisSound;
     private static ShotState activeShotState;
     private static RocketProjectile activeRocketProjectile;
     private static BodyScript replicatedExplosionShooter;
@@ -3675,6 +3677,26 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return result;
     }
 
+    internal static void ReplicateWeaponPickup(BodyScript body)
+    {
+        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        MultiplayerSession.Send(new PlayerSoundPacket(0x40000004u, body.transform.position.x, body.transform.position.y, 64, 64));
+    }
+
+    internal static void ReplicatePain(BodyScript body)
+    {
+        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        MultiplayerSession.Send(new PlayerGruntPacket());
+    }
+
+    internal static void ReplicateTelekinesis(LevitatorScript levitator)
+    {
+        var body = levitator == null ? null : levitator.refBody;
+        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript || Time.unscaledTime < nextTelekinesisSound) return;
+        nextTelekinesisSound = Time.unscaledTime + 0.1f;
+        var active = levitator.currentlyLevitating != null;
+        MultiplayerSession.Send(new PlayerSoundPacket(0x50000000u, body.transform.position.x, body.transform.position.y, active ? (byte)38 : (byte)0, active ? (byte)64 : (byte)0));
+    }
     internal static void ReplicateFootstep(BodyScript body, SType surface)
     {
         if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript || body.controlState != BodyScript.RagdollState.FullControl || body.inVehicle) return;
@@ -4321,9 +4343,27 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }      
         
+        if ((packet.SoundId & 0xff000000u) == 0x50000000u)
+        {
+            if (remoteTelekinesisSound == null)
+            {
+                var root = remoteAvatar == null ? gameObject : remoteAvatar;
+                remoteTelekinesisSound = root.GetComponent<AudioSource>() ?? root.AddComponent<AudioSource>();
+                remoteTelekinesisSound.clip = Resources.Load<AudioClip>("Sounds/Energy");
+                remoteTelekinesisSound.loop = true;
+                remoteTelekinesisSound.spatialBlend = 1f;
+            }
+            remoteTelekinesisSound.transform.position = new Vector2(packet.PositionX, packet.PositionY);
+            remoteTelekinesisSound.volume = packet.Volume / 64f;
+            remoteTelekinesisSound.pitch = packet.Pitch / 64f;
+            if (packet.Volume > 0 && !remoteTelekinesisSound.isPlaying) remoteTelekinesisSound.Play();
+            else if (packet.Volume == 0 && remoteTelekinesisSound.isPlaying) remoteTelekinesisSound.Stop();
+            return;
+        }        
+        
         if ((packet.SoundId & 0xff000000u) == 0x40000000u)
         {
-            var name = packet.SoundId == 0x40000001u ? "Kick" : packet.SoundId == 0x40000002u ? "Hit" : "boneCrunch";
+            var name = packet.SoundId == 0x40000001u ? "Kick" : packet.SoundId == 0x40000002u ? "Hit" : packet.SoundId == 0x40000003u ? "boneCrunch" : "wepPickup";
             var clip = Resources.Load<AudioClip>("Sounds/" + name);
             if (clip != null) 
                 Sound.Play(clip, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f);
@@ -6484,3 +6524,4 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 }
+
