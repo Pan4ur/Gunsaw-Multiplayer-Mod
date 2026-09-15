@@ -6,6 +6,8 @@ internal readonly struct WorldBodySnapshot
     internal readonly bool IsCrate;
     internal readonly ulong CratePrefabId;
     internal readonly float PositionX, PositionY, Rotation, VelocityX, VelocityY, AngularVelocity, GravityScale;
+    internal readonly bool HasMechanismTarget;
+    internal readonly float MechanismTargetX, MechanismTargetY;
     internal readonly int Constraints;
     internal readonly byte BodyType;
     internal readonly bool Simulated, Awake, SafetyRailing, SafetyRailingAttached, IsVehiclePart;
@@ -16,7 +18,8 @@ internal readonly struct WorldBodySnapshot
 
     internal WorldBodySnapshot(ulong id, bool destroyed, bool isDroppedWeapon = false, bool isCrate = false,
         ulong cratePrefabId = 0UL, float positionX = 0f, float positionY = 0f, float rotation = 0f,
-        float velocityX = 0f, float velocityY = 0f, float angularVelocity = 0f, float gravityScale = 0f,
+        float velocityX = 0f, float velocityY = 0f, float angularVelocity = 0f, bool hasMechanismTarget = false,
+        float mechanismTargetX = 0f, float mechanismTargetY = 0f, float gravityScale = 0f,
         int constraints = 0, byte bodyType = 0, bool simulated = false, bool awake = false,
         bool safetyRailing = false, bool safetyRailingAttached = false, bool isVehiclePart = false,
         float vehiclePartHealth = 0f, float vehicleHealth = 0f, bool vehicleEngineDisabled = false,
@@ -33,6 +36,9 @@ internal readonly struct WorldBodySnapshot
         VelocityX = velocityX;
         VelocityY = velocityY;
         AngularVelocity = angularVelocity;
+        HasMechanismTarget = hasMechanismTarget;
+        MechanismTargetX = mechanismTargetX;
+        MechanismTargetY = mechanismTargetY;
         GravityScale = gravityScale;
         Constraints = constraints;
         BodyType = bodyType;
@@ -63,6 +69,12 @@ internal readonly struct WorldBodySnapshot
         writer.WriteSingle(VelocityX);
         writer.WriteSingle(VelocityY);
         writer.WriteSingle(AngularVelocity);
+        writer.WriteBoolean(HasMechanismTarget);
+        if (HasMechanismTarget)
+        {
+            writer.WriteSingle(MechanismTargetX);
+            writer.WriteSingle(MechanismTargetY);
+        }
         writer.WriteSingle(GravityScale);
         writer.WriteInt32(Constraints);
         writer.WriteByte(BodyType);
@@ -99,6 +111,9 @@ internal readonly struct WorldBodySnapshot
         var velocityX = reader.ReadSingle();
         var velocityY = reader.ReadSingle();
         var angularVelocity = reader.ReadSingle();
+        var hasMechanismTarget = reader.ReadBoolean();
+        var mechanismTargetX = hasMechanismTarget ? reader.ReadSingle() : 0f;
+        var mechanismTargetY = hasMechanismTarget ? reader.ReadSingle() : 0f;
         var gravityScale = reader.ReadSingle();
         var constraints = reader.ReadInt32();
         var bodyType = reader.ReadByte();
@@ -122,7 +137,8 @@ internal readonly struct WorldBodySnapshot
         var weaponId = dropped ? reader.ReadUInt64() : 0UL;
         var ammo = dropped ? reader.ReadInt32() : 0;
         return new WorldBodySnapshot(id, false, dropped, crate, cratePrefabId, positionX, positionY, rotation,
-            velocityX, velocityY, angularVelocity, gravityScale, constraints, bodyType, simulated, awake,
+            velocityX, velocityY, angularVelocity, hasMechanismTarget, mechanismTargetX, mechanismTargetY,
+            gravityScale, constraints, bodyType, simulated, awake,
             railing, railingAttached, vehiclePart, vehiclePartHealth, vehicleHealth, engineDisabled,
             jointAttached, weaponId, ammo);
     }

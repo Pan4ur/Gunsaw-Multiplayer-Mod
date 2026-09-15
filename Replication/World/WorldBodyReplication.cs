@@ -11,6 +11,7 @@ public class WorldBodyReplication
     private readonly Dictionary<Rigidbody2D, Vector2> lodPositions = new();
     internal readonly Dictionary<Rigidbody2D, WorldReplication.State> received = new();
     internal readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
+    private readonly Dictionary<Rigidbody2D, Vector2> mechanismTargets = new();
     internal readonly Dictionary<string, WorldReplication.ClientBodyState> pushes = new();
     internal readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
     internal readonly Dictionary<string, WorldReplication.PropAuthority> propAuthorities = new();
@@ -85,6 +86,7 @@ public class WorldBodyReplication
         frozenFarClientProps.Remove(body);
         lodPositions.Remove(body);
         received.Remove(body);
+        mechanismTargets.Remove(body);
         locallyControlledUntil.Remove(body);
         WorldReplication.Instance.nextContactStateAt.Remove(body);
         localSettings.Remove(body);
@@ -130,6 +132,25 @@ public class WorldBodyReplication
                                 body.GetComponentInParent<VehiclePart>() != null ||
                                 IsSafetyRailingBody(body) ||
                                 IsChainlinkFenceBody(body));
+    }
+
+    internal static bool TryGetMechanismTarget(Rigidbody2D body, out Vector2 target)
+    {
+        target = Vector2.zero;
+        if (body == null) return false;
+        var door = body.GetComponentInParent<DoorScript>();
+        if (door != null)
+        {
+            var point = door.followingFirstPoint ? door.point1 : door.point2;
+            if (point == null) return false;
+            target = point.position;
+            return true;
+        }
+
+        var mover = body.GetComponentInParent<RbMoveToObj>();
+        if (mover == null || mover.TransformToMoveTo == null) return false;
+        target = mover.TransformToMoveTo.position;
+        return true;
     }
     
     internal static bool IsDroneBody(Rigidbody2D body)
@@ -283,6 +304,12 @@ public class WorldBodyReplication
 
         var classification = ClassificationFor(body);
         var mechanism = classification.Mechanism && !classification.InteractiveProp && !classification.ClientPhysicsJoint;
+       
+        if (mechanism && state.hasMechanismTarget)
+            mechanismTargets[body] = state.mechanismTarget;
+        else
+            mechanismTargets.Remove(body);
+            
         float controlUntil;
         if (!mechanism && locallyControlledUntil.TryGetValue(body, out controlUntil))
         {
@@ -498,6 +525,31 @@ public class WorldBodyReplication
                 to.angularVelocity + angularCorrection, 0.35f);
         }
         foreach (var body in staleVehiclePaths) vehiclePaths.Remove(body);
+    }
+
+    internal void TickMechanismTargets()
+    {
+        if (mechanismTargets.Count == 0) return;
+        staleVehiclePaths.Clear();
+        foreach (var pair in mechanismTargets)
+        {
+            var body = pair.Key;
+            if (body == null || !body.simulated)
+            {
+                staleVehiclePaths.Add(body);
+                continue;
+            }
+
+            var velocity = body.velocity;
+            if (velocity.sqrMagnitude <= 0.0001f) continue;
+            var remaining = pair.Value - body.position;
+            if (remaining.sqrMagnitude > 0.0001f && Vector2.Dot(remaining, velocity) > 0f) continue;
+
+            body.position = pair.Value;
+            body.velocity = Vector2.zero;
+            body.angularVelocity = 0f;
+        }
+        foreach (var body in staleVehiclePaths) mechanismTargets.Remove(body);
     }
     
     internal void FreezeFarClientProps()

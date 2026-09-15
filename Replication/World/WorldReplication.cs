@@ -446,6 +446,7 @@ internal sealed class WorldReplication : MonoBehaviour
             }
 
             bodies.TickVehiclePaths();
+            bodies.TickMechanismTargets();
             if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
             {
                 var clientSendStarted = MultiplayerPerformance.StartPhase();
@@ -797,6 +798,13 @@ internal sealed class WorldReplication : MonoBehaviour
             BinaryWriterRaw.WriteSingle(writer, body.velocity.x); 
             BinaryWriterRaw.WriteSingle(writer, body.velocity.y);
             BinaryWriterRaw.WriteSingle(writer, body.angularVelocity);
+            var hasMechanismTarget = WorldBodyReplication.TryGetMechanismTarget(body, out var mechanismTarget);
+            writer.Write(hasMechanismTarget);
+            if (hasMechanismTarget)
+            {
+                BinaryWriterRaw.WriteSingle(writer, mechanismTarget.x);
+                BinaryWriterRaw.WriteSingle(writer, mechanismTarget.y);
+            }
             BinaryWriterRaw.WriteSingle(writer, body.gravityScale);
             writer.Write((int)body.constraints);
             writer.Write((byte)body.bodyType); writer.Write(body.simulated); writer.Write(awake);
@@ -1004,12 +1012,22 @@ internal sealed class WorldReplication : MonoBehaviour
                 var isDropped = reader.ReadBoolean();
                 var isCrate = reader.ReadBoolean();
                 var cratePrefabId = isCrate ? reader.ReadUInt64() : 0UL;
+                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                var rotation = reader.ReadSingle();
+                var velocity = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                var angularVelocity = reader.ReadSingle();
+                var hasMechanismTarget = reader.ReadBoolean();
+                var mechanismTarget = hasMechanismTarget
+                    ? new Vector2(reader.ReadSingle(), reader.ReadSingle())
+                    : Vector2.zero;
                 var state = new State
                 {
-                    position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-                    rotation = reader.ReadSingle(),
-                    velocity = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-                    angularVelocity = reader.ReadSingle(),
+                    position = position,
+                    rotation = rotation,
+                    velocity = velocity,
+                    angularVelocity = angularVelocity,
+                    hasMechanismTarget = hasMechanismTarget,
+                    mechanismTarget = mechanismTarget,
                     gravityScale = reader.ReadSingle(),
                     constraints = (RigidbodyConstraints2D)reader.ReadInt32(),
                     bodyType = (RigidbodyType2D)reader.ReadByte(),
@@ -1797,6 +1815,8 @@ internal sealed class WorldReplication : MonoBehaviour
         public float rotation;
         public Vector2 velocity;
         public float angularVelocity;
+        public bool hasMechanismTarget;
+        public Vector2 mechanismTarget;
         public float gravityScale;
         public RigidbodyConstraints2D constraints;
         public RigidbodyType2D bodyType;
@@ -1866,33 +1886,6 @@ internal sealed class WorldReplication : MonoBehaviour
             var value = BitConverter.ToSingle(data, offset);
             offset += 4;
             return value;
-        }
-
-        public string ReadString()
-        {
-            var length = 0;
-            var shift = 0;
-            byte value;
-            do
-            {
-                value = ReadByte();
-                length |= (value & 0x7F) << shift;
-                shift += 7;
-                if (shift > 35) throw new FormatException();
-            } while ((value & 0x80) != 0);
-            Require(length);
-            var result = Encoding.UTF8.GetString(data, offset, length);
-            offset += length;
-            return result;
-        }
-
-        public byte[] ReadBytes(int length)
-        {
-            Require(length);
-            var result = new byte[length];
-            Buffer.BlockCopy(data, offset, result, 0, length);
-            offset += length;
-            return result;
         }
 
         private void Require(int count)
