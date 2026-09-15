@@ -16,8 +16,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private TMP_FontAsset chatFont;
     private ScrollRect chatScroll;
     private RectTransform chatContent;
+    private Image chatOpenBackground;
+    private readonly List<Image> chatLineBackgrounds = new();
     private float nextChatRefresh;
-    private int renderedChatEntryCount = -1;
     private string renderedChatText = "";
     private bool chatBottomPending;
     private int chatBottomPendingFrame;
@@ -183,10 +184,11 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         ScreenAnchor(chatPanel.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 80f));
         var chatViewport = new GameObject("ChatViewport", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
         chatViewport.transform.SetParent(chatPanel.transform, false);
-        Rect(chatViewport.GetComponent<RectTransform>(), new Vector2(0f, 24f), new Vector2(580f, 185f));
+        Rect(chatViewport.GetComponent<RectTransform>(), new Vector2(-20f, 24f), new Vector2(580f, 185f));
         Image chatViewportImage = chatViewport.GetComponent<Image>();
         chatViewportImage.color = Color.clear;
         chatViewportImage.raycastTarget = false;
+        chatOpenBackground = chatViewportImage;
         chatScroll = chatViewport.GetComponent<ScrollRect>();
         chatScroll.horizontal = false;
         chatScroll.movementType = ScrollRect.MovementType.Clamped;
@@ -207,6 +209,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         chatText.rectTransform.pivot = new Vector2(0.5f, 1f);
         chatText.rectTransform.anchoredPosition = Vector2.zero;
         chatText.rectTransform.sizeDelta = Vector2.zero;
+        chatText.rectTransform.offsetMin = new Vector2(8f, 0f);
         chatText.enableWordWrapping = true;
         ApplyChatFont(chatText);
         chatHint = Text(root.transform, "", Vector2.zero, new Vector2(620f, 42f), 14, TextAlignmentOptions.Center);
@@ -685,6 +688,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var previousPosition = chatScroll.verticalNormalizedPosition;
         var start = hud.ChatOpen ? 0 : Mathf.Max(0, entries.Count - 5);
         var text = "";
+        var lineHeights = new List<float>();
+        var lineAlphas = new List<float>();
         var now = Time.unscaledTime;
         for (var i = start; i < entries.Count; i++)
         {
@@ -692,14 +697,17 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var age = now - entry.CreatedAt;
             if (!hud.ChatOpen && age > ChatMsgLifetime) continue;
             var line = "[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message;
+            var alpha = hud.ChatOpen ? 1f : MessageAlpha(age, ChatMsgLifetime);
             if (!hud.ChatOpen)
-                line = ApplyChatFade(line, MessageAlpha(age, ChatMsgLifetime));
+                line = ApplyChatFade(line, alpha);
             text += line + "\n";
+            lineHeights.Add(chatText.GetPreferredValues(line, 572f, 0f).y);
+            lineAlphas.Add(alpha);
         }
         if (text != renderedChatText)
         {
             chatText.text = text;
-            var preferredHeight = chatText.GetPreferredValues(text, 580f, 0f).y;
+            var preferredHeight = chatText.GetPreferredValues(text, 572f, 0f).y;
             chatContent.sizeDelta = new Vector2(0f, Mathf.Max(185f, preferredHeight + 8f));
             Canvas.ForceUpdateCanvases();
             chatScroll.verticalNormalizedPosition = keepAtBottom ? 0f : previousPosition;
@@ -710,8 +718,42 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             }
             renderedChatText = text;
         }
-        renderedChatEntryCount = entries.Count;
+        UpdateChatBackgrounds(hud.ChatOpen, lineHeights, lineAlphas);
         chatWasOpen = hud.ChatOpen;
+    }
+
+    private void UpdateChatBackgrounds(bool chatOpen, List<float> lineHeights, List<float> lineAlphas)
+    {
+        if (chatOpenBackground != null)
+            chatOpenBackground.color = chatOpen ? new Color(0f, 0f, 0f, 0.5f) : Color.clear;
+
+        var activeCount = chatOpen ? 0 : lineHeights.Count;
+        while (chatLineBackgrounds.Count < activeCount)
+        {
+            var backgroundObject = new GameObject("ChatLineBackground", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            backgroundObject.transform.SetParent(chatContent, false);
+            var background = backgroundObject.GetComponent<Image>();
+            background.raycastTarget = false;
+            background.rectTransform.anchorMin = new Vector2(0f, 1f);
+            background.rectTransform.anchorMax = new Vector2(0f, 1f);
+            background.rectTransform.pivot = new Vector2(0f, 1f);
+            background.rectTransform.SetSiblingIndex(0);
+            chatLineBackgrounds.Add(background);
+        }
+
+        var top = 0f;
+        for (var index = 0; index < activeCount; index++)
+        {
+            var background = chatLineBackgrounds[index];
+            var height = lineHeights[index];
+            background.rectTransform.anchoredPosition = new Vector2(0f, -top);
+            background.rectTransform.sizeDelta = new Vector2(580f, height);
+            background.color = new Color(0f, 0f, 0f, 0.5f * lineAlphas[index]);
+            background.gameObject.SetActive(true);
+            top += height;
+        }
+        for (var index = activeCount; index < chatLineBackgrounds.Count; index++)
+            chatLineBackgrounds[index].gameObject.SetActive(false);
     }
 
     private static float MessageAlpha(float age, float lifetime)
