@@ -176,11 +176,14 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         playersText.overflowMode = TextOverflowModes.Overflow;
 
         chatPanel = Panel(root.transform, Vector2.zero, new Vector2(620f, 250f));
+        chatPanel.GetComponent<Image>().raycastTarget = false;
         ScreenAnchor(chatPanel.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 80f));
         var chatViewport = new GameObject("ChatViewport", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
         chatViewport.transform.SetParent(chatPanel.transform, false);
         Rect(chatViewport.GetComponent<RectTransform>(), new Vector2(0f, 24f), new Vector2(580f, 185f));
-        chatViewport.GetComponent<Image>().color = Color.clear;
+        Image chatViewportImage = chatViewport.GetComponent<Image>();
+        chatViewportImage.color = Color.clear;
+        chatViewportImage.raycastTarget = false;
         chatScroll = chatViewport.GetComponent<ScrollRect>();
         chatScroll.horizontal = false;
         chatScroll.movementType = ScrollRect.MovementType.Clamped;
