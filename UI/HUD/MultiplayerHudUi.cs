@@ -519,9 +519,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             if (!body.inVehicle && body.rb == null)
                 continue;
 
-            Vector3 bodyPosition = body.inVehicle
-                ? body.transform.position
-                : (Vector3)body.rb.position;
+            Vector3 bodyPosition = body.inVehicle ? body.transform.position : body.rb.position;
 
             var screen = camera.WorldToScreenPoint(bodyPosition);
 
@@ -568,9 +566,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 direction.y * Mathf.Max(0f, center.y - margin)
             );
 
-            marker.Rect.anchoredPosition = CanvasPosition(
-                new Vector3(edgePosition.x, edgePosition.y, 0f)
-            );
+            marker.Rect.anchoredPosition = CanvasPosition(new Vector3(edgePosition.x, edgePosition.y, 0f));
 
             marker.Rect.sizeDelta = new Vector2(82f, 96f) * size;
 
@@ -579,17 +575,10 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
             float distance = 0f;
 
-            if (localBody != null &&
-                (localBody.inVehicle || localBody.rb != null))
+            if (localBody != null && (localBody.inVehicle || localBody.rb != null))
             {
-                Vector3 localPosition = localBody.inVehicle
-                    ? localBody.transform.position
-                    : (Vector3)localBody.rb.position;
-
-                distance = Vector2.Distance(
-                    (Vector2)localPosition,
-                    (Vector2)bodyPosition
-                );
+                Vector3 localPosition = localBody.inVehicle ? localBody.transform.position : localBody.rb.position;
+                distance = Vector2.Distance(localPosition, bodyPosition);
             }
 
             marker.Name.text =
@@ -599,11 +588,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
             UpdateHeadVisual(marker.HeadParts, marker.Visual, body, 60f);
 
-            marker.Visual.localScale = new Vector3(
-                body.isRight ? 1f : -1f,
-                1f,
-                1f
-            );
+            marker.Visual.localScale = new Vector3(body.isRight ? 1f : -1f, 1f, 1f);
 
             marker.Root.SetActive(true);
         }
@@ -724,36 +709,41 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdateChatBackgrounds(bool chatOpen, List<float> lineHeights, List<float> lineAlphas)
     {
+        if (chatContent == null) return;
         if (chatOpenBackground != null)
             chatOpenBackground.color = chatOpen ? new Color(0f, 0f, 0f, 0.5f) : Color.clear;
 
         var activeCount = chatOpen ? 0 : lineHeights.Count;
-        while (chatLineBackgrounds.Count < activeCount)
+        for (var index = 0; index < activeCount; index++)
         {
+            var background = index < chatLineBackgrounds.Count ? chatLineBackgrounds[index] : null;
+            if (background != null && background.rectTransform != null) continue;
             var backgroundObject = new GameObject("ChatLineBackground", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             backgroundObject.transform.SetParent(chatContent, false);
-            var background = backgroundObject.GetComponent<Image>();
+            background = backgroundObject.GetComponent<Image>();
             background.raycastTarget = false;
             background.rectTransform.anchorMin = new Vector2(0f, 1f);
             background.rectTransform.anchorMax = new Vector2(0f, 1f);
             background.rectTransform.pivot = new Vector2(0f, 1f);
             background.rectTransform.SetSiblingIndex(0);
-            chatLineBackgrounds.Add(background);
+            if (index < chatLineBackgrounds.Count) chatLineBackgrounds[index] = background;
+            else chatLineBackgrounds.Add(background);
         }
 
         var top = 0f;
         for (var index = 0; index < activeCount; index++)
         {
             var background = chatLineBackgrounds[index];
+            var rect = background.rectTransform;
             var height = lineHeights[index];
-            background.rectTransform.anchoredPosition = new Vector2(0f, -top);
-            background.rectTransform.sizeDelta = new Vector2(580f, height);
+            rect.anchoredPosition = new Vector2(0f, -top);
+            rect.sizeDelta = new Vector2(580f, height);
             background.color = new Color(0f, 0f, 0f, 0.5f * lineAlphas[index]);
             background.gameObject.SetActive(true);
             top += height;
         }
         for (var index = activeCount; index < chatLineBackgrounds.Count; index++)
-            chatLineBackgrounds[index].gameObject.SetActive(false);
+            if (chatLineBackgrounds[index] != null) chatLineBackgrounds[index].gameObject.SetActive(false);
     }
 
     private static float MessageAlpha(float age, float lifetime)
@@ -840,7 +830,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             asset.TryAddCharacters(new string(characters));
             return asset;
         }
-        catch (Exception exception)
+        catch
         {
             return null;
         }

@@ -1,4 +1,3 @@
-using System;
 using System.Collections;
 using System.Globalization;
 using UnityEngine;
@@ -2456,14 +2455,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     MissionManager.main.damageReceived += appliedAmount;
             }
             applyingNetworkPlayerDamage = true;
-            try // TODO Debug exception handling
+            try
             {
                 body.Damaged(critical);
                 body.DoGrunt();
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.Message);
+                GunsawMultiplayerPlugin.LogInfo(e.Message);
             }
             finally { applyingNetworkPlayerDamage = false; }
         }
