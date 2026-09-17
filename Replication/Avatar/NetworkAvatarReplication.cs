@@ -3685,7 +3685,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static void ReplicatePain(BodyScript body)
     {
         if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
-        MultiplayerSession.Send(new PlayerGruntPacket());
+        if (body.painNoises == null || body.painNoises.Count == 0) return;
+        var clip = body.painNoises[UnityEngine.Random.Range(0, body.painNoises.Count)];
+        if (clip == null || string.IsNullOrWhiteSpace(clip.name)) return;
+        var head = body.headTransform == null ? body.transform : body.headTransform;
+        MultiplayerSession.Send(new PlayerSoundPacket(PlayerSoundId(clip.name) & 0x0fffffffu, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
     }
 
     internal static void ReplicateTelekinesis(LevitatorScript levitator)

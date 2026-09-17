@@ -1564,5 +1564,15 @@ internal static class MultiplayerWeaponPickupSoundPatch
 [HarmonyPatch(typeof(BodyScript), "DoGrunt")]
 internal static class MultiplayerPainSoundPatch
 {
-    private static void Postfix(BodyScript __instance) => NetworkAvatarReplication.ReplicatePain(__instance);
+    private static void Prefix(BodyScript __instance, out bool __state)
+    {
+        __state = __instance != null && GameManager.main != null && GameManager.main.whinesEnabled &&
+            __instance.painNoises != null && __instance.painNoises.Count > 0 &&
+            __instance.screamTime < 0f && __instance.IsConsc();
+    }
+
+    private static void Postfix(BodyScript __instance, bool __state)
+    {
+        if (__state) NetworkAvatarReplication.ReplicatePain(__instance);
+    }
 }

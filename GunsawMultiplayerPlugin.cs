@@ -386,8 +386,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (MultiplayerSession.TryTakeStatus(out connectionMessage))
             status = connectionMessage;
 
-        PlayerGruntService.Tick();
-
         if (MultiplayerSession.TryTakeHostDisconnected())
         {
             joinedLobbyId = "";
@@ -462,7 +460,15 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
         CsExperienceMode.Tick();
         if (MultiplayerHud.IsTyping || (multiplayerHud != null && multiplayerHud.ChatOpen)) return;
-        if (Input.GetKeyDown(Controls.keys[Controls.PAIN_SOUND])) PlayerGruntService.TryPlayLocal();
+        if (Input.GetKeyDown(Controls.keys[Controls.PAIN_SOUND]))
+        {
+            var body = PlayerScript.player?.bodyScript;
+            if (body != null)
+            {
+                body.screamTime = -1;
+                body.DoGrunt();
+            }
+        }
         if (Input.GetKey(KeyCode.End) && Input.GetKey(KeyCode.Space) &&
             Input.GetKey(KeyCode.C) && Input.GetKeyDown(KeyCode.S))
         {

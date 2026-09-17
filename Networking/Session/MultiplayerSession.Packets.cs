@@ -186,15 +186,6 @@ internal static partial class MultiplayerSession
                     playerStates[senderId] = state;
                 }
             }
-            else if (decodedPacket.Type == PacketType.PlayerGrunt)
-            {
-                if (senderId == 0) continue;
-                lock (statusLock)
-                {
-                    if (playerGrunts.Count >= MaxPendingEventPackets) playerGrunts.Dequeue();
-                    playerGrunts.Enqueue(senderId);
-                }
-            }
             else if (decodedPacket.Type == PacketType.PlayerSpecialLines)
             {
                 var reader = new PacketReader(decodedPacket.Payload);
@@ -786,7 +777,6 @@ internal static partial class MultiplayerSession
         worldInteractions.Clear();
         playerDamage.Clear();
         pvpDamage.Clear();
-        playerGrunts.Clear();
         shotVisuals.Clear();
         reloadEffects.Clear();
         playerSounds.Clear();
