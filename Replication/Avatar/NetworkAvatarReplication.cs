@@ -6161,13 +6161,21 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (string.IsNullOrEmpty(spriteId)) return null;
         WeaponPreset cached;
         if (weaponPresetCache.TryGetValue(spriteId, out cached) && cached != null) return cached;
+        WeaponPreset fallback = null;
         foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null && SpriteId(preset.sprite) == spriteId)
+            if (preset != null)
             {
-                weaponPresetCache[spriteId] = preset;
-                return preset;
+                if (fallback == null) fallback = preset;
+                if (SpriteId(preset.sprite) == spriteId)
+                {
+                    weaponPresetCache[spriteId] = preset;
+                    return preset;
+                }
             }
-        return null;
+
+        weaponPresetCache[spriteId] = fallback;
+        GunsawMultiplayerPlugin.LogInfo("Weapon preset not found for sprite: " + spriteId.Replace("\n", "\\n") + ". Missing some mods?");
+        return fallback;
     }
 
     private static Sprite FindSprite(ulong spriteId)
