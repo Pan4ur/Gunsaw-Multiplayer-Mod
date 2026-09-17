@@ -12,6 +12,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private const float FullVisualStateInterval = 5f;
     private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
     private const string ProtogenPrefabPath = "Enemies/RobotEnemy";
+    private const string AlbinoPrefabPath = "Enemies/AlbinoEnemy";
     private static readonly List<string> knownCharacterPrefabs = [];
     private static readonly Dictionary<string, string> characterDisplayNames = new();
     private static readonly Dictionary<string, Sprite> spriteCache = new();
@@ -1135,6 +1136,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
         if (!knownCharacterPrefabs.Contains(ProtogenPrefabPath)) knownCharacterPrefabs.Add(ProtogenPrefabPath);
         characterDisplayNames[ProtogenPrefabPath] = "G4-A";
+        if (!knownCharacterPrefabs.Contains(AlbinoPrefabPath)) knownCharacterPrefabs.Add(AlbinoPrefabPath);
+        characterDisplayNames[AlbinoPrefabPath] = "Albino";
 
         var selectedIndex = menu.charIndex;
         if (selectedIndex >= 0 && selectedIndex < characters.Count)
