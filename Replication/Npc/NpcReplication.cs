@@ -580,7 +580,7 @@ internal sealed class NpcReplication : MonoBehaviour
         using (var stream = new MemoryStream(packet.Length))
         {
             stream.WriteByte(CompressedSnapshotMarker);
-            using (var compressor = new DeflateStream(stream, CompressionLevel.Fastest, true))
+            using (var compressor = new DeflateStream(stream, System.IO.Compression.CompressionLevel.Fastest, true))
                 compressor.Write(packet, 0, packet.Length);
             var compressed = stream.ToArray();
             return compressed.Length < packet.Length ? compressed : packet;

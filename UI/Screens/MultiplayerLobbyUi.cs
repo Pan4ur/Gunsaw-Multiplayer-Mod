@@ -12,7 +12,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, regenFactorInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle, restrictLightToggle;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
@@ -88,6 +88,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetInput(healthFactorInput, viewingLobbySettings ? MultiplayerSession.HealthFactor.ToString("0.##") : plugin.createHealthFactor);
         SetInput(regenFactorInput, viewingLobbySettings ? MultiplayerSession.RegenFactor.ToString("0.##") : plugin.createRegenFactor);
         SetToggle(blackoutToggle, viewingLobbySettings ? MultiplayerSession.BlackoutEnabled : plugin.createBlackout);
+        SetToggle(restrictLightToggle, viewingLobbySettings ? MultiplayerSession.RestrictLightEnabled : plugin.createRestrictLight);
         SetInput(serverInput, plugin.lobbyServerAddress);
         SetToggle(pvpToggle, viewingLobbySettings ? MultiplayerSession.PvpEnabled : plugin.createPvp);
         SetToggle(grabToggle, viewingLobbySettings ? MultiplayerSession.CanGrabPlayers : plugin.createCanGrab);
@@ -136,6 +137,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         healthFactorInput.interactable = interactable;
         regenFactorInput.interactable = interactable;
         blackoutToggle.interactable = interactable;
+        restrictLightToggle.interactable = interactable && plugin.createBlackout;
         initialScaleInput.interactable = interactable;
         startingWeaponInput.interactable = interactable;
         respawnWeaponInput.interactable = interactable;
@@ -280,6 +282,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(regenFactorRow.gameObject, "REGEN FACTOR: Multiplies every player's health regeneration speed. 0 disables regeneration. Allowed range: 0 to 10.");
         blackoutToggle = CreateToggle(CreateSettingsRow(settings), "BLACKOUT", Vector2.zero, new Vector2(520f, 40f), value => plugin.createBlackout = value);
         AddTooltip(blackoutToggle.gameObject, "BLACKOUT: Turns off level lighting and gives every player a headlamp.");
+        restrictLightToggle = CreateToggle(CreateSettingsRow(settings), "RESTRICT LIGHT", Vector2.zero, new Vector2(520f, 40f), value => plugin.createRestrictLight = value);
+        AddTooltip(restrictLightToggle.gameObject, "RESTRICT LIGHT: Headlamp light is blocked by walls and props.");
         respawnAtStartToggle = CreateToggle(CreateSettingsRow(settings), "RESPAWN AT START", Vector2.zero, new Vector2(520f, 40f), value => plugin.createRespawnAtStart = value);
         AddTooltip(respawnAtStartToggle.gameObject, "RESPAWN AT START: Applies to ALLOW RESPAWN. When enabled, players spawn at a player spawn point placed by the map author. If there are several, one is chosen at random. Some custom maps may accidentally contain too many spawn points and become impossible to complete without removing the extra points. When disabled, players respawn at the position of their corpse.");
         playerCollisionsToggle = CreateToggle(CreateSettingsRow(settings), "PLAYER COLLISIONS", Vector2.zero, new Vector2(520f, 40f), value => plugin.createPlayerCollisions = value);

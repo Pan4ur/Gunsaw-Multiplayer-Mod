@@ -25,8 +25,9 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly float HealthFactor;
     internal readonly float RegenFactor;
     internal readonly bool BlackoutEnabled;
+    internal readonly bool RestrictLightEnabled;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false)
     {
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -53,6 +54,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         HealthFactor = LobbyHealthRule.Clamp(healthFactor);
         RegenFactor = LobbyRegenRule.Clamp(regenFactor);
         BlackoutEnabled = blackoutEnabled;
+        RestrictLightEnabled = restrictLightEnabled;
     }
 
     public PacketType Type => PacketType.Settings;
@@ -84,6 +86,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteSingle(HealthFactor);
         writer.WriteSingle(RegenFactor);
         writer.WriteByte(BlackoutEnabled ? (byte)1 : (byte)0);
+        writer.WriteByte(RestrictLightEnabled ? (byte)1 : (byte)0);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -103,6 +106,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         var healthFactor = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
         var regenFactor = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
         var blackoutEnabled = reader.Remaining >= 1 && reader.ReadByte() != 0;
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled);
+        var restrictLightEnabled = reader.Remaining >= 1 && reader.ReadByte() != 0;
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled);
     }
 }

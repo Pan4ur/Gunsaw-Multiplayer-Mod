@@ -54,6 +54,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ConfigEntry<string> savedCreateHealthFactor;
     private ConfigEntry<string> savedCreateRegenFactor;
     private ConfigEntry<bool> savedCreateBlackout;
+    private ConfigEntry<bool> savedCreateRestrictLight;
     private ConfigEntry<string> savedCreateMaxPlayers;
     private readonly List<LobbyPreset> lobbyPresets = new List<LobbyPreset>();
     internal bool visible;
@@ -86,6 +87,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal string createHealthFactor = "1.0";
     internal string createRegenFactor = "1.0";
     internal bool createBlackout;
+    internal bool createRestrictLight;
     internal string createMaxPlayers = "4";
     internal string customLevelJson = "";
     private string customLevelCode = "";
@@ -192,6 +194,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         savedCreateRegenFactor = Config.Bind("Lobby", "RegenFactor", createRegenFactor,
             "Multiplier for each player's health regeneration speed. Allowed range: 0 to 10.");
         savedCreateBlackout = Config.Bind("Lobby", "Blackout", createBlackout, "Enables darkness with a headlamp on every player.");
+        savedCreateRestrictLight = Config.Bind("Lobby", "RestrictLight", createRestrictLight, "Makes headlamp light stop at obstacles.");
         savedCreateMaxPlayers = Config.Bind("Lobby", "MaxPlayers", createMaxPlayers,
             "Default maximum player count.");
         playerName = savedPlayerName.Value;
@@ -219,6 +222,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createHealthFactor = savedCreateHealthFactor.Value;
         createRegenFactor = savedCreateRegenFactor.Value;
         createBlackout = savedCreateBlackout.Value;
+        createRestrictLight = savedCreateRestrictLight.Value;
         createMaxPlayers = savedCreateMaxPlayers.Value;
         LoadLobbyPresets();
         headlessMode = HasCommandLineFlag("-headlessLobby");
@@ -332,7 +336,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         AutoRestartSystem.Tick(createAutoRestart);
         MultiplayerSession.SyncBrutalMode();
         BlackoutRule.Tick();
-        BlackoutRule.HandleInput();
         ObserverSystem.Tick();
         if (MultiplayerSession.IsHosting)
         {
@@ -539,6 +542,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (savedCreateHealthFactor.Value != createHealthFactor) { savedCreateHealthFactor.Value = createHealthFactor; changed = true; }
         if (savedCreateRegenFactor.Value != createRegenFactor) { savedCreateRegenFactor.Value = createRegenFactor; changed = true; }
         if (savedCreateBlackout.Value != createBlackout) { savedCreateBlackout.Value = createBlackout; changed = true; }
+        if (savedCreateRestrictLight.Value != createRestrictLight) { savedCreateRestrictLight.Value = createRestrictLight; changed = true; }
         if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
         if (changed) Config.Save();
     }
@@ -1018,7 +1022,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 allowRespawn = createAllowRespawn, respawnTime = respawnTime, numberOfLives = numberOfLives,
                 respawnAtStart = createRespawnAtStart,
                 playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
-                allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(), healthFactor = healthFactor, regenFactor = regenFactor, blackout = createBlackout, startingWeapon = createStartingWeapon, respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
+                allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(), healthFactor = healthFactor, regenFactor = regenFactor, blackout = createBlackout, restrictLight = createRestrictLight, startingWeapon = createStartingWeapon, respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
                 allowObserver = createAllowObserver,
                 teams = createTeams, teamsCfg = createTeamsCfg,
                 brutalMode = MultiplayerSession.ReadBrutalMode(),
@@ -1052,7 +1056,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         createMaxPlayers = maxPlayers.ToString();
         if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
             createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-            createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, healthFactor, regenFactor, createBlackout, maxPlayers))
+            createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, healthFactor, regenFactor, createBlackout, createRestrictLight, maxPlayers))
         {
             status = "Could not update lobby settings.";
             return;
@@ -1223,7 +1227,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
                     createGrabOnlyUnconscious, createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-                    createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, healthFactor, regenFactor, createBlackout,
+                    createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, healthFactor, regenFactor, createBlackout, createRestrictLight,
                     playerName, hostPeerId, maxPlayers, createConnectionMode);
                 avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
                 if (headlessMode) StartHeadlessKeepAlive(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
@@ -2065,6 +2069,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public float healthFactor = LobbyHealthRule.DefaultFactor;
         public float regenFactor = LobbyRegenRule.DefaultFactor;
         public bool blackout;
+        public bool restrictLight;
         public bool respawnAtStart;
         public bool playerCollisions = true;
         public bool cheats;
@@ -2114,6 +2119,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public float healthFactor = LobbyHealthRule.DefaultFactor;
         public float regenFactor = LobbyRegenRule.DefaultFactor;
         public bool blackout;
+        public bool restrictLight;
         public bool respawnAtStart;
         public bool playerCollisions = true;
         public bool cheats;
@@ -2160,6 +2166,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public string healthFactor = "1.0";
         public string regenFactor = "1.0";
         public bool blackout;
+        public bool restrictLight;
         public string maxPlayers = "4";
         public ConnectionMode connectionMode = ConnectionMode.Relay;
     }

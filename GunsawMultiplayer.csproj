@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Remove="Examples\**\*.cs" />
     <EmbeddedResource Include="Assets\killmessages.json" />
+    <EmbeddedResource Include="Assets\headlamp-light" LogicalName="GunsawMultiplayer.Assets.headlamp-light" />
     <EmbeddedResource Include="CustomProps\Assets\npc-spawner.png" />
     <EmbeddedResource Include="CustomProps\Assets\arsenal.png" />
     <EmbeddedResource Include="CustomProps\Assets\rnd.png" />
@@ -37,6 +38,14 @@
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.SpriteShapeModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.SpriteShapeModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>    
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
@@ -85,7 +94,7 @@
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="Unity.RenderPipelines.Universal.Runtime">
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime" Publicize="true">
       <HintPath>$(GameDirectory)/Gunsaw_Data/Managed/Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
