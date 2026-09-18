@@ -359,6 +359,8 @@ internal sealed class GraffitiSystem : MonoBehaviour
         var gameObject = new GameObject("MP Graffiti");
         var renderer = gameObject.AddComponent<SpriteRenderer>();
         renderer.sprite = sprite;
+        var material = BlackoutRule.GetLitMaterial();
+        if (material != null) renderer.sharedMaterial = material;
         renderer.sortingOrder = ++nextSortingOrder;
         gameObject.transform.position = new Vector3(packet.X, packet.Y, 0f);
         gameObject.transform.rotation = Quaternion.Euler(0f, 0f, packet.Rotation);

@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class DroppedWeaponReplication
 {
@@ -81,6 +81,7 @@ public class DroppedWeaponReplication
         var dropped = WorldReplication.Instantiate(prefab, position, Quaternion.Euler(0f, 0f, rotation)).GetComponent<DroppedWeapon>();
         if (dropped == null) return null;
         dropped.ChangeWeapon(weapon, ammo);
+        BlackoutRule.ApplyToObject(dropped.gameObject);
         var body = dropped.GetComponent<Rigidbody2D>();
         if (body == null) { WorldReplication.Destroy(dropped.gameObject); return null; }
         WorldReplication.Instance.bodies.bodies[id] = body;
@@ -136,6 +137,7 @@ public class DroppedWeaponReplication
             weapon = FindWeaponPreset(weaponId);
             if (weapon == null) return;
             dropped.ChangeWeapon(weapon, ammo);
+        BlackoutRule.ApplyToObject(dropped.gameObject);
         }
         if (dropped.ammoAmount != ammo)
         {

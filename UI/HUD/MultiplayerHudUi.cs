@@ -401,6 +401,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var body = remote.Body;
             if (body == null || body.rb == null) continue;
             var visibility = VoyagerBody.PvpVoyagerVisibility(body);
+            if (!BlackoutRule.IsVisibleInHeadlamp(body)) visibility = 0f;
             if (visibility <= 0.01f)
             {
                 active.Add(body);
@@ -469,6 +470,13 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 stale.Add(pair.Key);
                 continue;
             }
+            
+            if (NetworkAvatarRegistry.IsRemoteAvatarBody(pair.Key) && !BlackoutRule.IsVisibleInHeadlamp(pair.Key))
+            {
+                pair.Value.gameObject.SetActive(false); 
+                continue; 
+            }
+
             var position = pair.Key.inVehicle ? pair.Key.transform.position : (Vector3)pair.Key.rb.position;
             var screen = camera.WorldToScreenPoint(position + Vector3.down * 1.4f);
             if (screen.z <= 0f) { pair.Value.gameObject.SetActive(false); continue; }
@@ -481,6 +489,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         foreach (var body in stale) chatBubbles.Remove(body);
         foreach (var pair in latest)
         {
+            if (NetworkAvatarRegistry.IsRemoteAvatarBody(pair.Key) && !BlackoutRule.IsVisibleInHeadlamp(pair.Key)) 
+                continue;
+
             var position = pair.Key.inVehicle ? pair.Key.transform.position : (Vector3)pair.Key.rb.position;
             var screen = camera.WorldToScreenPoint(position + Vector3.down * 1.4f);
             if (screen.z <= 0f) continue;

@@ -40,7 +40,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
                 Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart, HealthFactor, RegenFactor), senderId);
+                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart, HealthFactor, RegenFactor, BlackoutEnabled), senderId);
                 SendPeerNames(senderId);
                 Send(new PeerNamePacket(senderId, connectedName));
                 TeamSystem.SendAll(senderId);
@@ -319,6 +319,7 @@ internal static partial class MultiplayerSession
                 RespawnAmmo = settings.RespawnAmmo;
                 HealthFactor = settings.HealthFactor;
                 RegenFactor = settings.RegenFactor;
+                BlackoutEnabled = settings.BlackoutEnabled;
                 LobbySettingsReceived = true;
                 TeamSystem.Configure(TeamsEnabled, TeamsCfg);
                 lock (statusLock)
@@ -524,6 +525,15 @@ internal static partial class MultiplayerSession
                             receivedChatIds.Remove(receivedChatOrder.Dequeue());
                     }
                 }
+            }
+            else if (decodedPacket.Type == PacketType.Headlamp && decodedPacket.Payload.Length == sizeof(ushort) + 1 + sizeof(uint))
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    BlackoutRule.ReceiveHeadlamp(senderId, HeadlampPacket.Read(ref reader));
+                }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.Graffiti &&
                      decodedPacket.Payload.Length >= GraffitiPacket.MetadataBytes + GraffitiSystem.MinImageBytes &&

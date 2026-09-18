@@ -1034,6 +1034,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         RemoveReplicaScarfArtifacts(avatar);
         remoteBody.WakeUp();
         remoteBody.isPlayer = true;
+        BlackoutRule.RegisterBody(remoteBody);
         remoteBody.dropWeapon = false;
         remoteBody.team = RemoteTeam(localBody);
         foreach (var chatter in avatar.GetComponentsInChildren<Chatter>(true)) DestroyImmediate(chatter);
@@ -5632,7 +5633,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var behaviour = light as Behaviour;
             if (behaviour != null) behaviour.enabled = lightState.Visible;
             var light2D = light as UnityEngine.Experimental.Rendering.Universal.Light2D;
-            if (light2D != null)
+            if (light2D != null && light2D.GetComponentInParent<Headlamp>() == null)
             {
                 light2D.intensity = lightState.Intensity;
                 light2D.color = lightState.Color;

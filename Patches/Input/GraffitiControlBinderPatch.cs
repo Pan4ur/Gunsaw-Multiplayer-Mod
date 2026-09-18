@@ -5,6 +5,7 @@ using UnityEngine;
 [HarmonyPatch(typeof(ControlBinder), "Start")]
 internal static class GraffitiControlBinderPatch
 {
+    // TODO proper bind system
     private static void Postfix(ControlBinder __instance)
     {
         var key = Controls.newControls[Controls.GRAFFITI];
@@ -15,6 +16,13 @@ internal static class GraffitiControlBinderPatch
         field.localPosition = Vector3.down * 43f;
         field.name = key;
         __instance.texts.Add(key, field.GetComponent<TextMeshProUGUI>());
+        var headlampKey = Controls.newControls[Controls.TOGGLE_HEADLAMP];
+        var headlampField = UnityEngine.Object.Instantiate(field.gameObject).transform;
+        headlampField.SetParent(field.parent);
+        headlampField.localScale = Vector3.one;
+        headlampField.localPosition = field.localPosition + Vector3.down * 43f;
+        headlampField.name = headlampKey;
+        __instance.texts.Add(headlampKey, headlampField.GetComponent<TextMeshProUGUI>());
         foreach (var label in Resources.FindObjectsOfTypeAll<TextMeshProUGUI>())
         {
             if (label == null || label.text != "Unarmed" || label.gameObject.name == "Unarmed") continue;
@@ -23,6 +31,11 @@ internal static class GraffitiControlBinderPatch
             copy.localScale = Vector3.one;
             copy.localPosition = label.transform.localPosition + Vector3.down * 43f;
             copy.GetComponent<TextMeshProUGUI>().text = key;
+            var headlampLabel = UnityEngine.Object.Instantiate(copy.gameObject).transform;
+            headlampLabel.SetParent(copy.parent);
+            headlampLabel.localScale = Vector3.one;
+            headlampLabel.localPosition = copy.localPosition + Vector3.down * 43f;
+            headlampLabel.GetComponent<TextMeshProUGUI>().text = headlampKey;
             break;
         }
         foreach (var gameObject in Resources.FindObjectsOfTypeAll<GameObject>())

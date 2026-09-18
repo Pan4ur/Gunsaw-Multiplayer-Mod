@@ -746,6 +746,7 @@ internal static class HostDroppedWeaponRegistrationPatch
 {
     private static void Postfix(DroppedWeapon __instance)
     {
+        if (__instance != null) BlackoutRule.ApplyToObject(__instance.gameObject);
         if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
             WorldReplication.Instance.weapons.RegisterDroppedWeapon(__instance);
     }

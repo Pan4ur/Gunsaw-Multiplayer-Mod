@@ -37,6 +37,7 @@ internal static class LocalCharacterCreationPatch
         if (__instance == null || __instance.bodyScript == null) return;
         LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
         LobbyHealthRule.RestoreFull(__instance.bodyScript);
+        BlackoutRule.RegisterBody(__instance.bodyScript);
         __instance.curHealthShow = __instance.bodyScript.maxHealth;
     }
 }
