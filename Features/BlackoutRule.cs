@@ -9,6 +9,7 @@ internal static class BlackoutRule
     private static readonly Dictionary<SpriteRenderer, Material> originalMaterials = new();
     private static readonly Dictionary<SpriteShapeRenderer, Material[]> originalGroundMaterials = new();
     private static readonly Dictionary<LineRenderer, Material> originalLineMaterials = new();
+    private static readonly Dictionary<Collider2D, bool> chainlinkFenceCache = new();
     private static Material litMaterial;
     private static AssetBundle headlampBundle;
     internal static Material headlampMaterial;
@@ -146,10 +147,18 @@ internal static class BlackoutRule
 
     internal static bool IsChainlinkFence(Collider2D collider)
     {
+        if (collider == null)
+            return false;
+        
+        if (chainlinkFenceCache.TryGetValue(collider, out var cached)) return cached;
         for (var current = collider == null ? null : collider.transform; current != null; current = current.parent)
             if (current.name.IndexOf("chainlink", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                chainlinkFenceCache[collider] = true;
                 return true;
-     
+            }
+        
+        chainlinkFenceCache[collider] = false;
         return false;
     }
 
@@ -577,6 +586,7 @@ internal static class BlackoutRule
             if (pair.Key != null)
                 pair.Key.sharedMaterial = pair.Value;
         originalLineMaterials.Clear();
+        chainlinkFenceCache.Clear();
         
         foreach (var lamp in UnityEngine.Object.FindObjectsOfType<Headlamp>())
             if (lamp != null) 
