@@ -3607,7 +3607,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var facing = weapon.body != null && !weapon.body.isRight ? -1f : 1f;
             state.Direction = (Vector2)(weapon.transform.right * facing);
             state.Up = weapon.transform.up;
-            state.WeaponSprite = SpriteId(weapon.stats.sprite);
+            state.WeaponSprite = weapon.stats.name;
         }
         var player = PlayerScript.player;
         if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
@@ -4226,7 +4226,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var hostNpcShot = MultiplayerSession.IsHost && shooter != null && !shooter.isPlayer &&
                 shooter.GetComponentInParent<NetworkReplica>() == null;
             if (!completed || state == null || state.Weapon == null || shooter == null ||
-                (!localPlayerShot && !hostNpcShot) || state.Weapon.ammo >= state.AmmoBefore ||
+                (!localPlayerShot && !hostNpcShot) || (state.Weapon.ammo >= state.AmmoBefore &&
+                !CustomWeaponsCompatibility.IsFiredCustomMelee(state.Weapon)) ||
                 !MultiplayerSession.IsConnected) return;
             var targetPeers = new List<ushort>();
             foreach (var wound in state.Wounds)
@@ -4411,9 +4412,27 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             var flash = Instantiate(preset.muzzleFlash, origin, Quaternion.identity);
             Destroy(flash, 0.4f);
         }
+
+        if (preset.shootType != 1 && preset.range == 0f && remoteBody != null &&
+            CustomWeaponsCompatibility.TryPlayRemoteMelee(preset, remoteBody.weapon, remoteBody)) return;
         
         if (preset.shootType == 1)
         {
+            if (CustomWeaponsCompatibility.TryGetProjectileVisual(preset, out _))
+            {
+                var projectileCount = Mathf.Clamp(preset.bulletAmount, 1, 64);
+                for (var index = 0; index < projectileCount; index++)
+                {
+                    var exactDirection = index < exactDirections.Length
+                        ? new Vector2(exactDirections[index].X, exactDirections[index].Y)
+                        : Vector2.zero;
+                    var projectileDirection = exactDirection.sqrMagnitude > 0.01f
+                        ? exactDirection.normalized
+                        : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
+                    PlayRemoteProjectile(preset, origin, projectileDirection, !npcShot);
+                }
+                return;
+            }
             PlayRemoteProjectile(preset, origin, direction, !npcShot);
             return;
         }
@@ -4481,9 +4500,19 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         Destroy(magazine, 30f);
     }
 
-    private void PlayRemoteProjectile(WeaponPreset preset, Vector2 origin, Vector2 direction,
-        bool ignoreRemoteAvatar)
+    private void PlayRemoteProjectile(WeaponPreset preset, Vector2 origin, Vector2 direction, bool ignoreRemoteAvatar)
     {
+        if (CustomWeaponsCompatibility.TryGetProjectileVisual(preset, out var customProjectile))
+        {
+            var customVisual = new GameObject("MP Custom Projectile Visual");
+            customVisual.transform.position = origin;
+            customVisual.transform.right = direction;
+            customVisual.AddComponent<SpriteRenderer>().sprite = customProjectile.Sprite;
+            remoteProjectiles.Enqueue(new RemoteProjectileVisual { Visual = customVisual, ExpiresAt = Time.unscaledTime + customProjectile.Lifetime });
+            StartCoroutine(MoveRemoteCustomProjectile(customVisual, direction, customProjectile.Speed, customProjectile.Lifetime, customProjectile.Ricochets, ignoreRemoteAvatar));
+            return;
+        }
+        
         GameObject visual = null;
         GameObject impactEffect = null;
         AudioClip explosionSound = null;
@@ -4581,6 +4610,38 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 velocity = Vector2.zero;
             }
             maximumLifetime -= Time.deltaTime;
+            yield return null;
+        }
+        if (visual != null) Destroy(visual);
+    }
+
+    private IEnumerator MoveRemoteCustomProjectile(GameObject visual, Vector2 direction, float speed,
+        float lifetime, int ricochets, bool ignoreRemoteAvatar)
+    {
+        while (visual != null && lifetime > 0f)
+        {
+            var position = (Vector2)visual.transform.position;
+            var distance = speed * Time.deltaTime;
+            RaycastHit2D collision = default;
+            foreach (var hit in Physics2D.RaycastAll(position, direction, distance))
+            {
+                var collider = hit.collider;
+                if (collider == null || collider.isTrigger || (ignoreRemoteAvatar && remoteAvatar != null && collider.transform.IsChildOf(remoteAvatar.transform))) continue;
+                collision = hit;
+                break;
+            }
+            if (collision.collider == null) visual.transform.position = position + direction * distance;
+            else
+            {
+                visual.transform.position = collision.point;
+                var layer = collision.collider.gameObject.layer;
+                if (ricochets <= 0 || (layer != LayerMask.NameToLayer("Ground") && layer != LayerMask.NameToLayer("Default"))) break;
+                ricochets--;
+                direction = Vector2.Reflect(direction, collision.normal).normalized;
+                visual.transform.position = collision.point + direction * 0.01f;
+                visual.transform.right = direction;
+            }
+            lifetime -= Time.deltaTime;
             yield return null;
         }
         if (visual != null) Destroy(visual);
@@ -6169,6 +6230,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (string.IsNullOrEmpty(spriteId)) return null;
         WeaponPreset cached;
         if (weaponPresetCache.TryGetValue(spriteId, out cached) && cached != null) return cached;
+        if (GameManager.main != null && GameManager.main.allWeapons != null)
+            foreach (var preset in GameManager.main.allWeapons)
+                if (preset != null && preset.name == spriteId)
+                {
+                    weaponPresetCache[spriteId] = preset;
+                    return preset;
+                }
         WeaponPreset fallback = null;
         foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
             if (preset != null)
@@ -6196,9 +6264,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private static WeaponPreset FindWeaponPreset(ulong spriteId)
     {
-        if (spriteId == 0UL) return null;
+        if (spriteId == 0UL) 
+            return null;
+        
         foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null && NetworkWireId.FromString(SpriteId(preset.sprite)) == spriteId) return preset;
+            if (preset != null && NetworkWireId.FromString(SpriteId(preset.sprite)) == spriteId) 
+                return preset;
+        
         return null;
     }
 

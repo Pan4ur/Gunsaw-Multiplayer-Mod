@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class DroppedWeaponReplication
 {
@@ -233,9 +233,18 @@ public class DroppedWeaponReplication
 
     internal WeaponPreset FindWeaponPreset(ulong weaponId)
     {
-        if (weaponId == 0UL) return null;
+        if (weaponId == 0UL) 
+            return null;
+            
+        if (GameManager.main != null && GameManager.main.allWeapons != null)
+            foreach (var candidate in GameManager.main.allWeapons)
+                if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId) 
+                    return candidate;
+                    
         foreach (var candidate in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId) return candidate;
+            if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId)
+                return candidate; // should be dead now (fallback)
+     
         return null;
     }
     
