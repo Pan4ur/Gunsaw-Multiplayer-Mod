@@ -595,14 +595,17 @@ internal sealed class CustomLevelBrowserUi
         play.onClick.AddListener(() => { if (card.entry != null) plugin.StartCatalogCustomLevel(card.entry.code, card.entry.name ?? "Untitled"); });
         var actions = new GameObject("Local Actions", typeof(RectTransform));
         actions.transform.SetParent(root.transform, false);
-        var configure = CreateIconButton(actions.transform, new Vector2(40f, 0f), new Vector2(50f, 50f),
-            configureIcon, new Color(0.15f, 0.32f, 0.62f, 1f), "Configure");
+        var configure = CreateIconButton(actions.transform, new Vector2(90f, 0f), new Vector2(50f, 50f),
+            configureIcon, new Color(0.1f, 0.24f, 0.48f, 1f), "Configure");
         configure.onClick.AddListener(() => { if (card.entry != null) plugin.OpenCustomLevelEditor(card.entry.code, card.entry.name ?? "Untitled"); });
-        var edit = CreateIconButton(actions.transform, new Vector2(100f, 0f), new Vector2(50f, 50f), editIcon,
+        configure.GetComponent<RectTransform>().sizeDelta = new Vector2(34f, 34f);
+        var edit = CreateIconButton(actions.transform, new Vector2(130f, 0f), new Vector2(50f, 50f), editIcon,
             new Color(0.55f, 0.38f, 0.08f, 1f), "Edit");
         edit.onClick.AddListener(() => OpenEditLocalLevel(card.entry));
-        var remove = CreateDeleteButton(actions.transform, new Vector2(160f, 0f), new Vector2(50f, 50f));
+        edit.GetComponent<RectTransform>().sizeDelta = new Vector2(34f, 34f);
+        var remove = CreateDeleteButton(actions.transform, new Vector2(170f, 0f), new Vector2(50f, 50f));
         remove.onClick.AddListener(() => { if (card.entry != null) DeleteLocalLevel(card.entry); });
+        remove.GetComponent<RectTransform>().sizeDelta = new Vector2(34f, 34f);
         card.localActions = actions;
         levelCards.Add(card);
         return card;
