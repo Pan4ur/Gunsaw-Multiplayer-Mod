@@ -70,6 +70,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private string appliedInventory = "";
     private string lastSerializedInventory = "";
     private float nextFullInventory;
+    private float forceFullInventoryUntil;
     private VisualLayout localVisualLayout;
     private VisualLayout remoteVisualLayout;
     private LineRenderer remoteLevitLine;
@@ -843,9 +844,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var serverOnlyHost = GunsawMultiplayerPlugin.IsHeadlessServer;
         var prefab = ResolveLocalCharacterPrefab(player.bodyScript);
         var currentIdentity = localName + "\n" + prefab;
-        if (!serverOnlyHost && (identitySent != currentIdentity || Time.unscaledTime >= nextIdentity))
+        var identityChanged = identitySent != currentIdentity;
+        if (!serverOnlyHost && (identityChanged || Time.unscaledTime >= nextIdentity))
         {
             identitySent = currentIdentity;
+            if (identityChanged) forceFullInventoryUntil = Time.unscaledTime + 0.5f;
             nextIdentity = Time.unscaledTime + 2f;
             MultiplayerSession.Send(new IdentityPacket(localName, prefab));
         }
@@ -1392,7 +1395,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 inventoryIds[index] = NetworkWireId.FromString(preset == null ? "" : SpriteId(preset.sprite));
             }
             var inventoryKey = string.Join("|", inventoryIds);
-            var inventoryChanged = inventoryKey != lastSerializedInventory || Time.unscaledTime >= nextFullInventory;
+            var inventoryChanged = inventoryKey != lastSerializedInventory || Time.unscaledTime >= nextFullInventory || Time.unscaledTime < forceFullInventoryUntil;
             writer.Write(inventoryChanged);
             if (inventoryChanged)
             {
@@ -3173,6 +3176,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         startingAmmoAppliedBody = body;
         pendingRespawnLoadoutBody = null;
         pendingRespawnLoadoutSource = null;
+        forceFullInventoryUntil = Time.unscaledTime + 0.5f;
+        nextFullInventory = 0f;
+        nextSnapshot = 0f;
     }
 
     private static void ApplyDefaultLobbyLoadout(BodyScript body, BodyScript source)
