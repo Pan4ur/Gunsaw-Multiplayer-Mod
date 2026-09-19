@@ -18,7 +18,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static readonly Dictionary<string, Sprite> spriteCache = new();
     private static readonly Dictionary<Sprite, string> spriteIdCache = new();
     private static readonly Dictionary<Texture2D, string> textureSignatureCache = new();
-    private static readonly Dictionary<string, WeaponPreset> weaponPresetCache = new();
     private static string selectedCharacterPrefab = "";
     private static string pendingRespawnCharacterPrefab = "";
     private static int remoteAvatarCreationDepth;
@@ -1716,7 +1715,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 {
                     while (remoteBody.weapons.Count < inventorySprites.Length) remoteBody.weapons.Add(null);
                     while (remoteBody.weaponAmmos.Count < inventorySprites.Length) remoteBody.weaponAmmos.Add(0);
-                    for (var index = 0; index < inventorySprites.Length; index++) remoteBody.weapons[index] = FindWeaponPreset(inventorySprites[index]);
+                    for (var index = 0; index < inventorySprites.Length; index++) remoteBody.weapons[index] = WeaponPresetProvider.FindWeaponPresetBySpriteHash(inventorySprites[index]);
                 }
                 if (weaponSlot >= 0 && weaponSlot < remoteBody.weaponAmmos.Count) remoteBody.weaponAmmos[weaponSlot] = weaponAmmo;
                 if (weaponSlot < 0)
@@ -2507,7 +2506,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (limbIndex >= 0 && limbIndex < limbs.Count)
         {
             var limb = limbs[limbIndex] as LimbScript;
-            var preset = FindWeaponPreset(weaponSprite);
+            var preset = WeaponPresetProvider.FindWeaponPreset(weaponSprite);
             
             if (limb != null && preset != null)
             {
@@ -3858,7 +3857,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (senderId == 0 || !IsFinite(packet.PositionX) || !IsFinite(packet.PositionY)) return false;
         var replica = NetworkAvatarRegistry.GetOrCreateReplica(senderId);
         var shooter = replica == null ? null : replica.remoteBody;
-        var preset = FindWeaponPreset(packet.WeaponSpriteId);
+        var preset = WeaponPresetProvider.FindWeaponPreset(packet.WeaponSpriteId);
         var projectile = preset == null ? null : preset.tracerLine;
         var rocket = projectile == null ? null : projectile.GetComponentInChildren<RocketProjectile>(true);
         var grenade = projectile == null ? null : projectile.GetComponentInChildren<GrenadeScript>(true);
@@ -4409,7 +4408,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             direction.sqrMagnitude < 0.01f || up.sqrMagnitude < 0.01f) return;
         direction.Normalize();
         up.Normalize();
-        var preset = FindWeaponPreset(sprite);
+        var preset = WeaponPresetProvider.FindWeaponPreset(sprite);
         if (preset == null && remoteBody != null && remoteBody.weapon != null)
             preset = remoteBody.weapon.stats;
         if (preset == null) return;
@@ -4669,7 +4668,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (remoteProjectiles.Count > 0) projectile = remoteProjectiles.Dequeue();
         if (projectile == null)
         {
-            var preset = FindWeaponPreset(sprite);
+            var preset = WeaponPresetProvider.FindWeaponPreset(sprite);
             projectile = CreateRemoteProjectileVisualData(preset == null ? null : preset.tracerLine);
         }
         if (projectile == null) return;
@@ -6171,7 +6170,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private static string SpriteId(Sprite sprite)
+    public static string SpriteId(Sprite sprite)
     {
         if (sprite == null) return "";
         string cached;
@@ -6235,52 +6234,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return null;
     }
 
-    private static WeaponPreset FindWeaponPreset(string spriteId)
-    {
-        if (string.IsNullOrEmpty(spriteId)) return null;
-        WeaponPreset cached;
-        if (weaponPresetCache.TryGetValue(spriteId, out cached) && cached != null) return cached;
-        if (GameManager.main != null && GameManager.main.allWeapons != null)
-            foreach (var preset in GameManager.main.allWeapons)
-                if (preset != null && preset.name == spriteId)
-                {
-                    weaponPresetCache[spriteId] = preset;
-                    return preset;
-                }
-        WeaponPreset fallback = null;
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null)
-            {
-                if (fallback == null) fallback = preset;
-                if (SpriteId(preset.sprite) == spriteId)
-                {
-                    weaponPresetCache[spriteId] = preset;
-                    return preset;
-                }
-            }
-
-        weaponPresetCache[spriteId] = fallback;
-        GunsawMultiplayerPlugin.LogInfo("Weapon preset not found for sprite: " + spriteId.Replace("\n", "\\n") + ". Missing some mods?");
-        return fallback;
-    }
-
     private static Sprite FindSprite(ulong spriteId)
     {
         if (spriteId == 0UL) return null;
         foreach (var sprite in Resources.FindObjectsOfTypeAll<Sprite>())
             if (sprite != null && NetworkWireId.FromString(SpriteId(sprite)) == spriteId) return sprite;
-        return null;
-    }
-
-    private static WeaponPreset FindWeaponPreset(ulong spriteId)
-    {
-        if (spriteId == 0UL) 
-            return null;
-        
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null && NetworkWireId.FromString(SpriteId(preset.sprite)) == spriteId) 
-                return preset;
-        
         return null;
     }
 

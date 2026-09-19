@@ -1468,7 +1468,7 @@ internal sealed class NpcReplication : MonoBehaviour
             var resolved = true;
             for (var index = 0; index < state.Weapons.Length; index++)
             {
-                var preset = FindWeaponPreset(state.Weapons[index]);
+                var preset = WeaponPresetProvider.FindWeaponPresetByNameHash(state.Weapons[index]);
                 if (preset != null || state.Weapons[index] == 0UL) weapons[index] = preset;
                 else resolved = false;
             }
@@ -1577,22 +1577,6 @@ internal sealed class NpcReplication : MonoBehaviour
             body.wepLaser = null;
             body.wepLaserLine = null;
         }
-    }
-
-    private static WeaponPreset FindWeaponPreset(string name)
-    {
-        if (string.IsNullOrEmpty(name)) return null;
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null && preset.name == name) return preset;
-        return null;
-    }
-
-    private static WeaponPreset FindWeaponPreset(ulong weaponId)
-    {
-        if (weaponId == 0UL) return null;
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null && NetworkWireId.FromString(preset.name) == weaponId) return preset;
-        return null;
     }
 
     private static void SetTarget(NpcProxy proxy, Rigidbody2D body, Pose pose)

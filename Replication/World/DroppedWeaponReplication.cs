@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class DroppedWeaponReplication
 {
@@ -76,7 +76,7 @@ public class DroppedWeaponReplication
     {
         var prefab = Resources.Load<GameObject>("Spawnables/PickupWeapon");
         if (prefab == null) return null;
-        var weapon = FindWeaponPreset(weaponId);
+        var weapon = WeaponPresetProvider.FindWeaponPresetByNameHash(weaponId);
         if (weapon == null) return null;
         var dropped = WorldReplication.Instantiate(prefab, position, Quaternion.Euler(0f, 0f, rotation)).GetComponent<DroppedWeapon>();
         if (dropped == null) return null;
@@ -134,7 +134,7 @@ public class DroppedWeaponReplication
         var changed = weapon == null || NetworkWireId.FromString(weapon.name) != weaponId;
         if (changed)
         {
-            weapon = FindWeaponPreset(weaponId);
+            weapon = WeaponPresetProvider.FindWeaponPresetByNameHash(weaponId);
             if (weapon == null) return;
             dropped.ChangeWeapon(weapon, ammo);
         BlackoutRule.ApplyToObject(dropped.gameObject);
@@ -229,23 +229,6 @@ public class DroppedWeaponReplication
         ammoSprite.transform.position = dropped.transform.position + Vector3.up * 0.6f;
         ammoSprite.transform.rotation = Quaternion.identity;
         ammoSprite.enabled = dropped.ammoAmount > 0 && Mathf.PingPong(Time.time, 0.3f) > 0.15f;
-    }
-
-    internal WeaponPreset FindWeaponPreset(ulong weaponId)
-    {
-        if (weaponId == 0UL) 
-            return null;
-            
-        if (GameManager.main != null && GameManager.main.allWeapons != null)
-            foreach (var candidate in GameManager.main.allWeapons)
-                if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId) 
-                    return candidate;
-                    
-        foreach (var candidate in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId)
-                return candidate; // should be dead now (fallback)
-     
-        return null;
     }
     
     internal void AnimateClientDroppedWeaponIndicators()

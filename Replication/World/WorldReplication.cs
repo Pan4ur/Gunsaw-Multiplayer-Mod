@@ -1411,7 +1411,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 var remoteBody = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
                 if (operation == WorldInteraction.WeaponDrop)
                 {
-                    var requestedWeapon = weapons.FindWeaponPreset(oldWeaponId);
+                    var requestedWeapon = WeaponPresetProvider.FindWeaponPresetByNameHash(oldWeaponId);
                     if (remoteBody == null || !remoteBody.isAlive || requestedWeapon == null || slot < 0 ||
                         slot >= remoteBody.weapons.Count || slot >= remoteBody.weaponAmmos.Count ||
                         (requestedPosition - (Vector2)remoteBody.transform.position).sqrMagnitude > 25f)
@@ -1459,7 +1459,7 @@ internal sealed class WorldReplication : MonoBehaviour
                         var pickedWeapon = dropped.stats;
                         var previousWeapon = slot >= 0 && slot < remoteBody.weapons.Count
                             ? remoteBody.weapons[slot] : null;
-                        remoteBody.weapons[slot] = weapons.FindWeaponPreset(oldWeaponId);
+                        remoteBody.weapons[slot] = WeaponPresetProvider.FindWeaponPresetByNameHash(oldWeaponId);
                         remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
                         weapons.ReplaceDroppedWeaponWithPrevious(dropped, remoteBody, pickedWeapon);
                         remoteBody.weapons[slot] = pickedWeapon;
