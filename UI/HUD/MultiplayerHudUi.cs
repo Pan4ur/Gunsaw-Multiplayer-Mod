@@ -28,6 +28,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new();
     private readonly Dictionary<BodyScript, CoopMarker> coopMarkers = new();
     private readonly Dictionary<ushort, FinalLeaderboardRow> finalLeaderboardRows = new();
+    private bool freezeLeaderboard;
     private bool coopMarkersVisible = true;
 
     internal void Configure(MultiplayerHud hud)
@@ -328,7 +329,12 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var mission = MissionManager.main;
         var visible = mission != null && mission.finished;
         finalLeaderboardPanel.SetActive(visible);
-        if (!visible) return;
+        if (!visible)
+        {
+            freezeLeaderboard = false;
+            return;
+        }
+        if (freezeLeaderboard) return;
 
         var entries = new List<FinalLeaderboardEntry>();
         var player = PlayerScript.player;
@@ -375,6 +381,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             UpdateHeadVisual(row.HeadParts, row.Visual, entry.Body, 58f);
             row.Root.SetActive(true);
         }
+        freezeLeaderboard = true;
     }
 
     private FinalLeaderboardRow CreateFinalLeaderboardRow()
