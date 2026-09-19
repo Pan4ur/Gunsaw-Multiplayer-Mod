@@ -26,8 +26,13 @@ internal static class LobbyHealthRule
     {
         Apply(body, MultiplayerSession.HealthFactor);
         body.health = body.maxHealth;
+        body.stamina = body.maxHealth;
         var player = PlayerScript.player;
-        if (player != null && player.bodyScript == body) player.curHealthShow = body.maxHealth;
+        if (player != null && player.bodyScript == body)
+        {
+            player.curHealthShow = body.maxHealth;
+            player.curStaminaShow = body.maxHealth;
+        }
     }
 }
 
