@@ -144,7 +144,7 @@ internal sealed class CustomLevelBrowserUi
         addLocalButton = CreateButton(panel.transform, "ADD LEVEL", new Vector2(195f, -397f), new Vector2(112f, 38f));
         onlineButton.onClick.AddListener(() => SetMode(false));
         localButton.onClick.AddListener(() => SetMode(true));
-        addLocalButton.onClick.AddListener(OpenAddLocalLevel);
+        addLocalButton.onClick.AddListener(OpenAddLevel);
         addLocalPanel = CreatePanel(panel.transform, Vector2.zero, new Vector2(510f, 430f));
         addLocalPanel.name = "Add Local Level";
         CreateText(addLocalPanel.transform, "SAVE LOCAL LEVEL", new Vector2(0f, 172f), new Vector2(460f, 32f), 21, TextAlignmentOptions.Center, FontStyles.UpperCase);
@@ -241,11 +241,19 @@ internal sealed class CustomLevelBrowserUi
         var localImage = localButton.GetComponent<Image>();
         onlineImage.color = localMode ? new Color(0.16f, 0.2f, 0.2f, 1f) : new Color(0.18f, 0.48f, 0.2f, 1f);
         localImage.color = localMode ? new Color(0.18f, 0.48f, 0.2f, 1f) : new Color(0.16f, 0.2f, 0.2f, 1f);
-        addLocalButton.gameObject.SetActive(localMode);
-        onlineButton.GetComponent<RectTransform>().anchoredPosition = localMode ? new Vector2(-145f, -397f) : new Vector2(-91f, -397f);
-        localButton.GetComponent<RectTransform>().anchoredPosition = localMode ? new Vector2(38f, -397f) : new Vector2(91f, -397f);
+        addLocalButton.gameObject.SetActive(true);
+        onlineButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-145f, -397f);
+        localButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(38f, -397f);
         if (!localMode && open && !loading && onlineLevels.Length == 0) plugin.StartCoroutine(LoadCatalog());
         if (open) Rebuild(true);
+    }
+
+    private void OpenAddLevel()
+    {
+        if (localMode)
+            OpenAddLocalLevel();
+        else
+            Application.OpenURL("https://gunsaw-level-codes.jimmyking.dev/");
     }
 
     private void OpenAddLocalLevel()
