@@ -2,96 +2,63 @@ using UnityEngine;
 
 public static class WeaponPresetProvider
 {
-    private static readonly Dictionary<string, WeaponPreset> weaponPresetCache = new();
-    private static readonly Dictionary<ulong, WeaponPreset> weaponPresetNameHashCache = new();
-    private static readonly Dictionary<ulong, WeaponPreset> weaponPresetSpriteHashCache = new();
-    
-    public static WeaponPreset FindWeaponPresetByNameHash(ulong weaponId)
-    {
-        if (weaponId == 0UL) 
-            return null;
-        
-        WeaponPreset cached;
-        if (weaponPresetNameHashCache.TryGetValue(weaponId, out cached) && cached != null)
-            return cached;
-            
-        if (GameManager.main != null && GameManager.main.allWeapons != null)
-            foreach (var candidate in GameManager.main.allWeapons)
-                if (candidate != null && NetworkWireId.FromString(candidate.name) == weaponId)
-                {
-                    weaponPresetNameHashCache[weaponId] = candidate;
-                    return candidate;
-                }
-        
-        WeaponPreset fallback = null;
-        foreach (var candidate in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (candidate != null)
-            {
-                if (fallback == null) fallback = candidate;
-                if (NetworkWireId.FromString(candidate.name) == weaponId)
-                {
-                    weaponPresetNameHashCache[weaponId] = candidate;
-                    return candidate; // should be dead now (fallback)
-                }
-            }
-        
-        weaponPresetNameHashCache[weaponId] = fallback;
-        GunsawMultiplayerPlugin.LogInfo("Weapon preset not found for hash: " + weaponId + ". Missing some mods?");
-        return fallback;
-    }
-    
-    public static WeaponPreset FindWeaponPresetBySpriteHash(ulong spriteId)
-    {
-        if (spriteId == 0UL) return null;
+    private static readonly Dictionary<string, WeaponPreset> cache = new();
+    private static readonly Dictionary<ulong, WeaponPreset> nameHashCache = new();
+    private static readonly Dictionary<ulong, WeaponPreset> spriteHashCache = new();
 
-        WeaponPreset cached;
-        if (weaponPresetSpriteHashCache.TryGetValue(spriteId, out cached) && cached != null)
+    private static WeaponPreset FindWeaponPreset<T>(T id, Dictionary<T, WeaponPreset> genericCache, Func<WeaponPreset, bool> allWeaponsMatch, Func<WeaponPreset, bool> resourcesMatch)
+    {
+        if (genericCache.TryGetValue(id, out var cached) && cached != null)
             return cached;
 
-        WeaponPreset fallback = null;
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null)
-            {
-                if (fallback == null) fallback = preset;
-                if (NetworkWireId.FromString(NetworkAvatarReplication.SpriteId(preset.sprite)) != spriteId) continue;
-                weaponPresetSpriteHashCache[spriteId] = preset;
-                return preset;
-            }
-
-        weaponPresetSpriteHashCache[spriteId] = fallback;
-        GunsawMultiplayerPlugin.LogInfo("Weapon preset not found for sprite hash: " + spriteId + ". Missing some mods?");
-        return fallback;
-    }
-    public static WeaponPreset FindWeaponPreset(string spriteId)
-    {
-        if (string.IsNullOrEmpty(spriteId)) return null;
-        
-        WeaponPreset cached;
-        if (weaponPresetCache.TryGetValue(spriteId, out cached) && cached != null)
-            return cached;
-        
-        if (GameManager.main != null && GameManager.main.allWeapons != null)
+        if (allWeaponsMatch != null && GameManager.main?.allWeapons != null)
             foreach (var preset in GameManager.main.allWeapons)
-                if (preset != null && preset.name == spriteId)
+                if (preset != null && allWeaponsMatch(preset))
                 {
-                    weaponPresetCache[spriteId] = preset;
+                    genericCache[id] = preset;
                     return preset;
                 }
-        
-        WeaponPreset fallback = null;
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null)
-            {
-                if (fallback == null) fallback = preset;
-                if (NetworkAvatarReplication.SpriteId(preset.sprite) == spriteId)
-                {
-                    weaponPresetCache[spriteId] = preset;
-                    return preset;
-                }
-            }
 
-        weaponPresetCache[spriteId] = fallback;
-        GunsawMultiplayerPlugin.LogInfo("Weapon preset not found for sprite: " + spriteId.Replace("\n", "\\n") + ". Missing some mods?");
+        WeaponPreset fallback = null;
+
+        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
+        {
+            if (preset == null)
+                continue;
+
+            fallback ??= preset;
+
+            if (!resourcesMatch(preset))
+                continue;
+
+            genericCache[id] = preset;
+            return preset;
+        }
+
+        genericCache[id] = fallback;
+        GunsawMultiplayerPlugin.LogInfo($"Weapon preset not found for: {id}. Missing some mods?");
+
         return fallback;
+    }
+
+    public static WeaponPreset FindWeaponPresetByNameHash(ulong id)
+    {
+        if (id == 0) return null;
+
+        return FindWeaponPreset(id, nameHashCache, p => NetworkWireId.FromString(p.name) == id, p => NetworkWireId.FromString(p.name) == id);
+    }
+
+    public static WeaponPreset FindWeaponPresetBySpriteHash(ulong id)
+    {
+        if (id == 0) return null;
+
+        return FindWeaponPreset(id, spriteHashCache, null, p => NetworkWireId.FromString(NetworkAvatarReplication.SpriteId(p.sprite)) == id);
+    }
+
+    public static WeaponPreset FindWeaponPreset(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        
+        return FindWeaponPreset(id, cache, p => p.name == id, p => NetworkAvatarReplication.SpriteId(p.sprite) == id);
     }
 }
