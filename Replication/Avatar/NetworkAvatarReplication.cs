@@ -3699,10 +3699,20 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
         if (body.painNoises == null || body.painNoises.Count == 0) return;
-        var clip = body.painNoises[UnityEngine.Random.Range(0, body.painNoises.Count)];
-        if (clip == null || string.IsNullOrWhiteSpace(clip.name)) return;
+        var index = UnityEngine.Random.Range(0, body.painNoises.Count);
+        if (body.painNoises[index] == null) return;
         var head = body.headTransform == null ? body.transform : body.headTransform;
-        MultiplayerSession.Send(new PlayerSoundPacket(PlayerSoundId(clip.name) & 0x0fffffffu, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
+        MultiplayerSession.Send(new PlayerSoundPacket(0x10000000u | (uint)index, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
+    }
+
+    internal static void ReplicateScream(BodyScript body)
+    {
+        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        if (body.deathNoises == null || body.deathNoises.Count == 0) return;
+        var index = UnityEngine.Random.Range(0, body.deathNoises.Count);
+        if (body.deathNoises[index] == null) return;
+        var head = body.headTransform == null ? body.transform : body.headTransform;
+        MultiplayerSession.Send(new PlayerSoundPacket(0x11000000u | (uint)index, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
     }
 
     internal static void ReplicateTelekinesis(LevitatorScript levitator)
@@ -4347,6 +4357,16 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         
+        if ((packet.SoundId & 0xff000000u) == 0x10000000u || (packet.SoundId & 0xff000000u) == 0x11000000u)
+        {
+            var sounds = (packet.SoundId & 0xff000000u) == 0x11000000u ? remoteBody?.deathNoises : remoteBody?.painNoises;
+            var index = (int)(packet.SoundId & 0x00ffffffu);
+            var clip = sounds != null && index < sounds.Count ? sounds[index] : null;
+            if (clip != null)
+                Sound.Play(clip, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f);
+            return;
+        }
+
         if ((packet.SoundId & 0xffff0000u) == 0x20000000u)
         {
             BuildAnimatedSoundCatalog();

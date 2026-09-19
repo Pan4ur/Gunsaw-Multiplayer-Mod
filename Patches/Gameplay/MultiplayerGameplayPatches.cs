@@ -1577,3 +1577,17 @@ internal static class MultiplayerPainSoundPatch
         if (__state) NetworkAvatarReplication.ReplicatePain(__instance);
     }
 }
+
+[HarmonyPatch(typeof(BodyScript), "DoScream")]
+internal static class MultiplayerDeathSoundPatch
+{
+    private static void Prefix(BodyScript __instance, out bool __state)
+    {
+        __state = __instance != null && __instance.deathNoises != null && __instance.deathNoises.Count > 0;
+    }
+
+    private static void Postfix(BodyScript __instance, bool __state)
+    {
+        if (__state) NetworkAvatarReplication.ReplicateScream(__instance);
+    }
+}
