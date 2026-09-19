@@ -21,7 +21,11 @@ internal static partial class MultiplayerSession
             targets = isHost ? peers.Ids() : (hostPeerId == 0 ? [] : [hostPeerId]);
         }
         var packet = PacketCodec.Encode(new PingPacket(now));
-        foreach (var target in targets) SendPacket(packet, target);
+        foreach (var target in targets)
+        {
+            try { SendPacket(packet, target); }
+            catch (IOException) { return; }
+        }
     }
 
     private static int QueueCustomLevelTransfer(string levelCode, ushort targetId = 0)
