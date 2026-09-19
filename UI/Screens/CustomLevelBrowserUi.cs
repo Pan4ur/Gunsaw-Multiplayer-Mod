@@ -45,6 +45,8 @@ internal sealed class CustomLevelBrowserUi
     private bool localMode;
     private string localCode = "";
     private GameObject editLocalPanel;
+    private GameObject deleteLocalPanel;
+    private CatalogEntry deletingEntry;
     private TMP_InputField editName;
     private TMP_Text editCodeStatus;
     private CatalogEntry editingEntry;
@@ -159,6 +161,7 @@ internal sealed class CustomLevelBrowserUi
         cancel.onClick.AddListener(CloseAddLocalLevel);
         addLocalPanel.SetActive(false);
         CreateEditLocalPanel();
+        CreateDeleteLocalPanel();
         LoadLocalLevels();
         SetMode(false);
         panel.SetActive(false);
@@ -184,6 +187,7 @@ internal sealed class CustomLevelBrowserUi
             queuedCovers.Clear();
             addLocalPanel.SetActive(false);
             if (editLocalPanel != null) editLocalPanel.SetActive(false);
+            if (deleteLocalPanel != null) deleteLocalPanel.SetActive(false);
         }
         panel.SetActive(value);
         if (value)
@@ -226,6 +230,7 @@ internal sealed class CustomLevelBrowserUi
         {
             addLocalPanel?.SetActive(false);
             editLocalPanel?.SetActive(false);
+            deleteLocalPanel?.SetActive(false);
         }
         
         localMode = useLocal;
@@ -344,6 +349,47 @@ internal sealed class CustomLevelBrowserUi
         save.onClick.AddListener(SaveEditedLevel);
         cancel.onClick.AddListener(() => editLocalPanel.SetActive(false));
         editLocalPanel.SetActive(false);
+    }
+
+    private void CreateDeleteLocalPanel()
+    {
+        deleteLocalPanel = CreatePanel(panel.transform, Vector2.zero, new Vector2(420f, 220f));
+        deleteLocalPanel.name = "Delete Local Level";
+        CreateText(deleteLocalPanel.transform, "DELETE LEVEL?", new Vector2(0f, 66f), new Vector2(380f, 32f),
+            21, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        var message = CreateText(deleteLocalPanel.transform, "", new Vector2(0f, 20f), new Vector2(360f, 32f),
+            14, TextAlignmentOptions.Center);
+        message.name = "Message";
+        var confirm = CreateButton(deleteLocalPanel.transform, "DELETE", new Vector2(-78f, -58f), new Vector2(130f, 40f));
+        confirm.GetComponent<Image>().color = new Color(0.55f, 0.1f, 0.1f, 1f);
+        var cancel = CreateButton(deleteLocalPanel.transform, "CANCEL", new Vector2(78f, -58f), new Vector2(130f, 40f));
+        confirm.onClick.AddListener(ConfirmDeleteLocalLevel);
+        cancel.onClick.AddListener(CloseDeleteLocalLevel);
+        deleteLocalPanel.SetActive(false);
+    }
+
+    private void OpenDeleteLocalLevel(CatalogEntry entry)
+    {
+        if (entry == null) return;
+        deletingEntry = entry;
+        foreach (var text in deleteLocalPanel.GetComponentsInChildren<TMP_Text>(true))
+            if (text.name == "Message") text.text = "Delete \"" + (entry.name ?? "Untitled") + "\"?";
+        addLocalPanel.SetActive(false);
+        editLocalPanel.SetActive(false);
+        deleteLocalPanel.SetActive(true);
+    }
+
+    private void ConfirmDeleteLocalLevel()
+    {
+        var entry = deletingEntry;
+        CloseDeleteLocalLevel();
+        DeleteLocalLevel(entry);
+    }
+
+    private void CloseDeleteLocalLevel()
+    {
+        deletingEntry = null;
+        deleteLocalPanel.SetActive(false);
     }
 
     private void OpenEditLocalLevel(CatalogEntry entry)
@@ -604,7 +650,7 @@ internal sealed class CustomLevelBrowserUi
         edit.onClick.AddListener(() => OpenEditLocalLevel(card.entry));
         edit.GetComponent<RectTransform>().sizeDelta = new Vector2(34f, 34f);
         var remove = CreateDeleteButton(actions.transform, new Vector2(170f, 0f), new Vector2(50f, 50f));
-        remove.onClick.AddListener(() => { if (card.entry != null) DeleteLocalLevel(card.entry); });
+        remove.onClick.AddListener(() => OpenDeleteLocalLevel(card.entry));
         remove.GetComponent<RectTransform>().sizeDelta = new Vector2(34f, 34f);
         card.localActions = actions;
         levelCards.Add(card);
