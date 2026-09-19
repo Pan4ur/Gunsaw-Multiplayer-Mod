@@ -245,9 +245,6 @@ internal sealed class NpcReplication : MonoBehaviour
     private void LateUpdate()
     {
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
-        var interpolationStarted = MultiplayerPerformance.StartPhase();
-        InterpolateClientNpcs();
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolate, interpolationStarted);
         foreach (var proxy in clientProxies)
         {
             if (proxy != null)
@@ -264,6 +261,12 @@ internal sealed class NpcReplication : MonoBehaviour
                 }
             }
         }
+    }
+
+    private void FixedUpdate()
+    {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
+        ApplyClientNpcBodies();
     }
 
     internal void ApplyDistanceCulling()
@@ -1093,7 +1096,20 @@ internal sealed class NpcReplication : MonoBehaviour
         proxy.FacialExpressions = root == null ? Array.Empty<FacialExpression>() :
             root.GetComponentsInChildren<FacialExpression>(true);
         FreezeProxy(proxy);
+        ConfigureRenderCallbacks(proxy);
         return proxy;
+    }
+
+    private void ConfigureRenderCallbacks(NpcProxy proxy)
+    {
+        if (proxy.Root == null || proxy.Marker == null) return;
+        proxy.Marker.OnWillRender = () => InterpolateClientNpc(proxy);
+        foreach (var renderer in proxy.Root.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            var callback = renderer.GetComponent<NpcRenderReplica>();
+            if (callback == null) callback = renderer.gameObject.AddComponent<NpcRenderReplica>();
+            callback.Marker = proxy.Marker;
+        }
     }
 
     private static void FreezeProxy(NpcProxy proxy)
@@ -1106,7 +1122,7 @@ internal sealed class NpcReplication : MonoBehaviour
         }
         foreach (var behaviour in proxy.Root.GetComponentsInChildren<MonoBehaviour>(true))
         {
-            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is ScarfPhysics ||
+            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is NpcRenderReplica || behaviour is ScarfPhysics ||
                 behaviour is SusnessShow || behaviour is Chatter) continue;
             if (!proxy.Behaviours.ContainsKey(behaviour)) proxy.Behaviours.Add(behaviour, behaviour.enabled);
             behaviour.enabled = false;
@@ -1127,9 +1143,11 @@ internal sealed class NpcReplication : MonoBehaviour
                 proxy.RigidbodySettings.Add(body, new RigidbodySettings
                 {
                     BodyType = body.bodyType,
-                    Simulated = body.simulated
+                    Simulated = body.simulated,
+                    Interpolation = body.interpolation
                 });
             if (body.simulated && !keepLocalPhysics) body.bodyType = RigidbodyType2D.Kinematic;
+            if (!keepLocalPhysics) body.interpolation = RigidbodyInterpolation2D.Interpolate;
             body.velocity = Vector2.zero;
             body.angularVelocity = 0f;
         }
@@ -1188,9 +1206,6 @@ internal sealed class NpcReplication : MonoBehaviour
             var limb = limbs[index] as LimbScript;
             if (limb == null) continue;
             SetTarget(proxy, limb.rb, state.Limbs[index].Pose);
-            if (limb.rb != null)
-                SetTransformTarget(proxy, limb.rb.transform, TransformPose.From(state.Limbs[index].Pose));
-
             SetTransformTarget(proxy, limb.transform, state.Limbs[index].Visual);
             var dismembered = state.Limbs[index].Dismembered;
             if (limb.dismembered != dismembered) limb.dismembered = dismembered;
@@ -1650,69 +1665,80 @@ internal sealed class NpcReplication : MonoBehaviour
         return left.Position == right.Position && Mathf.Approximately(left.Rotation, right.Rotation);
     }
 
-    private void InterpolateClientNpcs()
+    private void InterpolateClientNpc(NpcProxy proxy)
+    {
+       
+        if (proxy == null || proxy.LastVisualInterpolationFrame == Time.frameCount)
+            return;
+        
+        proxy.LastVisualInterpolationFrame = Time.frameCount;
+        
+        if (proxy.Root == null || !proxy.Root.activeInHierarchy || proxy.Body == null || proxy.TransformTargets.Count == 0)
+            return;
+       
+        if (!LoadDistanceSystem.IsNpcNearLocalPlayer(proxy.Body.transform.position))
+            return;
+      
+        var now = Time.unscaledTime;
+        if (proxy.LocalPhysics)
+        {
+            if (now <= proxy.LocalPhysicsUntil) return;
+            proxy.LocalPhysics = false;
+            FreezeProxy(proxy);
+        }
+      
+        if (IsDead(proxy)) return;
+        var transformsStarted = MultiplayerPerformance.StartPhase();
+      
+        foreach (var pair in proxy.TransformTargets)
+        {
+            var transform = pair.Key;
+            if (transform == null) continue;
+            var target = pair.Value;
+            var amount = Mathf.Clamp01((now - target.StartedAt) / SnapshotInterval);
+            transform.SetPositionAndRotation(Vector3.Lerp(target.From.Position, target.Target.Position, amount),
+                Quaternion.Lerp(Quaternion.Euler(0f, 0f, target.From.Rotation), Quaternion.Euler(0f, 0f, target.Target.Rotation), amount));
+           
+            if (amount >= 1f)
+                proxy.CompletedTransformTargets.Add(transform);
+        }
+        foreach (var transform in proxy.CompletedTransformTargets)
+            proxy.TransformTargets.Remove(transform);
+            
+        proxy.CompletedTransformTargets.Clear();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
+    }
+
+    private void ApplyClientNpcBodies()
     {
         foreach (var proxy in clientProxies)
         {
-            if (proxy == null || proxy.Root == null || !proxy.Root.activeInHierarchy) continue;
-            if (!LoadDistanceSystem.IsNpcNearLocalPlayer(proxy.Body.transform.position)) continue;
-            if (proxy.LocalPhysics)
-            {
-                if (Time.unscaledTime <= proxy.LocalPhysicsUntil) continue;
-                proxy.LocalPhysics = false;
-                FreezeProxy(proxy);
-            }
-            if (IsDead(proxy)) continue;
-            var bodiesStarted = MultiplayerPerformance.StartPhase();
+            if (proxy == null || proxy.Root == null || !proxy.Root.activeInHierarchy || proxy.Body == null) continue;
+            if (!LoadDistanceSystem.IsNpcNearLocalPlayer(proxy.Body.transform.position) || proxy.LocalPhysics || IsDead(proxy)) continue;
             foreach (var pair in proxy.BodyTargets)
             {
                 var body = pair.Key;
                 if (body == null) continue;
-                var target = pair.Value;
-                if (target.Completed) continue;
-                var amount = Mathf.Clamp01((Time.unscaledTime - target.StartedAt) /
-                    SnapshotInterval);
-                body.position = Vector2.Lerp(target.From.Position, target.Target.Position, amount);
-                body.rotation = Mathf.LerpAngle(target.From.Rotation, target.Target.Rotation, amount);
-                if (amount >= 1f) proxy.CompletedBodyTargets.Add(body);
+                body.MovePosition(pair.Value.Target.Position);
+                body.MoveRotation(pair.Value.Target.Rotation);
+                proxy.CompletedBodyTargets.Add(body);
             }
             foreach (var body in proxy.CompletedBodyTargets)
-            {
-                PoseTarget target;
-                if (!proxy.BodyTargets.TryGetValue(body, out target)) continue;
-                target.Completed = true;
-                proxy.BodyTargets[body] = target;
-            }
+                proxy.BodyTargets.Remove(body);
             proxy.CompletedBodyTargets.Clear();
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateBodies, bodiesStarted);
-            var transformsStarted = MultiplayerPerformance.StartPhase();
-            foreach (var pair in proxy.TransformTargets)
-            {
-                var transform = pair.Key;
-                if (transform == null) continue;
-                var target = pair.Value;
-                if (target.Completed) continue;
-                var amount = Mathf.Clamp01((Time.unscaledTime - target.StartedAt) /
-                    SnapshotInterval);
-                transform.position = Vector3.Lerp(target.From.Position, target.Target.Position, amount);
-                transform.rotation = Quaternion.Lerp(Quaternion.Euler(0f, 0f, target.From.Rotation),
-                    Quaternion.Euler(0f, 0f, target.Target.Rotation), amount);
-                if (amount >= 1f) proxy.CompletedTransformTargets.Add(transform);
-            }
-            foreach (var transform in proxy.CompletedTransformTargets)
-            {
-                TransformTarget target;
-                if (!proxy.TransformTargets.TryGetValue(transform, out target)) continue;
-                target.Completed = true;
-                proxy.TransformTargets[transform] = target;
-            }
-            proxy.CompletedTransformTargets.Clear();
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
         }
     }
 
     private static bool IsDead(NpcProxy proxy)
     {
+        if (true)
+            return false;
+        
+        /*
+         * It was a pretty cool optimization technique, but because of it,
+         * the limbs could get stuck in one position since only the root is checked,
+         * and iterating through all the limbs would, on the other hand, kill performance
+         */
         if (proxy.LastHostAlive || proxy.Body == null || proxy.Body.rb == null)
             return false;
         
@@ -1886,6 +1912,7 @@ internal sealed class NpcReplication : MonoBehaviour
             if (pair.Key == null) continue;
             pair.Key.bodyType = pair.Value.BodyType;
             pair.Key.simulated = pair.Value.Simulated;
+            pair.Key.interpolation = pair.Value.Interpolation;
         }
         foreach (var pair in proxy.OriginalJointStates)
             if (pair.Key != null) pair.Key.enabled = pair.Value;
@@ -2666,6 +2693,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public bool LastHostAlive = true;
         public bool LocalPhysics;
         public float LocalPhysicsUntil;
+        public int LastVisualInterpolationFrame = -1;
         public int AppliedWeapon = -2;
         public ulong[] AppliedWeapons = Array.Empty<ulong>();
         public NpcNetworkReplica Marker;
@@ -2799,7 +2827,6 @@ internal sealed class NpcReplication : MonoBehaviour
         public Pose Target;
         public Pose From;
         public float StartedAt;
-        public bool Completed;
     }
 
     private struct TransformTarget
@@ -2807,7 +2834,6 @@ internal sealed class NpcReplication : MonoBehaviour
         public TransformPose Target;
         public TransformPose From;
         public float StartedAt;
-        public bool Completed;
     }
 
     private struct TransformPose
@@ -2825,6 +2851,7 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         public RigidbodyType2D BodyType;
         public bool Simulated;
+        public RigidbodyInterpolation2D Interpolation;
     }
 
     private struct LineState
@@ -2839,4 +2866,23 @@ internal sealed class NpcReplication : MonoBehaviour
     }
 }
 
-internal sealed class NpcNetworkReplica : MonoBehaviour { }
+internal sealed class NpcNetworkReplica : MonoBehaviour
+{
+    public Action OnWillRender;
+
+    public void NotifyWillRender()
+    {
+        var callback = OnWillRender;
+        if (callback != null) callback();
+    }
+}
+
+internal sealed class NpcRenderReplica : MonoBehaviour
+{
+    public NpcNetworkReplica Marker;
+
+    private void OnWillRenderObject()
+    {
+        if (Marker != null) Marker.NotifyWillRender();
+    }
+}
