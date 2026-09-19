@@ -38,6 +38,7 @@ MP Features:
 - Configurable number of lives per level
 - P2P and Relay connection modes
 - Discord RPC
+- Blackout mode (lights are off, headlamp only)
 
 Props:
 - NPC spawner
@@ -45,6 +46,7 @@ Props:
 - Logic gates (nand, and, or, xor, t-trigger, d-trigger, clock, rnd...)
 - Lamps now have an id to toggle
 - Player spawn points now have a team filed (color)
+- Weapons (props) now have a respawn time
 
 ## Installation
 
@@ -56,6 +58,13 @@ Props:
 6. Copy the `GunsawMultiplayer.dll` to ```<Gunsaw folder>\BepInEx\plugins\GunsawMultiplayer.dll```
 7. Start Gunsaw, open the **Multiplayer** menu at bottom-left corner, and create or join a lobby
 8. Smash your friends in every way possible
+
+> [!WARNING]
+> **LINUX ONLY**
+>
+> [Add winhttp to the libs](https://docs.bepinex.dev/articles/advanced/proton_wine.html)
+>
+> Add `LC_ALL=ru_RU.UTF-8` if you need to see Russian letters
 
 <details>
 <summary>Detailed</summary>
@@ -79,6 +88,7 @@ Props:
 - C - Carry player (You need to aim at him with your sights)
 - E - Reactivate one-time triggers
 - B - Play a whine
+- L - Toggle headlamp (in Blackout mode)
 
 ## Crashes
 
