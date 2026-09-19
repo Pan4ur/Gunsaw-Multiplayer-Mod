@@ -26,6 +26,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private bool nativeInspectorCaptured;
     private readonly List<NativeInputState> nativeInputs = new List<NativeInputState>();
     private readonly List<NativeLabelState> nativeLabels = new List<NativeLabelState>();
+    private LevelPartGame editingLamp;
 
     internal static CustomPropEditorController Ensure(LevelEditor value)
     {
@@ -405,7 +406,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         if (editor.idField != null)
         {
             editor.idField.onEndEdit.AddListener(value => CommitFields());
-            editor.idField.onEndEdit.AddListener(value => CommitColoredLampId());
+            editor.idField.onSelect.AddListener(value => BeginColoredLampIdEdit());
+            editor.idField.onEndEdit.AddListener(value => CommitColoredLampId(editingLamp, value));
         }
         if (editor.tarIdField != null) editor.tarIdField.onEndEdit.AddListener(value => CommitFields());
         if (editor.teamField != null)
@@ -460,21 +462,32 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         if (!IsColoredLamp(levelPart)) return;
         levelPart.showId = true;
         levelPart.idNameOverride = "Activation ID";
-        editor.idField.text = levelPart.part.id.ToString();
+        editor.idField.SetTextWithoutNotify(levelPart.part.id.ToString());
         if (editor.idName != null) editor.idName.text = "Activation ID";
         SetEditable(editor.idField);
     }
 
-    internal void CommitColoredLampId()
+    private void BeginColoredLampIdEdit()
     {
-        if (editor == null || editor.idField == null) return;
         var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
         var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
-        if (!IsColoredLamp(levelPart)) return;
-        int id;
-        if (int.TryParse(editor.idField.text, out id)) levelPart.part.id = Mathf.Max(0, id);
+        editingLamp = IsColoredLamp(levelPart) ? levelPart : null;
     }
 
+    internal void CommitColoredLampId()
+    {
+        if (editor != null && editor.idField != null && editor.idField.isFocused && editingLamp != null)
+            CommitColoredLampId(editingLamp, editor.idField.text);
+    }
+
+    private void CommitColoredLampId(LevelPartGame levelPart, string value)
+    {
+        if (!IsColoredLamp(levelPart)) return;
+        int id;
+        if (!int.TryParse(value, out id)) return;
+        levelPart.part.id = Mathf.Max(0, id);
+    }
+    
     internal void EnableRespawnTimeForWeapon()
     {
         if (editor == null || editor.forceXField == null) return;
