@@ -2693,8 +2693,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 : -1f;
         }
         TeleportRespawnBodyToNpc(body);
-        if (CanRespawn && respawnAt >= 0f && Time.unscaledTime >= respawnAt)
-            RespawnLocalPlayer(player, body);
+        if (CanRespawn)
+        {
+            if (respawnAt >= 0f && Time.unscaledTime >= respawnAt)
+                RespawnLocalPlayer(player, body);
+        }
+   else     GameManager.main.swapAmount = 0;
     }
 
     private void TeleportRespawnBodyToNpc(BodyScript body)
