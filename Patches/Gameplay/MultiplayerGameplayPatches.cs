@@ -18,6 +18,8 @@ internal static class BloodPropCreationPatch
     private static void Postfix(GameObject __instance)
     {
         LevelCleanupSystem.Register(__instance);
+        if (BlackoutRule.IsApplied) 
+            BlackoutRule.RegisterBloodProp(__instance);
     }
 }
 

@@ -980,6 +980,7 @@ internal sealed class WorldReplication : MonoBehaviour
                                     Sound.Play(crate.crateDestroy, crate.transform.position);
                                 var debris = Instantiate(crate.objOnDestroy, crate.transform.position,
                                     crate.transform.rotation);
+                                BlackoutRule.ApplyToObject(debris);
                                 if (crate.breakType == CrateScript.BreakType.None)
                                     RegisterCrateDebrisBodies(id, debris.GetComponentsInChildren<Rigidbody2D>(true),
                                         true);

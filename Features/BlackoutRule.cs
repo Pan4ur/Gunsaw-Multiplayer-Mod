@@ -10,10 +10,14 @@ internal static class BlackoutRule
     private static readonly Dictionary<Light2D, float> globalLightIntensities = new();
     private static readonly Dictionary<Camera, Color> backgroundColors = new();
     private static readonly Dictionary<SpriteRenderer, Material> originalMaterials = new();
+    private static readonly Dictionary<ParticleSystemRenderer, Material> originalParticleMaterials = new();
+    private static readonly Dictionary<Texture, Material> particleLitMaterials = new();
     private static readonly Dictionary<SpriteShapeRenderer, Material[]> originalGroundMaterials = new();
     private static readonly Dictionary<LineRenderer, Material> originalLineMaterials = new();
     private static readonly Dictionary<Collider2D, bool> chainlinkFenceCache = new();
     private static Material litMaterial;
+    private static Material scarfLitMaterial;
+    private static Material unlitMaterial;
     private static AssetBundle headlampBundle;
     internal static Material headlampMaterial;
     private static bool triedHeadlampMaterial;
@@ -38,14 +42,16 @@ internal static class BlackoutRule
     private static bool restrictLightApplied;
     private static AudioClip headlampToggleSound;
 
+    internal static bool IsApplied => applied;
+
     internal static void Tick()
     {
         HandleInput();
-        if (!MultiplayerSession.IsActive || !MultiplayerSession.BlackoutEnabled)
+        if (!CanApplyBlackout())
         {
-            if (applied) 
+            if (applied)
                 RestoreLights();
-            
+
             applied = false;
             return;
         }
@@ -54,26 +60,41 @@ internal static class BlackoutRule
         RegisterRespawnedLocalBody();
         TickHeadlamps();
         UpdateRestrictLightShadows();
-       
+
         var sceneHandle = UnityEngine.SceneManagement.SceneManager.GetActiveScene().handle;
         if (applied && sceneHandle == appliedSceneHandle)
             return;
-        
+
         applied = true;
         appliedSceneHandle = sceneHandle;
         ApplyScene();
     }
 
+    private static bool CanApplyBlackout()
+    {
+        if (!MultiplayerSession.IsActive || !MultiplayerSession.BlackoutEnabled || GameManager.main == null)
+            return false;
+        var sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        return sceneName != "LevelSelect" && sceneName != "LevelEditor";
+    }
+
     internal static void RegisterBody(BodyScript body)
     {
-        if (!MultiplayerSession.IsActive || !MultiplayerSession.BlackoutEnabled || body == null || body.headTransform == null)
+        if (!CanApplyBlackout() || body == null || body.headTransform == null)
             return;
-        
+
         EnsureHeadlamp(body);
         ApplyToObject(body.gameObject);
+        MakeWeaponLaserBright(body.wepLaserLine);
+        if (body.tails != null)
+            foreach (var tail in body.tails)
+                if (tail != null)
+                    ApplyToObject(tail.gameObject);
         DisableLights(body.gameObject);
-        
-        var ownerId = body == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId : NetworkAvatarRegistry.ReplicaForBody(body)?.remotePeerId ?? 0;
+
+        var ownerId = body == PlayerScript.player?.bodyScript
+            ? MultiplayerSession.LocalPeerId
+            : NetworkAvatarRegistry.ReplicaForBody(body)?.remotePeerId ?? 0;
         if (ownerId != 0 && headlampStates.TryGetValue(ownerId, out var state))
             body.headTransform.GetComponentInChildren<Headlamp>(true)?.SetState(state.Enabled, state.Sequence);
     }
@@ -86,54 +107,60 @@ internal static class BlackoutRule
         {
             if (body == null || body.headTransform == null)
                 continue;
-            
+
             var localBody = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
-            
+
             if (!body.isPlayer && body != localBody && body.GetComponentInParent<NetworkReplica>() == null)
                 continue;
-            
+
             EnsureHeadlamp(body);
+            MakeWeaponLaserBright(body.wepLaserLine);
         }
-        
+
         DimLevelLighting();
         GraffitiSystem.SetBlackoutMaterials(true);
         ApplyLitMaterials();
-        
+        foreach (var scarf in UnityEngine.Object.FindObjectsOfType<ScarfPhysics>())
+            ApplyScarfMaterial(scarf);
+
         foreach (var light in UnityEngine.Object.FindObjectsOfType<Light2D>())
         {
-            if (light == null || IsLevelGlobalLight(light) || light.GetComponentInParent<Headlamp>() != null || light.GetComponentInParent<FireScript>() != null) 
+            if (light == null || IsLevelGlobalLight(light) || light.GetComponentInParent<Headlamp>() != null ||
+                light.GetComponentInParent<FireScript>() != null)
                 continue;
-            
-            if (!disabledLights.ContainsKey(light)) 
+
+            if (!disabledLights.ContainsKey(light))
                 disabledLights.Add(light, light.enabled);
-            
+
             light.enabled = false;
         }
     }
-    
+
     private static void UpdateRestrictLightShadows()
     {
         var enabled = MultiplayerSession.RestrictLightEnabled;
-        if (enabled == restrictLightApplied) 
+        if (enabled == restrictLightApplied)
             return;
-      
+
         restrictLightApplied = enabled;
-       
+
         if (!enabled)
         {
             RemoveRestrictLightShadows();
             return;
         }
-       
+
         foreach (var collider in UnityEngine.Object.FindObjectsOfType<Collider2D>())
         {
-            if (collider == null || collider.isTrigger || IsChainlinkFence(collider) || collider.GetComponentInParent<BodyScript>() != null || collider.GetComponent<BlackoutShadowCaster>() != null) 
+            if (collider == null || collider.isTrigger || IsChainlinkFence(collider) ||
+                collider.GetComponentInParent<BodyScript>() != null ||
+                collider.GetComponent<BlackoutShadowCaster>() != null)
                 continue;
-          
+
             var bounds = collider.bounds;
-            if (bounds.size.x <= 0.001f || bounds.size.y <= 0.001f) 
+            if (bounds.size.x <= 0.001f || bounds.size.y <= 0.001f)
                 continue;
-           
+
             var shape = GetShadowCasterShape(collider, bounds);
             var caster = collider.gameObject.AddComponent<ShadowCaster2D>();
             caster.enabled = false;
@@ -154,15 +181,16 @@ internal static class BlackoutRule
     {
         if (collider == null)
             return false;
-        
-        if (chainlinkFenceCache.TryGetValue(collider, out var cached)) return cached;
+
+        if (chainlinkFenceCache.TryGetValue(collider, out var cached))
+            return cached;
         for (var current = collider == null ? null : collider.transform; current != null; current = current.parent)
             if (current.name.IndexOf("chainlink", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 chainlinkFenceCache[collider] = true;
                 return true;
             }
-        
+
         chainlinkFenceCache[collider] = false;
         return false;
     }
@@ -171,10 +199,10 @@ internal static class BlackoutRule
     {
         if (collider is PolygonCollider2D polygon && polygon.pathCount > 0)
             return Array.ConvertAll(polygon.GetPath(0), point => (Vector3)point);
-       
+
         if (collider is EdgeCollider2D edge && edge.points.Length > 2)
             return Array.ConvertAll(edge.points, point => (Vector3)point);
-        
+
         var transform = collider.transform;
         return new[]
         {
@@ -184,27 +212,27 @@ internal static class BlackoutRule
             transform.InverseTransformPoint(new Vector3(bounds.max.x, bounds.min.y, transform.position.z))
         };
     }
-    
+
     private static void RemoveRestrictLightShadows()
     {
         foreach (var marker in shadowCasters)
         {
-            if (marker == null) 
+            if (marker == null)
                 continue;
-           
+
             var caster = marker.gameObject.GetComponent<ShadowCaster2D>();
             if (caster != null)
                 UnityEngine.Object.Destroy(caster);
-          
+
             UnityEngine.Object.Destroy(marker);
         }
     }
-    
+
     private static void EnsureHeadlamp(BodyScript body)
     {
         if (body.headTransform.GetComponentInChildren<Headlamp>(true) != null)
             return;
-        
+
         var headlamp = new GameObject("MP Blackout Headlamp");
         headlamp.transform.SetParent(body.headTransform, false);
         headlamp.transform.localPosition = new Vector3(0f, 0.15f, 0f);
@@ -219,11 +247,12 @@ internal static class BlackoutRule
         light.pointLightInnerAngle = 38f;
         light.pointLightOuterAngle = 64f;
         light.pointLightOuterRadius = 12f;
-       
-        var sortingLayerField = typeof(Light2D).GetField("m_ApplyToSortingLayers", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (sortingLayerField != null) 
+
+        var sortingLayerField = typeof(Light2D).GetField("m_ApplyToSortingLayers",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        if (sortingLayerField != null)
             sortingLayerField.SetValue(light, System.Array.ConvertAll(SortingLayer.layers, layer => layer.id));
-      
+
         light.intensity = 2f;
         light.color = Color.white;
         light.enabled = true;
@@ -234,43 +263,43 @@ internal static class BlackoutRule
         faceLight.lightType = Light2D.LightType.Point;
         faceLight.pointLightInnerRadius = 0.1f;
         faceLight.pointLightOuterRadius = 0.8f;
-        
+
         if (sortingLayerField != null)
             sortingLayerField.SetValue(faceLight, Array.ConvertAll(SortingLayer.layers, layer => layer.id));
-      
+
         faceLight.intensity = 0.25f;
         faceLight.color = Color.white;
         faceLight.enabled = true;
         headlampController.Configure(light, faceLight);
         headlamps.Add(headlampController);
     }
-    
+
     private static Material GetHeadlampMaterial()
     {
-        if (triedHeadlampMaterial) 
+        if (triedHeadlampMaterial)
             return headlampMaterial;
-       
+
         triedHeadlampMaterial = true;
-       
+
         var stream = typeof(BlackoutRule).Assembly.GetManifestResourceStream("GunsawMultiplayer.Assets.headlamp-light");
-        if (stream == null) 
+        if (stream == null)
             return null;
-      
+
         using (stream)
         {
             var bytes = new byte[stream.Length];
             stream.Read(bytes, 0, bytes.Length);
             headlampBundle = AssetBundle.LoadFromMemory(bytes);
         }
-        
-        if (headlampBundle == null) 
+
+        if (headlampBundle == null)
             return null;
-        
+
         var materials = headlampBundle.LoadAllAssets<Material>();
-      
+
         if (materials.Length > 0)
             headlampMaterial = materials[0];
-      
+
         return headlampMaterial;
     }
 
@@ -278,64 +307,66 @@ internal static class BlackoutRule
     {
         if (headlampMaterial == null)
             return;
-       
+
         var count = 0;
-       
+
         foreach (var lamp in headlamps)
         {
-            if (lamp == null || !lamp.WriteShaderData(headlampShaderData, headlampShaderSettings, headlampShaderFaces, headlampShaderBlockers, headlampShaderBlockerCounts, headlampShaderGroundBlockers, count)) 
+            if (lamp == null || !lamp.WriteShaderData(headlampShaderData, headlampShaderSettings, headlampShaderFaces,
+                    headlampShaderBlockers, headlampShaderBlockerCounts, headlampShaderGroundBlockers, count))
                 continue;
-           
+
             count++;
             if (count == 16)
                 break;
         }
-        
+
         Shader.SetGlobalInt("_HeadlampCount", count);
         Shader.SetGlobalVectorArray("_HeadlampData", headlampShaderData);
         Shader.SetGlobalVectorArray("_HeadlampSettings", headlampShaderSettings);
         Shader.SetGlobalVectorArray("_HeadlampFaces", headlampShaderFaces);
-        
-        if (headlampShaderBlockerTexture == null) 
-            headlampShaderBlockerTexture = new Texture2D(HeadlampBlockerDataWidth, 16, TextureFormat.RGBAFloat, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
-       
+
+        if (headlampShaderBlockerTexture == null)
+            headlampShaderBlockerTexture =
+                new Texture2D(HeadlampBlockerDataWidth, 16, TextureFormat.RGBAFloat, false, true)
+                    { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+
         headlampShaderBlockerTexture.SetPixels(headlampShaderBlockers);
         headlampShaderBlockerTexture.Apply(false, false);
         Shader.SetGlobalFloatArray("_HeadlampBlockerCounts", headlampShaderBlockerCounts);
         Shader.SetGlobalFloatArray("_HeadlampGroundBlockers", headlampShaderGroundBlockers);
         Shader.SetGlobalTexture("_HeadlampBlockers", headlampShaderBlockerTexture);
-
     }
-    
+
     internal static Material GetLitMaterial()
     {
-        if (litMaterial != null) 
+        if (litMaterial != null)
             return litMaterial;
-        
+
         var customMaterial = GetHeadlampMaterial();
-       
+
         if (customMaterial != null)
         {
-            litMaterial = customMaterial; 
+            litMaterial = customMaterial;
             return litMaterial;
         }
-       
+
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
         {
             if (renderer == null || renderer.sharedMaterial == null || renderer.sharedMaterial.shader == null)
                 continue;
-           
-            if (!renderer.sharedMaterial.shader.name.Contains("Sprite-Lit")) 
+
+            if (!renderer.sharedMaterial.shader.name.Contains("Sprite-Lit"))
                 continue;
-           
+
             litMaterial = renderer.sharedMaterial;
             return litMaterial;
         }
-       
+
         var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Lit-Default");
         if (shader != null)
             litMaterial = new Material(shader);
-       
+
         return litMaterial;
     }
 
@@ -344,64 +375,71 @@ internal static class BlackoutRule
         var material = GetLitMaterial();
         if (material == null)
             return;
-        
+
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
         {
-            if (renderer == null || renderer.GetComponent<GraffitiMaterialMarker>() != null || originalMaterials.ContainsKey(renderer)) 
+            if (renderer == null || renderer.GetComponent<GraffitiMaterialMarker>() != null ||
+                originalMaterials.ContainsKey(renderer))
                 continue;
-            
+
             originalMaterials.Add(renderer, renderer.sharedMaterial);
             renderer.sharedMaterial = material;
+            BindSpriteTexture(renderer);
         }
 
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteShapeRenderer>())
         {
             if (renderer == null || originalGroundMaterials.ContainsKey(renderer))
                 continue;
-         
+
             var original = renderer.sharedMaterials;
             originalGroundMaterials.Add(renderer, original);
-          
+
             if (original.Length == 0)
             {
                 renderer.sharedMaterial = new Material(material);
                 continue;
             }
-            
+
             var replacements = new Material[original.Length];
             for (var index = 0; index < replacements.Length; index++)
                 replacements[index] = new Material(material);
             renderer.sharedMaterials = replacements;
         }
-        
+
+        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<ParticleSystemRenderer>())
+            ApplyToNewParticleRenderer(renderer);
+
         var localLevitator = PlayerScript.player == null ? null : PlayerScript.player.levitLine;
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<LineRenderer>())
         {
-            if (renderer == null || renderer != localLevitator && renderer.gameObject.name.IndexOf("Levit", StringComparison.OrdinalIgnoreCase) < 0)
+            if (renderer == null || renderer != localLevitator &&
+                renderer.gameObject.name.IndexOf("Levit", StringComparison.OrdinalIgnoreCase) < 0)
                 continue;
-            
-            if (originalLineMaterials.ContainsKey(renderer)) 
+
+            if (originalLineMaterials.ContainsKey(renderer))
                 continue;
-           
+
             originalLineMaterials.Add(renderer, renderer.sharedMaterial);
-           
+
             if (levitatorMaterial == null)
             {
-                var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default") ?? Shader.Find("Sprites/Default");
-                if (shader != null) 
+                var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default") ??
+                             Shader.Find("Sprites/Default");
+                if (shader != null)
                     levitatorMaterial = new Material(shader);
             }
-            
-            if (levitatorMaterial != null) 
+
+            if (levitatorMaterial != null)
                 renderer.sharedMaterial = levitatorMaterial;
         }
     }
-    
+
     internal static void RegisterFire(FireScript fire)
     {
         if (!applied || fire == null || fire.GetComponentInChildren<BlackoutFireLight>(true) != null)
             return;
-       
+
         var lightObject = new GameObject("MP Blackout Fire Light");
         lightObject.transform.SetParent(fire.transform, false);
         lightObject.AddComponent<BlackoutFireLight>();
@@ -409,11 +447,12 @@ internal static class BlackoutRule
         light.lightType = Light2D.LightType.Point;
         light.pointLightInnerRadius = 0.25f;
         light.pointLightOuterRadius = 3.5f;
-       
-        var sortingLayerField = typeof(Light2D).GetField("m_ApplyToSortingLayers", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (sortingLayerField != null) 
+
+        var sortingLayerField = typeof(Light2D).GetField("m_ApplyToSortingLayers",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        if (sortingLayerField != null)
             sortingLayerField.SetValue(light, System.Array.ConvertAll(SortingLayer.layers, layer => layer.id));
-        
+
         light.intensity = 0.8f;
         light.color = new Color(1f, 0.36f, 0.12f);
     }
@@ -422,24 +461,28 @@ internal static class BlackoutRule
     {
         if (!applied || gameObject == null)
             return;
-        
+
         foreach (var r in gameObject.GetComponentsInChildren<SpriteRenderer>(true))
             ApplyToNewSpriteRenderer(r);
+
+        foreach (var r in gameObject.GetComponentsInChildren<ParticleSystemRenderer>(true))
+            ApplyToNewParticleRenderer(r);
     }
 
     private static void DisableLights(GameObject gameObject)
     {
-        if (gameObject == null) 
+        if (gameObject == null)
             return;
-        
+
         foreach (var light in gameObject.GetComponentsInChildren<Light2D>(true))
         {
-            if (light == null || light.GetComponentInParent<Headlamp>() != null || light.GetComponentInParent<FireScript>() != null) 
+            if (light == null || light.GetComponentInParent<Headlamp>() != null ||
+                light.GetComponentInParent<FireScript>() != null)
                 continue;
-           
+
             if (!disabledLights.ContainsKey(light))
                 disabledLights.Add(light, light.enabled);
-            
+
             light.enabled = false;
         }
     }
@@ -449,7 +492,8 @@ internal static class BlackoutRule
         foreach (var loader in UnityEngine.Object.FindObjectsOfType<LevelLoader>())
         {
             var light = loader == null ? null : loader.globalLight;
-            if (light == null) continue;
+            if (light == null)
+                continue;
             if (!globalLightIntensities.ContainsKey(light))
                 globalLightIntensities.Add(light, light.intensity);
             light.enabled = true;
@@ -458,11 +502,13 @@ internal static class BlackoutRule
 
         foreach (var camera in Camera.allCameras)
         {
-            if (camera == null) continue;
+            if (camera == null)
+                continue;
             if (!backgroundColors.ContainsKey(camera))
                 backgroundColors.Add(camera, camera.backgroundColor);
             var color = backgroundColors[camera];
-            camera.backgroundColor = new Color(color.r * BlackoutGlobalLightIntensity, color.g * BlackoutGlobalLightIntensity, color.b * BlackoutGlobalLightIntensity, color.a);
+            camera.backgroundColor = new Color(color.r * BlackoutGlobalLightIntensity,
+                color.g * BlackoutGlobalLightIntensity, color.b * BlackoutGlobalLightIntensity, color.a);
         }
     }
 
@@ -476,44 +522,248 @@ internal static class BlackoutRule
     {
         if (!applied || renderer == null || litMaterial == null || originalMaterials.ContainsKey(renderer))
             return;
-        
+
         originalMaterials.Add(renderer, renderer.sharedMaterial);
         renderer.sharedMaterial = litMaterial;
+        BindSpriteTexture(renderer);
     }
-    
-    internal static bool IsVisibleInHeadlamp(BodyScript body) => IsPositionIlluminated(body == null ? Vector2.zero : body.transform.position);
+
+    internal static void MakeAlwaysBright(GameObject gameObject)
+    {
+        if (!applied)
+            return;
+        if (gameObject == null)
+            return;
+        if (gameObject.GetComponent<AlwaysBrightVisualMarker>() == null)
+            gameObject.AddComponent<AlwaysBrightVisualMarker>();
+        var material = GetUnlitMaterial();
+        if (material == null)
+            return;
+
+        foreach (var renderer in gameObject.GetComponentsInChildren<SpriteRenderer>(true))
+            if (renderer != null)
+                renderer.sharedMaterial = material;
+
+        foreach (var renderer in gameObject.GetComponentsInChildren<LineRenderer>(true))
+            if (renderer != null)
+                renderer.sharedMaterial = material;
+
+        foreach (var renderer in gameObject.GetComponentsInChildren<ParticleSystemRenderer>(true))
+            if (renderer != null)
+                renderer.sharedMaterial = material;
+    }
+
+    internal static void MakeInstantiatedEffectBright(GameObject prefab, Vector2 position)
+    {
+        if (!applied)
+            return;
+        if (prefab == null)
+            return;
+        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
+        {
+            if (renderer == null)
+                continue;
+            var root = renderer.transform.root;
+            if (root == null || !root.name.StartsWith(prefab.name, StringComparison.Ordinal) ||
+                ((Vector2)root.position - position).sqrMagnitude > 4f)
+                continue;
+            MakeAlwaysBright(root.gameObject);
+        }
+    }
+
+    internal static void ApplyInstantiatedEffectLit(GameObject prefab, Vector2 position)
+    {
+        if (!applied)
+            return;
+        if (prefab == null)
+            return;
+        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
+        {
+            if (renderer == null)
+                continue;
+            var root = renderer.transform.root;
+            if (root == null || !root.name.StartsWith(prefab.name, StringComparison.Ordinal) ||
+                ((Vector2)root.position - position).sqrMagnitude > 4f)
+                continue;
+            ApplyToObject(root.gameObject);
+        }
+    }
+
+    internal static void ApplyBloodAt(Vector2 position)
+    {
+        if (!applied)
+            return;
+        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
+        {
+            if (renderer == null || !renderer.gameObject.name.StartsWith("Blood", StringComparison.Ordinal) ||
+                ((Vector2)renderer.transform.position - position).sqrMagnitude > 0.04f)
+                continue;
+            ApplyToNewSpriteRenderer(renderer);
+        }
+    }
+
+    internal static void RegisterBloodProp(GameObject gameObject)
+    {
+        if (gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop") ||
+            gameObject.GetComponent<BlackoutBloodPropVisual>() != null)
+            return;
+        gameObject.AddComponent<BlackoutBloodPropVisual>();
+    }
+
+    internal static void ApplyDismembermentEffects()
+    {
+        if (!applied)
+            return;
+        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
+        {
+            if (renderer == null)
+                continue;
+            var root = renderer.transform.root;
+            if (root == null || !IsDismembermentEffect(root.name))
+                continue;
+            ApplyToObject(root.gameObject);
+        }
+    }
+
+    private static bool IsDismembermentEffect(string name)
+    {
+        return name.StartsWith("GutGib", StringComparison.Ordinal) ||
+               name.StartsWith("GoreChunk", StringComparison.Ordinal) ||
+               name.StartsWith("FurTuft", StringComparison.Ordinal) ||
+               name.StartsWith("EyeGib", StringComparison.Ordinal) ||
+               name.StartsWith("BrainGib", StringComparison.Ordinal) ||
+               name.StartsWith("BrainDestroyGib", StringComparison.Ordinal);
+    }
+
+    internal static void MakeWeaponLaserBright(LineRenderer line)
+    {
+        if (!applied)
+            return;
+        var material = GetUnlitMaterial();
+        if (line != null && material != null)
+            line.sharedMaterial = material;
+    }
+
+    internal static void ApplyScarfMaterial(ScarfPhysics scarf)
+    {
+        if (!applied)
+            return;
+        var material = GetScarfLitMaterial();
+        if (material == null)
+            return;
+        var line = scarf == null ? null : scarf.pointRenderer;
+        if (line == null)
+            return;
+        if (!originalLineMaterials.ContainsKey(line))
+            originalLineMaterials.Add(line, line.sharedMaterial);
+        line.sharedMaterial = material;
+    }
+
+
+    private static void ApplyToNewParticleRenderer(ParticleSystemRenderer renderer)
+    {
+        if (!applied || renderer == null || renderer.GetComponentInParent<AlwaysBrightVisualMarker>() != null ||
+            renderer.GetComponentInParent<FireScript>() != null ||
+            renderer.GetComponentInParent<RocketProjectile>() != null ||
+            originalParticleMaterials.ContainsKey(renderer))
+            return;
+
+        var template = GetLitMaterial();
+        if (template == null)
+            return;
+        originalParticleMaterials.Add(renderer, renderer.sharedMaterial);
+        var texture = GetMaterialTexture(renderer.sharedMaterial);
+        texture ??= Texture2D.whiteTexture;
+        if (!particleLitMaterials.TryGetValue(texture, out var material))
+        {
+            material = new Material(template) { mainTexture = texture };
+            particleLitMaterials.Add(texture, material);
+        }
+
+        renderer.sharedMaterial = material;
+    }
+
+    private static Texture GetMaterialTexture(Material material)
+    {
+        if (material == null)
+            return null;
+        if (material.mainTexture != null)
+            return material.mainTexture;
+        foreach (var property in material.GetTexturePropertyNames())
+        {
+            var texture = material.GetTexture(property);
+            if (texture != null)
+                return texture;
+        }
+
+        return null;
+    }
+
+    private static Material GetScarfLitMaterial()
+    {
+        if (scarfLitMaterial != null)
+            return scarfLitMaterial;
+        var material = GetLitMaterial();
+        if (material == null)
+            return null;
+        scarfLitMaterial = new Material(material) { mainTexture = Texture2D.whiteTexture };
+        return scarfLitMaterial;
+    }
+
+    private static Material GetUnlitMaterial()
+    {
+        if (unlitMaterial != null)
+            return unlitMaterial;
+        var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
+        if (shader != null)
+            unlitMaterial = new Material(shader);
+        return unlitMaterial;
+    }
+
+    private static void BindSpriteTexture(SpriteRenderer renderer)
+    {
+        if (renderer == null || renderer.sprite == null || renderer.sprite.texture == null)
+            return;
+        var block = new MaterialPropertyBlock();
+        renderer.GetPropertyBlock(block);
+        block.SetTexture("_MainTex", renderer.sprite.texture);
+        renderer.SetPropertyBlock(block);
+    }
+
+    internal static bool IsVisibleInHeadlamp(BodyScript body) =>
+        IsPositionIlluminated(body == null ? Vector2.zero : body.transform.position);
 
     internal static bool IsPositionIlluminated(Vector2 position)
     {
-        if (!MultiplayerSession.BlackoutEnabled)
+        if (!CanApplyBlackout())
             return true;
-        
+
         var localBody = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
         var lamp = localBody == null ? null : localBody.headTransform.GetComponentInChildren<Headlamp>(true);
-      
+
         return lamp != null && lamp.Illuminates(position);
     }
-    
+
     private static void PlayHeadlampSwitchSound()
     {
-        if (headlampToggleSound == null) 
+        if (headlampToggleSound == null)
             headlampToggleSound = Resources.Load<AudioClip>("Sounds/revolverRel5");
-        
-        if (headlampToggleSound != null) 
+
+        if (headlampToggleSound != null)
             Sound.Play(headlampToggleSound, Vector2.zero, twoDimensional: true, pitchShift: false, pitch: 8f);
     }
 
     private static void HandleInput()
     {
-        if (!MultiplayerSession.IsActive || !MultiplayerSession.BlackoutEnabled || !Input.GetKeyDown(Controls.keys[Controls.TOGGLE_HEADLAMP]))
+        if (!CanApplyBlackout() || !Input.GetKeyDown(Controls.keys[Controls.TOGGLE_HEADLAMP]))
             return;
-        
+
         var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
         var lamp = body == null ? null : body.headTransform.GetComponentInChildren<Headlamp>(true);
-       
-        if (lamp == null) 
+
+        if (lamp == null)
             return;
-        
+
         var packet = new HeadlampPacket(MultiplayerSession.LocalPeerId, !lamp.Enabled, ++localSequence);
         headlampStates[packet.OwnerId] = packet;
         lamp.SetState(packet.Enabled, packet.Sequence);
@@ -523,7 +773,7 @@ internal static class BlackoutRule
 
     internal static void ReceiveHeadlamp(ushort senderId, HeadlampPacket packet)
     {
-        if (packet.OwnerId != 0) 
+        if (packet.OwnerId != 0)
             incomingHeadlamps.Enqueue(new IncomingHeadlamp(senderId, packet));
     }
 
@@ -536,23 +786,27 @@ internal static class BlackoutRule
             {
                 if (packet.OwnerId != incoming.SenderId)
                     continue;
-               
+
                 MultiplayerSession.Send(packet);
             }
+
             headlampStates[packet.OwnerId] = packet;
-           
-            var body = packet.OwnerId == MultiplayerSession.LocalPeerId ? PlayerScript.player?.bodyScript : NetworkAvatarRegistry.RemoteBodyForPeer(packet.OwnerId);
-           
+
+            var body = packet.OwnerId == MultiplayerSession.LocalPeerId
+                ? PlayerScript.player?.bodyScript
+                : NetworkAvatarRegistry.RemoteBodyForPeer(packet.OwnerId);
+
             var lamp = body == null ? null : body.headTransform.GetComponentInChildren<Headlamp>(true);
             if (lamp != null)
                 lamp.SetState(packet.Enabled, packet.Sequence);
         }
     }
-    
+
     private static void RegisterRespawnedLocalBody()
     {
         var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
-        if (body == null || body == localBodyWithHeadlamp) return;
+        if (body == null || body == localBodyWithHeadlamp)
+            return;
         RegisterBody(body);
         if (body.headTransform != null && body.headTransform.GetComponentInChildren<Headlamp>(true) != null)
             localBodyWithHeadlamp = body;
@@ -561,10 +815,10 @@ internal static class BlackoutRule
     private static void TickHeadlamps()
     {
         headlamps.RemoveWhere(lamp => lamp == null);
-        
+
         foreach (var lamp in headlamps)
             lamp.Tick();
-       
+
         UpdateHeadlampShader();
         ApplyLevitatorMaterials();
     }
@@ -574,32 +828,34 @@ internal static class BlackoutRule
         var localLevitator = PlayerScript.player == null ? null : PlayerScript.player.levitLine;
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<LineRenderer>())
         {
-            if (renderer == null || renderer != localLevitator && renderer.gameObject.name.IndexOf("Levit", StringComparison.OrdinalIgnoreCase) < 0)
+            if (renderer == null || renderer != localLevitator &&
+                renderer.gameObject.name.IndexOf("Levit", StringComparison.OrdinalIgnoreCase) < 0)
                 continue;
-            
+
             if (!originalLineMaterials.ContainsKey(renderer))
                 originalLineMaterials.Add(renderer, renderer.sharedMaterial);
-           
+
             if (levitatorMaterial == null)
             {
-                var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
+                var shader = Shader.Find("Sprites/Default") ??
+                             Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
                 if (shader != null)
                     levitatorMaterial = new Material(shader);
             }
-            
+
             if (levitatorMaterial != null && renderer.sharedMaterial != levitatorMaterial)
                 renderer.sharedMaterial = levitatorMaterial;
         }
     }
-    
+
     private static void RestoreLights()
     {
         foreach (var pair in disabledLights)
-            if (pair.Key != null) 
+            if (pair.Key != null)
                 pair.Key.enabled = pair.Value;
-        
+
         disabledLights.Clear();
-        
+
         foreach (var pair in globalLightIntensities)
             if (pair.Key != null)
                 pair.Key.intensity = pair.Value;
@@ -609,38 +865,48 @@ internal static class BlackoutRule
             if (pair.Key != null)
                 pair.Key.backgroundColor = pair.Value;
         backgroundColors.Clear();
-        
+
         appliedSceneHandle = int.MinValue;
         headlampStates.Clear();
         headlamps.Clear();
         restrictLightApplied = false;
         localBodyWithHeadlamp = null;
-        
+
         foreach (var pair in originalMaterials)
             if (pair.Key != null)
                 pair.Key.sharedMaterial = pair.Value;
         originalMaterials.Clear();
-       
+
+        foreach (var pair in originalParticleMaterials)
+            if (pair.Key != null)
+                pair.Key.sharedMaterial = pair.Value;
+        originalParticleMaterials.Clear();
+
+        foreach (var material in particleLitMaterials.Values)
+            if (material != null)
+                UnityEngine.Object.Destroy(material);
+        particleLitMaterials.Clear();
+
         foreach (var pair in originalGroundMaterials)
             if (pair.Key != null)
                 pair.Key.sharedMaterials = pair.Value;
         originalGroundMaterials.Clear();
-        
+
         foreach (var pair in originalLineMaterials)
             if (pair.Key != null)
                 pair.Key.sharedMaterial = pair.Value;
         originalLineMaterials.Clear();
         GraffitiSystem.SetBlackoutMaterials(false);
         chainlinkFenceCache.Clear();
-        
+
         foreach (var lamp in UnityEngine.Object.FindObjectsOfType<Headlamp>())
-            if (lamp != null) 
+            if (lamp != null)
                 UnityEngine.Object.Destroy(lamp.gameObject);
-        
+
         RemoveRestrictLightShadows();
-        
+
         foreach (var fireLight in UnityEngine.Object.FindObjectsOfType<BlackoutFireLight>())
-            if (fireLight != null) 
+            if (fireLight != null)
                 UnityEngine.Object.Destroy(fireLight.gameObject);
     }
 }
@@ -652,7 +918,7 @@ internal readonly struct IncomingHeadlamp
 
     internal IncomingHeadlamp(ushort senderId, HeadlampPacket packet)
     {
-        SenderId = senderId; 
+        SenderId = senderId;
         Packet = packet;
     }
 }
@@ -673,19 +939,22 @@ internal sealed class Headlamp : MonoBehaviour
     private readonly float[] blockerDistances = new float[RestrictedBlockerLimit];
     private readonly bool[] blockerGround = new bool[RestrictedBlockerLimit];
     private int blockerCount;
-    private static readonly Dictionary<Collider2D, SpriteRenderer> colliderVisuals = new Dictionary<Collider2D, SpriteRenderer>();
+
+    private static readonly Dictionary<Collider2D, SpriteRenderer> colliderVisuals =
+        new Dictionary<Collider2D, SpriteRenderer>();
+
     internal bool Enabled { get; private set; } = true;
 
     internal void Configure(Light2D main, Light2D face)
     {
         mainLight = main;
         faceLight = face;
-
     }
 
     internal void SetState(bool enabled, uint newSequence)
     {
-        if (newSequence <= sequence) return;
+        if (newSequence <= sequence)
+            return;
         sequence = newSequence;
         Enabled = enabled;
         transitionStarted = Time.unscaledTime;
@@ -699,11 +968,11 @@ internal sealed class Headlamp : MonoBehaviour
         var target = Enabled ? TurnOnAnimation(elapsed) : Mathf.Lerp(fromMain, 0f, Mathf.Clamp01(elapsed / 0.05f));
         var faceTarget = Enabled ? target * 0.11666667f : Mathf.Lerp(fromFace, 0f, Mathf.Clamp01(elapsed / 0.05f));
         var useShader = BlackoutRule.headlampMaterial != null;
-      
+
         if (mainLight != null)
         {
-            mainLight.enabled = !useShader; 
-            mainLight.intensity = target; 
+            mainLight.enabled = !useShader;
+            mainLight.intensity = target;
             UpdateRestrictedShape();
         }
 
@@ -716,35 +985,47 @@ internal sealed class Headlamp : MonoBehaviour
 
     private void UpdateRestrictedShape()
     {
-        if (mainLight == null) return;
+        if (mainLight == null)
+            return;
         mainLight.shadowsEnabled = MultiplayerSession.RestrictLightEnabled;
         mainLight.shadowIntensity = MultiplayerSession.RestrictLightEnabled ? 1f : 0f;
         mainLight.lightType = Light2D.LightType.Point;
         mainLight.pointLightInnerAngle = 38f;
         mainLight.pointLightOuterAngle = 64f;
         blockerCount = 0;
-        if (!MultiplayerSession.RestrictLightEnabled) return;
+        if (!MultiplayerSession.RestrictLightEnabled)
+            return;
         var origin = (Vector2)mainLight.transform.position;
         var count = Physics2D.OverlapCircleNonAlloc(origin, mainLight.pointLightOuterRadius, blockingColliders);
         for (var index = 0; index < Mathf.Min(count, blockingColliders.Length); index++)
         {
             var collider = blockingColliders[index];
-            if (collider == null || !collider.enabled || collider.isTrigger || BlackoutRule.IsChainlinkFence(collider) || collider.name.IndexOf("Lamp", System.StringComparison.OrdinalIgnoreCase) >= 0 || collider.GetComponentInParent<BodyScript>() != null) continue;
+            if (collider == null || !collider.enabled || collider.isTrigger ||
+                BlackoutRule.IsChainlinkFence(collider) ||
+                collider.name.IndexOf("Lamp", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                collider.GetComponentInParent<BodyScript>() != null)
+                continue;
             var ground = IsGroundCollider(collider);
-            if (!ground && collider.GetComponentInParent<Renderer>() == null && collider.GetComponentInChildren<Renderer>(true) == null) continue;
+            if (!ground && collider.GetComponentInParent<Renderer>() == null &&
+                collider.GetComponentInChildren<Renderer>(true) == null)
+                continue;
             var bounds = collider.bounds;
-            if (!CanIlluminate(bounds) || (!ground && bounds.Contains(origin))) continue;
+            if (!CanIlluminate(bounds) || (!ground && bounds.Contains(origin)))
+                continue;
             if (ground)
             {
-                if (AddGroundSegments(collider, origin)) continue;
+                if (AddGroundSegments(collider, origin))
+                    continue;
             }
+
             GetColliderPoints(collider, bounds, out var firstPoints, out var secondPoints);
             AddBlocker(firstPoints, secondPoints, ((Vector2)bounds.ClosestPoint(origin) - origin).sqrMagnitude, false);
         }
     }
-    
+
     private static bool IsGroundCollider(Collider2D collider) =>
-        collider.gameObject.layer == LayerMask.NameToLayer("Ground") || collider.name.StartsWith("GroundShape", StringComparison.OrdinalIgnoreCase);
+        collider.gameObject.layer == LayerMask.NameToLayer("Ground") ||
+        collider.name.StartsWith("GroundShape", StringComparison.OrdinalIgnoreCase);
 
     private bool AddGroundSegments(Collider2D collider, Vector2 origin)
     {
@@ -756,7 +1037,8 @@ internal sealed class Headlamp : MonoBehaviour
                 var points = polygon.GetPath(path);
                 for (var point = 0; point < points.Length; point++)
                 {
-                    AddGroundSegment(polygon.transform.TransformPoint(points[point]), polygon.transform.TransformPoint(points[(point + 1) % points.Length]), origin);
+                    AddGroundSegment(polygon.transform.TransformPoint(points[point]),
+                        polygon.transform.TransformPoint(points[(point + 1) % points.Length]), origin);
                     added = true;
                 }
             }
@@ -766,10 +1048,12 @@ internal sealed class Headlamp : MonoBehaviour
             var points = edge.points;
             for (var point = 0; point + 1 < points.Length; point++)
             {
-                AddGroundSegment(edge.transform.TransformPoint(points[point]), edge.transform.TransformPoint(points[point + 1]), origin);
+                AddGroundSegment(edge.transform.TransformPoint(points[point]),
+                    edge.transform.TransformPoint(points[point + 1]), origin);
                 added = true;
             }
         }
+
         return added;
     }
 
@@ -777,7 +1061,8 @@ internal sealed class Headlamp : MonoBehaviour
     {
         var segment = end - start;
         var lengthSquared = segment.sqrMagnitude;
-        if (lengthSquared < 0.000001f) return;
+        if (lengthSquared < 0.000001f)
+            return;
         var first = new Vector4(start.x, start.y, end.x, end.y);
         var second = new Vector4(end.x, end.y, start.x, start.y);
         var nearest = start + segment * Mathf.Clamp01(Vector2.Dot(origin - start, segment) / lengthSquared);
@@ -788,15 +1073,25 @@ internal sealed class Headlamp : MonoBehaviour
     {
         for (var existing = 0; existing < blockerCount; existing++)
         {
-            var sameDirection = (new Vector2(blockerFirstPoints[existing].x, blockerFirstPoints[existing].y) - new Vector2(firstPoints.x, firstPoints.y)).sqrMagnitude < 0.000001f &&
-                                (new Vector2(blockerFirstPoints[existing].z, blockerFirstPoints[existing].w) - new Vector2(firstPoints.z, firstPoints.w)).sqrMagnitude < 0.000001f;
-            var reversed = (new Vector2(blockerFirstPoints[existing].x, blockerFirstPoints[existing].y) - new Vector2(firstPoints.z, firstPoints.w)).sqrMagnitude < 0.000001f &&
-                           (new Vector2(blockerFirstPoints[existing].z, blockerFirstPoints[existing].w) - new Vector2(firstPoints.x, firstPoints.y)).sqrMagnitude < 0.000001f;
-            if (sameDirection || reversed) return;
+            var sameDirection =
+                (new Vector2(blockerFirstPoints[existing].x, blockerFirstPoints[existing].y) -
+                 new Vector2(firstPoints.x, firstPoints.y)).sqrMagnitude < 0.000001f &&
+                (new Vector2(blockerFirstPoints[existing].z, blockerFirstPoints[existing].w) -
+                 new Vector2(firstPoints.z, firstPoints.w)).sqrMagnitude < 0.000001f;
+            var reversed =
+                (new Vector2(blockerFirstPoints[existing].x, blockerFirstPoints[existing].y) -
+                 new Vector2(firstPoints.z, firstPoints.w)).sqrMagnitude < 0.000001f &&
+                (new Vector2(blockerFirstPoints[existing].z, blockerFirstPoints[existing].w) -
+                 new Vector2(firstPoints.x, firstPoints.y)).sqrMagnitude < 0.000001f;
+            if (sameDirection || reversed)
+                return;
         }
+
         var insert = blockerCount;
-        while (insert > 0 && blockerDistances[insert - 1] > distance) insert--;
-        if (insert >= RestrictedBlockerLimit) return;
+        while (insert > 0 && blockerDistances[insert - 1] > distance)
+            insert--;
+        if (insert >= RestrictedBlockerLimit)
+            return;
         var last = Mathf.Min(blockerCount, RestrictedBlockerLimit - 1);
         for (var move = last; move > insert; move--)
         {
@@ -805,6 +1100,7 @@ internal sealed class Headlamp : MonoBehaviour
             blockerSecondPoints[move] = blockerSecondPoints[move - 1];
             blockerGround[move] = blockerGround[move - 1];
         }
+
         blockerDistances[insert] = distance;
         blockerFirstPoints[insert] = firstPoints;
         blockerSecondPoints[insert] = secondPoints;
@@ -814,8 +1110,11 @@ internal sealed class Headlamp : MonoBehaviour
 
     private static void GetColliderPoints(Collider2D collider, Bounds bounds, out Vector4 first, out Vector4 second)
     {
-        var tileVisual = collider.name.IndexOf("Tile", System.StringComparison.OrdinalIgnoreCase) >= 0 ? collider.GetComponent<SpriteRenderer>() ?? collider.GetComponentInParent<SpriteRenderer>() ?? collider.GetComponentInChildren<SpriteRenderer>(true) : null;
-        
+        var tileVisual = collider.name.IndexOf("Tile", System.StringComparison.OrdinalIgnoreCase) >= 0
+            ? collider.GetComponent<SpriteRenderer>() ?? collider.GetComponentInParent<SpriteRenderer>() ??
+            collider.GetComponentInChildren<SpriteRenderer>(true)
+            : null;
+
         if (tileVisual != null && tileVisual.sprite != null)
         {
             var half = tileVisual.size * 0.5f;
@@ -829,7 +1128,7 @@ internal sealed class Headlamp : MonoBehaviour
             second = new Vector4(topRight.x, topRight.y, bottomRight.x, bottomRight.y);
             return;
         }
-       
+
         if (collider is BoxCollider2D box)
         {
             var mesh = box.CreateMesh(true, true);
@@ -838,16 +1137,18 @@ internal sealed class Headlamp : MonoBehaviour
             {
                 var points = new Vector2[4];
                 var count = 0;
-               
+
                 foreach (var vertex in vertices)
                 {
                     var point = (Vector2)vertex;
                     var duplicate = false;
                     for (var index = 0; index < count; index++)
-                        if ((points[index] - point).sqrMagnitude < 0.000001f) duplicate = true;
-                    if (!duplicate && count < points.Length) points[count++] = point;
+                        if ((points[index] - point).sqrMagnitude < 0.000001f)
+                            duplicate = true;
+                    if (!duplicate && count < points.Length)
+                        points[count++] = point;
                 }
-                
+
                 if (count == 4)
                 {
                     var center = (points[0] + points[1] + points[2] + points[3]) * 0.25f;
@@ -856,49 +1157,56 @@ internal sealed class Headlamp : MonoBehaviour
                         var point = points[index];
                         var angle = Mathf.Atan2(point.y - center.y, point.x - center.x);
                         var previous = index - 1;
-                        while (previous >= 0 && Mathf.Atan2(points[previous].y - center.y, points[previous].x - center.x) > angle)
+                        while (previous >= 0 &&
+                               Mathf.Atan2(points[previous].y - center.y, points[previous].x - center.x) > angle)
                         {
                             points[previous + 1] = points[previous];
                             previous--;
                         }
+
                         points[previous + 1] = point;
                     }
+
                     first = new Vector4(points[0].x, points[0].y, points[1].x, points[1].y);
                     second = new Vector4(points[2].x, points[2].y, points[3].x, points[3].y);
                     Destroy(mesh);
                     return;
                 }
             }
-            
-            if (mesh != null) 
+
+            if (mesh != null)
                 Destroy(mesh);
-        }        
-        
+        }
+
         if (!colliderVisuals.TryGetValue(collider, out var visual) || visual == null)
         {
             var largestArea = 0f;
             foreach (var sprite in collider.GetComponentsInParent<SpriteRenderer>(true))
             {
-                if (sprite == null || sprite.sprite == null) continue;
+                if (sprite == null || sprite.sprite == null)
+                    continue;
                 var area = sprite.bounds.size.sqrMagnitude;
-                if (area <= largestArea) continue;
+                if (area <= largestArea)
+                    continue;
                 largestArea = area;
                 visual = sprite;
             }
-            
+
             foreach (var sprite in collider.GetComponentsInChildren<SpriteRenderer>(true))
             {
-                if (sprite == null || sprite.sprite == null) continue;
+                if (sprite == null || sprite.sprite == null)
+                    continue;
                 var area = sprite.bounds.size.sqrMagnitude;
-                if (area <= largestArea) continue;
+                if (area <= largestArea)
+                    continue;
                 largestArea = area;
                 visual = sprite;
             }
-            
-            if (visual != null) 
+
+            if (visual != null)
                 colliderVisuals[collider] = visual;
         }
-        
+
         if (visual != null && visual.sprite != null)
         {
             var localBounds = visual.sprite.bounds;
@@ -911,67 +1219,86 @@ internal sealed class Headlamp : MonoBehaviour
             second = new Vector4(topRight.x, topRight.y, bottomRight.x, bottomRight.y);
             return;
         }
-        
+
         first = new Vector4(bounds.min.x, bounds.min.y, bounds.min.x, bounds.max.y);
         second = new Vector4(bounds.max.x, bounds.max.y, bounds.max.x, bounds.min.y);
     }
-    
-    internal bool WriteShaderData(Vector4[] data, Vector4[] settings, Vector4[] faces, Color[] blockers, float[] blockerCounts, float[] groundBlockers, int index)
+
+    internal bool WriteShaderData(Vector4[] data, Vector4[] settings, Vector4[] faces, Color[] blockers,
+        float[] blockerCounts, float[] groundBlockers, int index)
     {
-        if (!Enabled || mainLight == null || mainLight.intensity <= 0.01f) return false;
+        if (!Enabled || mainLight == null || mainLight.intensity <= 0.01f)
+            return false;
         var direction = (Vector2)mainLight.transform.up;
         var position = (Vector2)mainLight.transform.position;
         data[index] = new Vector4(position.x, position.y, direction.x, direction.y);
-        settings[index] = new Vector4(mainLight.intensity * 0.5f, mainLight.pointLightOuterRadius, mainLight.pointLightInnerAngle, mainLight.pointLightOuterAngle);
+        settings[index] = new Vector4(mainLight.intensity * 0.5f, mainLight.pointLightOuterRadius,
+            mainLight.pointLightInnerAngle, mainLight.pointLightOuterAngle);
         var facePosition = faceLight == null ? position : (Vector2)faceLight.transform.position;
-        faces[index] = new Vector4(facePosition.x, facePosition.y, faceLight == null ? 0f : faceLight.intensity * 0.5f, faceLight == null ? 0f : faceLight.pointLightOuterRadius);
+        faces[index] = new Vector4(facePosition.x, facePosition.y, faceLight == null ? 0f : faceLight.intensity * 0.5f,
+            faceLight == null ? 0f : faceLight.pointLightOuterRadius);
         blockerCounts[index] = blockerCount;
         for (var blocker = 0; blocker < RestrictedBlockerLimit; blocker++)
         {
             var first = blocker < blockerCount ? blockerFirstPoints[blocker] : Vector4.zero;
             var second = blocker < blockerCount ? blockerSecondPoints[blocker] : Vector4.zero;
             blockers[index * RestrictedBlockerDataWidth + blocker * 2] = new Color(first.x, first.y, first.z, first.w);
-            blockers[index * RestrictedBlockerDataWidth + blocker * 2 + 1] = new Color(second.x, second.y, second.z, second.w);
-            groundBlockers[index * RestrictedBlockerLimit + blocker] = blocker < blockerCount && blockerGround[blocker] ? 1f : 0f;
+            blockers[index * RestrictedBlockerDataWidth + blocker * 2 + 1] =
+                new Color(second.x, second.y, second.z, second.w);
+            groundBlockers[index * RestrictedBlockerLimit + blocker] =
+                blocker < blockerCount && blockerGround[blocker] ? 1f : 0f;
         }
+
         return true;
     }
-    
+
     internal bool Illuminates(Vector2 position)
     {
-        if (!Enabled || mainLight == null) return false;
+        if (!Enabled || mainLight == null)
+            return false;
         var offset = position - (Vector2)mainLight.transform.position;
-        if (offset.sqrMagnitude > 144f || offset.sqrMagnitude < 0.01f) return offset.sqrMagnitude < 0.01f;
+        if (offset.sqrMagnitude > 144f || offset.sqrMagnitude < 0.01f)
+            return offset.sqrMagnitude < 0.01f;
         return Vector2.Angle(mainLight.transform.up, offset) <= 32f;
     }
-    
+
     internal bool CanIlluminate(Bounds bounds)
     {
-        if (!Enabled || mainLight == null || mainLight.intensity <= 0.01f) return false;
+        if (!Enabled || mainLight == null || mainLight.intensity <= 0.01f)
+            return false;
         var origin = (Vector2)mainLight.transform.position;
         var center = (Vector2)bounds.center;
         var radius = ((Vector2)bounds.extents).magnitude;
         var offset = center - origin;
         var distance = offset.magnitude;
-        if (distance - radius > mainLight.pointLightOuterRadius) return false;
-        if (distance <= radius) return true;
+        if (distance - radius > mainLight.pointLightOuterRadius)
+            return false;
+        if (distance <= radius)
+            return true;
         var padding = Mathf.Asin(Mathf.Min(1f, radius / distance)) * Mathf.Rad2Deg;
         return Vector2.Angle(mainLight.transform.up, offset) <= mainLight.pointLightOuterAngle * 0.5f + padding;
     }
-    
+
     private float TurnOnAnimation(float elapsed)
     {
         var phase = ((sequence * 1103515245u + 12345u) & 255u) / 255f;
-        if (elapsed < 0.025f) return 0.15f + phase * 0.2f;
-        if (elapsed < 0.055f) return 1.4f + phase * 0.6f;
-        if (elapsed < 0.085f) return 0.05f;
-        if (elapsed < 0.125f) return 1f + phase;
-        if (elapsed < 0.18f) return 0.35f + phase * 0.3f;
+        if (elapsed < 0.025f)
+            return 0.15f + phase * 0.2f;
+        if (elapsed < 0.055f)
+            return 1.4f + phase * 0.6f;
+        if (elapsed < 0.085f)
+            return 0.05f;
+        if (elapsed < 0.125f)
+            return 1f + phase;
+        if (elapsed < 0.18f)
+            return 0.35f + phase * 0.3f;
         return 2f;
     }
 }
 
-internal sealed class BlackoutFireLight : MonoBehaviour { }
+internal sealed class BlackoutFireLight : MonoBehaviour
+{
+}
 
 [HarmonyPatch(typeof(FireScript), "Awake")]
 internal static class BlackoutFirePatch
@@ -979,4 +1306,117 @@ internal static class BlackoutFirePatch
     private static void Postfix(FireScript __instance) => BlackoutRule.RegisterFire(__instance);
 }
 
-internal sealed class BlackoutShadowCaster : MonoBehaviour { }
+[HarmonyPatch(typeof(RocketProjectile), "Update")]
+internal static class BlackoutRocketVisualPatch
+{
+    private static void Prefix(RocketProjectile __instance)
+    {
+        if (BlackoutRule.IsApplied && __instance != null)
+            BlackoutRule.MakeAlwaysBright(__instance.gameObject);
+    }
+}
+
+[HarmonyPatch(typeof(GrenadeScript), "OnCollisionEnter2D")]
+internal static class BlackoutGrenadeVisualPatch
+{
+    private static void Prefix(GrenadeScript __instance, out GameObject __state)
+    {
+        __state = BlackoutRule.IsApplied && __instance != null ? __instance.objOnDestroy : null;
+    }
+
+    private static void Postfix(GrenadeScript __instance, GameObject __state)
+    {
+        if (BlackoutRule.IsApplied && __instance != null)
+            BlackoutRule.MakeInstantiatedEffectBright(__state, __instance.transform.position);
+    }
+}
+
+[HarmonyPatch(typeof(BodyScript), "ChangeWeapon")]
+internal static class BlackoutWeaponLaserMaterialPatch
+{
+    private static void Postfix(BodyScript __instance)
+    {
+        if (BlackoutRule.IsApplied && __instance != null)
+            BlackoutRule.MakeWeaponLaserBright(__instance.wepLaserLine);
+    }
+}
+
+[HarmonyPatch(typeof(ScarfPhysics), "Start")]
+internal static class BlackoutScarfMaterialPatch
+{
+    private static void Postfix(ScarfPhysics __instance)
+    {
+        if (BlackoutRule.IsApplied)
+            BlackoutRule.ApplyScarfMaterial(__instance);
+    }
+}
+
+[HarmonyPatch(typeof(LimbScript), "DoWallDrop")]
+internal static class BlackoutWallBloodPatch
+{
+    private static void Postfix(LimbScript __instance)
+    {
+        if (BlackoutRule.IsApplied && __instance != null)
+            BlackoutRule.ApplyBloodAt(__instance.transform.position);
+    }
+}
+
+[HarmonyPatch(typeof(BodyScript), "Damaged")]
+internal static class BlackoutBodyBloodEffectPatch
+{
+    private static void Postfix(BodyScript __instance)
+    {
+        if (!BlackoutRule.IsApplied || __instance == null)
+            return;
+        var position = (Vector2)__instance.transform.position;
+        BlackoutRule.ApplyInstantiatedEffectLit(Resources.Load<GameObject>("Spawnables/BloodSplashBleed"), position);
+        BlackoutRule.ApplyInstantiatedEffectLit(Resources.Load<GameObject>("Spawnables/BloodSplashGoreBleed"), position);
+        BlackoutRule.ApplyDismembermentEffects();
+    }
+}
+
+[HarmonyPatch(typeof(DismemberManager), "Update")]
+internal static class BlackoutDismembermentParticlePatch
+{
+    private static void Prefix(DismemberManager __instance, out bool __state)
+    {
+        __state = BlackoutRule.IsApplied && __instance != null && __instance.currentDamage > __instance.damageReq;
+    }
+
+    private static void Postfix(DismemberManager __instance, bool __state)
+    {
+        if (__state && __instance != null)
+            BlackoutRule.ApplyDismembermentEffects();
+    }
+}
+
+[HarmonyPatch(typeof(CrateScript), "Damage")]
+internal static class BlackoutPropParticlePatch
+{
+    private static void Prefix(CrateScript __instance, out GameObject __state)
+    {
+        __state = BlackoutRule.IsApplied && __instance != null ? __instance.objOnDestroy : null;
+    }
+
+    private static void Postfix(CrateScript __instance, GameObject __state)
+    {
+        if (BlackoutRule.IsApplied && __instance != null)
+            BlackoutRule.ApplyInstantiatedEffectLit(__state, __instance.transform.position);
+    }
+}
+
+internal sealed class BlackoutShadowCaster : MonoBehaviour
+{
+}
+
+internal sealed class AlwaysBrightVisualMarker : MonoBehaviour
+{
+}
+
+internal sealed class BlackoutBloodPropVisual : MonoBehaviour
+{
+    private void Start()
+    {
+        BlackoutRule.ApplyToObject(gameObject);
+    }
+}

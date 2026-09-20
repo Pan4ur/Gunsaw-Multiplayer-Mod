@@ -3898,7 +3898,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 CreateRemoteExplosionCracks(packet);
             }
             if (impactEffect != null)
-                Destroy(Instantiate(impactEffect, position, Quaternion.identity), 60f);
+            {
+                var effect = Instantiate(impactEffect, position, Quaternion.identity);
+                BlackoutRule.MakeAlwaysBright(effect);
+                Destroy(effect, 60f);
+            }
             return true;
         }
         finally
@@ -4554,6 +4558,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             visual = Instantiate(preset.tracerLine, origin, Quaternion.identity);
             visual.name = "MP Projectile Visual";
             visual.transform.right = direction;
+            BlackoutRule.MakeAlwaysBright(visual);
             var rocket = visual.GetComponentInChildren<RocketProjectile>(true);
             if (rocket != null && rocket.moveSpeed > 0f) speed = rocket.moveSpeed;
             if (rocket != null) speedIncrease = rocket.moveSpeedSpeedUp;
@@ -4721,6 +4726,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (impactEffect != null)
         {
             var effect = Instantiate(impactEffect, position, Quaternion.identity);
+            BlackoutRule.MakeAlwaysBright(effect);
             foreach (var projectile in effect.GetComponentsInChildren<RocketProjectile>(true)) projectile.enabled = false;
             foreach (var grenade in effect.GetComponentsInChildren<GrenadeScript>(true)) grenade.enabled = false;
             foreach (var collider in effect.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
@@ -6088,6 +6094,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         visual = Instantiate(prefab, limb.transform.position, Quaternion.identity);
         visual.name = "MP Remote Fire";
         visual.transform.SetParent(limb.transform, true);
+        BlackoutRule.MakeAlwaysBright(visual);
         foreach (var behaviour in visual.GetComponentsInChildren<MonoBehaviour>(true))
             behaviour.enabled = false;
         foreach (var behaviour in visual.GetComponentsInChildren<Behaviour>(true))
@@ -6141,15 +6148,25 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         Sound.Play(Resources.Load<AudioClip>("Sounds/dismember" + UnityEngine.Random.Range(1, 4)), position, false, false);
         Sound.Play(Resources.Load<AudioClip>("Sounds/bloodDrip"), position, false, false, remoteBody.transform);
         var blood = Resources.Load<GameObject>("Spawnables/BloodSplashGoreBleed");
-        if (blood != null) Destroy(Instantiate(blood, position, Quaternion.identity, remoteBody.transform), 10f);
+        if (blood != null)
+        {
+            var effect = Instantiate(blood, position, Quaternion.identity, remoteBody.transform);
+            BlackoutRule.ApplyToObject(effect);
+            Destroy(effect, 10f);
+        }
         if (manager.lethal)
         {
             var gib = Resources.Load<GameObject>(manager.doDeHead ? "Spawnables/BrainDestroyGib" : "Spawnables/GutGib");
-            if (gib != null) Instantiate(gib, position, Quaternion.identity);
+            if (gib != null)
+            {
+                var effect = Instantiate(gib, position, Quaternion.identity);
+                BlackoutRule.ApplyToObject(effect);
+            }
         }
         var gore = Resources.Load<GameObject>("Spawnables/GoreChunk");
         if (gore == null) return;
         var chunk = Instantiate(gore, position, Quaternion.identity);
+        BlackoutRule.ApplyToObject(chunk);
         var particles = chunk.GetComponent<ParticleSystem>();
         if (particles != null)
         {
@@ -6599,4 +6616,3 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 }
-
