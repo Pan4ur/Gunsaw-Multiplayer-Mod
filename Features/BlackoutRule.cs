@@ -5,7 +5,10 @@ using UnityEngine.U2D;
 
 internal static class BlackoutRule
 {
+    private const float BlackoutGlobalLightIntensity = 0.01f;
     private static readonly Dictionary<Light2D, bool> disabledLights = new();
+    private static readonly Dictionary<Light2D, float> globalLightIntensities = new();
+    private static readonly Dictionary<Camera, Color> backgroundColors = new();
     private static readonly Dictionary<SpriteRenderer, Material> originalMaterials = new();
     private static readonly Dictionary<SpriteShapeRenderer, Material[]> originalGroundMaterials = new();
     private static readonly Dictionary<LineRenderer, Material> originalLineMaterials = new();
@@ -92,11 +95,13 @@ internal static class BlackoutRule
             EnsureHeadlamp(body);
         }
         
+        DimLevelLighting();
+        GraffitiSystem.SetBlackoutMaterials(true);
         ApplyLitMaterials();
         
         foreach (var light in UnityEngine.Object.FindObjectsOfType<Light2D>())
         {
-            if (light == null || light.GetComponentInParent<Headlamp>() != null || light.GetComponentInParent<FireScript>() != null) 
+            if (light == null || IsLevelGlobalLight(light) || light.GetComponentInParent<Headlamp>() != null || light.GetComponentInParent<FireScript>() != null) 
                 continue;
             
             if (!disabledLights.ContainsKey(light)) 
@@ -342,7 +347,7 @@ internal static class BlackoutRule
         
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
         {
-            if (renderer == null || originalMaterials.ContainsKey(renderer)) 
+            if (renderer == null || renderer.GetComponent<GraffitiMaterialMarker>() != null || originalMaterials.ContainsKey(renderer)) 
                 continue;
             
             originalMaterials.Add(renderer, renderer.sharedMaterial);
@@ -437,6 +442,34 @@ internal static class BlackoutRule
             
             light.enabled = false;
         }
+    }
+
+    private static void DimLevelLighting()
+    {
+        foreach (var loader in UnityEngine.Object.FindObjectsOfType<LevelLoader>())
+        {
+            var light = loader == null ? null : loader.globalLight;
+            if (light == null) continue;
+            if (!globalLightIntensities.ContainsKey(light))
+                globalLightIntensities.Add(light, light.intensity);
+            light.enabled = true;
+            light.intensity = BlackoutGlobalLightIntensity;
+        }
+
+        foreach (var camera in Camera.allCameras)
+        {
+            if (camera == null) continue;
+            if (!backgroundColors.ContainsKey(camera))
+                backgroundColors.Add(camera, camera.backgroundColor);
+            var color = backgroundColors[camera];
+            camera.backgroundColor = new Color(color.r * BlackoutGlobalLightIntensity, color.g * BlackoutGlobalLightIntensity, color.b * BlackoutGlobalLightIntensity, color.a);
+        }
+    }
+
+    private static bool IsLevelGlobalLight(Light2D light)
+    {
+        var loader = light == null ? null : light.GetComponentInParent<LevelLoader>();
+        return loader != null && loader.globalLight == light;
     }
 
     internal static void ApplyToNewSpriteRenderer(SpriteRenderer renderer)
@@ -566,6 +599,17 @@ internal static class BlackoutRule
                 pair.Key.enabled = pair.Value;
         
         disabledLights.Clear();
+        
+        foreach (var pair in globalLightIntensities)
+            if (pair.Key != null)
+                pair.Key.intensity = pair.Value;
+        globalLightIntensities.Clear();
+
+        foreach (var pair in backgroundColors)
+            if (pair.Key != null)
+                pair.Key.backgroundColor = pair.Value;
+        backgroundColors.Clear();
+        
         appliedSceneHandle = int.MinValue;
         headlampStates.Clear();
         headlamps.Clear();
@@ -586,6 +630,7 @@ internal static class BlackoutRule
             if (pair.Key != null)
                 pair.Key.sharedMaterial = pair.Value;
         originalLineMaterials.Clear();
+        GraffitiSystem.SetBlackoutMaterials(false);
         chainlinkFenceCache.Clear();
         
         foreach (var lamp in UnityEngine.Object.FindObjectsOfType<Headlamp>())
