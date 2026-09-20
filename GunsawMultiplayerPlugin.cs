@@ -106,7 +106,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ChatCommandSystem _chatCommandSystem;
     private MultiplayerLobbyUi multiplayerLobbyUi;
     private MultiplayerReplicationDebugMode replicationDebugMode;
-    private bool gameplayTypesLogged;
     private string hostedLobbyId = "";
     private string hostedLobbyDisplayName = "";
     private string editedLocalLevelCode = "";
@@ -370,12 +369,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         multiplayerHud.Configure(sessionName,
             MultiplayerSession.IsHosting ? hostedLobbyDisplayName : lobbyName, visible);
         multiplayerLobbyUi.Configure(this);
-
-        if (!gameplayTypesLogged && UnityEngine.Object.FindObjectOfType<PlayerScript>() != null)
-        {
-            gameplayTypesLogged = true;
-            Logger.LogInfo("Gameplay mapping active: PlayerScript, BodyScript, WeaponScript, LimbScript, SceneLoader.");
-        }
 
         if (MultiplayerSession.IsHosting && !string.IsNullOrEmpty(hostedLobbyId) &&
             lastHostedPeerListRevision != MultiplayerSession.PeerListRevision)
