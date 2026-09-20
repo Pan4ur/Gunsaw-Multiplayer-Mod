@@ -357,16 +357,17 @@ internal sealed class GraffitiSystem : MonoBehaviour
 
         var sprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
         var gameObject = new GameObject("MP Graffiti");
+        gameObject.AddComponent<GraffitiMaterialMarker>();
         var renderer = gameObject.AddComponent<SpriteRenderer>();
         renderer.sprite = sprite;
-        var material = BlackoutRule.GetLitMaterial();
-        if (material != null) renderer.sharedMaterial = material;
         renderer.sortingOrder = ++nextSortingOrder;
         gameObject.transform.position = new Vector3(packet.X, packet.Y, 0f);
         gameObject.transform.rotation = Quaternion.Euler(0f, 0f, packet.Rotation);
         gameObject.transform.localScale = Vector3.one * packet.Scale;
         gameObject.SetActive(ShowGraffiti);
-        placed.Add(key, new Graffiti(packet, gameObject, texture, sprite));
+        var graffiti = new Graffiti(packet, gameObject, renderer, texture, sprite);
+        graffiti.SetBlackoutMaterial(MultiplayerSession.BlackoutEnabled);
+        placed.Add(key, graffiti);
         placedOrder.Enqueue(key);
         PlaySprayer(gameObject.transform.position);
         return true;
@@ -818,6 +819,13 @@ internal sealed class GraffitiSystem : MonoBehaviour
         foreach (var graffiti in instance.placed.Values) graffiti.SetVisible(value);
     }
 
+    internal static void SetBlackoutMaterials(bool blackout)
+    {
+        if (instance == null) return;
+        foreach (var graffiti in instance.placed.Values)
+            graffiti.SetBlackoutMaterial(blackout);
+    }
+
     private static void PlaySprayer(Vector3 position)
     {
         if (EmbeddedAudioLoader.SprayerSound != null) Sound.Play(EmbeddedAudioLoader.SprayerSound, position, false, false);
@@ -916,15 +924,39 @@ internal sealed class GraffitiSystem : MonoBehaviour
     {
         internal readonly GraffitiPacket Packet;
         private readonly GameObject gameObject;
+        private readonly SpriteRenderer renderer;
         private readonly Texture2D texture;
         private readonly Sprite sprite;
+        private Material material;
 
-        internal Graffiti(GraffitiPacket packet, GameObject gameObject, Texture2D texture, Sprite sprite)
+        internal Graffiti(GraffitiPacket packet, GameObject gameObject, SpriteRenderer renderer, Texture2D texture, Sprite sprite)
         {
             Packet = packet;
             this.gameObject = gameObject;
+            this.renderer = renderer;
             this.texture = texture;
             this.sprite = sprite;
+        }
+
+        internal void SetBlackoutMaterial(bool blackout)
+        {
+            var template = blackout ? BlackoutRule.GetLitMaterial() : CreateStandardLitMaterial();
+            if (template == null || renderer == null) return;
+
+            if (material != null)
+                UnityEngine.Object.Destroy(material);
+
+            material = new Material(template) { mainTexture = texture };
+            renderer.sharedMaterial = material;
+
+            if (!blackout)
+                UnityEngine.Object.Destroy(template);
+        }
+
+        private static Material CreateStandardLitMaterial()
+        {
+            var shader = Shader.Find("Universal Render Pipeline/2D/Sprite-Lit-Default");
+            return shader == null ? null : new Material(shader);
         }
 
         internal void SetVisible(bool value)
@@ -939,12 +971,17 @@ internal sealed class GraffitiSystem : MonoBehaviour
             
             if (sprite != null) 
                 UnityEngine.Object.Destroy(sprite);
+
+            if (material != null)
+                UnityEngine.Object.Destroy(material);
             
             if (texture != null)
                 UnityEngine.Object.Destroy(texture);
         }
     }
 }
+
+internal sealed class GraffitiMaterialMarker : MonoBehaviour { }
 
 /*
     Она знает: мне хуёво, и селфхармит мой ангел
