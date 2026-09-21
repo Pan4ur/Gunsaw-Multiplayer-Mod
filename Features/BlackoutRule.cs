@@ -15,6 +15,17 @@ internal static class BlackoutRule
     private static readonly Dictionary<SpriteShapeRenderer, Material[]> originalGroundMaterials = new();
     private static readonly Dictionary<LineRenderer, Material> originalLineMaterials = new();
     private static readonly Dictionary<Collider2D, bool> chainlinkFenceCache = new();
+    private static readonly string[] dismembermentEffectPrefabPaths =
+    [
+        "Spawnables/BloodSplashBleed",
+        "Spawnables/BloodSplashGoreBleed",
+        "Spawnables/GutGib",
+        "Spawnables/GoreChunk",
+        "Spawnables/FurTuft",
+        "Spawnables/EyeGib",
+        "Spawnables/BrainGib",
+        "Spawnables/BrainDestroyGib"
+    ];
     private static Material litMaterial;
     private static Material scarfLitMaterial;
     private static Material unlitMaterial;
@@ -119,6 +130,7 @@ internal static class BlackoutRule
 
         DimLevelLighting();
         GraffitiSystem.SetBlackoutMaterials(true);
+        ApplyDismembermentEffectPrefabMaterials();
         ApplyLitMaterials();
         foreach (var scarf in UnityEngine.Object.FindObjectsOfType<ScarfPhysics>())
             ApplyScarfMaterial(scarf);
@@ -571,24 +583,6 @@ internal static class BlackoutRule
         }
     }
 
-    internal static void ApplyInstantiatedEffectLit(GameObject prefab, Vector2 position)
-    {
-        if (!applied)
-            return;
-        if (prefab == null)
-            return;
-        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
-        {
-            if (renderer == null)
-                continue;
-            var root = renderer.transform.root;
-            if (root == null || !root.name.StartsWith(prefab.name, StringComparison.Ordinal) ||
-                ((Vector2)root.position - position).sqrMagnitude > 4f)
-                continue;
-            ApplyToObject(root.gameObject);
-        }
-    }
-
     internal static void ApplyBloodAt(Vector2 position)
     {
         if (!applied)
@@ -610,29 +604,13 @@ internal static class BlackoutRule
         gameObject.AddComponent<BlackoutBloodPropVisual>();
     }
 
-    internal static void ApplyDismembermentEffects()
+    private static void ApplyDismembermentEffectPrefabMaterials()
     {
         if (!applied)
             return;
-        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
-        {
-            if (renderer == null)
-                continue;
-            var root = renderer.transform.root;
-            if (root == null || !IsDismembermentEffect(root.name))
-                continue;
-            ApplyToObject(root.gameObject);
-        }
-    }
 
-    private static bool IsDismembermentEffect(string name)
-    {
-        return name.StartsWith("GutGib", StringComparison.Ordinal) ||
-               name.StartsWith("GoreChunk", StringComparison.Ordinal) ||
-               name.StartsWith("FurTuft", StringComparison.Ordinal) ||
-               name.StartsWith("EyeGib", StringComparison.Ordinal) ||
-               name.StartsWith("BrainGib", StringComparison.Ordinal) ||
-               name.StartsWith("BrainDestroyGib", StringComparison.Ordinal);
+        foreach (var path in dismembermentEffectPrefabPaths)
+            ApplyToObject(Resources.Load<GameObject>(path));
     }
 
     internal static void MakeWeaponLaserBright(LineRenderer line)
@@ -1361,47 +1339,13 @@ internal static class BlackoutWallBloodPatch
     }
 }
 
-[HarmonyPatch(typeof(BodyScript), "Damaged")]
-internal static class BlackoutBodyBloodEffectPatch
-{
-    private static void Postfix(BodyScript __instance)
-    {
-        if (!BlackoutRule.IsApplied || __instance == null)
-            return;
-        var position = (Vector2)__instance.transform.position;
-        BlackoutRule.ApplyInstantiatedEffectLit(Resources.Load<GameObject>("Spawnables/BloodSplashBleed"), position);
-        BlackoutRule.ApplyInstantiatedEffectLit(Resources.Load<GameObject>("Spawnables/BloodSplashGoreBleed"), position);
-        BlackoutRule.ApplyDismembermentEffects();
-    }
-}
-
-[HarmonyPatch(typeof(DismemberManager), "Update")]
-internal static class BlackoutDismembermentParticlePatch
-{
-    private static void Prefix(DismemberManager __instance, out bool __state)
-    {
-        __state = BlackoutRule.IsApplied && __instance != null && __instance.currentDamage > __instance.damageReq;
-    }
-
-    private static void Postfix(DismemberManager __instance, bool __state)
-    {
-        if (__state && __instance != null)
-            BlackoutRule.ApplyDismembermentEffects();
-    }
-}
-
 [HarmonyPatch(typeof(CrateScript), "Damage")]
 internal static class BlackoutPropParticlePatch
 {
     private static void Prefix(CrateScript __instance, out GameObject __state)
     {
         __state = BlackoutRule.IsApplied && __instance != null ? __instance.objOnDestroy : null;
-    }
-
-    private static void Postfix(CrateScript __instance, GameObject __state)
-    {
-        if (BlackoutRule.IsApplied && __instance != null)
-            BlackoutRule.ApplyInstantiatedEffectLit(__state, __instance.transform.position);
+        BlackoutRule.ApplyToObject(__state);
     }
 }
 
