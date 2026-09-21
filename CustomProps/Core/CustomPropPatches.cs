@@ -94,6 +94,7 @@ internal static class CustomPropEditorSelectPartPatch
             controller.RefreshInspectorImmediate();
             controller.EnableTeamFieldForPlayerSpawn();
             controller.EnableIdFieldForColoredLamp();
+            controller.EnableSizeFieldForLampAngle();
             controller.EnableRespawnTimeForWeapon();
         }
     }

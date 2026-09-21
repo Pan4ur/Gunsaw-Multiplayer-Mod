@@ -16,12 +16,13 @@ internal static class ToggleableLampSystem
             if (level == null || level.parts == null) return;
             foreach (var part in level.parts)
             {
-                if (part == null || !IsLampPath(part.path) || part.id <= 0) continue;
+                if (part == null || !IsLampPath(part.path)) continue;
                 pending.Add(new LampLevelData
                 {
                     Position = part.pos,
                     ActivationId = part.id,
                     Intensity = part.force.x,
+                    Angle = LampAngle(part.size),
                     Color = LevelLoader.HexToColor(part.team),
                     IsColored = IsColoredLampPath(part.path)
                 });
@@ -45,6 +46,11 @@ internal static class ToggleableLampSystem
         return !string.IsNullOrEmpty(path) &&
                (path.Equals("Building/ColorLamp", StringComparison.OrdinalIgnoreCase) ||
                 path.EndsWith("/ColorLamp", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static float LampAngle(Vector2 size)
+    {
+        return size.x <= 1f ? 360f : Mathf.Clamp(size.x, 1f, 360f);
     }
 
     internal static void AttachRuntime()
@@ -85,7 +91,7 @@ internal static class ToggleableLampSystem
             used.Add(best.GetInstanceID());
             var runtime = best.GetComponent<ToggleableLampRuntime>();
             if (runtime == null) runtime = best.gameObject.AddComponent<ToggleableLampRuntime>();
-            runtime.Configure(definition.ActivationId, definition.Intensity, definition.Color, definition.IsColored);
+            runtime.Configure(definition.ActivationId, definition.Intensity, definition.Angle, definition.Color, definition.IsColored);
             EnsureActivationRelay(best.transform, runtime);
         }
         pending.Clear();
@@ -122,6 +128,7 @@ internal static class ToggleableLampSystem
         internal Vector2 Position;
         internal int ActivationId;
         internal float Intensity;
+        internal float Angle;
         internal Color Color;
         internal bool IsColored;
     }
@@ -131,6 +138,7 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
 {
     private int activationId;
     private float onIntensity;
+    private float angle;
     private Color color;
     private bool powered = true;
     private SpriteRenderer bulbRenderer;
@@ -139,12 +147,15 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
     internal bool Powered => powered;
     internal int ActivationId => activationId;
 
-    internal void Configure(int id, float intensity, Color configuredColor, bool isColored)
+    internal void Configure(int id, float intensity, float angle, Color configuredColor, bool isColored)
     {
         activationId = id;
-        var light = GetComponent<Light2D>();
+        var lights = GetComponentsInChildren<Light2D>(true);
+        var light = lights.Length > 0 ? lights[0] : null;
         onIntensity = isColored || light == null ? Mathf.Max(0f, intensity) : light.intensity;
         color = isColored || light == null ? configuredColor : light.color;
+        this.angle = angle;
+        ApplyPointLightShape(lights);
         powered = true;
         FindVisualRenderers();
         Apply();
@@ -175,15 +186,30 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
         }
         catch
         {
-            var light = GetComponent<Light2D>();
-            if (light != null)
-            {
-                light.color = color;
-                light.intensity = powered ? onIntensity : 0f;
-            }
+            foreach (var light in GetComponentsInChildren<Light2D>(true))
+                if (light != null)
+                {
+                    light.color = color;
+                    light.intensity = powered ? onIntensity : 0f;
+                }
         }
 
+        ApplyPointLightShape(GetComponentsInChildren<Light2D>(true));
+
         ApplyVisualState();
+    }
+
+    private void ApplyPointLightShape(Light2D[] lights)
+    {
+        var innerAngle = Mathf.Clamp(angle, 1f, 360f);
+        var outerAngle = Mathf.Min(360f, innerAngle + 26f);
+        foreach (var light in lights)
+        {
+            if (light == null) continue;
+            light.lightType = Light2D.LightType.Point;
+            light.pointLightInnerAngle = innerAngle;
+            light.pointLightOuterAngle = outerAngle;
+        }
     }
 
     private void FindVisualRenderers()

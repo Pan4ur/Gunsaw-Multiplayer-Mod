@@ -27,6 +27,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private readonly List<NativeInputState> nativeInputs = new List<NativeInputState>();
     private readonly List<NativeLabelState> nativeLabels = new List<NativeLabelState>();
     private LevelPartGame editingLamp;
+    private LevelPartGame editingLampAngle;
 
     internal static CustomPropEditorController Ensure(LevelEditor value)
     {
@@ -421,7 +422,12 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             editor.forceXField.onEndEdit.AddListener(value => CommitWeaponRespawnTime());
         }
         if (editor.forceYField != null) editor.forceYField.onEndEdit.AddListener(value => CommitFields());
-        if (editor.sizeXField != null) editor.sizeXField.onEndEdit.AddListener(value => CommitFields());
+        if (editor.sizeXField != null)
+        {
+            editor.sizeXField.onEndEdit.AddListener(value => CommitFields());
+            editor.sizeXField.onSelect.AddListener(value => BeginLampAngleEdit());
+            editor.sizeXField.onEndEdit.AddListener(value => CommitLampAngle(editingLampAngle, value));
+        }
         if (editor.sizeYField != null) editor.sizeYField.onEndEdit.AddListener(value => CommitFields());
     }
 
@@ -486,6 +492,40 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         int id;
         if (!int.TryParse(value, out id)) return;
         levelPart.part.id = Mathf.Max(0, id);
+    }
+
+    internal void EnableSizeFieldForLampAngle()
+    {
+        if (editor == null || editor.sizeXField == null) return;
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        if (!IsColoredLamp(levelPart)) return;
+        levelPart.showSize = true;
+        editor.sizeXField.SetTextWithoutNotify(LampAngle(levelPart.part.size).ToString());
+        SetEditable(editor.sizeXField);
+        if (editor.sizeYField != null) editor.sizeYField.gameObject.SetActive(false);
+        var sizeName = FindNativeFieldLabel(editor.sizeXField, "Size");
+        if (sizeName != null) sizeName.text = "Angle";
+    }
+
+    private void BeginLampAngleEdit()
+    {
+        var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
+        var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
+        editingLampAngle = IsColoredLamp(levelPart) ? levelPart : null;
+    }
+
+    private void CommitLampAngle(LevelPartGame levelPart, string value)
+    {
+        if (!IsColoredLamp(levelPart)) return;
+        float angle;
+        if (!float.TryParse(value, out angle)) return;
+        levelPart.part.size.x = Mathf.Clamp(angle, 1f, 360f);
+    }
+
+    private static float LampAngle(Vector2 size)
+    {
+        return size.x <= 1f ? 360f : Mathf.Clamp(size.x, 1f, 360f);
     }
     
     internal void EnableRespawnTimeForWeapon()
