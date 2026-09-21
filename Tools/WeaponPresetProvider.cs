@@ -45,7 +45,34 @@ public static class WeaponPresetProvider
     {
         if (id == 0) return null;
 
-        return FindWeaponPreset(id, nameHashCache, p => NetworkWireId.FromString(p.name) == id, p => NetworkWireId.FromString(p.name) == id);
+        if (nameHashCache.TryGetValue(id, out var cached) && cached != null)
+            return cached;
+
+        WeaponPreset fallback = null;
+        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
+        {
+            if (preset == null)
+                continue;
+
+            fallback ??= preset;
+            if (NetworkWireId.FromString(preset.name) != id)
+                continue;
+
+            nameHashCache[id] = preset;
+            return preset;
+        }
+
+        if (GameManager.main?.allWeapons != null)
+            foreach (var preset in GameManager.main.allWeapons)
+                if (preset != null && NetworkWireId.FromString(preset.name) == id)
+                {
+                    nameHashCache[id] = preset;
+                    return preset;
+                }
+
+        nameHashCache[id] = fallback;
+        GunsawMultiplayerPlugin.LogInfo($"Weapon preset not found for: {id}. Missing some mods?");
+        return fallback;
     }
 
     public static WeaponPreset FindWeaponPresetBySpriteHash(ulong id)
