@@ -62,6 +62,8 @@ Props:
 > [!WARNING]
 > **LINUX ONLY**
 >
+> Instal win version of BepInEx!!!
+> 
 > [Add winhttp to the libs](https://docs.bepinex.dev/articles/advanced/proton_wine.html)
 >
 > Add `LC_ALL=ru_RU.UTF-8` if you need to see Russian letters
