@@ -62,7 +62,7 @@ Props:
 > [!WARNING]
 > **LINUX ONLY**
 >
-> Instal win version of BepInEx!!!
+> Install win version of BepInEx!!!
 > 
 > [Add winhttp to the libs](https://docs.bepinex.dev/articles/advanced/proton_wine.html)
 >
