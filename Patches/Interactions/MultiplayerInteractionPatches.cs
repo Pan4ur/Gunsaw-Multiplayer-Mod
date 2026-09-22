@@ -1,4 +1,3 @@
-using System;
 using HarmonyLib;
 using UnityEngine;
 
@@ -41,10 +40,16 @@ internal static class HostActivationZonePatch
     private static bool Prefix(ActivateZoneScript __instance, Collider2D collision)
     {
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost) return true;
-        var player = PlayerScript.player;
-        var body = player == null ? null : player.bodyScript;
-        if (__instance == null || collision == null || body == null || collision.transform.root != body.transform.root) return false;
-        if (GunsawMultiplayerPlugin.World != null) GunsawMultiplayerPlugin.World.ActivateLocalZone(__instance, false);
+
+        var npcBody = collision?.GetComponent<BodyScript>() ?? collision?.GetComponent<LimbScript>()?.body;
+        if (npcBody != null && NpcReplication.IsHostNpc(npcBody))
+            return true;
+
+        var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
+        if (__instance == null || collision == null || body == null || collision.transform.root != body.transform.root)
+            return false;
+        
+        GunsawMultiplayerPlugin.World?.ActivateLocalZone(__instance, false);
         return false;
     }
 }
