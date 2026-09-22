@@ -123,6 +123,15 @@ internal static class ToggleableLampSystem
         return lamp.Object.GetComponentInChildren<ToggleableLampRuntime>(true);
     }
 
+    internal static ToggleableLampRuntime RuntimeForId(int id)
+    {
+        foreach (var r in UnityEngine.Object.FindObjectsOfType<ToggleableLampRuntime>())
+            if (r != null && r.ActivationId == id)
+                return r;
+        
+        return null;
+    }
+
     private sealed class LampLevelData
     {
         internal Vector2 Position;
@@ -146,6 +155,8 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
 
     internal bool Powered => powered;
     internal int ActivationId => activationId;
+    internal float Intensity => onIntensity;
+    internal Color Color => color;
 
     internal void Configure(int id, float intensity, float angle, Color configuredColor, bool isColored)
     {
@@ -174,6 +185,18 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
     {
         if (powered == value) return;
         powered = value;
+        Apply();
+    }
+
+    internal void SetColor(Color value)
+    {
+        color = value;
+        Apply();
+    }
+
+    internal void SetIntensity(float value)
+    {
+        onIntensity = Mathf.Max(0f, value);
         Apply();
     }
 

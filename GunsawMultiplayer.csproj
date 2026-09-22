@@ -15,6 +15,8 @@
     <EmbeddedResource Include="CustomProps\Assets\npc-spawner.png" />
     <EmbeddedResource Include="CustomProps\Assets\arsenal.png" />
     <EmbeddedResource Include="CustomProps\Assets\rnd.png" />
+    <EmbeddedResource Include="CustomProps\Assets\lamp-color-changer.png" />
+    <EmbeddedResource Include="CustomProps\Assets\lamp-intensity-changer.png" />
     <EmbeddedResource Include="CustomProps\Assets\logic-*.png" />
     <EmbeddedResource Include="Assets\play.png" />
     <EmbeddedResource Include="Assets\bin.png" />

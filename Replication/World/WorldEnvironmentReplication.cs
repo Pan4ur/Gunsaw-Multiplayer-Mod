@@ -600,6 +600,11 @@ public class WorldEnvironmentReplication
                 if (runtime == null) continue;
                 writer.Write(WorldReplication.Instance.WireId(pair.Key));
                 writer.Write(runtime.Powered);
+                BinaryWriterRaw.WriteSingle(writer, runtime.Intensity);
+                BinaryWriterRaw.WriteSingle(writer, runtime.Color.r);
+                BinaryWriterRaw.WriteSingle(writer, runtime.Color.g);
+                BinaryWriterRaw.WriteSingle(writer, runtime.Color.b);
+                BinaryWriterRaw.WriteSingle(writer, runtime.Color.a);
                 writtenPoweredLamps++;
             }
             return stream.ToArray();
@@ -653,7 +658,15 @@ public class WorldEnvironmentReplication
                 for (var index = 0; index < poweredLampCount &&
                      reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(ulong) + 1; index++)
                 {
-                    ApplyLampPowerState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()), reader.ReadBoolean());
+                    var id = WorldReplication.Instance.ResolveWireId(reader.ReadUInt64());
+                    var powered = reader.ReadBoolean();
+                    if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(float) * 5)
+                    {
+                        var intensity = reader.ReadSingle();
+                        var color = new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+                        ApplyLampState(id, powered, intensity, color);
+                    }
+                    else ApplyLampPowerState(id, powered);
                 }
             }
         }
@@ -665,6 +678,17 @@ public class WorldEnvironmentReplication
         if (!WorldReplication.Instance.lamps.TryGetValue(id, out lamp)) return;
         var runtime = ToggleableLampSystem.RuntimeForLamp(lamp);
         if (runtime != null) runtime.SetPowered(powered);
+    }
+
+    internal void ApplyLampState(string id, bool powered, float intensity, Color color)
+    {
+        WorldReplication.LampState lamp;
+        if (!WorldReplication.Instance.lamps.TryGetValue(id, out lamp)) return;
+        var runtime = ToggleableLampSystem.RuntimeForLamp(lamp);
+        if (runtime == null) return;
+        runtime.SetColor(color);
+        runtime.SetIntensity(intensity);
+        runtime.SetPowered(powered);
     }
 
     internal static void ApplyMissionEnemyCount(int killed, int total)

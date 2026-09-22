@@ -24,5 +24,7 @@ internal static class CustomPropBootstrap
         CustomPropRegistry.Register(new TFlipFlopDefinition());
         CustomPropRegistry.Register(new SrLatchDefinition());
         CustomPropRegistry.Register(new JkFlipFlopDefinition());
+        CustomPropRegistry.Register(new LampColorChangerDefinition());
+        CustomPropRegistry.Register(new LampIntensityChangerDefinition());
     }
 }
