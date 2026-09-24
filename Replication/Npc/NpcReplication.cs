@@ -6,12 +6,12 @@ using UnityEngine.SceneManagement;
 
 internal sealed class NpcReplication : MonoBehaviour
 {
-    private const byte ProtocolVersion = 13;
     private const byte CompressedSnapshotMarker = 0xFF;
     private const int CompressionThresholdBytes = 256;
     private const int MaxDecompressedSnapshotBytes = 1024 * 1024;
     private const float RotationToWire = ushort.MaxValue / 360f;
     private const float RotationFromWire = 360f / ushort.MaxValue;
+    private const float LimbOffsetScale = 1024f;
 
     private const float SnapshotInterval = 1f / 50f;
     private const float DiscoveryInterval = 60f;
@@ -331,15 +331,11 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             pendingBodies.Remove(body);
             if (body == null) continue;
-            if (MultiplayerSession.IsHost) RegisterHostNpc(body, localBody);
-            else RegisterClientNpc(body, localBody);
+            if (MultiplayerSession.IsHost)
+                RegisterHostNpc(body, localBody, out _);
+            else
+                RegisterClientNpc(body, localBody);
         }
-    }
-
-    private bool RegisterHostNpc(BodyScript body, BodyScript localBody)
-    {
-        string ignored;
-        return RegisterHostNpc(body, localBody, out ignored);
     }
 
     private bool RegisterHostNpc(BodyScript body, BodyScript localBody, out string id)
@@ -402,23 +398,31 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         foreach (var body in hostNpcs.Values)
         {
-            if (body == null || !body.gameObject.activeInHierarchy || !LoadDistanceSystem.IsNpcNearAnyPlayer(body)) continue;
+            if (body == null || !body.gameObject.activeInHierarchy || !LoadDistanceSystem.IsNpcNearAnyPlayer(body))
+                continue;
             var layout = HostLayout(body);
             IsEvaluatingAuthoritativePose = true;
             try
             {
-            for (var index = 0; index < layout.Limbs.Length; index++)
-            {
+                for (var index = 0; index < layout.Limbs.Length; index++)
+                {
                     var limb = layout.Limbs[index];
-                    if (limb == null || !limb.gameObject.activeInHierarchy) continue;
-                    try { limb.OnWillRenderObject(); }
+                    if (limb == null || !limb.gameObject.activeInHierarchy)
+                        continue;
+                    try
+                    {
+                        limb.OnWillRenderObject();
+                    }
                     catch (Exception e)
                     {
                         GunsawMultiplayerPlugin.LogInfo("NPC pose animation failed for " + body.name + ": " + e.GetType().Name + ": " + e.Message);
                     }
                 }
             }
-            finally { IsEvaluatingAuthoritativePose = false; }
+            finally
+            {
+                IsEvaluatingAuthoritativePose = false;
+            }
         }
     }
 
@@ -447,8 +451,7 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         if (npc == null || rigidbody == null) return false;
         var root = NpcRoot(npc);
-        return root != null && (rigidbody.transform == root.transform ||
-            rigidbody.transform.IsChildOf(root.transform));
+        return root != null && (rigidbody.transform == root.transform || rigidbody.transform.IsChildOf(root.transform));
     }
 
     private static GameObject NpcRoot(BodyScript body)
@@ -537,10 +540,9 @@ internal sealed class NpcReplication : MonoBehaviour
         using (var stream = new MemoryStream())
         using (var writer = new BinaryWriter(stream))
         {
-            writer.Write(ProtocolVersion);
+            writer.Write(fullSnapshot);
             writer.Write(++sendSequence);
             writer.Write(MultiplayerSession.SnapshotEpoch);
-            writer.Write(fullSnapshot);
             writer.Write((ushort)changed.Count);
             foreach (var state in changed)
             {
@@ -674,13 +676,16 @@ internal sealed class NpcReplication : MonoBehaviour
 
         sectionStarted = writer.BaseStream.Position;
         var limbs = layout.Limbs;
+        var rootPosition = body.rb == null ? Vector2.zero : body.rb.position;
         var sendLimbPose = includeIdentity || LoadDistanceSystem.ShouldSendNpcLimbPose(body);
         writer.Write((ushort)(sendLimbPose ? limbs.Length : 0));
         for (var limbIndex = 0; sendLimbPose && limbIndex < limbs.Length; limbIndex++)
         {
             var limb = limbs[limbIndex];
-            WritePose(writer, limb.rb);
-            WriteTransform(writer, limb == null ? null : limb.transform);
+            WriteLimbPose(writer, limb.rb == null ? Vector2.zero : limb.rb.position,
+                limb.rb == null ? 0f : limb.rb.rotation, rootPosition);
+            WriteLimbPose(writer, limb == null ? Vector2.zero : (Vector2)limb.transform.position,
+                limb == null ? 0f : limb.transform.eulerAngles.z, rootPosition);
             var fire = limbIndex < layout.LimbFires.Length ? layout.LimbFires[limbIndex] : null;
             writer.Write((byte)((limb.dismembered ? 1 : 0) | (IsBurning(fire) ? 2 : 0)));
         }
@@ -795,12 +800,11 @@ internal sealed class NpcReplication : MonoBehaviour
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDecompress, decompressStarted);
             using (var reader = new BinaryReader(new MemoryStream(decoded)))
             {
-                if (reader.ReadByte() != ProtocolVersion) return;
+                var fullSnapshot = reader.ReadBoolean();
                 var sequence = reader.ReadInt32();
                 var sceneEpoch = reader.ReadInt32();
                 if (!MultiplayerSession.IsSnapshotEpochCurrent(sceneEpoch)) return;
                 if (sequence <= receivedSequence) return;
-                var fullSnapshot = reader.ReadBoolean();
                 var count = reader.ReadUInt16();
                 decodedStates.Clear();
                 var parseStarted = MultiplayerPerformance.StartPhase();
@@ -868,8 +872,8 @@ internal sealed class NpcReplication : MonoBehaviour
         EnsureArray(ref state.Limbs, limbCount);
         for (var index = 0; index < limbCount; index++)
         {
-            var pose = ReadPose(reader);
-            var visual = ReadTransform(reader);
+            var pose = ReadLimbPose(reader, state.Body.Position);
+            var visual = ReadLimbPose(reader, state.Body.Position);
             var flags = reader.ReadByte();
             state.Limbs[index] = new LimbState
             {
@@ -1481,9 +1485,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
         var slotChanged = proxy.AppliedWeapon != state.WeaponSlot;
         var currentWeapons = body.weapons;
-        if (state.WeaponSlot >= 0 && state.WeaponSlot < currentWeapons.Count &&
-            currentWeapons[state.WeaponSlot] != null &&
-            proxy.AppliedWeapon != state.WeaponSlot)
+        if (state.WeaponSlot >= 0 && state.WeaponSlot < currentWeapons.Count && currentWeapons[state.WeaponSlot] != null && proxy.AppliedWeapon != state.WeaponSlot)
         {
             try
             {
@@ -1614,6 +1616,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private static void SetTransformTarget(NpcProxy proxy, Transform transform, Pose state)
     {
         if (transform == null) return;
+        TrackTransformOrder(proxy, transform);
         TransformTarget previous;
         if (proxy.TransformTargets.TryGetValue(transform, out previous) && SamePose(previous.Target, state)) return;
         var from = new Pose
@@ -1633,6 +1636,35 @@ internal sealed class NpcReplication : MonoBehaviour
             From = from,
             StartedAt = Time.unscaledTime
         };
+    }
+
+    private static void TrackTransformOrder(NpcProxy proxy, Transform transform)
+    {
+        var parent = transform.parent;
+        TransformOrder previous;
+        if (proxy.TransformOrderByTransform.TryGetValue(transform, out previous))
+        {
+            if (previous.Parent == parent) return;
+            foreach (var tracked in proxy.OrderedTransformTargets)
+            {
+                if (tracked == null) continue;
+                proxy.TransformOrderByTransform[tracked] = new TransformOrder
+                {
+                    Parent = tracked.parent,
+                    Depth = NetworkAvatarUtilities.TransformDepth(tracked)
+                };
+            }
+            proxy.OrderedTransformTargets.Sort((left, right) =>
+                proxy.TransformOrderByTransform[left].Depth.CompareTo(proxy.TransformOrderByTransform[right].Depth));
+            return;
+        }
+
+        var depth = NetworkAvatarUtilities.TransformDepth(transform);
+        var index = proxy.OrderedTransformTargets.Count;
+        while (index > 0 && proxy.TransformOrderByTransform[proxy.OrderedTransformTargets[index - 1]].Depth > depth)
+            index--;
+        proxy.OrderedTransformTargets.Insert(index, transform);
+        proxy.TransformOrderByTransform[transform] = new TransformOrder { Parent = parent, Depth = depth };
     }
 
     private static bool SamePose(Pose left, Pose right)
@@ -1665,22 +1697,25 @@ internal sealed class NpcReplication : MonoBehaviour
         if (IsDead(proxy)) return;
         var transformsStarted = MultiplayerPerformance.StartPhase();
 
-        foreach (var pair in proxy.TransformTargets)
+        for (var index = 0; index < proxy.OrderedTransformTargets.Count; index++)
         {
-            var transform = pair.Key;
-            if (transform == null) continue;
-            var target = pair.Value;
+            var transform = proxy.OrderedTransformTargets[index];
+            if (transform == null)
+            {
+                proxy.OrderedTransformTargets.RemoveAt(index--);
+                proxy.TransformOrderByTransform.Remove(transform);
+                proxy.TransformTargets.Remove(transform);
+                continue;
+            }
+            TransformTarget target;
+            if (!proxy.TransformTargets.TryGetValue(transform, out target)) continue;
             var amount = Mathf.Clamp01((now - target.StartedAt) / SnapshotInterval);
             transform.SetPositionAndRotation(Vector3.Lerp(target.From.Position, target.Target.Position, amount),
                 Quaternion.Lerp(Quaternion.Euler(0f, 0f, target.From.Rotation), Quaternion.Euler(0f, 0f, target.Target.Rotation), amount));
 
             if (amount >= 1f)
-                proxy.CompletedTransformTargets.Add(transform);
+                proxy.TransformTargets.Remove(transform);
         }
-        foreach (var transform in proxy.CompletedTransformTargets)
-            proxy.TransformTargets.Remove(transform);
-
-        proxy.CompletedTransformTargets.Clear();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
     }
 
@@ -1907,6 +1942,24 @@ internal sealed class NpcReplication : MonoBehaviour
         WriteRotation(writer, body.rotation);
     }
 
+    private static void WriteLimbPose(BinaryWriter writer, Vector2 position, float rotation, Vector2 root)
+    {
+        var x = Math.Round((position.x - root.x) * LimbOffsetScale);
+        var y = Math.Round((position.y - root.y) * LimbOffsetScale);
+        if (x < short.MinValue + 1 || x > short.MaxValue || y < short.MinValue || y > short.MaxValue)
+        {
+            writer.Write(short.MinValue);
+            BinaryWriterRaw.WriteSingle(writer, position.x);
+            BinaryWriterRaw.WriteSingle(writer, position.y);
+        }
+        else
+        {
+            writer.Write((short)x);
+            writer.Write((short)y);
+        }
+        WriteRotation(writer, rotation);
+    }
+
     private static Rigidbody2D[] GetRigBodies(BodyScript body)
     {
         var result = new List<Rigidbody2D>();
@@ -2070,6 +2123,17 @@ internal sealed class NpcReplication : MonoBehaviour
             Position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
             Rotation = ReadRotation(reader)
         };
+    }
+
+    private static Pose ReadLimbPose(BinaryReader reader, Vector2 root)
+    {
+        var x = reader.ReadInt16();
+        Vector2 position;
+        if (x == short.MinValue)
+            position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+        else
+            position = root + new Vector2(x / LimbOffsetScale, reader.ReadInt16() / LimbOffsetScale);
+        return new Pose { Position = position, Rotation = ReadRotation(reader) };
     }
 
     private static void WriteTransforms(BinaryWriter writer, Transform[] transforms)
@@ -2650,7 +2714,8 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly List<Rigidbody2D> CompletedBodyTargets = new List<Rigidbody2D>();
         public readonly Dictionary<ulong, Rigidbody2D> RigBodies = new Dictionary<ulong, Rigidbody2D>();
         public readonly Dictionary<Transform, TransformTarget> TransformTargets = new Dictionary<Transform, TransformTarget>();
-        public readonly List<Transform> CompletedTransformTargets = new List<Transform>();
+        public readonly Dictionary<Transform, TransformOrder> TransformOrderByTransform = new Dictionary<Transform, TransformOrder>();
+        public readonly List<Transform> OrderedTransformTargets = new List<Transform>();
         public readonly Dictionary<int, GameObject> FireVisuals = new Dictionary<int, GameObject>();
         public readonly Dictionary<GameObject, bool> OriginalFireActive = new Dictionary<GameObject, bool>();
         public readonly HashSet<GameObject> OwnedFireVisuals = new HashSet<GameObject>();
@@ -2691,21 +2756,21 @@ internal sealed class NpcReplication : MonoBehaviour
         public bool DeHeaded;
         public float BurnIntensity;
         public float Alertness;
-        public bool[] DeathObjects = new bool[0];
+        public bool[] DeathObjects = [];
         public Pose Body;
         public Pose Arms;
-        public RigPose[] RigBodies = new RigPose[0];
-        public LimbState[] Limbs = new LimbState[0];
-        public Pose[] TailBases = new Pose[0];
-        public Pose[] Tails = new Pose[0];
+        public RigPose[] RigBodies = [];
+        public LimbState[] Limbs = [];
+        public Pose[] TailBases = [];
+        public Pose[] Tails = [];
         public Pose Gun;
         public Pose GunAnimation;
         public Pose Weapon;
         public int WeaponSlot;
         public int WeaponAmmo;
-        public ulong[] Weapons = new ulong[0];
+        public ulong[] Weapons = [];
         public LineState Laser;
-        public NpcVisualState Visuals = new NpcVisualState();
+        public NpcVisualState Visuals = new ();
         public bool HasVisuals;
         public byte[] FacialExpressions = Array.Empty<byte>();
     }
@@ -2773,6 +2838,12 @@ internal sealed class NpcReplication : MonoBehaviour
         public float StartedAt;
     }
 
+    private struct TransformOrder
+    {
+        public Transform Parent;
+        public int Depth;
+    }
+
     private struct RigidbodySettings
     {
         public RigidbodyType2D BodyType;
@@ -2795,12 +2866,6 @@ internal sealed class NpcReplication : MonoBehaviour
 internal sealed class NpcNetworkReplica : MonoBehaviour
 {
     public Action OnWillRender;
-
-    public void NotifyWillRender()
-    {
-        var callback = OnWillRender;
-        if (callback != null) callback();
-    }
 }
 
 internal sealed class NpcRenderReplica : MonoBehaviour
@@ -2809,6 +2874,6 @@ internal sealed class NpcRenderReplica : MonoBehaviour
 
     private void OnWillRenderObject()
     {
-        Marker?.NotifyWillRender();
+        Marker?.OnWillRender?.Invoke();
     }
 }
