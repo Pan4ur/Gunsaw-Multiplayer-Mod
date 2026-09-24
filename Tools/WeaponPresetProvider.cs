@@ -79,13 +79,13 @@ public static class WeaponPresetProvider
     {
         if (id == 0) return null;
 
-        return FindWeaponPreset(id, spriteHashCache, null, p => NetworkWireId.FromString(NetworkAvatarReplication.SpriteId(p.sprite)) == id);
+        return FindWeaponPreset(id, spriteHashCache, null, p => NetworkWireId.FromString(NetworkAvatarUtilities.SpriteId(p.sprite)) == id);
     }
 
     public static WeaponPreset FindWeaponPreset(string id)
     {
         if (string.IsNullOrEmpty(id)) return null;
         
-        return FindWeaponPreset(id, cache, p => p.name == id, p => NetworkAvatarReplication.SpriteId(p.sprite) == id);
+        return FindWeaponPreset(id, cache, p => p.name == id, p => NetworkAvatarUtilities.SpriteId(p.sprite) == id);
     }
 }

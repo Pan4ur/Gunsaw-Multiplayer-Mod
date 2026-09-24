@@ -100,7 +100,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private string requestedHostScene = "";
     private float customLevelPhysicsRefreshUntil;
     private float nextCustomLevelPhysicsRefresh;
-    private NetworkAvatarReplication avatarReplication;
+    private LocalPlayerReplication avatarReplication;
     private WorldReplication worldReplication;
     private NpcReplication npcReplication;
     private MultiplayerHud multiplayerHud;
@@ -250,7 +250,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             }
         }
         new Harmony(PluginGuid).PatchAll();
-        avatarReplication = gameObject.AddComponent<NetworkAvatarReplication>();
+        avatarReplication = gameObject.AddComponent<LocalPlayerReplication>();
+        gameObject.AddComponent<NetworkAvatarManager>();
         worldReplication = gameObject.AddComponent<WorldReplication>();
         npcReplication = gameObject.AddComponent<NpcReplication>();
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
@@ -363,7 +364,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             Time.unscaledTime >= nextCustomLevelPhysicsRefresh)
         {
             nextCustomLevelPhysicsRefresh = Time.unscaledTime + 0.25f;
-            NetworkAvatarReplication.ForceRefreshRemotePhysics();
+            NetworkAvatarManager.ForceRefreshRemotePhysics();
         }
         var sessionName = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected
             ? MultiplayerSession.LocalPlayerName : playerName;
@@ -431,7 +432,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 return;
             }
             requestedHostScene = sceneToLoad;
-            NetworkAvatarReplication.ResetExhaustedLives();
+            LocalPlayerReplication.ResetExhaustedLives();
             ObserverSystem.ResetForLevelChange(mustReload);
             if (sceneToLoad == "LevelLoader")
             {

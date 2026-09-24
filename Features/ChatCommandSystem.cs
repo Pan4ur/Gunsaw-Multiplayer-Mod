@@ -24,7 +24,7 @@ internal sealed class ChatCommandSystem
 
     private bool Kill()
     {
-        if (!NetworkAvatarReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
+        if (!LocalPlayerReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
             MultiplayerHud.AddSystemMessage("You are dead already.");
         
         return true;
@@ -44,8 +44,8 @@ internal sealed class ChatCommandSystem
             return true;
         }
         if (!CustomLevelSpawnSelection.TryGetRandomSpawnPosition(out var position) &&
-            (NetworkAvatarReplication.Instance == null ||
-             !NetworkAvatarReplication.Instance.TryGetLocalSpawnPosition(out position)))
+            (LocalPlayerReplication.Instance == null ||
+             !LocalPlayerReplication.Instance.TryGetLocalSpawnPosition(out position)))
         {
             MultiplayerHud.AddSystemMessage("The map spawn point is not available yet.");
             return true;
@@ -70,13 +70,13 @@ internal sealed class ChatCommandSystem
             return true;
         }
         var character = message.Length > 5 ? message.Substring(5).Trim() : "";
-        if (!NetworkAvatarReplication.TrySetPendingRespawnCharacter(character, out var characterName))
+        if (!LocalPlayerReplication.TrySetPendingRespawnCharacter(character, out var characterName))
         {
             MultiplayerHud.AddSystemMessage("Usage: /swap <character name>");
             return true;
         }
         if (MultiplayerSession.IsHost)
-            NetworkAvatarReplication.BroadcastSwapAnnouncement(MultiplayerSession.LocalPlayerName, characterName);
+            NetworkAvatarManager.BroadcastSwapAnnouncement(MultiplayerSession.LocalPlayerName, characterName);
         else
         {
             ChatPacket packet;
@@ -115,7 +115,7 @@ internal sealed class ChatCommandSystem
         }
         var target = targetPeerId == MultiplayerSession.LocalPeerId
             ? PlayerScript.player?.bodyScript
-            : NetworkAvatarRegistry.RemoteBodyForPeer(targetPeerId);
+            : NetworkAvatarManager.RemoteBodyForPeer(targetPeerId);
         var local = PlayerScript.player?.bodyScript;
         if (target == null || !target.isAlive || local == null)
         {

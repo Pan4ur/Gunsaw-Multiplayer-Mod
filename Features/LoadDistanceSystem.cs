@@ -136,7 +136,7 @@ internal static class LoadDistanceSystem
 
     internal static bool TryGetLocalViewPosition(out Vector2 position)
     {
-        var target = NetworkAvatarReplication.SpectatorTargetBody();
+        var target = LocalPlayerReplication.SpectatorTargetBody();
         if (target != null && target.gameObject.activeInHierarchy)
         {
             position = GetPlayerPosition(target);
@@ -296,7 +296,7 @@ internal static class LoadDistanceSystem
         if (localPlayer != null)
             AddPlayerPosition(localPlayer.bodyScript);
 
-        foreach (var remote in NetworkAvatarRegistry.replicas)
+        foreach (var remote in NetworkAvatarManager.replicas)
         {
             if (remote.Value == null)
                 continue;

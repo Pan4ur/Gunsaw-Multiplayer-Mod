@@ -243,7 +243,7 @@ internal static class TeamSystem
         var values = new List<string>();
         if (Name(MultiplayerSession.LocalPeerId) == team)
             values.Add(MultiplayerSession.LocalPlayerName + " <size=13>(YOU)</size>");
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarManager.RemotePlayers())
             if (Name(remote.PeerId) == team) values.Add(remote.Name);
         return values.Count == 0 ? "<color=#FFFFFF99>NO PLAYERS</color>" : string.Join("\n", values);
     }

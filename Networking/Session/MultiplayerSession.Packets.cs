@@ -348,7 +348,7 @@ internal static partial class MultiplayerSession
             }
             else if (!isHost && decodedPacket.Type == PacketType.KillScreenEffect && senderId == hostPeerId)
             {
-                NetworkAvatarReplication.PlayKillScreenEffect();
+                NetworkAvatarManager.PlayKillScreenEffect();
             }
             else if (!isHost && decodedPacket.Type == PacketType.ObserverState && senderId == hostPeerId)
             {

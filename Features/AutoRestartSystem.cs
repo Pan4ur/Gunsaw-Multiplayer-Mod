@@ -24,7 +24,7 @@ internal static class AutoRestartSystem
                 if (TeamSystem.Enabled) aliveTeams.Add(TeamSystem.Name(MultiplayerSession.LocalPeerId));
             }
         }
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarManager.RemotePlayers())
         {
             if (remote.Body == null) continue;
             if (remote.Body.isAlive)

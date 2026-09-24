@@ -140,7 +140,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         ushort senderId;
         while (MultiplayerSession.TryTakeChat(out senderId, out sender, out message))
         {
-            if (NetworkAvatarReplication.TryBroadcastSwapRequest(senderId, message)) continue;
+            if (NetworkAvatarManager.TryBroadcastSwapRequest(senderId, message)) continue;
             if (GunsawMultiplayerPlugin.Instance.TryHandleLobbyChatCommand(senderId, message)) continue;
             AddMessage(sender, message, false, senderId);
         }
@@ -338,12 +338,12 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 (npc == null ? 0 : npc.TailBytesPerSecond) / 1024f,
                 (npc == null ? 0 : npc.WeaponBytesPerSecond) / 1024f,
                 (npc == null ? 0 : npc.EffectsBytesPerSecond) / 1024f,
-                NetworkAvatarReplication.AvatarCoreBytesPerSecond / 1024f,
-                NetworkAvatarReplication.AvatarLimbBytesPerSecond / 1024f,
-                NetworkAvatarReplication.AvatarRigBytesPerSecond / 1024f,
-                NetworkAvatarReplication.AvatarWeaponBytesPerSecond / 1024f,
-                NetworkAvatarReplication.AvatarEffectsBytesPerSecond / 1024f,
-                NetworkAvatarReplication.AvatarVisualBytesPerSecond / 1024f);
+                LocalPlayerReplication.AvatarCoreBytesPerSecond / 1024f,
+                LocalPlayerReplication.AvatarLimbBytesPerSecond / 1024f,
+                LocalPlayerReplication.AvatarRigBytesPerSecond / 1024f,
+                LocalPlayerReplication.AvatarWeaponBytesPerSecond / 1024f,
+                LocalPlayerReplication.AvatarEffectsBytesPerSecond / 1024f,
+                LocalPlayerReplication.AvatarVisualBytesPerSecond / 1024f);
             networkStatsTextValue += string.Format("\nWORLD CPU  disc {0:0.0}  ser {1:0.0}  read {2:0.0}  apply {3:0.0}\n" +
                 "           input {4:0.0}  contacts {5:0.0} ms/s\n" +
                 "NPC CPU    disc {6:0.0}  anim {7:0.0}  ser {8:0.0}  read {9:0.0}\n" +
@@ -590,7 +590,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             if (string.Equals(commandName, "/swap", StringComparison.OrdinalIgnoreCase))
             {
                 var characterPrefix = input.Substring(separator).TrimStart();
-                foreach (var character in NetworkAvatarReplication.SwapCharacterNames())
+                foreach (var character in NetworkAvatarManager.SwapCharacterNames())
                 {
                     if (character.StartsWith(characterPrefix, StringComparison.OrdinalIgnoreCase))
                         chatSuggestions.Add("/swap " + character);

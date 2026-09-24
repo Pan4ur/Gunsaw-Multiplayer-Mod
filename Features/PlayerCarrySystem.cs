@@ -32,7 +32,7 @@ internal static class PlayerCarrySystem
     internal static bool IsCarriedTarget(BodyScript body) => carrying && body != null && body == BodyForPeer(targetId);
     internal static bool MustLockRemoteCarryPose(BodyScript body) =>
         carrying && body != null && body == BodyForPeer(targetId) &&
-        NetworkAvatarRegistry.IsRemoteAvatarBody(body);
+        NetworkAvatarManager.IsRemoteAvatarBody(body);
 
 
     internal static void Tick()
@@ -219,7 +219,7 @@ internal static class PlayerCarrySystem
 
     private static BodyScript BodyForPeer(ushort peerId)
     {
-        return peerId == MultiplayerSession.LocalPeerId ? PlayerScript.player?.bodyScript : NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        return peerId == MultiplayerSession.LocalPeerId ? PlayerScript.player?.bodyScript : NetworkAvatarManager.RemoteBodyForPeer(peerId);
     }
 
     private static ushort FindCarryTarget(BodyScript local)
@@ -227,7 +227,7 @@ internal static class PlayerCarrySystem
         var camera = Camera.main;
         if (camera == null) return 0;
         var point = (Vector2)camera.ScreenToWorldPoint(Input.mousePosition);
-        foreach (var remote in NetworkAvatarRegistry.replicas)
+        foreach (var remote in NetworkAvatarManager.replicas)
         {
             if (remote.Value == null)
                 continue;
@@ -289,7 +289,7 @@ internal static class PlayerCarrySystem
                 limb.animated = limb.limbType == 1;
             }
             targetLimbAnimation[target] = animation;
-            if (NetworkAvatarRegistry.IsRemoteAvatarBody(target))
+            if (NetworkAvatarManager.IsRemoteAvatarBody(target))
             {
                 DisableRemoteTargetColliders(target);
                 EnableRemoteCarryPhysics(parts);
@@ -310,7 +310,7 @@ internal static class PlayerCarrySystem
         {
             if (part.Body == null) continue;
             if (IsFreeLowerLeg(part.LimbIndex) || (part.IsTail && !part.IsTailBase)) continue;
-            if (part.IsArm && NetworkAvatarRegistry.IsRemoteAvatarBody(target)) continue;
+            if (part.IsArm && NetworkAvatarManager.IsRemoteAvatarBody(target)) continue;
             if (!targetInterpolation.ContainsKey(part.Body))
             {
                 targetInterpolation[part.Body] = part.Body.interpolation;
@@ -336,7 +336,7 @@ internal static class PlayerCarrySystem
             }
             part.Body.angularVelocity = 0f;
         }
-        if (NetworkAvatarRegistry.IsRemoteAvatarBody(target))
+        if (NetworkAvatarManager.IsRemoteAvatarBody(target))
             ApplyRemoteArmPose(target, anchor, poseRotation, rotation, armDelta, physicsTick);
     }
 

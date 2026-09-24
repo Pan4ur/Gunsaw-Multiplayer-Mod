@@ -164,7 +164,7 @@ public class WorldEnvironmentReplication
     internal void ApplyButtonActivation(string id, ushort peerId)
     {
         ButtonScript button;
-        var remotePlayer = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        var remotePlayer = NetworkAvatarManager.RemoteBodyForPeer(peerId);
         float allowedAt;
         if (!WorldReplication.Instance.buttons.TryGetValue(id, out button) || button == null || remotePlayer == null ||
             !remotePlayer.isAlive || (remotePlayer.transform.position - button.transform.position).sqrMagnitude > 25f ||
@@ -181,7 +181,7 @@ public class WorldEnvironmentReplication
     internal void ApplyDoorActivation(string id, ushort peerId)
     {
         QDoorOpen opener;
-        var remotePlayer = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        var remotePlayer = NetworkAvatarManager.RemoteBodyForPeer(peerId);
         float allowedAt;
         if (!WorldReplication.Instance.proximityDoors.TryGetValue(id, out opener) || opener == null || remotePlayer == null ||
             !remotePlayer.isAlive ||
@@ -200,7 +200,7 @@ public class WorldEnvironmentReplication
         var localPlayer = PlayerScript.player;
         var remotePlayer = peerId == MultiplayerSession.LocalPeerId
             ? (localPlayer == null ? null : localPlayer.bodyScript)
-            : NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+            : NetworkAvatarManager.RemoteBodyForPeer(peerId);
         float allowedAt;
         if (!WorldReplication.Instance.activationZones.TryGetValue(id, out zone) || zone == null || remotePlayer == null ||
             !remotePlayer.isAlive || (!manual && WorldReplication.Instance.activatedZoneIds.Contains(id) && !ActivatesTeleport(zone)) ||
@@ -298,7 +298,7 @@ public class WorldEnvironmentReplication
     internal void ApplyGlassDamage(string id, ushort peerId, float damage, Vector3 bulletPosition)
     {
         GlassScript glass;
-        var remoteBody = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        var remoteBody = NetworkAvatarManager.RemoteBodyForPeer(peerId);
         if (!WorldReplication.Instance.glasses.TryGetValue(id, out glass) || glass == null || remoteBody == null ||
             !remoteBody.isAlive || ((Vector2)remoteBody.transform.position - (Vector2)glass.transform.position).sqrMagnitude > 10000f)
             return;

@@ -101,7 +101,7 @@ internal static class ScoreboardSystem
         {
             if (!MultiplayerSession.IsHost || senderId == 0 || killPacket.KillerId == 0 || killPacket.KillerId == senderId) continue;
             hostKills[killPacket.KillerId] = KillsFor(killPacket.KillerId) + 1;
-            NetworkAvatarReplication.RoutePlayerKillScreenEffect(killPacket.KillerId);
+            NetworkAvatarManager.RoutePlayerKillScreenEffect(killPacket.KillerId);
         }
 
         if (Time.unscaledTime < nextSend) return;
@@ -123,9 +123,9 @@ internal static class ScoreboardSystem
     internal static void RecordHostNpcKill(BodyScript victim)
     {
         if (!MultiplayerSession.IsHost || victim == null || victim.isPlayer) return;
-        var killer = NetworkAvatarReplication.DamageSourceFor(victim);
+        var killer = NetworkAvatarManager.DamageSourceFor(victim);
         if (killer == null) return;
-        var peerId = killer == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId : (NetworkAvatarRegistry.ReplicaForBody(killer)?.remotePeerId ?? 0);
+        var peerId = killer == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId : (NetworkAvatarManager.ReplicaForBody(killer)?.remotePeerId ?? 0);
         if (peerId != 0) hostKills[peerId] = KillsFor(peerId) + 1;
     }
 

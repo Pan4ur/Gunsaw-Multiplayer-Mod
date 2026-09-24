@@ -85,7 +85,7 @@ internal sealed class NpcReplication : MonoBehaviour
     internal static void AlertForRemoteShot(ushort peerId, Vector2 position)
     {
         var instance = Instance;
-        var shooter = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        var shooter = NetworkAvatarManager.RemoteBodyForPeer(peerId);
         if (!MultiplayerSession.IsHost || instance == null || shooter == null || !shooter.isAlive) return;
         var maxAlertDistance = GameManager.main == null ? 0f : GameManager.main.maxAlertDist;
         foreach (var body in instance.hostNpcs.Values)
@@ -257,7 +257,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 else
                 {
                     if (proxy.Root != null && proxy.Root.activeSelf)
-                        proxy.Root.SetActive(false); 
+                        proxy.Root.SetActive(false);
                 }
             }
         }
@@ -491,9 +491,9 @@ internal sealed class NpcReplication : MonoBehaviour
             }
             scratch.Stream.Position = 0;
             scratch.Stream.SetLength(0);
-            
+
             var stateBreakdown = new NpcWireBreakdown();
-            
+
             WriteState(scratch.Writer, scratch.WireId, pair.Key, pair.Value, false, ref stateBreakdown);
             byte[] previous;
             var stateChanged = !lastSentStates.TryGetValue(pair.Key, out previous) || !StreamEquals(scratch.Stream, previous);
@@ -1290,7 +1290,7 @@ internal sealed class NpcReplication : MonoBehaviour
         return MultiplayerSession.IsConnected && !MultiplayerSession.IsHost && Instance != null &&
             body != null && Instance.clientBodies.ContainsKey(body);
     }
-    
+
     internal static void PrepareAuthoritativeNpcDeath(BodyScript body)
     {
         if (!MultiplayerSession.IsHosting || body == null || body.isPlayer || !body.isAlive ||
@@ -1378,10 +1378,10 @@ internal sealed class NpcReplication : MonoBehaviour
         var amount = Mathf.Clamp(proxy.LastHostHealth - body.health, 0f, 1000f);
         body.health = proxy.LastHostHealth;
         body.isAlive = proxy.LastHostAlive;
-        
-        if (NetworkAvatarReplication.ShouldCancelExplosionDamage()) 
+
+        if (NetworkAvatarManager.ShouldCancelExplosionDamage())
             return true;
-        
+
         if (amount > 0.001f)
         {
             ScoreboardSystem.RecordLocalDamageDealt(amount);
@@ -1424,8 +1424,8 @@ internal sealed class NpcReplication : MonoBehaviour
         BodyScript body;
         if (amount <= 0f || !hostNpcs.TryGetValue(id, out body) || body == null || !body.isAlive) return;
         body.health -= amount;
-        var source = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
-        if (source != null) NetworkAvatarReplication.RecordDamageSource(body, source);
+        var source = NetworkAvatarManager.RemoteBodyForPeer(peerId);
+        if (source != null) NetworkAvatarManager.RecordDamageSource(body, source);
         body.Damaged(packet.Critical);
     }
 
@@ -1439,7 +1439,7 @@ internal sealed class NpcReplication : MonoBehaviour
             float.IsInfinity(point.y) || float.IsNaN(localPoint.x) || float.IsNaN(localPoint.y) ||
             float.IsInfinity(localPoint.x) || float.IsInfinity(localPoint.y)) return;
         BodyScript body;
-        var remotePlayer = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        var remotePlayer = NetworkAvatarManager.RemoteBodyForPeer(peerId);
         if (!hostNpcs.TryGetValue(id, out body) || body == null || body.isAlive ||
             remotePlayer == null || !remotePlayer.isAlive)
             return;
@@ -1651,18 +1651,18 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void InterpolateClientNpc(NpcProxy proxy)
     {
-       
+
         if (proxy == null || proxy.LastVisualInterpolationFrame == Time.frameCount)
             return;
-        
+
         proxy.LastVisualInterpolationFrame = Time.frameCount;
-        
+
         if (proxy.Root == null || !proxy.Root.activeInHierarchy || proxy.Body == null || proxy.TransformTargets.Count == 0)
             return;
-       
+
         if (!LoadDistanceSystem.IsNpcNearLocalPlayer(proxy.Body.transform.position))
             return;
-      
+
         var now = Time.unscaledTime;
         if (proxy.LocalPhysics)
         {
@@ -1670,10 +1670,10 @@ internal sealed class NpcReplication : MonoBehaviour
             proxy.LocalPhysics = false;
             FreezeProxy(proxy);
         }
-      
+
         if (IsDead(proxy)) return;
         var transformsStarted = MultiplayerPerformance.StartPhase();
-      
+
         foreach (var pair in proxy.TransformTargets)
         {
             var transform = pair.Key;
@@ -1682,13 +1682,13 @@ internal sealed class NpcReplication : MonoBehaviour
             var amount = Mathf.Clamp01((now - target.StartedAt) / SnapshotInterval);
             transform.SetPositionAndRotation(Vector3.Lerp(target.From.Position, target.Target.Position, amount),
                 Quaternion.Lerp(Quaternion.Euler(0f, 0f, target.From.Rotation), Quaternion.Euler(0f, 0f, target.Target.Rotation), amount));
-           
+
             if (amount >= 1f)
                 proxy.CompletedTransformTargets.Add(transform);
         }
         foreach (var transform in proxy.CompletedTransformTargets)
             proxy.TransformTargets.Remove(transform);
-            
+
         proxy.CompletedTransformTargets.Clear();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
     }
@@ -1717,7 +1717,7 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         if (true)
             return false;
-        
+
         /*
          * It was a pretty cool optimization technique, but because of it,
          * the limbs could get stuck in one position since only the root is checked,
@@ -1725,11 +1725,11 @@ internal sealed class NpcReplication : MonoBehaviour
          */
         if (proxy.LastHostAlive || proxy.Body == null || proxy.Body.rb == null)
             return false;
-        
+
         PoseTarget target;
         if (!proxy.BodyTargets.TryGetValue(proxy.Body.rb, out target))
             return true;
-        
+
         return (target.Target.Position - proxy.Body.rb.position).sqrMagnitude <= 0.04f;
     }
 

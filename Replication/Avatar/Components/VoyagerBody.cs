@@ -13,7 +13,7 @@ public class VoyagerBody
         if (!layout.HasCamo) return;
         var visibility = PvpVoyagerVisibility(body, true);
         var blend = 1f - Mathf.Exp(-10f * Mathf.Max(0f, deltaTime));
-        var isRemote = NetworkAvatarRegistry.IsRemoteAvatarBody(body);
+        var isRemote = NetworkAvatarManager.IsRemoteAvatarBody(body);
         foreach (var renderer in layout.AlphaRenderers)
         {
             if (renderer == null) continue;

@@ -105,7 +105,7 @@ internal static class BlackoutRule
 
         var ownerId = body == PlayerScript.player?.bodyScript
             ? MultiplayerSession.LocalPeerId
-            : NetworkAvatarRegistry.ReplicaForBody(body)?.remotePeerId ?? 0;
+            : NetworkAvatarManager.ReplicaForBody(body)?.remotePeerId ?? 0;
         if (ownerId != 0 && headlampStates.TryGetValue(ownerId, out var state))
             body.headTransform.GetComponentInChildren<Headlamp>(true)?.SetState(state.Enabled, state.Sequence);
     }
@@ -772,7 +772,7 @@ internal static class BlackoutRule
 
             var body = packet.OwnerId == MultiplayerSession.LocalPeerId
                 ? PlayerScript.player?.bodyScript
-                : NetworkAvatarRegistry.RemoteBodyForPeer(packet.OwnerId);
+                : NetworkAvatarManager.RemoteBodyForPeer(packet.OwnerId);
 
             var lamp = body == null ? null : body.headTransform.GetComponentInChildren<Headlamp>(true);
             if (lamp != null)

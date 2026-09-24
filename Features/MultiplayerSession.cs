@@ -380,7 +380,7 @@ internal static partial class MultiplayerSession
     {
         if (!isHost || string.IsNullOrEmpty(scene)) return;
         ObserverSystem.BroadcastResetForLevelChange();
-        NetworkAvatarReplication.ResetExhaustedLives();
+        LocalPlayerReplication.ResetExhaustedLives();
         hostScene = scene;
         var autoRestart = autoRestartSceneReload;
         autoRestartSceneReload = false;

@@ -1409,7 +1409,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 var clientOwnsWeapon = reader.ReadBoolean();
                 var requestedPosition = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 Rigidbody2D rigidbody;
-                var remoteBody = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+                var remoteBody = NetworkAvatarManager.RemoteBodyForPeer(peerId);
                 if (operation == WorldInteraction.WeaponDrop)
                 {
                     var requestedWeapon = WeaponPresetProvider.FindWeaponPresetByNameHash(oldWeaponId);
@@ -1533,7 +1533,7 @@ internal sealed class WorldReplication : MonoBehaviour
     private void ApplyVehicleDamage(string id, ushort peerId, float amount, bool collision)
     {
         Rigidbody2D body;
-        var remoteBody = NetworkAvatarRegistry.RemoteBodyForPeer(peerId);
+        var remoteBody = NetworkAvatarManager.RemoteBodyForPeer(peerId);
         if (remoteBody == null || !remoteBody.isAlive || !bodies.bodies.TryGetValue(id, out body) || body == null)
             return;
         var part = body.GetComponent<VehiclePart>();

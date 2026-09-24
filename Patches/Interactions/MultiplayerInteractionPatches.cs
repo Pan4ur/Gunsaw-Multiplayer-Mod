@@ -58,21 +58,21 @@ internal static class HostActivationZonePatch
 internal static class MultiplayerPlayerWoundPatch
 {
     private static void Prefix(LimbScript limb,
-        out NetworkAvatarReplication.TargetScreenEffectState __state)
+        out NetworkAvatarManager.TargetScreenEffectState __state)
     {
-        __state = NetworkAvatarReplication.BeginTargetScreenEffect(limb == null ? null : limb.body);
+        __state = NetworkAvatarManager.BeginTargetScreenEffect(limb == null ? null : limb.body);
     }
 
     private static void Postfix(WeaponScript __instance, LimbScript limb, Vector2 hitpoint,
         Vector2 dir, GameObject splash)
     {
-        NetworkAvatarReplication.RecordRemoteWound(__instance, limb, hitpoint, dir, splash);
+        NetworkAvatarManager.RecordRemoteWound(__instance, limb, hitpoint, dir, splash);
     }
 
     private static Exception Finalizer(Exception __exception,
-        NetworkAvatarReplication.TargetScreenEffectState __state)
+        NetworkAvatarManager.TargetScreenEffectState __state)
     {
-        NetworkAvatarReplication.EndTargetScreenEffect(__state);
+        NetworkAvatarManager.EndTargetScreenEffect(__state);
         return __exception;
     }
 }
@@ -108,7 +108,7 @@ internal static class ClientVehicleCollisionPatch
             {
                 if (KartPassengers.IsProtectedPassenger(localBody) && localBody.curVehicle == __instance.vehicle)
                     localBody.ExitVehicle();
-                NetworkAvatarReplication.EjectRemoteVehicleOccupants(__instance.vehicle);
+                NetworkAvatarManager.EjectRemoteVehicleOccupants(__instance.vehicle);
             }
             return true;
         }
@@ -163,7 +163,7 @@ internal static class ClientVehicleCollisionPatch
             ragdoll = false;
         }
 
-        NetworkAvatarReplication.RouteVehicleImpact(hitBody, impact, __instance.transform.position, ragdoll);
+        NetworkAvatarManager.RouteVehicleImpact(hitBody, impact, __instance.transform.position, ragdoll);
     }
 }
 
@@ -228,6 +228,6 @@ internal static class RemoteVehicleLimbCollisionPatch
 {
     private static bool Prefix(LimbScript __instance)
     {
-        return __instance == null || !NetworkAvatarRegistry.IsRemoteReplicaBody(__instance.body);
+        return __instance == null || !NetworkAvatarManager.IsRemoteReplicaBody(__instance.body);
     }
 }

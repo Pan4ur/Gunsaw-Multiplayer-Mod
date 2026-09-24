@@ -64,7 +64,7 @@ public class WorldBodyReplication
         if (interactiveProp) interactivePropBodies.Add(body);
         else interactivePropBodies.Remove(body);
         if (MultiplayerSession.IsHost && interactiveProp)
-            NetworkAvatarReplication.IgnoreRemotePlayerPropCollisions(body);
+            NetworkAvatarManager.IgnoreRemotePlayerPropCollisions(body);
         if (!MultiplayerSession.IsHost) MakeClientControlled(body);
     }
 

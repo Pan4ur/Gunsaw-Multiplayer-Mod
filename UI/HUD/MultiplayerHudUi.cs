@@ -258,7 +258,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdateSpectator()
     {
-        var active = NetworkAvatarReplication.IsSpectating;
+        var active = LocalPlayerReplication.IsSpectating;
         var name = SpectatorTargetName();
         spectatorText.gameObject.SetActive(active);
         spectatorHint.gameObject.SetActive(active && name != "NO ALIVE PLAYERS");
@@ -267,9 +267,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     internal static string SpectatorTargetName()
     {
-        if (NetworkAvatarReplication.Instance == null || NetworkAvatarReplication.Instance.spectatorPeerId == 0) return "NO ALIVE PLAYERS";
+        if (LocalPlayerReplication.Instance == null || LocalPlayerReplication.Instance.spectatorPeerId == 0) return "NO ALIVE PLAYERS";
         NetworkAvatarReplication replica;
-        return NetworkAvatarRegistry.replicas.TryGetValue(NetworkAvatarReplication.Instance.spectatorPeerId, out replica) && replica != null
+        return NetworkAvatarManager.replicas.TryGetValue(LocalPlayerReplication.Instance.spectatorPeerId, out replica) && replica != null
             ? "SPECTATING " + replica.remoteName : "NO ALIVE PLAYERS";
     }
     
@@ -286,9 +286,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     internal static string RespawnCountdownText()
     {
         var player = PlayerScript.player;
-        if (NetworkAvatarReplication.Instance == null || !NetworkAvatarReplication.Instance.CanRespawn || NetworkAvatarReplication.Instance.respawnAt < 0f ||
+        if (LocalPlayerReplication.Instance == null || !LocalPlayerReplication.Instance.CanRespawn || LocalPlayerReplication.Instance.respawnAt < 0f ||
             player == null || player.bodyScript == null || player.bodyScript.isAlive) return "";
-        return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(NetworkAvatarReplication.Instance.respawnAt - Time.unscaledTime));
+        return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(LocalPlayerReplication.Instance.respawnAt - Time.unscaledTime));
     }
 
     private void UpdatePlayers()
@@ -298,7 +298,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         {
             var text = header + "\n\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
                 MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
-            foreach (var remote in NetworkAvatarRegistry.RemotePlayers()) text += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
+            foreach (var remote in NetworkAvatarManager.RemotePlayers()) text += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
             playersText.text = text;
             return;
         }
@@ -309,7 +309,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             if (TeamSystem.Name(MultiplayerSession.LocalPeerId) == team)
                 grouped += "\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
                     MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
-            foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+            foreach (var remote in NetworkAvatarManager.RemotePlayers())
                 if (TeamSystem.Name(remote.PeerId) == team) grouped += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
         }
         playersText.text = grouped;
@@ -320,7 +320,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var kills = 0;
         if (TeamSystem.Name(MultiplayerSession.LocalPeerId) == team)
             kills += ScoreboardSystem.ForPlayer(MultiplayerSession.LocalPeerId).Kills;
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarManager.RemotePlayers())
             if (TeamSystem.Name(remote.PeerId) == team) kills += ScoreboardSystem.ForPlayer(remote.PeerId).Kills;
         return kills;
     }
@@ -358,7 +358,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         entries.Add(new FinalLeaderboardEntry(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
             MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost,
             player == null ? null : player.bodyScript));
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarManager.RemotePlayers())
             entries.Add(new FinalLeaderboardEntry(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1, remote.Body));
         entries.Sort((left, right) =>
         {
@@ -420,7 +420,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var camera = Camera.main;
         if (camera == null) return;
         var active = new HashSet<BodyScript>();
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarManager.RemotePlayers())
         {
             var body = remote.Body;
             if (body == null || body.rb == null) continue;
@@ -448,7 +448,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 tag.fontStyle = FontStyles.Bold;
                 nameTags[body] = tag;
             }
-            var name = NetworkAvatarReplication.RemoteNameTag(body);
+            var name = NetworkAvatarManager.RemoteNameTag(body);
             tag.text = ScoreboardSystem.IsMvp(remote.PeerId) ? "[MVP] " + name : name;
             var color = TeamSystem.Enabled ? TeamSystem.Color(remote.PeerId) :
                 !body.isAlive ? new Color(1f, 0.28f, 0.28f) : !body.IsConsc() ? new Color(1f, 0.72f, 0.22f) : Color.white;
@@ -480,7 +480,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 var player = PlayerScript.player;
                 body = player == null ? null : player.bodyScript;
             }
-            else body = NetworkAvatarRegistry.RemoteBodyForPeer(entry.PeerId);
+            else body = NetworkAvatarManager.RemoteBodyForPeer(entry.PeerId);
             if (body != null && !latest.ContainsKey(body)) latest.Add(body, entry);
         }
 
@@ -495,7 +495,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 continue;
             }
             
-            if (NetworkAvatarRegistry.IsRemoteAvatarBody(pair.Key) && !BlackoutRule.IsVisibleInHeadlamp(pair.Key))
+            if (NetworkAvatarManager.IsRemoteAvatarBody(pair.Key) && !BlackoutRule.IsVisibleInHeadlamp(pair.Key))
             {
                 pair.Value.gameObject.SetActive(false); 
                 continue; 
@@ -513,7 +513,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         foreach (var body in stale) chatBubbles.Remove(body);
         foreach (var pair in latest)
         {
-            if (NetworkAvatarRegistry.IsRemoteAvatarBody(pair.Key) && !BlackoutRule.IsVisibleInHeadlamp(pair.Key)) 
+            if (NetworkAvatarManager.IsRemoteAvatarBody(pair.Key) && !BlackoutRule.IsVisibleInHeadlamp(pair.Key))
                 continue;
 
             var position = pair.Key.inVehicle ? pair.Key.transform.position : (Vector3)pair.Key.rb.position;
@@ -544,7 +544,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
         const float size = 0.75f;
 
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarManager.RemotePlayers())
         {
             var body = remote.Body;
 

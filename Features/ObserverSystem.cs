@@ -98,7 +98,7 @@ internal static class ObserverSystem
             var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
             if (body != null && body.isAlive)
             {
-                NetworkAvatarReplication.RecordEnvironmentalDeathCause(body, PlayerDeathCause.Observer);
+                NetworkAvatarManager.RecordEnvironmentalDeathCause(body, PlayerDeathCause.Observer);
                 body.Death();
             }
         }
@@ -152,7 +152,7 @@ internal static class ObserverSystem
         if (target == PlayerScript.player.bodyScript && target.isAlive)
         {
          
-            NetworkAvatarReplication.RecordEnvironmentalDeathCause(target, PlayerDeathCause.Observer);
+            NetworkAvatarManager.RecordEnvironmentalDeathCause(target, PlayerDeathCause.Observer);
             target.Death();
             return;
         }
@@ -173,7 +173,7 @@ internal static class ObserverSystem
             ? ((Vector2)localBody.transform.position - (Vector2)observer.position).sqrMagnitude
             : float.MaxValue;
         NetworkAvatarReplication closest = null;
-        foreach (var replica in NetworkAvatarRegistry.replicas.Values)
+        foreach (var replica in NetworkAvatarManager.replicas.Values)
         {
             var body = replica == null ? null : replica.remoteBody;
             if (body == null || !body.isAlive || !body.gameObject.activeInHierarchy || replica.remotePeerId == 0) continue;

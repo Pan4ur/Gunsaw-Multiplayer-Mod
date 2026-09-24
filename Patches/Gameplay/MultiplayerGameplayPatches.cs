@@ -54,7 +54,7 @@ internal static class ClientLevitatorPropPatch
             __instance.UnGrab();
             return false;
         }
-        NetworkAvatarReplication.ValidateRemoteGrab(__instance);
+        NetworkAvatarManager.ValidateRemoteGrab(__instance);
         return true;
     }
 
@@ -62,8 +62,8 @@ internal static class ClientLevitatorPropPatch
     {
         if (GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.QueueLevitated(__instance.currentlyLevitating);
-        NetworkAvatarReplication.QueueRemoteGrab(__instance);
-        NetworkAvatarReplication.ReplicateTelekinesis(__instance);
+        NetworkAvatarManager.QueueRemoteGrab(__instance);
+        NetworkAvatarManager.ReplicateTelekinesis(__instance);
         NpcReplication.QueueClientCorpseGrab(__instance);
     }
 
@@ -104,7 +104,7 @@ internal static class ClientCrystalTongueRemotePlayerPatch
         var closestDistance = 13f;
         Collider2D closestCollider = null;
         Vector2 closestPoint = Vector2.zero;
-        foreach (var remote in NetworkAvatarRegistry.RemotePlayers())
+        foreach (var remote in NetworkAvatarManager.RemotePlayers())
         {
             if (remote.Body == null) continue;
             foreach (var collider in remote.Body.GetComponentsInChildren<Collider2D>(true))
@@ -168,7 +168,7 @@ internal static class MultiplayerPlayerGrabPatch
     private static void Postfix(LevitatorScript __instance)
     {
         if (__instance == null || ClientLevitatorPropPatch.ShouldReleaseGrab(__instance)) return;
-        NetworkAvatarReplication.TryGrabRemotePlayer(__instance);
+        NetworkAvatarManager.TryGrabRemotePlayer(__instance);
         NpcReplication.TryGrabClientCorpse(__instance);
     }
 }
@@ -185,8 +185,8 @@ internal static class MultiplayerPlayerSlowmoPatch
             LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
         if (MultiplayerSession.IsConnected)
         {
-            NetworkAvatarReplication.EnsurePlayerSingletonForUpdate();
-            if (!NetworkAvatarReplication.PrepareLocalPlayerUpdate(__instance))
+            NetworkAvatarManager.EnsurePlayerSingletonForUpdate();
+            if (!LocalPlayerReplication.PrepareLocalPlayerUpdate(__instance))
                 return false;
         }
 
@@ -224,7 +224,7 @@ internal static class MultiplayerPlayerSlowmoPatch
 
     private static void Postfix(PlayerScript __instance)
     {
-        NetworkAvatarReplication.SuppressSpectatorDeathEffects(__instance);
+        LocalPlayerReplication.SuppressSpectatorDeathEffects(__instance);
     }
 }
 
@@ -523,7 +523,7 @@ internal static class MultiplayerLimbAnimationPatch
     private static bool Prefix(LimbScript __instance)
     {
         var body = __instance == null ? null : __instance.body;
-        if (body == null || NpcReplication.IsClientProxy(body) || NetworkAvatarRegistry.IsRemoteAvatarBody(body))
+        if (body == null || NpcReplication.IsClientProxy(body) || NetworkAvatarManager.IsRemoteAvatarBody(body))
             return false;
 
         if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
@@ -551,7 +551,7 @@ internal static class MultiplayerNpcKillScreenEffectPatch
 {
     private static bool Prefix()
     {
-        return NetworkAvatarReplication.AllowNpcKillScreenEffect();
+        return NetworkAvatarManager.AllowNpcKillScreenEffect();
     }
 }
 
@@ -560,7 +560,7 @@ internal static class MultiplayerPvpScreenCrackPatch
 {
     private static bool Prefix()
     {
-        return !NetworkAvatarReplication.SuppressLocalShotScreenCrack();
+        return !NetworkAvatarManager.SuppressLocalShotScreenCrack();
     }
 }
 
@@ -578,7 +578,7 @@ internal static class MultiplayerTargetCameraOffsetPatch
 {
     private static bool Prefix()
     {
-        return !NetworkAvatarReplication.SuppressTargetedScreenEffect();
+        return !NetworkAvatarManager.SuppressTargetedScreenEffect();
     }
 }
 
@@ -587,7 +587,7 @@ internal static class MultiplayerTargetCameraRotationPatch
 {
     private static bool Prefix()
     {
-        return !NetworkAvatarReplication.SuppressTargetedScreenEffect();
+        return !NetworkAvatarManager.SuppressTargetedScreenEffect();
     }
 }
 
@@ -596,7 +596,7 @@ internal static class MultiplayerTargetCameraShakeUpdatePatch
 {
     private static void Prefix(CameraFollow __instance)
     {
-        NetworkAvatarReplication.ClearSuppressedCameraShake(__instance);
+        NetworkAvatarManager.ClearSuppressedCameraShake(__instance);
     }
 }
 
@@ -799,20 +799,20 @@ internal static class MultiplayerOneTimeButtonPatch
 internal static class ClientNpcDamagePatch
 {
     private static bool Prefix(BodyScript __instance, bool isCrit,
-        out NetworkAvatarReplication.TargetScreenEffectState __state)
+        out NetworkAvatarManager.TargetScreenEffectState __state)
     {
-        __state = NetworkAvatarReplication.BeginTargetScreenEffect(__instance);
+        __state = NetworkAvatarManager.BeginTargetScreenEffect(__instance);
         if (KartPassengers.IsProtectedPassenger(__instance)) return false;
-        NetworkAvatarReplication.RecordDamageSource(__instance);
-        NetworkAvatarReplication.TryCreateLocalKillBloodSplat(__instance);
-        if (NetworkAvatarReplication.HandleHostRemoteDamaged(__instance, isCrit)) return false;
+        NetworkAvatarManager.RecordDamageSource(__instance);
+        NetworkAvatarManager.TryCreateLocalKillBloodSplat(__instance);
+        if (NetworkAvatarManager.HandleHostRemoteDamaged(__instance, isCrit)) return false;
         return !NpcReplication.HandleClientDamaged(__instance, isCrit);
     }
 
     private static Exception Finalizer(Exception __exception,
-        NetworkAvatarReplication.TargetScreenEffectState __state)
+        NetworkAvatarManager.TargetScreenEffectState __state)
     {
-        NetworkAvatarReplication.EndTargetScreenEffect(__state);
+        NetworkAvatarManager.EndTargetScreenEffect(__state);
         return __exception;
     }
 }
@@ -822,14 +822,14 @@ internal static class ClientNpcDeathPatch
 {
     private static bool Prefix(BodyScript __instance)
     {
-        NetworkAvatarReplication.CaptureDeathCause(__instance);
+        NetworkAvatarManager.CaptureDeathCause(__instance);
         if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer)
             __instance.dropWeapon = false;
-        if (NetworkAvatarReplication.BlockLocalRespawnDeath(__instance)) return false;
-        if (NetworkAvatarReplication.HandleHostRemoteDeath(__instance)) return false;
+        if (LocalPlayerReplication.BlockLocalRespawnDeath(__instance)) return false;
+        if (NetworkAvatarManager.HandleHostRemoteDeath(__instance)) return false;
         NpcReplication.PrepareAuthoritativeNpcDeath(__instance);
         if (NpcReplication.HandleClientDeath(__instance)) return false;
-        NetworkAvatarReplication.RouteNpcKillScreenEffect(__instance);
+        NetworkAvatarManager.RouteNpcKillScreenEffect(__instance);
         return true;
     }
 
@@ -839,13 +839,13 @@ internal static class ClientNpcDeathPatch
         if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer &&
             localPlayer != null && localPlayer.bodyScript == __instance)
             __instance.DropAllWeapons();
-        NetworkAvatarReplication.EndNpcKillScreenEffect(__instance);
+        NetworkAvatarManager.EndNpcKillScreenEffect(__instance);
         Announce(__instance);
     }
 
     private static Exception Finalizer(BodyScript __instance, Exception __exception)
     {
-        NetworkAvatarReplication.EndNpcKillScreenEffect(__instance);
+        NetworkAvatarManager.EndNpcKillScreenEffect(__instance);
         return __exception;
     }
 
@@ -853,29 +853,29 @@ internal static class ClientNpcDeathPatch
         PlayerDeathCause deathCause = PlayerDeathCause.Unknown)
     {
         if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || __instance == null ||
-            NetworkAvatarReplication.IsCreatingRemoteAvatar() ||
-            (!allowRemoteReplica && NetworkAvatarRegistry.IsRemoteReplicaBody(__instance)) ||
+            NetworkAvatarManager.IsCreatingRemoteAvatar() ||
+            (!allowRemoteReplica && NetworkAvatarManager.IsRemoteReplicaBody(__instance)) ||
             (!__instance.isPlayer && !NpcReplication.IsHostNpc(__instance)) ||
-            !NetworkAvatarReplication.BeginDeathAnnouncement(__instance)) return;
+            !NetworkAvatarManager.BeginDeathAnnouncement(__instance)) return;
         ScoreboardSystem.RecordHostNpcKill(__instance);
         var localPlayer = PlayerScript.player;
         if (!MultiplayerSession.IsHosting && (localPlayer == null || localPlayer.bodyScript != __instance)) return;
         var victimName = DeathDisplayName(__instance);
-        var killer = NetworkAvatarReplication.DamageSourceFor(__instance);
+        var killer = NetworkAvatarManager.DamageSourceFor(__instance);
         var killerPeerId = killer == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId :
-            NetworkAvatarRegistry.ReplicaForBody(killer)?.remotePeerId ?? 0;
-        if (killerPeerId == 0) killerPeerId = NetworkAvatarReplication.DamageSourcePeerIdFor(__instance);
+            NetworkAvatarManager.ReplicaForBody(killer)?.remotePeerId ?? 0;
+        if (killerPeerId == 0) killerPeerId = NetworkAvatarManager.DamageSourcePeerIdFor(__instance);
         if (MultiplayerSession.IsHosting && __instance.isPlayer && localPlayer != null &&
             localPlayer.bodyScript == __instance && killerPeerId != 0)
             ScoreboardSystem.RecordHostPvpKill(killerPeerId, MultiplayerSession.LocalPeerId);
         if (MultiplayerSession.IsHosting && __instance.isPlayer && killerPeerId != 0)
-            NetworkAvatarReplication.RoutePlayerKillScreenEffect(killerPeerId);
+            NetworkAvatarManager.RoutePlayerKillScreenEffect(killerPeerId);
         if (!MultiplayerSession.IsHosting && __instance.isPlayer && killerPeerId != 0)
             MultiplayerSession.Send(new PlayerKillPacket(killerPeerId), 1);
         if (deathCause == PlayerDeathCause.Unknown)
-            deathCause = NetworkAvatarReplication.DeathCauseFor(__instance);
-        var weaponName = NetworkAvatarReplication.DamageWeaponFor(__instance);
-        var killerName = killer == null ? NetworkAvatarReplication.DamageSourceNameFor(__instance) : DeathDisplayName(killer);
+            deathCause = NetworkAvatarManager.DeathCauseFor(__instance);
+        var weaponName = NetworkAvatarManager.DamageWeaponFor(__instance);
+        var killerName = killer == null ? NetworkAvatarManager.DamageSourceNameFor(__instance) : DeathDisplayName(killer);
         var message = KillMessageService.Create(deathCause, victimName, killerName, weaponName);
         MultiplayerHud.AddSystemMessage(message);
         ChatPacket packet;
@@ -890,7 +890,7 @@ internal static class ClientNpcDeathPatch
             var localPlayer = PlayerScript.player;
             if (localPlayer != null && body == localPlayer.bodyScript)
                 return MultiplayerSession.LocalPlayerName;
-            var remoteName = NetworkAvatarRegistry.RemoteNameForBody(body);
+            var remoteName = NetworkAvatarManager.RemoteNameForBody(body);
             return string.IsNullOrEmpty(remoteName) ? "Player" : remoteName;
         }
         var characterName = body.characterName;
@@ -907,13 +907,13 @@ internal static class ClientNpcDropWeaponPatch
     private static bool Prefix(BodyScript __instance, out bool __state)
     {
         __state = __instance != null && __instance.dropWeapon && !__instance.unarmed;
-        if (NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, false)) return false;
+        if (NetworkAvatarManager.BlockNetworkPlayerDrop(__instance, false)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
 
     private static void Postfix(BodyScript __instance, bool __state)
     {
-        if (__state) NetworkAvatarReplication.ConsumeLocalDeathWeapon(__instance, false);
+        if (__state) LocalPlayerReplication.ConsumeLocalDeathWeapon(__instance, false);
     }
 }
 
@@ -924,10 +924,10 @@ internal static class ClientNpcDropWeaponSinglePatch
     {
         if (WorldReplication.Instance.weapons.QueueLocalWeaponDrop(__instance))
         {
-            NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, false);
+            NetworkAvatarManager.BlockNetworkPlayerDrop(__instance, false);
             return false;
         }
-        if (NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, false)) return false;
+        if (NetworkAvatarManager.BlockNetworkPlayerDrop(__instance, false)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
 
@@ -938,7 +938,7 @@ internal static class ClientNpcDropAllWeaponsPatch
 {
     private static bool Prefix(BodyScript __instance)
     {
-        if (NetworkAvatarReplication.BlockNetworkPlayerDrop(__instance, true)) return false;
+        if (NetworkAvatarManager.BlockNetworkPlayerDrop(__instance, true)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
 
@@ -950,7 +950,7 @@ internal static class ClientNpcLimbCollisionPatch
     private static bool Prefix(LimbScript __instance)
     {
         return __instance == null ||
-            (!NpcReplication.IsClientProxy(__instance.body) && !NetworkAvatarRegistry.IsRemoteAvatarBody(__instance.body));
+            (!NpcReplication.IsClientProxy(__instance.body) && !NetworkAvatarManager.IsRemoteAvatarBody(__instance.body));
     }
 }
 
@@ -959,7 +959,7 @@ internal static class ClientSawCollisionEnterPatch
 {
     private static bool Prefix(SawScript __instance, Collision2D collision)
     {
-        NetworkAvatarReplication.RecordSawDamage(__instance, collision);
+        NetworkAvatarManager.RecordSawDamage(__instance, collision);
         return ClientSawCollisionPatch.ShouldRun(__instance, collision);
     }
 }
@@ -969,7 +969,7 @@ internal static class ClientSawCollisionStayPatch
 {
     private static bool Prefix(SawScript __instance, Collision2D collision)
     {
-        NetworkAvatarReplication.RecordSawDamage(__instance, collision);
+        NetworkAvatarManager.RecordSawDamage(__instance, collision);
         return ClientSawCollisionPatch.ShouldRun(__instance, collision);
     }
 }
@@ -979,7 +979,7 @@ internal static class AcidDeathCausePatch
 {
     private static void Prefix(WaterScript __instance, Collider2D collision)
     {
-        NetworkAvatarReplication.RecordAcidDamage(__instance, collision);
+        NetworkAvatarManager.RecordAcidDamage(__instance, collision);
     }
 }
 
@@ -988,7 +988,7 @@ internal static class IncineratorDeathCausePatch
 {
     private static void Prefix(Incinerator __instance, Collider2D collision)
     {
-        NetworkAvatarReplication.RecordIncineratorDamage(__instance, collision);
+        NetworkAvatarManager.RecordIncineratorDamage(__instance, collision);
     }
 }
 
@@ -1131,17 +1131,17 @@ internal static class MultiplayerNpcChatterPatch
 [HarmonyPatch(typeof(WeaponScript), "Shoot")]
 internal static class MultiplayerWeaponShotPatch
 {
-    private static bool Prefix(WeaponScript __instance, out NetworkAvatarReplication.ShotState __state)
+    private static bool Prefix(WeaponScript __instance, out NetworkAvatarManager.ShotState __state)
     {
-        __state = NetworkAvatarReplication.BeginWeaponShot(__instance);
+        __state = NetworkAvatarManager.BeginWeaponShot(__instance);
         return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost ||
             __instance == null || (__instance.GetComponentInParent<NpcNetworkReplica>() == null &&
             !NpcReplication.IsClientProxy(__instance.body));
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
     {
-        NetworkAvatarReplication.CompleteWeaponShot(__state, __exception == null);
+        NetworkAvatarManager.CompleteWeaponShot(__state, __exception == null);
         return __exception;
     }
     
@@ -1159,8 +1159,8 @@ internal static class MultiplayerWeaponShotPatch
                 typeof(ForceMode2D)
             });
 
-        var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceAtPositionWithPropAuthority));
-        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.PlayPlayerActionSound));
+        var replacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.AddForceAtPositionWithPropAuthority));
+        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.PlayPlayerActionSound));
         var compareTag = AccessTools.Method(typeof(GameObject), nameof(GameObject.CompareTag), new[] { typeof(string) });
         var notifyLamp = AccessTools.Method(typeof(WorldReplication), nameof(WorldReplication.NotifyShotLamp));
         var destroy = AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Destroy), new[] { typeof(UnityEngine.Object) });
@@ -1196,16 +1196,16 @@ internal static class MultiplayerWeaponShotPatch
 [HarmonyPatch(typeof(BodyScript), "KickDelayed")]
 internal static class MultiplayerPlayerKickDelayedPatch
 {
-    private static void Prefix(BodyScript __instance, out NetworkAvatarReplication.ShotState __state)
+    private static void Prefix(BodyScript __instance, out NetworkAvatarManager.ShotState __state)
     {
-        __state = NetworkAvatarReplication.BeginMeleeAttack(__instance);
-        NetworkAvatarReplication.BeginPlayerSound(__instance);
+        __state = NetworkAvatarManager.BeginMeleeAttack(__instance);
+        NetworkAvatarManager.BeginPlayerSound(__instance);
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
     {
-        NetworkAvatarReplication.EndMeleeAttack(__state);
-        NetworkAvatarReplication.EndPlayerSound(__instance);
+        NetworkAvatarManager.EndMeleeAttack(__state);
+        NetworkAvatarManager.EndPlayerSound(__instance);
         return __exception;
     }
 
@@ -1221,8 +1221,8 @@ internal static class MultiplayerPlayerKickDelayedPatch
                 typeof(ForceMode2D)
             });
 
-        var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceWithPropAuthority));
-        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.PlayPlayerActionSound));
+        var replacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.AddForceWithPropAuthority));
+        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.PlayPlayerActionSound));
 
         foreach (var instruction in instructions)
         {
@@ -1268,38 +1268,38 @@ internal static class MultiplayerVelvetWebPatch
 {
     private static void Postfix(VelvetScript __instance)
     {
-        NetworkAvatarReplication.ReplicateVelvetWeb(__instance);
+        NetworkAvatarManager.ReplicateVelvetWeb(__instance);
     }
 }
 
 [HarmonyPatch(typeof(TeleportZone), "Activate")]
 internal static class MultiplayerTeleportZonePatch
 {
-    private static void Prefix(TeleportZone __instance, int idd, out List<NetworkAvatarReplication.SuppressedTeleportBody> __state)
+    private static void Prefix(TeleportZone __instance, int idd, out List<NetworkAvatarManager.SuppressedTeleportBody> __state)
     {
-        NetworkAvatarReplication.ReplicateTeleportZone(__instance, idd);
-        __state = NetworkAvatarReplication.SuppressRemoteTeleportEffects(__instance, idd);
+        NetworkAvatarManager.ReplicateTeleportZone(__instance, idd);
+        __state = NetworkAvatarManager.SuppressRemoteTeleportEffects(__instance, idd);
     }
 
-    private static void Postfix(List<NetworkAvatarReplication.SuppressedTeleportBody> __state)
+    private static void Postfix(List<NetworkAvatarManager.SuppressedTeleportBody> __state)
     {
-        NetworkAvatarReplication.RestoreRemoteTeleportEffects(__state);
+        NetworkAvatarManager.RestoreRemoteTeleportEffects(__state);
     }
 }
 
 [HarmonyPatch(typeof(BodyScript), "Kick")]
 internal static class MultiplayerPlayerKickPatch
 {
-    private static void Prefix(BodyScript __instance, out NetworkAvatarReplication.ShotState __state)
+    private static void Prefix(BodyScript __instance, out NetworkAvatarManager.ShotState __state)
     {
-        __state = NetworkAvatarReplication.BeginMeleeAttack(__instance);
-        NetworkAvatarReplication.BeginPlayerSound(__instance);
+        __state = NetworkAvatarManager.BeginMeleeAttack(__instance);
+        NetworkAvatarManager.BeginPlayerSound(__instance);
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
     {
-        NetworkAvatarReplication.EndMeleeAttack(__state);
-        NetworkAvatarReplication.EndPlayerSound(__instance);
+        NetworkAvatarManager.EndMeleeAttack(__state);
+        NetworkAvatarManager.EndPlayerSound(__instance);
         return __exception;
     }
     
@@ -1315,8 +1315,8 @@ internal static class MultiplayerPlayerKickPatch
                 typeof(ForceMode2D)
             });
 
-        var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceWithPropAuthority));
-        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.PlayPlayerActionSound));
+        var replacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.AddForceWithPropAuthority));
+        var soundReplacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.PlayPlayerActionSound));
 
         foreach (var instruction in instructions)
         {
@@ -1342,7 +1342,7 @@ internal static class MultiplayerNpcTargetPatch
     private static bool Prefix(AIScript __instance)
     {
         if (__instance == null || !LoadDistanceSystem.ShouldTickNpc(__instance.body)) return false;
-        NetworkAvatarReplication.PrepareNpcTarget(__instance);
+        NetworkAvatarManager.PrepareNpcTarget(__instance);
         return true;
     }
 }
@@ -1382,7 +1382,7 @@ internal static class MultiplayerGrenadeOwnerPatch
 {
     private static void Postfix(GrenadeScript __instance, BodyScript body)
     {
-        NetworkAvatarReplication.ConfigureProjectileCollisions(__instance, body);
+        NetworkAvatarManager.ConfigureProjectileCollisions(__instance, body);
     }
 }
 
@@ -1391,7 +1391,7 @@ internal static class MultiplayerRocketOwnerPatch
 {
     private static void Postfix(RocketProjectile __instance, BodyScript body)
     {
-        NetworkAvatarReplication.ConfigureProjectileCollisions(__instance, body);
+        NetworkAvatarManager.ConfigureProjectileCollisions(__instance, body);
     }
 }
 
@@ -1400,12 +1400,12 @@ internal static class MultiplayerRocketUpdatePatch
 {
     private static void Prefix(RocketProjectile __instance, out RocketProjectile __state)
     {
-        __state = NetworkAvatarReplication.BeginRocketUpdate(__instance);
+        __state = NetworkAvatarManager.BeginRocketUpdate(__instance);
     }
 
     private static Exception Finalizer(Exception __exception, RocketProjectile __state)
     {
-        NetworkAvatarReplication.EndRocketUpdate(__state);
+        NetworkAvatarManager.EndRocketUpdate(__state);
         return __exception;
     }
 }
@@ -1413,22 +1413,22 @@ internal static class MultiplayerRocketUpdatePatch
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class MultiplayerExplosionPatch
 {
-    private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force, ref float damage, ref int fireAmount, out NetworkAvatarReplication.ShotState __state)
+    private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force, ref float damage, ref int fireAmount, out NetworkAvatarManager.ShotState __state)
     {
-        var projectile = NetworkAvatarReplication.ResolveExplosionProjectile(explosionObj);
+        var projectile = NetworkAvatarManager.ResolveExplosionProjectile(explosionObj);
         if (projectile != null && (projectile.GetComponentInChildren<RocketProjectile>(true) != null || projectile.GetComponentInChildren<GrenadeScript>(true) != null))
              damage *= 2f; // Not vanilla but fun
-        if (NetworkAvatarReplication.ShouldSuppressClientProjectileFires(projectile)) fireAmount = 0;
-        __state = NetworkAvatarReplication.BeginProjectileExplosion(projectile);
-        NetworkAvatarReplication.ReplicateProjectileImpact(projectile, pos);
+        if (NetworkAvatarManager.ShouldSuppressClientProjectileFires(projectile)) fireAmount = 0;
+        __state = NetworkAvatarManager.BeginProjectileExplosion(projectile);
+        NetworkAvatarManager.ReplicateProjectileImpact(projectile, pos);
         var barrel = explosionObj == null ? null : explosionObj.GetComponent<CrateScript>();
-        NetworkAvatarReplication.ReplicateExplosion(explosionObj, pos, range, force, barrel != null && barrel.breakType == CrateScript.BreakType.Explode);
+        NetworkAvatarManager.ReplicateExplosion(explosionObj, pos, range, force, barrel != null && barrel.breakType == CrateScript.BreakType.Explode);
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarReplication.ShotState __state, BodyScript __instance)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
     {
-        NetworkAvatarReplication.EndWeaponShot(__state);
-        NetworkAvatarReplication.ScheduleExplosionCrackCleanup();
+        NetworkAvatarManager.EndWeaponShot(__state);
+        NetworkAvatarManager.ScheduleExplosionCrackCleanup();
         return __exception;
     }
 }
@@ -1486,7 +1486,7 @@ internal static class ClientRestartAsDeathPatch
 {
     private static bool Prefix()
     {
-        return NetworkAvatarReplication.HandleClientRestart();
+        return LocalPlayerReplication.HandleClientRestart();
     }
 }
 
@@ -1499,7 +1499,7 @@ internal static class ClientRestartKeyPatch
             GameManager.main == null || GameManager.main.paused || __instance.keys == null) return;
         KeyCode restartKey;
         if (!__instance.keys.TryGetValue("Restart", out restartKey) || !Input.GetKeyDown(restartKey)) return;
-        NetworkAvatarReplication.KillLocalPlayer(PlayerDeathCause.SelfKill);
+        LocalPlayerReplication.KillLocalPlayer(PlayerDeathCause.SelfKill);
         ClientRestartSceneLoadPatch.SuppressNextLoad();
     }
 }
@@ -1547,20 +1547,20 @@ internal static class MultiplayerStepSoundPatch
 {
     private static void Postfix(BodyScript __instance, SType ___currentSurface)
     {
-        NetworkAvatarReplication.ReplicateFootstep(__instance, ___currentSurface);
+        NetworkAvatarManager.ReplicateFootstep(__instance, ___currentSurface);
     }
 }
 
 [HarmonyPatch(typeof(AnimatedBodyScript), "DoSound")]
 internal static class MultiplayerAnimatedSoundPatch
 {
-    private static void Postfix(AnimatedBodyScript __instance, string name) => NetworkAvatarReplication.ReplicateAnimatedSound(__instance, name);
+    private static void Postfix(AnimatedBodyScript __instance, string name) => NetworkAvatarManager.ReplicateAnimatedSound(__instance, name);
 }
 
 [HarmonyPatch(typeof(DroppedWeapon), "PickupWeapon")]
 internal static class MultiplayerWeaponPickupSoundPatch
 {
-    private static void Postfix(BodyScript body) => NetworkAvatarReplication.ReplicateWeaponPickup(body);
+    private static void Postfix(BodyScript body) => NetworkAvatarManager.ReplicateWeaponPickup(body);
 }
 
 [HarmonyPatch(typeof(BodyScript), "DoGrunt")]
@@ -1575,7 +1575,7 @@ internal static class MultiplayerPainSoundPatch
 
     private static void Postfix(BodyScript __instance, bool __state)
     {
-        if (__state) NetworkAvatarReplication.ReplicatePain(__instance);
+        if (__state) NetworkAvatarManager.ReplicatePain(__instance);
     }
 }
 
@@ -1589,6 +1589,6 @@ internal static class MultiplayerDeathSoundPatch
 
     private static void Postfix(BodyScript __instance, bool __state)
     {
-        if (__state) NetworkAvatarReplication.ReplicateScream(__instance);
+        if (__state) NetworkAvatarManager.ReplicateScream(__instance);
     }
 }

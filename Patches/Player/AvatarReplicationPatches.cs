@@ -8,7 +8,7 @@ internal static class CharacterSelectionReplicationPatch
 {
     private static void Postfix(MainMenuManager __instance)
     {
-        NetworkAvatarReplication.CaptureCharacterMenu(__instance);
+        NetworkAvatarManager.CaptureCharacterMenu(__instance);
     }
 }
 
@@ -28,7 +28,7 @@ internal static class LocalCharacterCreationPatch
     private static void Prefix()
     {
         if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
-        NetworkAvatarReplication.RestoreCharacterSelection();
+        NetworkAvatarManager.RestoreCharacterSelection();
     }
 
     private static void Postfix(PlayerScript __instance)
@@ -48,7 +48,7 @@ internal static class WeaponBackShowSlotGuardPatch
     private static void Prefix(BodyScript ___body)
     {
         if (MultiplayerSession.IsConnected && ___body != null && ___body.isPlayer)
-            NetworkAvatarReplication.EnsureRespawnWeaponSlots(___body);
+            LocalPlayerReplication.EnsureRespawnWeaponSlots(___body);
     }
 }
 
@@ -57,7 +57,7 @@ internal static class PlayerAmmoDisplaySlotGuardPatch
 {
     private static void Prefix(PlayerScript __instance)
     {
-        if (MultiplayerSession.IsConnected) NetworkAvatarReplication.EnsurePlayerAmmoDisplaySlots(__instance);
+        if (MultiplayerSession.IsConnected) LocalPlayerReplication.EnsurePlayerAmmoDisplaySlots(__instance);
     }
 }
 
@@ -66,7 +66,7 @@ internal static class WeaponReloadStateGuardPatch
 {
     private static bool Prefix(WeaponScript __instance)
     {
-        return !MultiplayerSession.IsConnected || NetworkAvatarReplication.PrepareWeaponReload(__instance);
+        return !MultiplayerSession.IsConnected || LocalPlayerReplication.PrepareWeaponReload(__instance);
     }
 }
 
@@ -75,6 +75,6 @@ internal static class MultiplayerBodyClosestLimbPatch
 {
     private static void Postfix(BodyScript __instance, LimbScript __result)
     {
-        NetworkAvatarReplication.RecordBodyColliderHit(__instance, __result);
+        NetworkAvatarManager.RecordBodyColliderHit(__instance, __result);
     }
 }
