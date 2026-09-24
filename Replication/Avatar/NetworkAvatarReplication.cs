@@ -62,7 +62,6 @@ internal class NetworkAvatarReplication : MonoBehaviour
     internal bool lastRemoteAlive = true;
     private AudioSource remoteTelekinesisSound;
     private int appliedDismembermentHash = int.MinValue;
-    private float pendingRemoteDamage;
     internal bool remoteCanBeGrabbed;
     private bool remoteVehicleReflected;
     private bool hasRemoteVehicleReflection;
@@ -98,8 +97,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
             var body = pair.Key;
             var target = pair.Value;
             if (body == null) continue;
-            var alpha = Mathf.Clamp01((Time.unscaledTime - target.startedAt) /
-                Mathf.Max(0.001f, target.duration));
+            var alpha = Mathf.Clamp01((Time.unscaledTime - target.startedAt) / Mathf.Max(0.001f, target.duration));
             body.transform.position = Vector3.Lerp(target.fromPosition, target.position, alpha);
             body.transform.rotation = Quaternion.Lerp(target.fromRotation, target.rotation, alpha);
         }
@@ -154,9 +152,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     protected virtual void OnDestroy()
     {
-        NetworkAvatarReplication current;
-        if (replicas.TryGetValue(remotePeerId, out current) && current == this)
-            replicas.Remove(remotePeerId);
+        NetworkAvatarManager.UnregisterReplica(this);
     }
 
     internal void CreateRemote(string identity, BodyScript localBody)
@@ -181,18 +177,18 @@ internal class NetworkAvatarReplication : MonoBehaviour
         DestroyRemote();
         remoteName = sanitizedName;
         GameObject avatar = null;
-        remoteAvatarCreationDepth++;
+        var creationScope = NetworkAvatarManager.BeginRemoteAvatarCreation();
         try
         {
             avatar = Instantiate(prefab, localBody.transform.position + new Vector3(2f, 0f, 0f), Quaternion.identity);
             foreach (var remotePlayer in avatar.GetComponentsInChildren<PlayerScript>(true))
                 DestroyImmediate(remotePlayer);
-            RestoreLocalPlayerSingleton();
+            NetworkAvatarManager.RestoreLocalPlayerSingleton();
             avatar.AddComponent<NetworkReplica>();
         }
         finally
         {
-            remoteAvatarCreationDepth--;
+            creationScope.Dispose();
         }
         remoteAvatar = avatar;
         remoteAvatarParent = avatar.transform.parent;
@@ -225,9 +221,11 @@ internal class NetworkAvatarReplication : MonoBehaviour
             remoteTailRootSprites.Add(tail == null ? new SpriteRenderer[0] : tail.GetComponentsInChildren<SpriteRenderer>(true));
         foreach (var behaviour in avatar.GetComponentsInChildren<MonoBehaviour>()) behaviour.enabled = false;
         foreach (var animator in avatar.GetComponentsInChildren<Animator>()) animator.enabled = false;
+       
         var remoteCrystalTongue = avatar.GetComponentInChildren<CrystalTongue>(true);
         remoteCrystalTongueLine = remoteCrystalTongue == null ? null : remoteCrystalTongue.line;
         if (remoteCrystalTongueLine != null) remoteCrystalTongueLine.enabled = false;
+        
         UpdateRemotePhysicsMode();
         CacheDismembermentVisuals();
         CreateRemoteLevitLine(avatar.transform);
@@ -273,7 +271,6 @@ internal class NetworkAvatarReplication : MonoBehaviour
         appliedWeaponSprite = 0UL;
         appliedInventory = "";
         appliedDismembermentHash = int.MinValue;
-        pendingRemoteDamage = 0f;
         remoteCanBeGrabbed = false;
         hasRemoteScaleBeforeVehicle = false;
     }
@@ -321,9 +318,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 if (remoteState < BodyScript.EntityState.Idle || remoteState > BodyScript.EntityState.MoveLeft)
                     remoteState = BodyScript.EntityState.Idle;
                 var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteVehicleDriver, remoteState);
-                var remoteVehicleStreamed = remoteInVehicle && remoteBody.inVehicle &&
-                    remoteBody.curVehicle != null && remoteBody.curVehicle.mainPart != null &&
-                    remoteBody.curVehicle.mainPart.rb != null;
+                var remoteVehicleStreamed = remoteInVehicle && remoteBody.inVehicle && remoteBody.curVehicle != null && remoteBody.curVehicle.mainPart != null && remoteBody.curVehicle.mainPart.rb != null;
 
                 var isRight = (flags & 4) != 0;
                 var reflected = (flags & 8) != 0;
@@ -341,32 +336,19 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 {
                     if (hadVehicleHeadRotation)
                     {
-                        var progress = Mathf.Clamp01(
-                            (Time.unscaledTime -
-                             vehicleHeadStartedAt) /
-                            0.10f);
-
-                        vehicleHeadFromRotation =
-                            Mathf.LerpAngle(
-                                vehicleHeadFromRotation,
-                                remoteVehicleHeadRotation,
-                                progress);
+                        var progress = Mathf.Clamp01((Time.unscaledTime - vehicleHeadStartedAt) / 0.10f);
+                        vehicleHeadFromRotation = Mathf.LerpAngle(vehicleHeadFromRotation, remoteVehicleHeadRotation, progress);
                     }
                     else
-                    {
                         vehicleHeadFromRotation = remoteHeadRotation;
-                    }
 
                     vehicleHeadStartedAt = Time.unscaledTime;
                 }
 
                 remoteVehicleHeadRotation = remoteHeadRotation;
 
-                if (!remoteVehicleStreamed &&
-                    remoteBody.isRight != isRight)
-                {
+                if (!remoteVehicleStreamed && remoteBody.isRight != isRight)
                     remoteBody.SwitchDir(true);
-                }
 
                 var limbs = remoteBody.limbs ?? [];
                 var sourceVehicleRoot = Vector2.zero;
@@ -377,9 +359,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
                     lastAuthoritativePosition = remoteBody.rb.position;
                 }
                 else
-                {
                     lastAuthoritativePosition = SetTarget(reader, remoteBody.rb);
-                }
+                
                 hasAuthoritativePosition = true;
                 var limbCount = reader.ReadUInt16();
                 for (var index = 0; index < limbCount; index++)
@@ -401,16 +382,10 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 }
 
                 for (var index = 0; index < tailCount; index++)
-                    ReadTailTarget(reader,
-                        index < remoteTailBases.Count ? remoteTailBases[index] : null,
-                        index < remoteTailSprites.Count ? remoteTailSprites[index] : null,
-                        remoteVehicleStreamed);
+                    ReadTailTarget(reader, index < remoteTailBases.Count ? remoteTailBases[index] : null, index < remoteTailSprites.Count ? remoteTailSprites[index] : null, remoteVehicleStreamed);
                 var tailRootCount = reader.ReadUInt16();
                 for (var index = 0; index < tailRootCount; index++)
-                    ReadTailTarget(reader,
-                        index < remoteTails.Length ? remoteTails[index] : null,
-                        index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null,
-                        remoteVehicleStreamed);
+                    ReadTailTarget(reader, index < remoteTails.Length ? remoteTails[index] : null, index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null, remoteVehicleStreamed);
 
                 if (remoteVehicleStreamed)
                 {
@@ -443,12 +418,6 @@ internal class NetworkAvatarReplication : MonoBehaviour
             using (var reader = new BinaryReader(new MemoryStream(packetWriter.ToArray(), false)))
             {
                 var remoteHealth = reader.ReadSingle();
-                if (MultiplayerSession.IsHost)
-                {
-                    if (remoteHealth < lastRemoteHealth)
-                        pendingRemoteDamage = Mathf.Max(0f, pendingRemoteDamage - (lastRemoteHealth - remoteHealth));
-                    else if (remoteHealth > lastRemoteHealth) pendingRemoteDamage = 0f;
-                }
                 var wasRemoteAlive = lastRemoteAlive;
                 remoteBody.health = remoteHealth;
                 remoteBody.isAlive = reader.ReadBoolean();
@@ -462,7 +431,6 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 {
                     if (MultiplayerSession.IsHost) ScoreboardSystem.NoteHostPlayerRespawn(remotePeerId);
                     ClearReplicaBloodEffects(remoteBody);
-                    pendingRemoteDamage = 0f;
                 }
                 remoteBody.burnIntensity = reader.ReadSingle();
                 remoteBody.noLegs = reader.ReadBoolean();
@@ -489,12 +457,17 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 if (weaponSlot >= 0 && weaponSlot < remoteBody.weaponAmmos.Count) remoteBody.weaponAmmos[weaponSlot] = weaponAmmo;
                 if (weaponSlot < 0)
                 {
-                    if (!remoteBody.unarmed) remoteBody.ChangeToUnarmed();
-                    appliedWeapon = -1; appliedWeaponSprite = 0UL; appliedInventory = inventoryKey;
+                    if (!remoteBody.unarmed)
+                        remoteBody.ChangeToUnarmed();
+                    
+                    appliedWeapon = -1;
+                    appliedWeaponSprite = 0UL;
+                    appliedInventory = inventoryKey;
                 }
                 else if (weaponSlot != appliedWeapon || inventoryKey != appliedInventory)
                 {
-                    remoteBody.ChangeWeapon(weaponSlot); appliedWeapon = weaponSlot;
+                    remoteBody.ChangeWeapon(weaponSlot);
+                    appliedWeapon = weaponSlot;
                 }
                 if (weaponSlot >= 0 && remoteBody.weapon != null)
                 {
@@ -541,8 +514,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     internal void Apply(PlayerSpecialLinesPacket packet)
     {
-        SetRemoteLineTarget(remoteLevitLine, remoteLevitLine == null ? null : remoteLevitLine.gameObject,
-            packet.Levitator, remoteLevitInterpolation);
+        SetRemoteLineTarget(remoteLevitLine, remoteLevitLine == null ? null : remoteLevitLine.gameObject, packet.Levitator, remoteLevitInterpolation);
         SetRemoteLineTarget(remoteCrystalTongueLine, null, packet.CrystalTongue, remoteCrystalTongueInterpolation);
     }
 
@@ -599,7 +571,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
             vehicle.occupJoint = null;
             KartPassengers.RegisterDriver(vehicle, remoteBody);
         }
-        else KartPassengers.Attach(vehicle, remoteBody, false);
+        else 
+            KartPassengers.Attach(vehicle, remoteBody, false);
 
         remoteBody.inVehicle = true;
         remoteBody.curVehicle = vehicle;
@@ -618,7 +591,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
         if (remoteAvatar != null)
         {
-            var offset = (Vector3)KartPassengers.SeatPosition(vehicle, remoteBody) - remoteBody.transform.position;
+            var offset = (Vector3) KartPassengers.SeatPosition(vehicle, remoteBody) - remoteBody.transform.position;
             remoteAvatar.transform.SetParent(vehicle.mainPart.transform, true);
             remoteAvatar.transform.position += offset;
         }
@@ -689,33 +662,24 @@ internal class NetworkAvatarReplication : MonoBehaviour
             if (tailBody == null)
                 continue;
 
-            var localRotation = Mathf.DeltaAngle(
-                vehicle.mainPart.rb.rotation,
-                tailBody.rotation);
+            var localRotation = Mathf.DeltaAngle(vehicle.mainPart.rb.rotation, tailBody.rotation);
 
             vehicleTailTargets.Add(new VehicleTailTarget
             {
                 Body = tailBody,
-
                 LocalRotation = localRotation,
                 FromLocalRotation = localRotation,
                 StartedAt = Time.unscaledTime
             });
         }
 
-        for (var index = 0;
-             index < vehicleTailTransformTargets.Count;
-             index++)
+        for (var index = 0; index < vehicleTailTransformTargets.Count; index++)
         {
-            var state =
-                vehicleTailTransformTargets[index];
-
+            var state = vehicleTailTransformTargets[index];
             if (state.Transform == null)
                 continue;
 
-            var localRotation = Mathf.DeltaAngle(
-                vehicle.mainPart.rb.rotation,
-                state.Transform.eulerAngles.z);
+            var localRotation = Mathf.DeltaAngle(vehicle.mainPart.rb.rotation, state.Transform.eulerAngles.z);
 
             state.LocalRotation = localRotation;
             state.FromLocalRotation = localRotation;
@@ -746,15 +710,20 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 hasRemoteScaleBeforeVehicle = false;
             }
 
-
             SnapRemoteVehicleLimbs();
             remoteBody.enabled = false;
         }
+        
         if (remoteAvatar != null)
-            foreach (var limb in remoteAvatar.GetComponentsInChildren<LimbScript>(true)) limb.enabled = false;
+            foreach (var limb in remoteAvatar.GetComponentsInChildren<LimbScript>(true))
+                limb.enabled = false;
+        
         if (remoteBody != null && remoteBody.BodyAnimator != null)
             remoteBody.BodyAnimator.enabled = false;
-        if (remoteAvatar != null) remoteAvatar.transform.SetParent(remoteAvatarParent, true);
+        
+        if (remoteAvatar != null) 
+            remoteAvatar.transform.SetParent(remoteAvatarParent, true);
+        
         remotePhysicsModeKnown = false;
         UpdateRemotePhysicsMode();
         targets.Clear();
@@ -780,28 +749,28 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     private void ApplyVehicleHeadRotation()
     {
-        if (remoteBody == null || remoteBody.headTransform == null || remoteBody.curVehicle == null ||
-            remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null) return;
+        if (remoteBody == null || remoteBody.headTransform == null || remoteBody.curVehicle == null || remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null)
+            return;
+        
         var progress = Mathf.Clamp01((Time.unscaledTime - vehicleHeadStartedAt) / 0.10f);
         var relativeRotation = Mathf.LerpAngle(vehicleHeadFromRotation, remoteVehicleHeadRotation, progress);
-        remoteBody.headTransform.rotation = Quaternion.Euler(0f, 0f,
-            remoteBody.curVehicle.mainPart.rb.rotation + relativeRotation);
+        remoteBody.headTransform.rotation = Quaternion.Euler(0f, 0f, remoteBody.curVehicle.mainPart.rb.rotation + relativeRotation);
     }
 
     private void ReadVehicleArmsTarget(BinaryReader reader, Vector2 sourceRoot, float sourceRootRotation)
     {
         var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
         var rotation = ReadQuantizedRotation(reader);
-        if (remoteBody == null || remoteBody.curVehicle == null || remoteBody.curVehicle.mainPart == null ||
-            remoteBody.curVehicle.mainPart.rb == null) return;
+        if (remoteBody == null || remoteBody.curVehicle == null || remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null)
+            return;
+        
         var vehicle = remoteBody.curVehicle;
         var angle = vehicle.mainPart.rb.rotation - sourceRootRotation;
-        var target = KartPassengers.SeatPosition(vehicle, remoteBody) +
-            (Vector2)(Quaternion.Euler(0f, 0f, angle) * (position - sourceRoot));
+        var target = KartPassengers.SeatPosition(vehicle, remoteBody) + (Vector2)(Quaternion.Euler(0f, 0f, angle) * (position - sourceRoot));
         var localPosition = vehicle.mainPart.transform.InverseTransformPoint(target);
-        var localRotation = Mathf.DeltaAngle(vehicle.mainPart.rb.rotation,
-            vehicle.mainPart.rb.rotation + Mathf.DeltaAngle(sourceRootRotation, rotation));
+        var localRotation = Mathf.DeltaAngle(vehicle.mainPart.rb.rotation, vehicle.mainPart.rb.rotation + Mathf.DeltaAngle(sourceRootRotation, rotation));
         var progress = Mathf.Clamp01((Time.unscaledTime - vehicleArmsStartedAt) / 0.02f);
+        
         vehicleArmsFromLocalPosition = Vector2.Lerp(vehicleArmsFromLocalPosition, vehicleArmsLocalPosition, progress);
         vehicleArmsFromLocalRotation = Mathf.LerpAngle(vehicleArmsFromLocalRotation, vehicleArmsLocalRotation, progress);
         vehicleArmsLocalPosition = localPosition;
@@ -812,52 +781,25 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     private void ApplyVehicleArmsTarget()
     {
-        if (!hasVehicleArmsTarget ||
-            remoteBody == null ||
-            !remoteBody.inVehicle ||
-            remoteBody.Arms == null ||
-            remoteBody.curVehicle == null ||
-            remoteBody.curVehicle.mainPart == null ||
-            remoteBody.curVehicle.mainPart.rb == null)
+        if (!hasVehicleArmsTarget || remoteBody == null || !remoteBody.inVehicle || remoteBody.Arms == null 
+            || remoteBody.curVehicle == null || remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null)
             return;
 
-        var progress = Mathf.Clamp01(
-            (Time.unscaledTime - vehicleArmsStartedAt) / 0.02f);
+        var progress = Mathf.Clamp01((Time.unscaledTime - vehicleArmsStartedAt) / 0.02f);
+        var localRotation = Mathf.LerpAngle(vehicleArmsFromLocalRotation, vehicleArmsLocalRotation, progress);
 
-        var localRotation = Mathf.LerpAngle(
-            vehicleArmsFromLocalRotation,
-            vehicleArmsLocalRotation,
-            progress);
-
-        var vehicle = remoteBody.curVehicle;
-
-        vehicleArmsTargetRotation =
-            vehicle.mainPart.rb.rotation + localRotation;
-
-        remoteBody.Arms.rotation = Quaternion.Euler(
-            0f,
-            0f,
-            vehicleArmsTargetRotation);
+        vehicleArmsTargetRotation = remoteBody.curVehicle.mainPart.rb.rotation + localRotation;
+        remoteBody.Arms.rotation = Quaternion.Euler(0f, 0f, vehicleArmsTargetRotation);
     }
 
     private void ApplyVehicleTailTargets()
     {
-        if (remoteBody == null ||
-            !remoteBody.inVehicle ||
-            remoteBody.curVehicle == null ||
-            remoteBody.curVehicle.mainPart == null ||
-            remoteBody.curVehicle.mainPart.rb == null)
+        if (remoteBody == null || !remoteBody.inVehicle || remoteBody.curVehicle == null || remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null)
             return;
 
-        var vehicle =
-            remoteBody.curVehicle;
-
-        var vehicleRotation =
-            vehicle.mainPart.rb.rotation;
-
-        var seatPosition = KartPassengers.SeatPosition(vehicle, remoteBody)
-                           -
-                           (Vector2)vehicle.mainPart.transform.right * 0.15f; // оффсет так называемой попы (мне кажется я делаю что-то не так)
+        var vehicle = remoteBody.curVehicle;
+        var vehicleRotation = vehicle.mainPart.rb.rotation;
+        var seatPosition = KartPassengers.SeatPosition(vehicle, remoteBody) - (Vector2) vehicle.mainPart.transform.right * 0.15f; // оффсет так называемой попы (мне кажется я делаю что-то не так)
 
         foreach (var target in vehicleTailTransformTargets)
         {
@@ -904,12 +846,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    internal void SpawnRemoteDeathDropIfNeeded(float amount)
-    {
-        pendingRemoteDamage += amount;
-    }
-
-    internal void UpdateRemotePhysicsMode()
+    internal void UpdateRemotePhysicsMode(bool refreshPropCollisions = true)
     {
         if (remoteAvatar == null) return;
         var player = PlayerScript.player;
@@ -933,10 +870,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
         foreach (var pair in remoteColliderTriggers)
             if (pair.Key != null) pair.Key.isTrigger = pair.Value;
 
-        if (MultiplayerSession.IsHost)
-            foreach (var prop in FindObjectsOfType<Rigidbody2D>())
-                if (prop != null && (prop.GetComponentInParent<CrateScript>() != null || prop.GetComponentInParent<DroppedWeapon>() != null))
-                    IgnoreRemotePlayerPropCollisions(prop);
+        if (refreshPropCollisions)
+            NetworkAvatarManager.RefreshRemotePropCollisions(this);
     }
 
     internal bool TryRemotePart(Rigidbody2D rigidbody, out byte kind, out short index)
@@ -969,18 +904,21 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (remoteBody == null) return;
         var origin = new Vector2(packet.PositionX, packet.PositionY);
         var direction = new Vector2(packet.DirectionX, packet.DirectionY);
-        if (!NetworkAvatarUtilities.IsFinite(origin.x) || !NetworkAvatarUtilities.IsFinite(origin.y) || !NetworkAvatarUtilities.IsFinite(direction.x) ||
-            !NetworkAvatarUtilities.IsFinite(direction.y) || direction.sqrMagnitude < 0.01f) return;
+        if (!IsFinite(origin.x) || !IsFinite(origin.y) || !IsFinite(direction.x) || !IsFinite(direction.y) || direction.sqrMagnitude < 0.01f)
+            return;
+        
         var velvet = remoteBody.GetComponent<VelvetScript>();
         var prefab = velvet == null ? null : velvet.spawnPrefab;
         if (prefab == null) return;
         var visual = Instantiate(prefab, origin, Quaternion.identity);
+       
         var web = visual.GetComponent<WebScript>();
         if (web == null)
         {
             Destroy(visual);
             return;
         }
+        
         var speed = web.speed;
         var groundSprite = web.groundSprite;
         var bodySprite = web.bodySprite;
@@ -1041,8 +979,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (visual != null) Destroy(visual);
     }
 
-    private void CreateRemoteVelvetWebImpact(GameObject visual, RaycastHit2D hit,
-        Sprite groundSprite, Sprite bodySprite)
+    private void CreateRemoteVelvetWebImpact(GameObject visual, RaycastHit2D hit, Sprite groundSprite, Sprite bodySprite)
     {
         var splash = Resources.Load<GameObject>("Spawnables/WebSplashHit");
         if (splash != null) Destroy(Instantiate(splash, hit.point, Quaternion.identity), 10f);
@@ -1063,10 +1000,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
         else if (limb != null)
         {
             visual.transform.SetParent(limb.transform, false);
-            visual.transform.localPosition = new Vector2(UnityEngine.Random.Range(-0.1f, 0.1f),
-                UnityEngine.Random.Range(-0.1f, 0.1f));
-            visual.transform.localScale = new Vector2(UnityEngine.Random.Range(0.7f, 1.3f),
-                UnityEngine.Random.Range(0.7f, 1.3f));
+            visual.transform.localPosition = new Vector2(UnityEngine.Random.Range(-0.1f, 0.1f), UnityEngine.Random.Range(-0.1f, 0.1f));
+            visual.transform.localScale = new Vector2(UnityEngine.Random.Range(0.7f, 1.3f), UnityEngine.Random.Range(0.7f, 1.3f));
             visual.transform.eulerAngles = new Vector3(0f, 0f, UnityEngine.Random.Range(0f, 360f));
             if (renderer != null)
             {
@@ -1086,8 +1021,11 @@ internal class NetworkAvatarReplication : MonoBehaviour
             Destroy(visual);
             return;
         }
+        
         var sound = Resources.Load<AudioClip>("Sounds/webSplat");
-        if (sound != null) Sound.Play(sound, visual.transform.position);
+        if (sound != null) 
+            Sound.Play(sound, visual.transform.position);
+        
         Destroy(visual, 20f);
     }
 
@@ -1104,7 +1042,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if ((packet.SoundId & 0xff000000u) == 0x10000000u || (packet.SoundId & 0xff000000u) == 0x11000000u)
         {
             var sounds = (packet.SoundId & 0xff000000u) == 0x11000000u ? remoteBody?.deathNoises : remoteBody?.painNoises;
-            var index = (int)(packet.SoundId & 0x00ffffffu);
+            var index = (int) (packet.SoundId & 0x00ffffffu);
             var clip = sounds != null && index < sounds.Count ? sounds[index] : null;
             if (clip != null)
                 Sound.Play(clip, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f);
@@ -1114,7 +1052,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if ((packet.SoundId & 0xffff0000u) == 0x20000000u)
         {
             BuildAnimatedSoundCatalog();
-            var index = (ushort)packet.SoundId;
+            var index = (ushort) packet.SoundId;
             if (index < animatedSoundNames.Count)
             {
                 var clip = Resources.Load<AudioClip>("Sounds/" + animatedSoundNames[index]);
@@ -1137,8 +1075,12 @@ internal class NetworkAvatarReplication : MonoBehaviour
             remoteTelekinesisSound.transform.position = new Vector2(packet.PositionX, packet.PositionY);
             remoteTelekinesisSound.volume = packet.Volume / 64f;
             remoteTelekinesisSound.pitch = packet.Pitch / 64f;
-            if (packet.Volume > 0 && !remoteTelekinesisSound.isPlaying) remoteTelekinesisSound.Play();
-            else if (packet.Volume == 0 && remoteTelekinesisSound.isPlaying) remoteTelekinesisSound.Stop();
+            
+            if (packet.Volume > 0 && !remoteTelekinesisSound.isPlaying) 
+                remoteTelekinesisSound.Play();
+            else if (packet.Volume == 0 && remoteTelekinesisSound.isPlaying) 
+                remoteTelekinesisSound.Stop();
+            
             return;
         }
 
@@ -1152,6 +1094,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         }
 
         LoadPlayerSoundClips();
+        
         AudioClip sound;
         if (playerSoundClips.TryGetValue(packet.SoundId, out sound) && sound != null)
             Sound.Play(sound, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f);
@@ -1167,18 +1110,21 @@ internal class NetworkAvatarReplication : MonoBehaviour
         var spreadSeed = packet.SpreadSeed;
         var exactDirections = packet.ExactDirections;
 
-        if (!NetworkAvatarUtilities.IsFinite(origin.x) || !NetworkAvatarUtilities.IsFinite(origin.y) || !NetworkAvatarUtilities.IsFinite(direction.x) ||
-            !NetworkAvatarUtilities.IsFinite(direction.y) || !NetworkAvatarUtilities.IsFinite(up.x) || !NetworkAvatarUtilities.IsFinite(up.y) ||
-            direction.sqrMagnitude < 0.01f || up.sqrMagnitude < 0.01f) return;
+        if (!IsFinite(origin.x) || !IsFinite(origin.y) || !IsFinite(direction.x) || !IsFinite(direction.y) || !IsFinite(up.x) || !IsFinite(up.y) || direction.sqrMagnitude < 0.01f || up.sqrMagnitude < 0.01f) 
+            return;
+        
         direction.Normalize();
         up.Normalize();
+       
         var preset = WeaponPresetProvider.FindWeaponPreset(sprite);
         if (preset == null && remoteBody != null && remoteBody.weapon != null)
             preset = remoteBody.weapon.stats;
-        if (preset == null) return;
+       
+        if (preset == null)
+            return;
 
         if (preset.fireSound != null)
-            Sound.Play(preset.fireSound, origin, false, false, null, 1f, 1f);
+            Sound.Play(preset.fireSound, origin, false, false);
 
         if (preset.muzzleFlash != null)
         {
@@ -1186,8 +1132,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
             Destroy(flash, 0.4f);
         }
 
-        if (preset.shootType != 1 && preset.range == 0f && remoteBody != null &&
-            CustomWeaponsCompatibility.TryPlayRemoteMelee(preset, remoteBody.weapon, remoteBody)) return;
+        if (preset.shootType != 1 && preset.range == 0f && remoteBody != null && CustomWeaponsCompatibility.TryPlayRemoteMelee(preset, remoteBody.weapon, remoteBody))
+            return;
 
         if (preset.shootType == 1)
         {
@@ -1196,12 +1142,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 var projectileCount = Mathf.Clamp(preset.bulletAmount, 1, 64);
                 for (var index = 0; index < projectileCount; index++)
                 {
-                    var exactDirection = index < exactDirections.Length
-                        ? new Vector2(exactDirections[index].X, exactDirections[index].Y)
-                        : Vector2.zero;
-                    var projectileDirection = exactDirection.sqrMagnitude > 0.01f
-                        ? exactDirection.normalized
-                        : (direction + up * (preset.bulletSpread * NetworkAvatarUtilities.SpreadValue(spreadSeed, index))).normalized;
+                    var exactDirection = index < exactDirections.Length ? new Vector2(exactDirections[index].X, exactDirections[index].Y) : Vector2.zero;
+                    var projectileDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
                     PlayRemoteProjectile(preset, origin, projectileDirection, !npcShot);
                 }
                 return;
@@ -1221,9 +1163,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 exactDirection = new Vector2(dir.X, dir.Y);
             }
 
-            Vector2 shotDirection = exactDirection.sqrMagnitude > 0.01f
-                ? exactDirection.normalized
-                : (direction + up * (preset.bulletSpread * NetworkAvatarUtilities.SpreadValue(spreadSeed, index))).normalized;
+            Vector2 shotDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
 
             CreateRemoteTracer(preset, origin, FindRemoteShotEnd(origin, shotDirection, !npcShot));
             CreateRemoteBulletImpact(preset, origin, shotDirection, !npcShot);
@@ -1299,18 +1239,20 @@ internal class NetworkAvatarReplication : MonoBehaviour
             visual.name = "MP Projectile Visual";
             visual.transform.right = direction;
             BlackoutRule.MakeAlwaysBright(visual);
+          
             var rocket = visual.GetComponentInChildren<RocketProjectile>(true);
-            if (rocket != null && rocket.moveSpeed > 0f) speed = rocket.moveSpeed;
-            if (rocket != null) speedIncrease = rocket.moveSpeedSpeedUp;
             if (rocket != null)
             {
+                if (rocket.moveSpeed > 0f) speed = rocket.moveSpeed;
+                speedIncrease = rocket.moveSpeedSpeedUp;
                 impactEffect = rocket.objOnDestroy;
                 explosionSound = rocket.sound;
             }
+           
             var grenade = visual.GetComponentInChildren<GrenadeScript>(true);
-            if (grenade != null && grenade.startSpeed > 0f) speed = grenade.startSpeed;
             if (grenade != null)
             {
+                if (grenade.startSpeed > 0f) speed = grenade.startSpeed;
                 impactEffect = grenade.objOnDestroy;
                 explosionSound = grenade.explosionSound;
                 var grenadeBody = grenade.GetComponent<Rigidbody2D>();

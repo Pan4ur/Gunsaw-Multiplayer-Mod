@@ -3,7 +3,12 @@ using UnityEngine;
 
 internal static class NetworkAvatarUtilities
 {
-internal const float SnapshotInterval = 1f / 50f;
+    private static Material fallbackTracerMaterial;
+    internal const float SnapshotInterval = 1f / 50f;
+    private static readonly Dictionary<string, Sprite> spriteCache = new();
+    private static readonly Dictionary<Sprite, string> spriteIdCache = new();
+    private static readonly Dictionary<Texture2D, string> textureSignatureCache = new();
+    
     internal static LineRenderer AddFallbackTracer(GameObject visual)
     {
         var line = visual.AddComponent<LineRenderer>();
@@ -16,14 +21,14 @@ internal const float SnapshotInterval = 1f / 50f;
         if (fallbackTracerMaterial == null)
         {
             var shader = Shader.Find("Sprites/Default");
-            if (shader != null) fallbackTracerMaterial = new Material(shader);
+            if (shader != null) 
+                fallbackTracerMaterial = new Material(shader);
         }
         if (fallbackTracerMaterial != null) line.sharedMaterial = fallbackTracerMaterial;
         line.sortingOrder = 100;
         return line;
     }
-
-    private static Material fallbackTracerMaterial;
+    
     internal static void HideChildrenOfDisabledHeadAccessories(Transform root)
     {
         if (root == null) return;
@@ -34,8 +39,7 @@ internal const float SnapshotInterval = 1f / 50f;
             while (ancestor != null && ancestor != root)
             {
                 var ancestorRenderer = ancestor.GetComponent<SpriteRenderer>();
-                if (ancestorRenderer != null && !ancestorRenderer.enabled &&
-                    ancestor.parent != null && ancestor.parent.name == "Head")
+                if (ancestorRenderer != null && !ancestorRenderer.enabled && ancestor.parent != null && ancestor.parent.name == "Head")
                 {
                     renderer.enabled = false;
                     break;
@@ -97,10 +101,7 @@ internal const float SnapshotInterval = 1f / 50f;
         }
     }
 
-    internal static Rigidbody2D ResolveLocalPart(
-        BodyScript body,
-        byte kind,
-        int index)
+    internal static Rigidbody2D ResolveLocalPart(BodyScript body, byte kind, int index)
     {
         if (body == null)
             return null;
@@ -131,9 +132,7 @@ internal const float SnapshotInterval = 1f / 50f;
         return null;
     }
 
-    internal static void ReadLocalRotationImmediately(
-        BinaryReader reader,
-        Transform transform)
+    internal static void ReadLocalRotationImmediately(BinaryReader reader, Transform transform)
     {
         reader.ReadSingle();
         reader.ReadSingle();
@@ -155,8 +154,7 @@ internal const float SnapshotInterval = 1f / 50f;
 
     internal static float ReadQuantizedRotation(BinaryReader reader) => reader.ReadUInt16() * (360f / 65535f);
 
-    internal static void SetRemoteLineTarget(LineRenderer line, GameObject container, PlayerSnapshotLineState state,
-        RemoteLineInterpolation interpolation)
+    internal static void SetRemoteLineTarget(LineRenderer line, GameObject container, PlayerSnapshotLineState state, RemoteLineInterpolation interpolation)
     {
         if (line == null) return;
         if (!state.Visible)
@@ -201,14 +199,6 @@ internal const float SnapshotInterval = 1f / 50f;
             line.SetPosition(i, Vector3.Lerp(interpolation.From[i], interpolation.To[i], progress));
     }
 
-    internal sealed class RemoteLineInterpolation
-    {
-        internal Vector3[] From;
-        internal Vector3[] To;
-        internal float StartedAt;
-        internal bool Active;
-    }
-
     internal static bool IsBurning(LimbScript limb)
     {
         foreach (var fire in limb.GetComponentsInChildren<FireScript>(true))
@@ -231,43 +221,23 @@ internal const float SnapshotInterval = 1f / 50f;
             if (tailRoot == null)
                 continue;
 
-            CollectNetworkTailBodies(
-                tailRoot,
-                tailRoot,
-                body.rb,
-                result,
-                added);
+            CollectNetworkTailBodies(tailRoot, tailRoot, body.rb, result, added);
         }
 
         return result;
     }
 
-    internal static void CollectNetworkTailBodies(
-        Transform current,
-        Transform tailRoot,
-        Rigidbody2D bodyRigidbody,
-        List<Rigidbody2D> result,
-        HashSet<Rigidbody2D> added)
+    internal static void CollectNetworkTailBodies(Transform current, Transform tailRoot, Rigidbody2D bodyRigidbody, List<Rigidbody2D> result, HashSet<Rigidbody2D> added)
     {
         for (var index = 0; index < current.childCount; index++)
         {
             var child = current.GetChild(index);
             var rigidbody = child.GetComponent<Rigidbody2D>();
 
-            if (rigidbody != null &&
-                rigidbody != bodyRigidbody &&
-                rigidbody.transform != tailRoot &&
-                added.Add(rigidbody))
-            {
+            if (rigidbody != null && rigidbody != bodyRigidbody && rigidbody.transform != tailRoot && added.Add(rigidbody))
                 result.Add(rigidbody);
-            }
 
-            CollectNetworkTailBodies(
-                child,
-                tailRoot,
-                bodyRigidbody,
-                result,
-                added);
+            CollectNetworkTailBodies(child, tailRoot, bodyRigidbody, result, added);
         }
     }
 
@@ -302,32 +272,11 @@ internal const float SnapshotInterval = 1f / 50f;
         }
     }
 
-    internal static void WriteLineState(BinaryWriter writer, LineRenderer line)
-    {
-        var visible = line != null && line.enabled && line.gameObject.activeInHierarchy && line.positionCount > 0;
-        writer.Write(visible);
-        if (!visible) return;
-        var count = Mathf.Min(line.positionCount, 16);
-        writer.Write((byte)count);
-        writer.Write(line.useWorldSpace);
-        WriteColor(writer, line.startColor);
-        WriteColor(writer, line.endColor);
-        writer.Write(line.startWidth);
-        writer.Write(line.endWidth);
-        for (var index = 0; index < count; index++)
-        {
-            var point = line.GetPosition(index);
-            writer.Write(point.x);
-            writer.Write(point.y);
-            writer.Write(point.z);
-        }
-    }
-
     internal static PlayerSnapshotLineState CreateWeaponLaserState(LineRenderer line)
     {
         var visible = line != null && line.enabled && line.gameObject.activeInHierarchy && line.positionCount > 0;
-        if (!visible) return new PlayerSnapshotLineState(false, false, default(PlayerSnapshotColor),
-            default(PlayerSnapshotColor), 0f, 0f, new PlayerSnapshotVector3[0]);
+        if (!visible) 
+            return new PlayerSnapshotLineState(false, false, default, default, 0f, 0f, []);
 
         var count = Mathf.Min(line.positionCount, 16);
         var points = new PlayerSnapshotVector3[count];
@@ -411,7 +360,7 @@ internal const float SnapshotInterval = 1f / 50f;
 
     internal static void WriteVisualState(BinaryWriter writer, PlayerVisualState state)
     {
-        var renderers = state == null ? new RendererVisualState[0] : state.Renderers;
+        var renderers = state == null ? [] : state.Renderers;
         writer.Write((ushort)renderers.Length);
         for (var index = 0; index < renderers.Length; index++)
         {
@@ -423,7 +372,7 @@ internal const float SnapshotInterval = 1f / 50f;
             writer.Write(renderer.FlipY);
         }
 
-        var lights = state == null ? new LightVisualState[0] : state.Lights;
+        var lights = state == null ? [] : state.Lights;
         writer.Write((ushort)lights.Length);
         for (var index = 0; index < lights.Length; index++)
         {
@@ -629,101 +578,6 @@ internal const float SnapshotInterval = 1f / 50f;
         return HierarchyPath(root, renderer.transform) + "#" + componentIndex;
     }
 
-    internal sealed class VisualLayout
-    {
-        internal Transform Root;
-        internal SpriteRenderer[] Renderers;
-        internal string[] RendererPaths;
-        internal Component[] Lights;
-        internal string[] LightPaths;
-        internal Dictionary<string, SpriteRenderer> RenderersByPath;
-        internal Dictionary<string, Component> LightsByPath;
-        internal SpriteRenderer WeaponRenderer;
-        internal float NextValidation;
-    }
-
-    internal readonly struct RendererVisualState
-    {
-        internal readonly string Path;
-        internal readonly bool Visible;
-        internal readonly Color Color;
-        internal readonly bool FlipX;
-        internal readonly bool FlipY;
-
-        internal RendererVisualState(string path, bool visible, Color color, bool flipX, bool flipY)
-        {
-            Path = path ?? "";
-            Visible = visible;
-            Color = color;
-            FlipX = flipX;
-            FlipY = flipY;
-        }
-    }
-
-    internal readonly struct LightVisualState
-    {
-        internal readonly string Path;
-        internal readonly bool Visible;
-        internal readonly float Intensity;
-        internal readonly Color Color;
-
-        internal LightVisualState(string path, bool visible, float intensity, Color color)
-        {
-            Path = path ?? "";
-            Visible = visible;
-            Intensity = intensity;
-            Color = color;
-        }
-    }
-
-    internal sealed class PlayerVisualState
-    {
-        internal readonly RendererVisualState[] Renderers;
-        internal readonly LightVisualState[] Lights;
-        internal readonly byte[] FacialExpressions;
-
-        internal PlayerVisualState(RendererVisualState[] renderers, LightVisualState[] lights, byte[] facialExpressions)
-        {
-            Renderers = renderers ?? new RendererVisualState[0];
-            Lights = lights ?? new LightVisualState[0];
-            FacialExpressions = facialExpressions ?? Array.Empty<byte>();
-        }
-
-        internal static bool Equals(PlayerVisualState left, PlayerVisualState right)
-        {
-            if (ReferenceEquals(left, right)) return true;
-            if (left == null || right == null || left.Renderers.Length != right.Renderers.Length ||
-                left.Lights.Length != right.Lights.Length || left.FacialExpressions.Length != right.FacialExpressions.Length)
-                return false;
-            for (var index = 0; index < left.Renderers.Length; index++)
-            {
-                var a = left.Renderers[index]; var b = right.Renderers[index];
-                if (a.Path != b.Path || a.Visible != b.Visible || a.Color != b.Color || a.FlipX != b.FlipX ||
-                    a.FlipY != b.FlipY)
-                    return false;
-            }
-            for (var index = 0; index < left.Lights.Length; index++)
-            {
-                var a = left.Lights[index]; var b = right.Lights[index];
-                if (a.Path != b.Path || a.Visible != b.Visible || a.Intensity != b.Intensity || a.Color != b.Color)
-                    return false;
-            }
-            for (var index = 0; index < left.FacialExpressions.Length; index++)
-                if (left.FacialExpressions[index] != right.FacialExpressions[index]) return false;
-            return true;
-        }
-    }
-
-    internal struct AvatarWireBreakdown
-    {
-        internal int Core;
-        internal int Limbs;
-        internal int Rig;
-        internal int Weapons;
-        internal int Effects;
-        internal int Visual;
-    }
-
     internal static int TransformDepth(Transform transform)
     {
         var depth = 0;
@@ -739,8 +593,7 @@ internal const float SnapshotInterval = 1f / 50f;
     {
         var scarf = body.GetComponentInChildren<ScarfPhysics>(true);
         var visible = scarf != null && scarf.gameObject.activeInHierarchy && scarf.pointRenderer != null;
-        if (!visible) return new PlayerSnapshotScarfState(false, default(PlayerSnapshotColor),
-            default(PlayerSnapshotColor));
+        if (!visible) return new PlayerSnapshotScarfState(false, default, default);
         var startColor = scarf.pointRenderer.startColor;
         var endColor = scarf.pointRenderer.endColor;
         return new PlayerSnapshotScarfState(true, new PlayerSnapshotColor(startColor.r, startColor.g, startColor.b,
@@ -756,10 +609,6 @@ internal const float SnapshotInterval = 1f / 50f;
         writer.Write(state.EndColor.Red); writer.Write(state.EndColor.Green);
         writer.Write(state.EndColor.Blue); writer.Write(state.EndColor.Alpha);
     }
-
-    private static readonly Dictionary<string, Sprite> spriteCache = new();
-    private static readonly Dictionary<Sprite, string> spriteIdCache = new();
-    private static readonly Dictionary<Texture2D, string> textureSignatureCache = new();
 
     internal static string CleanCloneName(string name)
     {
@@ -863,5 +712,107 @@ internal const float SnapshotInterval = 1f / 50f;
         foreach (var sprite in Resources.FindObjectsOfTypeAll<Sprite>())
             if (sprite != null && NetworkWireId.FromString(SpriteId(sprite)) == spriteId) return sprite;
         return null;
+    }
+    
+    internal struct AvatarWireBreakdown
+    {
+        internal int Core;
+        internal int Limbs;
+        internal int Rig;
+        internal int Weapons;
+        internal int Effects;
+        internal int Visual;
+    }
+    
+        internal sealed class VisualLayout
+    {
+        internal Transform Root;
+        internal SpriteRenderer[] Renderers;
+        internal string[] RendererPaths;
+        internal Component[] Lights;
+        internal string[] LightPaths;
+        internal Dictionary<string, SpriteRenderer> RenderersByPath;
+        internal Dictionary<string, Component> LightsByPath;
+        internal SpriteRenderer WeaponRenderer;
+        internal float NextValidation;
+    }
+
+    internal readonly struct RendererVisualState
+    {
+        internal readonly string Path;
+        internal readonly bool Visible;
+        internal readonly Color Color;
+        internal readonly bool FlipX;
+        internal readonly bool FlipY;
+
+        internal RendererVisualState(string path, bool visible, Color color, bool flipX, bool flipY)
+        {
+            Path = path ?? "";
+            Visible = visible;
+            Color = color;
+            FlipX = flipX;
+            FlipY = flipY;
+        }
+    }
+
+    internal readonly struct LightVisualState
+    {
+        internal readonly string Path;
+        internal readonly bool Visible;
+        internal readonly float Intensity;
+        internal readonly Color Color;
+
+        internal LightVisualState(string path, bool visible, float intensity, Color color)
+        {
+            Path = path ?? "";
+            Visible = visible;
+            Intensity = intensity;
+            Color = color;
+        }
+    }
+
+    internal sealed class RemoteLineInterpolation
+    {
+        internal Vector3[] From;
+        internal Vector3[] To;
+        internal float StartedAt;
+        internal bool Active;
+    }
+    
+    internal sealed class PlayerVisualState
+    {
+        internal readonly RendererVisualState[] Renderers;
+        internal readonly LightVisualState[] Lights;
+        internal readonly byte[] FacialExpressions;
+
+        internal PlayerVisualState(RendererVisualState[] renderers, LightVisualState[] lights, byte[] facialExpressions)
+        {
+            Renderers = renderers ?? [];
+            Lights = lights ?? [];
+            FacialExpressions = facialExpressions ?? Array.Empty<byte>();
+        }
+
+        internal static bool Equals(PlayerVisualState left, PlayerVisualState right)
+        {
+            if (ReferenceEquals(left, right)) return true;
+            if (left == null || right == null || left.Renderers.Length != right.Renderers.Length ||
+                left.Lights.Length != right.Lights.Length || left.FacialExpressions.Length != right.FacialExpressions.Length)
+                return false;
+            for (var index = 0; index < left.Renderers.Length; index++)
+            {
+                var a = left.Renderers[index]; var b = right.Renderers[index];
+                if (a.Path != b.Path || a.Visible != b.Visible || a.Color != b.Color || a.FlipX != b.FlipX || a.FlipY != b.FlipY)
+                    return false;
+            }
+            for (var index = 0; index < left.Lights.Length; index++)
+            {
+                var a = left.Lights[index]; var b = right.Lights[index];
+                if (a.Path != b.Path || a.Visible != b.Visible || a.Intensity != b.Intensity || a.Color != b.Color)
+                    return false;
+            }
+            for (var index = 0; index < left.FacialExpressions.Length; index++)
+                if (left.FacialExpressions[index] != right.FacialExpressions[index]) return false;
+            return true;
+        }
     }
 }

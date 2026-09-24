@@ -4,7 +4,15 @@ using static NetworkAvatarUtilities;
 
 internal sealed class NetworkAvatarManager : MonoBehaviour
 {
-internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas = new();
+    internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas = new();
+
+    internal static void UnregisterReplica(NetworkAvatarReplication replica)
+    {
+        if (ReferenceEquals(replica, null)) return;
+        NetworkAvatarReplication current;
+        if (replicas.TryGetValue(replica.remotePeerId, out current) && ReferenceEquals(current, replica))
+            replicas.Remove(replica.remotePeerId);
+    }
 
     internal static NetworkAvatarReplication GetOrCreateReplica(ushort peerId)
     {
@@ -987,14 +995,14 @@ internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas =
     internal static ushort replicatedExplosionImpulseExclusionPeerId;
     private static int nextShotSpreadSeed;
     private static readonly HashSet<WebScript> localVelvetWebs = [];
-    internal static void IgnoreRemotePlayerPropCollisions(Rigidbody2D prop)
+    internal static void IgnoreRemotePlayerPropCollisions(Rigidbody2D prop, NetworkAvatarReplication? onlyReplica = null)
     {
         if (prop == null || !MultiplayerSession.IsHost) return;
         var propColliders = prop.GetComponentsInChildren<Collider2D>(true);
         if (propColliders == null || propColliders.Length == 0) return;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
         {
-            if (replica == null) continue;
+            if (replica == null || !ReferenceEquals(onlyReplica, null) && !ReferenceEquals(replica, onlyReplica)) continue;
             foreach (var remoteCollider in replica.remoteColliderTriggers.Keys)
             {
                 if (remoteCollider == null) continue;
@@ -1003,6 +1011,15 @@ internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas =
                         Physics2D.IgnoreCollision(remoteCollider, propCollider, true);
             }
         }
+    }
+
+    internal static void RefreshRemotePropCollisions(NetworkAvatarReplication? onlyReplica = null)
+    {
+        if (!MultiplayerSession.IsHost) return;
+        foreach (var prop in FindObjectsOfType<Rigidbody2D>())
+            if (prop != null && (prop.GetComponentInParent<CrateScript>() != null ||
+                prop.GetComponentInParent<DroppedWeapon>() != null))
+                IgnoreRemotePlayerPropCollisions(prop, onlyReplica);
     }
 
     internal static void TryGrabRemotePlayer(LevitatorScript levitator)
@@ -1189,10 +1206,8 @@ internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas =
         if (MultiplayerSession.IsHost)
         {
             if (currentShooter == null || !currentShooter.isPlayer || MultiplayerSession.PvpEnabled)
-            {
-                replica.SpawnRemoteDeathDropIfNeeded(amount);
                 SendRemotePlayerDamage(replica.remotePeerId, amount, critical, currentShooter);
-            }
+            
             return;
         }
         if (currentShooter == null) return;
@@ -1501,7 +1516,32 @@ internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas =
         return remoteAvatarCreationDepth > 0;
     }
 
-    internal static int remoteAvatarCreationDepth;
+    internal static IDisposable BeginRemoteAvatarCreation()
+    {
+        remoteAvatarCreationDepth++;
+        return new RemoteAvatarCreationScope();
+    }
+
+    private sealed class RemoteAvatarCreationScope : IDisposable
+    {
+        private bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed) return;
+            disposed = true;
+            try
+            {
+                RestoreLocalPlayerSingleton();
+            }
+            finally
+            {
+                remoteAvatarCreationDepth--;
+            }
+        }
+    }
+
+    private static int remoteAvatarCreationDepth;
     private static BodyScript initialScaleAppliedBody;
     private static float initialScaleBase = float.NaN;
     private static float appliedInitialScale = float.NaN;
@@ -1940,8 +1980,9 @@ internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas =
         {
             if (replica == null) continue;
             replica.remotePhysicsModeKnown = false;
-            replica.UpdateRemotePhysicsMode();
+            replica.UpdateRemotePhysicsMode(false);
         }
+        RefreshRemotePropCollisions();
     }
 
     internal static void EnsurePlayerSingletonForUpdate()
