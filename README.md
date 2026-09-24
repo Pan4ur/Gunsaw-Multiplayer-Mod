@@ -11,7 +11,7 @@ YT: [Showcase](https://youtu.be/aYmxX_OQOis) | [Gameplay](https://youtu.be/p0Nst
 
 MP Features:
 
-- Multiplayer for up to 16 players
+- Multiplayer for up to 64 players
 - PVP and CO-OP modes
 - Text chat
 - Player nametags and off-screen teammate markers
