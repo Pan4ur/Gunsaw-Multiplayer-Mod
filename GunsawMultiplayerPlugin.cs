@@ -464,7 +464,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
         CsExperienceMode.Tick();
         if (MultiplayerHud.IsTyping || (multiplayerHud != null && multiplayerHud.ChatOpen)) return;
-        if (Input.GetKeyDown(Controls.keys[Controls.PAIN_SOUND]))
+        if (Input.GetKeyDown(Controls.keys[Controls.PAIN_SOUND]) && !ArsenalMenu.ConsumesWhineKey(Controls.keys[Controls.PAIN_SOUND]))
         {
             var body = PlayerScript.player?.bodyScript;
             if (body != null)
@@ -504,22 +504,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (savedLobbyName.Value != lobbyName) { savedLobbyName.Value = lobbyName; changed = true; }
         if (savedCreatePvp.Value != createPvp) { savedCreatePvp.Value = createPvp; changed = true; }
         if (savedCreateCanGrab.Value != createCanGrab) { savedCreateCanGrab.Value = createCanGrab; changed = true; }
-        if (savedCreateGrabOnlyUnconscious.Value != createGrabOnlyUnconscious)
-        {
-            savedCreateGrabOnlyUnconscious.Value = createGrabOnlyUnconscious;
-            changed = true;
-        }
-        if (savedCreateAllowRespawn.Value != createAllowRespawn)
-        {
-            savedCreateAllowRespawn.Value = createAllowRespawn;
-            changed = true;
-        }
+        if (savedCreateGrabOnlyUnconscious.Value != createGrabOnlyUnconscious) { savedCreateGrabOnlyUnconscious.Value = createGrabOnlyUnconscious; changed = true; }
+        if (savedCreateAllowRespawn.Value != createAllowRespawn) { savedCreateAllowRespawn.Value = createAllowRespawn; changed = true; }
         if (savedCreateAutoRestart.Value != createAutoRestart) { savedCreateAutoRestart.Value = createAutoRestart; changed = true; }
-        if (savedCreateRespawnAtStart.Value != createRespawnAtStart)
-        {
-            savedCreateRespawnAtStart.Value = createRespawnAtStart;
-            changed = true;
-        }
+        if (savedCreateRespawnAtStart.Value != createRespawnAtStart) { savedCreateRespawnAtStart.Value = createRespawnAtStart; changed = true; }
         if (savedCreatePlayerCollisions.Value != createPlayerCollisions) { savedCreatePlayerCollisions.Value = createPlayerCollisions; changed = true; }
         if (savedCreateCheats.Value != createCheats) { savedCreateCheats.Value = createCheats; changed = true; }
         if (savedCreateAllowSwap.Value != createAllowSwap) { savedCreateAllowSwap.Value = createAllowSwap; changed = true; }

@@ -15,6 +15,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private static string savedChatDraft = "";
     private static int savedChatCaretPosition;
     private static bool savedChatWasOpen;
+    private static bool readingChatInput;
     private readonly List<ChatEntry> history = [];
     private readonly List<string> chatSuggestions = [];
     private int chatAutocompletePosition;
@@ -166,7 +167,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
             return;
         }
         if (!chatOpen) return;
-        if (Input.GetKeyDown(Controls.keys[Controls.CLOSE_CHAT]))
+        if (GetChatKeyDown(Controls.keys[Controls.CLOSE_CHAT]))
         { // Lets hope that bind is not typable
             CloseChat();
             return;
@@ -178,6 +179,19 @@ internal sealed class MultiplayerHud : MonoBehaviour
         }
         if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
             Submit();
+    }
+
+    private static bool GetChatKeyDown(KeyCode key)
+    {
+        readingChatInput = true;
+        try
+        {
+            return Input.GetKeyDown(key);
+        }
+        finally
+        {
+            readingChatInput = false;
+        }
     }
 
     private void LateUpdate()
@@ -822,7 +836,9 @@ internal sealed class MultiplayerHud : MonoBehaviour
         private static bool IsChatOpenAndKeyIsTypable(KeyCode key)
         {
             return (null != MultiplayerHud.Instance && MultiplayerHud.Instance.ChatOpen) &&
-                ((KeyCode.Space == key) || (KeyCode.A <= key && KeyCode.Z >= key) || (KeyCode.Alpha0 <= key && KeyCode.Alpha9 >= key));
+                !readingChatInput &&
+                ((KeyCode.Space == key) || (KeyCode.A <= key && KeyCode.Z >= key) || (KeyCode.Alpha0 <= key && KeyCode.Alpha9 >= key) ||
+                 key == Controls.keys[Controls.CLOSE_CHAT]);
         }
     }
 }

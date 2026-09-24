@@ -110,6 +110,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
     private Vector2 previewCenterOffset;
     private float previewScale;
     internal static bool IsOpen => instance != null && instance.menu != null && instance.menu.activeSelf;
+    internal static bool ConsumesWhineKey(KeyCode key) => key == KeyCode.B && (IsOpen || (instance != null && Time.unscaledTime <= instance.nearbyUntil));
 
     internal static string Prompt => instance != null && !instance.menu.activeSelf &&
                                      Time.unscaledTime <= instance.nearbyUntil
