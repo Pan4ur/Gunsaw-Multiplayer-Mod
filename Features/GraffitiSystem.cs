@@ -154,7 +154,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
             if (senderId != MultiplayerSession.HostPeerId || !ShowGraffiti) return;
         }
 
-        if (hosting && GunsawMultiplayerPlugin.IsHeadlessMode)
+        if (hosting && HeadlessLobbyService.IsHeadlessMode)
         {
             var p = new GraffitiPacket(packet.SceneEpoch, senderId, packet.Id, packet.X, packet.Y, packet.Scale, packet.Rotation, packet.Image);
             foreach (var peerId in MultiplayerSession.PeerIds())
@@ -331,7 +331,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
             {
                 packet = new GraffitiPacket(packet.SceneEpoch, item.SenderId, packet.Id, packet.X, packet.Y,
                     packet.Scale, packet.Rotation, packet.Image);
-                if (!GunsawMultiplayerPlugin.IsHeadlessMode && ShowGraffiti && !Add(packet)) continue;
+                if (!HeadlessLobbyService.IsHeadlessMode && ShowGraffiti && !Add(packet)) continue;
                 MultiplayerSession.Send(packet);
                 nextHostBroadcastAt = Time.unscaledTime + 1f;
                 break;

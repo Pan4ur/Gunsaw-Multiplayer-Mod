@@ -2001,7 +2001,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     private void SpawnRemoteDismembermentEffects(DismemberManager manager)
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode || remoteBody == null || remoteBody.isRobot) return;
+        if (HeadlessLobbyService.IsHeadlessMode || remoteBody == null || remoteBody.isRobot) return;
         var position = manager.transform.position;
         Sound.Play(Resources.Load<AudioClip>("Sounds/dismember" + UnityEngine.Random.Range(1, 4)), position, false, false);
         Sound.Play(Resources.Load<AudioClip>("Sounds/bloodDrip"), position, false, false, remoteBody.transform);

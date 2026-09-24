@@ -10,21 +10,21 @@ using UnityEngine.UI;
 internal static class HeadlessRainUpdatePatch
 {
     [HarmonyPrefix]
-    private static bool Prefix() => !GunsawMultiplayerPlugin.IsHeadlessMode;
+    private static bool Prefix() => !HeadlessLobbyService.IsHeadlessMode;
 }
 
 [HarmonyPatch(typeof(Graphic), "OnRectTransformDimensionsChange")]
 internal static class HeadlessGraphicDimensionsPatch
 {
     [HarmonyPrefix]
-    private static bool Prefix() => !GunsawMultiplayerPlugin.IsHeadlessMode;
+    private static bool Prefix() => !HeadlessLobbyService.IsHeadlessMode;
 }
 
 [HarmonyPatch(typeof(TextMeshProUGUI), "OnRectTransformDimensionsChange")]
 internal static class HeadlessTextMeshProDimensionsPatch
 {
     [HarmonyPrefix]
-    private static bool Prefix() => !GunsawMultiplayerPlugin.IsHeadlessMode;
+    private static bool Prefix() => !HeadlessLobbyService.IsHeadlessMode;
 }
 
 [HarmonyPatch]
@@ -34,7 +34,7 @@ internal static class HeadlessMouseEventsPatch
         AccessTools.Method(AccessTools.TypeByName("UnityEngine.SendMouseEvents"), "DoSendMouseEvents");
 
     [HarmonyPrefix]
-    private static bool Prefix() => !GunsawMultiplayerPlugin.IsHeadlessMode;
+    private static bool Prefix() => !HeadlessLobbyService.IsHeadlessMode;
 }
 
 internal static class HeadlessPresentation

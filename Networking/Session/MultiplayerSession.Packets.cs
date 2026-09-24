@@ -39,8 +39,7 @@ internal static partial class MultiplayerSession
                 Buffer.BlockCopy(sceneHeader, 0, scenePacket, 0, sceneHeader.Length);
                 Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
                 SendPacket(scenePacket, senderId, false);
-                Send(new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
-                    RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled, AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg, StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart, HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled), senderId);
+                Send(CreateSettingsPacket(), senderId);
                 SendPeerNames(senderId);
                 Send(new PeerNamePacket(senderId, connectedName));
                 TeamSystem.SendAll(senderId);

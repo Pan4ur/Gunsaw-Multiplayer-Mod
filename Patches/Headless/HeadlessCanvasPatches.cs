@@ -7,7 +7,7 @@ internal static class HeadlessPreWillRenderCanvasesPatch
     [HarmonyPrefix]
     private static bool Prefix()
     {
-        return !GunsawMultiplayerPlugin.IsHeadlessMode;
+        return !HeadlessLobbyService.IsHeadlessMode;
     }
 }
 
@@ -17,6 +17,6 @@ internal static class HeadlessWillRenderCanvasesPatch
     [HarmonyPrefix]
     private static bool Prefix()
     {
-        return !GunsawMultiplayerPlugin.IsHeadlessMode;
+        return !HeadlessLobbyService.IsHeadlessMode;
     }
 }

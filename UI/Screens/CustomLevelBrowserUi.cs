@@ -278,9 +278,7 @@ internal sealed class CustomLevelBrowserUi
         }
         try
         {
-            var json = Compression.Decompress(code);
-            if (string.IsNullOrWhiteSpace(json) || JsonUtility.FromJson<Level>(json) == null)
-                throw new System.InvalidOperationException("The level code is invalid.");
+            CustomLevelCode.DecodeAndValidateLevelCode(code);
             var entry = new CatalogEntry
             {
                 name = name,
@@ -442,9 +440,7 @@ internal sealed class CustomLevelBrowserUi
         }
         try
         {
-            var json = Compression.Decompress(code);
-            if (string.IsNullOrWhiteSpace(json) || JsonUtility.FromJson<Level>(json) == null)
-                throw new System.InvalidOperationException("The level code is invalid.");
+            CustomLevelCode.DecodeAndValidateLevelCode(code);
             editingEntry.name = name;
             editingEntry.code = code;
             editingEntry.date = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm");

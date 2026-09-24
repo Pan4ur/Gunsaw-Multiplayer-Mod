@@ -3,7 +3,6 @@ using BepInEx.Configuration;
 using DiscordIPC.Internal;
 using HarmonyLib;
 using System.Globalization;
-using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -18,81 +17,32 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     public const string PluginVersion = "0.4.9HF";
     private const string PluginMetadataVersion = "0.4.9.1"; // TODO remove on 0.5.0
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
-    private const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
+    internal const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
+    private const string DefaultRelayServer = "udp://expie.fun:27015";
 
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
 
-    internal readonly List<LobbyInfo> lobbies = new List<LobbyInfo>();
-    internal readonly List<ServerInfo> servers = new List<ServerInfo>();
+    internal readonly List<LobbyInfo> lobbies = [];
+    internal readonly List<ServerInfo> servers = [];
     internal bool customLevelCatalogReady;
     internal string customLevelCatalogError = "";
     internal bool serverListLoading;
     internal string serverListError = "";
-    private ConfigEntry<string> masterUrl;
+    internal ConfigEntry<string> masterUrl;
     private ConfigEntry<string> savedPlayerName;
     private ConfigEntry<string> savedLobbyName;
-    private ConfigEntry<bool> savedCreatePvp;
-    private ConfigEntry<bool> savedCreateCanGrab;
-    private ConfigEntry<bool> savedCreateGrabOnlyUnconscious;
-    private ConfigEntry<bool> savedCreateAllowRespawn;
-    private ConfigEntry<bool> savedCreateAutoRestart;
-    private ConfigEntry<bool> savedCreateRespawnAtStart;
-    private ConfigEntry<bool> savedCreatePlayerCollisions;
-    private ConfigEntry<bool> savedCreateCheats;
-    private ConfigEntry<bool> savedCreateAllowSwap;
-    private ConfigEntry<bool> savedCreateAllowScaleChanging;
-    private ConfigEntry<bool> savedCreateAllowObserver;
-    private ConfigEntry<bool> savedCreateTeams;
-    private ConfigEntry<string> savedCreateTeamsCfg;
-    private ConfigEntry<string> savedCreateInitialScale;
-    private ConfigEntry<string> savedCreateStartingWeapon;
-    private ConfigEntry<string> savedCreateRespawnWeapon;
-    private ConfigEntry<string> savedCreateStartingAmmo;
-    private ConfigEntry<string> savedCreateRespawnAmmo;
-    private ConfigEntry<string> savedCreateRespawnTime;
-    private ConfigEntry<string> savedCreateNumberOfLives;
-    private ConfigEntry<string> savedCreateHealthFactor;
-    private ConfigEntry<string> savedCreateRegenFactor;
-    private ConfigEntry<bool> savedCreateBlackout;
-    private ConfigEntry<bool> savedCreateRestrictLight;
-    private ConfigEntry<string> savedCreateMaxPlayers;
-    private readonly List<LobbyPreset> lobbyPresets = new List<LobbyPreset>();
+    private readonly List<Func<bool>> lobbySettingSavers = [];
+    private readonly List<LobbyPreset> lobbyPresets = [];
     internal bool visible;
     internal string status = "Select an option.";
     internal string updateStatus = "Checking for updates..."; 
     internal string lobbyServerAddress = "expie.fun";
     internal string lobbyName = "Lobby";
     internal string playerName = "Player";
-    internal bool createPvp;
-    internal bool createCanGrab = true;
-    internal bool createGrabOnlyUnconscious = true;
-    internal bool createAllowRespawn = true;
-    internal bool createAutoRestart;
-    internal bool createRespawnAtStart = true;
-    internal bool createPlayerCollisions = true;
-    internal bool createCheats;
-    internal bool createAllowSwap = true;
-    internal bool createAllowScaleChanging = true;
-    internal bool createAllowObserver = true;
-    internal bool warningSkipped;
-    internal bool createTeams;
-    internal string createTeamsCfg = "Milkies:blue;Expies:red";
-    internal string createInitialScale = "1.0";
-    internal string createStartingWeapon = "Default";
-    internal string createRespawnWeapon = "Default";
-    internal string createStartingAmmo = LobbyAmmoRules.StartingDefault;
-    internal string createRespawnAmmo = LobbyAmmoRules.RespawnDefault;
-    internal string createRespawnTime = "5";
-    internal string createNumberOfLives = "0";
-    internal string createHealthFactor = "1.0";
-    internal string createRegenFactor = "1.0";
-    internal bool createBlackout;
-    internal bool createRestrictLight;
-    internal string createMaxPlayers = "4";
+    internal LobbySettings lobbySettings = new();
     internal string customLevelJson = "";
-    private string customLevelCode = "";
-    internal ConnectionMode createConnectionMode = ConnectionMode.Relay;
+    internal string customLevelCode = "";
     private string receivedCustomLevelJson = "";
     private int receivedCustomLevelTransferId;
     private bool waitingForCustomLevel;
@@ -107,6 +57,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private ChatCommandSystem _chatCommandSystem;
     private MultiplayerLobbyUi multiplayerLobbyUi;
     private MultiplayerReplicationDebugMode replicationDebugMode;
+    private HeadlessLobbyService headlessLobbyService;
     private string hostedLobbyId = "";
     private string hostedLobbyDisplayName = "";
     private string editedLocalLevelCode = "";
@@ -115,32 +66,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private float nextHeartbeat;
     private int lastHostedPeerListRevision = -1;
     private bool shuttingDown;
-    private bool headlessMode;
-    private bool headlessStartPending;
-    private int hiddenHeadlessAvatarScene = int.MinValue;
-    private int headlessFixedTicks;
-    private int headlessFixedTicksAtLastSample;
-    private float headlessTpsSampleTime = -1f;
-    private int headlessTps;
-    private float headlessLastFixedTickTime = -1f;
-    private float headlessTickIntervalTotalMs;
-    private float headlessTickIntervalMaxMs;
-    private int headlessTickIntervalCount;
-    private int headlessLateTickCount;
-    private float headlessTickIntervalAverageMs;
-    private float headlessTickJitterMs;
-    private int headlessLateTickPercent;
-    private Timer headlessKeepAliveTimer;
-    private int headlessKeepAliveInFlight;
-    private string headlessDefaultMapJson = "";
-    private readonly Dictionary<string, HashSet<ushort>> headlessVotes = new Dictionary<string, HashSet<ushort>>(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<ushort> headlessKnownPeers = new HashSet<ushort>();
     private bool joinInProgress;
     private string joinedLobbyId = "";
     private int updateCheckInProgress;
-    private readonly object joinLock = new object();
-    private readonly Queue<Action> mainThreadActions = new Queue<Action>();
-    private readonly object mainThreadActionsLock = new object();
+    private readonly object joinLock = new ();
+    private readonly Queue<Action> mainThreadActions = new ();
+    private readonly object mainThreadActionsLock = new ();
 
     private void Awake()
     {
@@ -153,102 +84,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
         savedPlayerName = Config.Bind("Lobby", "PlayerName", playerName, "Name shown to other players.");
         savedLobbyName = Config.Bind("Lobby", "LobbyName", lobbyName, "Default name for new lobbies.");
-        savedCreatePvp = Config.Bind("Lobby", "Pvp", createPvp, "Enable PvP in new lobbies.");
-        savedCreateCanGrab = Config.Bind("Lobby", "CanGrab", createCanGrab, "Allow player grabbing in new lobbies.");
-        savedCreateGrabOnlyUnconscious = Config.Bind("Lobby", "GrabOnlyUnconscious", createGrabOnlyUnconscious,
-            "Limit grabbing to unconscious players in new lobbies.");
-        savedCreateAllowRespawn = Config.Bind("Lobby", "AllowRespawn", createAllowRespawn,
-            "Allow respawning in new lobbies.");
-        savedCreateAutoRestart = Config.Bind("Lobby", "AutoRestart", createAutoRestart,
-            "Restart the level after every player or team but one is eliminated.");
-        savedCreateRespawnAtStart = Config.Bind("Lobby", "RespawnAtStart", createRespawnAtStart,
-            "Respawn players at level start in new lobbies.");
-        savedCreatePlayerCollisions = Config.Bind("Lobby", "PlayerCollisions", createPlayerCollisions,
-            "Allow players to collide with each other in new lobbies.");
-        savedCreateCheats = Config.Bind("Lobby", "Cheats", createCheats,
-            "Allow built-in cheats in new lobbies.");
-        savedCreateAllowSwap = Config.Bind("Lobby", "AllowSwap", createAllowSwap,
-            "Allow changing character with /swap while playing.");
-        savedCreateAllowScaleChanging = Config.Bind("Lobby", "AllowScaleChanging", createAllowScaleChanging,
-            "Allow players to change their character scale.");
-        savedCreateAllowObserver = Config.Bind("Lobby", "AllowObserver", createAllowObserver,
-            "Allow players to activate Observer.");
-        savedCreateTeams = Config.Bind("Lobby", "Teams", createTeams, "Enable teams in new lobbies.");
-        savedCreateTeamsCfg = Config.Bind("Lobby", "TeamsCfg", createTeamsCfg, "Teams in Name:color format.");
-        savedCreateInitialScale = Config.Bind("Lobby", "InitialScale", createInitialScale,
-            "Character scale assigned when a player joins or respawns.");
-        savedCreateStartingWeapon = Config.Bind("Lobby", "StartingWeapon", createStartingWeapon,
-            "Weapons assigned when a player joins, in Slot1;Slot2;Slot3 format. Also supports random: Random, Random[in=Name;Name], and Random[ex=Name;Name].");
-        savedCreateRespawnWeapon = Config.Bind("Lobby", "RespawnWeapon", createRespawnWeapon,
-            "Weapons assigned when a player respawns, in Slot1;Slot2;Slot3 format. Also supports random: Random, Random[in=Name;Name], and Random[ex=Name;Name].");
-        savedCreateStartingAmmo = Config.Bind("Lobby", "StartingAmmo", createStartingAmmo,
-            "Ammo assigned when a player joins, in Pistol;Rifle;Heavy;Grenade format.");
-        savedCreateRespawnAmmo = Config.Bind("Lobby", "RespawnAmmo", createRespawnAmmo,
-            "Ammo assigned when a player respawns, in Pistol;Rifle;Heavy;Grenade format.");
-        savedCreateRespawnTime = Config.Bind("Lobby", "RespawnTime", createRespawnTime,
-            "Default respawn delay in seconds.");
-        savedCreateNumberOfLives = Config.Bind("Lobby", "NumberOfLives", createNumberOfLives,
-            "Lives available to each player per level. Zero means unlimited lives.");
-        savedCreateHealthFactor = Config.Bind("Lobby", "HealthFactor", createHealthFactor,
-            "Multiplier for each player's maximum health. Allowed range: 0.01 to 10.");
-        savedCreateRegenFactor = Config.Bind("Lobby", "RegenFactor", createRegenFactor,
-            "Multiplier for each player's health regeneration speed. Allowed range: 0 to 10.");
-        savedCreateBlackout = Config.Bind("Lobby", "Blackout", createBlackout, "Enables darkness with a headlamp on every player.");
-        savedCreateRestrictLight = Config.Bind("Lobby", "RestrictLight", createRestrictLight, "Makes headlamp light stop at obstacles.");
-        savedCreateMaxPlayers = Config.Bind("Lobby", "MaxPlayers", createMaxPlayers,
-            "Default maximum player count.");
+        lobbySettingSavers.AddRange(LobbySettingsSchema.BindConfig(Config, () => lobbySettings));
         playerName = savedPlayerName.Value;
         lobbyName = savedLobbyName.Value;
-        createPvp = savedCreatePvp.Value;
-        createCanGrab = savedCreateCanGrab.Value;
-        createGrabOnlyUnconscious = savedCreateGrabOnlyUnconscious.Value;
-        createAllowRespawn = savedCreateAllowRespawn.Value;
-        createAutoRestart = savedCreateAutoRestart.Value;
-        createRespawnAtStart = savedCreateRespawnAtStart.Value;
-        createPlayerCollisions = savedCreatePlayerCollisions.Value;
-        createCheats = savedCreateCheats.Value;
-        createAllowSwap = savedCreateAllowSwap.Value;
-        createAllowScaleChanging = savedCreateAllowScaleChanging.Value;
-        createAllowObserver = savedCreateAllowObserver.Value;
-        createTeams = savedCreateTeams.Value;
-        createTeamsCfg = savedCreateTeamsCfg.Value;
-        createInitialScale = savedCreateInitialScale.Value;
-        createStartingWeapon = savedCreateStartingWeapon.Value;
-        createRespawnWeapon = savedCreateRespawnWeapon.Value;
-        createStartingAmmo = savedCreateStartingAmmo.Value;
-        createRespawnAmmo = savedCreateRespawnAmmo.Value;
-        createRespawnTime = savedCreateRespawnTime.Value;
-        createNumberOfLives = savedCreateNumberOfLives.Value;
-        createHealthFactor = savedCreateHealthFactor.Value;
-        createRegenFactor = savedCreateRegenFactor.Value;
-        createBlackout = savedCreateBlackout.Value;
-        createRestrictLight = savedCreateRestrictLight.Value;
-        createMaxPlayers = savedCreateMaxPlayers.Value;
         LoadLobbyPresets();
-        headlessMode = HasCommandLineFlag("-headlessLobby");
-        GraffitiSystem.Initialize(headlessMode);
-        if (headlessMode)
-        {
-            HeadlessPresentation.Enable();
-            ApplyHeadlessCommandLineOptions();
-            var mapPath = CommandLineValue("-headlessMap");
-            if (string.IsNullOrEmpty(mapPath)) mapPath = Path.Combine(Paths.GameRootPath, "default_map.txt");
-            try
-            {
-                var code = File.ReadAllText(mapPath).Trim();
-                customLevelJson = Compression.Decompress(code);
-                customLevelCode = code;
-                if (string.IsNullOrWhiteSpace(customLevelJson) || JsonUtility.FromJson<Level>(customLevelJson) == null)
-                    throw new InvalidDataException("Invalid level code.");
-                headlessDefaultMapJson = customLevelJson;
-                Logger.LogInfo("Headless lobby map loaded: " + mapPath);
-            }
-            catch (Exception exception)
-            {
-                Logger.LogInfo("Headless lobby could not load map: " + exception.Message);
-                customLevelJson = "";
-            }
-        }
+        headlessLobbyService = new HeadlessLobbyService(this);
+        GraffitiSystem.Initialize(headlessLobbyService.IsEnabled);
+        headlessLobbyService.Initialize();
         new Harmony(PluginGuid).PatchAll();
         avatarReplication = gameObject.AddComponent<LocalPlayerReplication>();
         gameObject.AddComponent<NetworkAvatarManager>();
@@ -268,13 +110,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void Start()
     {
         KeepMultiplayerRunningInBackground();
-        if (headlessMode)
-        {
-            if (string.IsNullOrEmpty(customLevelJson)) { Logger.LogInfo("Headless lobby disabled: no valid map."); return; }
-            Logger.LogInfo("Starting headless lobby.");
-            if (SceneManager.GetActiveScene().name != "LevelSelect") SceneManager.LoadScene("LevelSelect");
-            CreateLobby();
-        }
+        headlessLobbyService.Start();
     }
 
     internal static void LogInfo(string m)
@@ -295,36 +131,17 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void KeepMultiplayerRunningInBackground()
     {
         Application.runInBackground = true;
-        if (headlessMode)
-        {
-            var manager = GameManager.main;
-            if (manager != null) manager.paused = false;
-            Time.timeScale = 1f;
-            Physics2D.simulationMode = SimulationMode2D.FixedUpdate;
-            return;
-        }
+        if (headlessLobbyService != null && headlessLobbyService.KeepRunning()) return;
         
         MultiplayerTimeControl.KeepMultiplayerActive();
     }
 
     internal static WorldReplication World;
-    internal static bool IsHeadlessMode => Instance != null && Instance.headlessMode;
-    internal static bool IsHeadlessServer => Instance != null && Instance.headlessMode && MultiplayerSession.IsHosting;
 
     private void Update()
     {
         KeepMultiplayerRunningInBackground();
-        UpdateHeadlessTps();
-        if (headlessMode && !warningSkipped)
-        {
-            var warning = FindObjectOfType<ViolenceScreen>();
-            if (warning != null)
-            {
-                warning.clicked = true;
-                warningSkipped = true;
-                return;
-            }
-        }
+        if (headlessLobbyService.UpdateEarly()) return;
         lock (mainThreadActionsLock)
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
@@ -334,7 +151,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             multiplayerLobbyUi?.ShowCustomLevelSuggestion(MultiplayerSession.PlayerName(suggestingPeer), suggestion);
         TeamSystem.Tick();
         ScoreboardSystem.Tick();
-        AutoRestartSystem.Tick(createAutoRestart);
+        AutoRestartSystem.Tick(lobbySettings.AutoRestart);
         MultiplayerSession.SyncBrutalMode();
         BlackoutRule.Tick();
         ObserverSystem.Tick();
@@ -347,29 +164,15 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         LoadDistanceSystem.Apply();
         MultiplayerSession.NoteHostSceneHandle(SceneManager.GetActiveScene().handle);
         MultiplayerSession.SetHostScene(SceneManager.GetActiveScene().name);
-        SendHeadlessHelpToNewPlayers();
-        HideHeadlessHostAvatar();
-        if (headlessStartPending && MultiplayerSession.IsHosting && SceneLoader.main != null)
-        {
-            headlessStartPending = false;
-            try
-            {
-                MultiplayerSession.StartHostCustomLevel(customLevelJson, customLevelCode);
-                StartCustomLevelLocally(customLevelJson);
-                Logger.LogInfo("Headless lobby custom level started.");
-            }
-            catch (Exception exception) { Logger.LogInfo("Headless lobby could not start map: " + exception.Message); }
-        }
+        headlessLobbyService.UpdateLobby();
         if (Time.unscaledTime < customLevelPhysicsRefreshUntil &&
             Time.unscaledTime >= nextCustomLevelPhysicsRefresh)
         {
             nextCustomLevelPhysicsRefresh = Time.unscaledTime + 0.25f;
             NetworkAvatarManager.ForceRefreshRemotePhysics();
         }
-        var sessionName = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected
-            ? MultiplayerSession.LocalPlayerName : playerName;
-        multiplayerHud.Configure(sessionName,
-            MultiplayerSession.IsHosting ? hostedLobbyDisplayName : lobbyName, visible);
+        var sessionName = MultiplayerSession.IsHosting || MultiplayerSession.IsConnected ? MultiplayerSession.LocalPlayerName : playerName;
+        multiplayerHud.Configure(sessionName, MultiplayerSession.IsHosting ? hostedLobbyDisplayName : lobbyName, visible);
         multiplayerLobbyUi.Configure(this);
 
         if (MultiplayerSession.IsHosting && !string.IsNullOrEmpty(hostedLobbyId) &&
@@ -404,18 +207,23 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         int incomingCustomLevelTransferId;
         if (MultiplayerSession.TryTakeCustomLevel(out incomingCustomLevel, out incomingCustomLevelTransferId))
         {
-            RPCManager.CheckInstance();
-            RPCManager.instance?.UpdateCustomLevel(incomingCustomLevel);
-            CustomLevelProgress.SetActive(incomingCustomLevel);
-            receivedCustomLevelJson = Compression.Decompress(incomingCustomLevel);
-            receivedCustomLevelTransferId = incomingCustomLevelTransferId;
-            if (waitingForCustomLevel && (waitingForCustomLevelTransferId == 0 ||
-                waitingForCustomLevelTransferId == incomingCustomLevelTransferId))
+            try
             {
-                waitingForCustomLevel = false;
-                waitingForCustomLevelTransferId = 0;
-                StartCustomLevelLocally(receivedCustomLevelJson);
+                var levelJson = CustomLevelCode.DecodeAndValidateLevelCode(incomingCustomLevel, 8 * 1024 * 1024);
+                RPCManager.CheckInstance();
+                RPCManager.instance?.UpdateCustomLevel(incomingCustomLevel);
+                CustomLevelProgress.SetActive(incomingCustomLevel);
+                receivedCustomLevelJson = levelJson;
+                receivedCustomLevelTransferId = incomingCustomLevelTransferId;
+                if (waitingForCustomLevel && (waitingForCustomLevelTransferId == 0 ||
+                    waitingForCustomLevelTransferId == incomingCustomLevelTransferId))
+                {
+                    waitingForCustomLevel = false;
+                    waitingForCustomLevelTransferId = 0;
+                    StartCustomLevelLocally(receivedCustomLevelJson);
+                }
             }
+            catch (Exception e) { status = "Could not load custom level from host: " + e.Message; }
         }
 
         string sceneToLoad;
@@ -436,8 +244,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             ObserverSystem.ResetForLevelChange(mustReload);
             if (sceneToLoad == "LevelLoader")
             {
-                if (sceneCustomLevelTransferId != 0 &&
-                    receivedCustomLevelTransferId != sceneCustomLevelTransferId)
+                if (sceneCustomLevelTransferId != 0 && receivedCustomLevelTransferId != sceneCustomLevelTransferId)
                 {
                     waitingForCustomLevel = true;
                     waitingForCustomLevelTransferId = sceneCustomLevelTransferId;
@@ -457,12 +264,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             waitingForCustomLevelTransferId = 0;
             receivedCustomLevelJson = "";
             receivedCustomLevelTransferId = 0;
-            status = mustReload ? "Host restarted the level. Reloading..." :
-                "Loading host scene " + sceneToLoad + "...";
+            status = mustReload ? "Host restarted the level. Reloading..." : "Loading host scene " + sceneToLoad + "...";
             SceneManager.LoadScene(sceneToLoad);
         }
 
-        CsExperienceMode.Tick();
         if (MultiplayerHud.IsTyping || (multiplayerHud != null && multiplayerHud.ChatOpen)) return;
         if (Input.GetKeyDown(Controls.keys[Controls.PAIN_SOUND]) && !ArsenalMenu.ConsumesWhineKey(Controls.keys[Controls.PAIN_SOUND]))
         {
@@ -472,12 +277,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 body.screamTime = -1;
                 body.DoGrunt();
             }
-        }
-        if (Input.GetKey(KeyCode.End) && Input.GetKey(KeyCode.Space) &&
-            Input.GetKey(KeyCode.C) && Input.GetKeyDown(KeyCode.S))
-        {
-            CsExperienceMode.Toggle();
-            return;
         }
         if (Input.GetKey(KeyCode.Space) && Input.GetKey(KeyCode.End) && Input.GetKeyDown(KeyCode.R))
         {
@@ -499,34 +298,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal void SaveLobbyPreferences()
     {
         if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) return;
-        var changed = false;
-        if (savedPlayerName.Value != playerName) { savedPlayerName.Value = playerName; changed = true; }
-        if (savedLobbyName.Value != lobbyName) { savedLobbyName.Value = lobbyName; changed = true; }
-        if (savedCreatePvp.Value != createPvp) { savedCreatePvp.Value = createPvp; changed = true; }
-        if (savedCreateCanGrab.Value != createCanGrab) { savedCreateCanGrab.Value = createCanGrab; changed = true; }
-        if (savedCreateGrabOnlyUnconscious.Value != createGrabOnlyUnconscious) { savedCreateGrabOnlyUnconscious.Value = createGrabOnlyUnconscious; changed = true; }
-        if (savedCreateAllowRespawn.Value != createAllowRespawn) { savedCreateAllowRespawn.Value = createAllowRespawn; changed = true; }
-        if (savedCreateAutoRestart.Value != createAutoRestart) { savedCreateAutoRestart.Value = createAutoRestart; changed = true; }
-        if (savedCreateRespawnAtStart.Value != createRespawnAtStart) { savedCreateRespawnAtStart.Value = createRespawnAtStart; changed = true; }
-        if (savedCreatePlayerCollisions.Value != createPlayerCollisions) { savedCreatePlayerCollisions.Value = createPlayerCollisions; changed = true; }
-        if (savedCreateCheats.Value != createCheats) { savedCreateCheats.Value = createCheats; changed = true; }
-        if (savedCreateAllowSwap.Value != createAllowSwap) { savedCreateAllowSwap.Value = createAllowSwap; changed = true; }
-        if (savedCreateAllowScaleChanging.Value != createAllowScaleChanging) { savedCreateAllowScaleChanging.Value = createAllowScaleChanging; changed = true; }
-        if (savedCreateAllowObserver.Value != createAllowObserver) { savedCreateAllowObserver.Value = createAllowObserver; changed = true; }
-        if (savedCreateTeams.Value != createTeams) { savedCreateTeams.Value = createTeams; changed = true; }
-        if (savedCreateTeamsCfg.Value != createTeamsCfg) { savedCreateTeamsCfg.Value = createTeamsCfg; changed = true; }
-        if (savedCreateInitialScale.Value != createInitialScale) { savedCreateInitialScale.Value = createInitialScale; changed = true; }
-        if (savedCreateStartingWeapon.Value != createStartingWeapon) { savedCreateStartingWeapon.Value = createStartingWeapon; changed = true; }
-        if (savedCreateRespawnWeapon.Value != createRespawnWeapon) { savedCreateRespawnWeapon.Value = createRespawnWeapon; changed = true; }
-        if (savedCreateStartingAmmo.Value != createStartingAmmo) { savedCreateStartingAmmo.Value = createStartingAmmo; changed = true; }
-        if (savedCreateRespawnAmmo.Value != createRespawnAmmo) { savedCreateRespawnAmmo.Value = createRespawnAmmo; changed = true; }
-        if (savedCreateRespawnTime.Value != createRespawnTime) { savedCreateRespawnTime.Value = createRespawnTime; changed = true; }
-        if (savedCreateNumberOfLives.Value != createNumberOfLives) { savedCreateNumberOfLives.Value = createNumberOfLives; changed = true; }
-        if (savedCreateHealthFactor.Value != createHealthFactor) { savedCreateHealthFactor.Value = createHealthFactor; changed = true; }
-        if (savedCreateRegenFactor.Value != createRegenFactor) { savedCreateRegenFactor.Value = createRegenFactor; changed = true; }
-        if (savedCreateBlackout.Value != createBlackout) { savedCreateBlackout.Value = createBlackout; changed = true; }
-        if (savedCreateRestrictLight.Value != createRestrictLight) { savedCreateRestrictLight.Value = createRestrictLight; changed = true; }
-        if (savedCreateMaxPlayers.Value != createMaxPlayers) { savedCreateMaxPlayers.Value = createMaxPlayers; changed = true; }
+        var changed = LobbySettingsSchema.SetIfChanged(savedPlayerName, playerName);
+        changed |= LobbySettingsSchema.SetIfChanged(savedLobbyName, lobbyName);
+        foreach (var save in lobbySettingSavers) changed |= save();
         if (changed) Config.Save();
     }
 
@@ -539,145 +313,42 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (name.Length > 32) name = name.Substring(0, 32);
         var preset = CreateLobbyPreset(name);
         var index = lobbyPresets.FindIndex(item => string.Equals(item.name, name, StringComparison.OrdinalIgnoreCase));
-        if (index >= 0) lobbyPresets[index] = preset;
-        else lobbyPresets.Add(preset);
-        SaveLobbyPresets();
+        var updated = new List<LobbyPreset>(lobbyPresets);
+        if (index >= 0) updated[index] = preset;
+        else updated.Add(preset);
+        LobbyPresetStore.Save(updated);
+        lobbyPresets.Clear();
+        lobbyPresets.AddRange(updated);
     }
 
     internal void ApplyLobbyPreset(LobbyPreset preset)
     {
-        if (preset == null) return;
-        createPvp = preset.pvp;
-        createCanGrab = preset.canGrab;
-        createGrabOnlyUnconscious = preset.grabOnlyUnconscious;
-        createAllowRespawn = preset.allowRespawn;
-        createAutoRestart = preset.autoRestart;
-        createRespawnAtStart = preset.respawnAtStart;
-        createPlayerCollisions = preset.playerCollisions;
-        createCheats = preset.cheats;
-        createAllowSwap = preset.allowSwap;
-        createAllowScaleChanging = preset.allowScaleChanging;
-        createAllowObserver = preset.allowObserver;
-        createTeams = preset.teams;
-        createTeamsCfg = preset.teamsCfg ?? "";
-        createInitialScale = preset.initialScale ?? "1.0";
-        createStartingWeapon = preset.startingWeapon ?? "Default";
-        createRespawnWeapon = preset.respawnWeapon ?? "Default";
-        createStartingAmmo = preset.startingAmmo ?? LobbyAmmoRules.StartingDefault;
-        createRespawnAmmo = preset.respawnAmmo ?? LobbyAmmoRules.RespawnDefault;
-        createRespawnTime = preset.respawnTime ?? "5";
-        createNumberOfLives = preset.numberOfLives ?? "0";
-        createHealthFactor = preset.healthFactor ?? "1.0";
-        createRegenFactor = preset.regenFactor ?? "1.0";
-        createBlackout = preset.blackout;
-        createMaxPlayers = preset.maxPlayers ?? "4";
-        createConnectionMode = preset.connectionMode;
+        if (preset?.settings == null) return;
+        lobbySettings = preset.settings.Clone();
         SaveLobbyPreferences();
     }
 
     internal void DeleteLobbyPreset(LobbyPreset preset)
     {
-        if (preset == null || !lobbyPresets.Remove(preset)) return;
-        SaveLobbyPresets();
+        if (preset == null || !lobbyPresets.Contains(preset)) return;
+        var updated = new List<LobbyPreset>(lobbyPresets);
+        updated.Remove(preset);
+        LobbyPresetStore.Save(updated);
+        lobbyPresets.Clear();
+        lobbyPresets.AddRange(updated);
     }
 
     private LobbyPreset CreateLobbyPreset(string name)
     {
-        return new LobbyPreset
-        {
-            name = name, pvp = createPvp, canGrab = createCanGrab, grabOnlyUnconscious = createGrabOnlyUnconscious,
-            allowRespawn = createAllowRespawn, autoRestart = createAutoRestart, respawnAtStart = createRespawnAtStart,
-            playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
-            allowScaleChanging = createAllowScaleChanging, allowObserver = createAllowObserver, teams = createTeams,
-            teamsCfg = createTeamsCfg, initialScale = createInitialScale, startingWeapon = createStartingWeapon,
-            respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
-            respawnTime = createRespawnTime, numberOfLives = createNumberOfLives, healthFactor = createHealthFactor,
-            regenFactor = createRegenFactor, blackout = createBlackout, maxPlayers = createMaxPlayers, connectionMode = createConnectionMode
-        };
+        return new LobbyPreset { name = name, settings = lobbySettings.Clone() };
     }
 
     private void LoadLobbyPresets()
     {
         lobbyPresets.Clear();
-        try
-        {
-            if (!File.Exists(LobbyPresetsPath)) return;
-            foreach (var line in File.ReadAllLines(LobbyPresetsPath))
-            {
-                var fields = line.Split('|');
-                if (fields.Length != 25) continue;
-                var preset = new LobbyPreset
-                {
-                    name = DecodeLobbyPresetValue(fields[0]),
-                    pvp = DecodeLobbyPresetBool(fields[1]),
-                    canGrab = DecodeLobbyPresetBool(fields[2]),
-                    grabOnlyUnconscious = DecodeLobbyPresetBool(fields[3]),
-                    allowRespawn = DecodeLobbyPresetBool(fields[4]),
-                    autoRestart = DecodeLobbyPresetBool(fields[5]),
-                    respawnAtStart = DecodeLobbyPresetBool(fields[6]),
-                    playerCollisions = DecodeLobbyPresetBool(fields[7]),
-                    cheats = DecodeLobbyPresetBool(fields[8]),
-                    allowSwap = DecodeLobbyPresetBool(fields[9]),
-                    allowScaleChanging = DecodeLobbyPresetBool(fields[10]),
-                    allowObserver = DecodeLobbyPresetBool(fields[11]),
-                    teams = DecodeLobbyPresetBool(fields[12]),
-                    teamsCfg = DecodeLobbyPresetValue(fields[13]),
-                    initialScale = DecodeLobbyPresetValue(fields[14]),
-                    startingWeapon = DecodeLobbyPresetValue(fields[15]),
-                    respawnWeapon = DecodeLobbyPresetValue(fields[16]),
-                    startingAmmo = DecodeLobbyPresetValue(fields[17]),
-                    respawnAmmo = DecodeLobbyPresetValue(fields[18]),
-                    respawnTime = DecodeLobbyPresetValue(fields[19]),
-                    numberOfLives = DecodeLobbyPresetValue(fields[20]),
-                    healthFactor = DecodeLobbyPresetValue(fields[21]),
-                    regenFactor = DecodeLobbyPresetValue(fields[22]),
-                    maxPlayers = DecodeLobbyPresetValue(fields[23])
-                };
-                if (Enum.TryParse(DecodeLobbyPresetValue(fields[24]), out ConnectionMode mode)) preset.connectionMode = mode;
-                if (!string.IsNullOrWhiteSpace(preset.name)) lobbyPresets.Add(preset);
-            }
-        }
-        catch (Exception exception) { Logger.LogInfo("Could not load lobby presets: " + exception.Message); }
+        try { lobbyPresets.AddRange(LobbyPresetStore.Load()); }
+        catch (Exception e) { Logger.LogInfo("Could not load lobby presets: " + e.Message); }
     }
-
-    private void SaveLobbyPresets()
-    {
-        Directory.CreateDirectory(Paths.ConfigPath);
-        var lines = new List<string>(lobbyPresets.Count);
-        foreach (var preset in lobbyPresets)
-        {
-            lines.Add(string.Join("|", new[]
-            {
-                EncodeLobbyPresetValue(preset.name), EncodeLobbyPresetValue(preset.pvp.ToString()), EncodeLobbyPresetValue(preset.canGrab.ToString()),
-                EncodeLobbyPresetValue(preset.grabOnlyUnconscious.ToString()), EncodeLobbyPresetValue(preset.allowRespawn.ToString()), EncodeLobbyPresetValue(preset.autoRestart.ToString()),
-                EncodeLobbyPresetValue(preset.respawnAtStart.ToString()), EncodeLobbyPresetValue(preset.playerCollisions.ToString()), EncodeLobbyPresetValue(preset.cheats.ToString()),
-                EncodeLobbyPresetValue(preset.allowSwap.ToString()), EncodeLobbyPresetValue(preset.allowScaleChanging.ToString()), EncodeLobbyPresetValue(preset.allowObserver.ToString()),
-                EncodeLobbyPresetValue(preset.teams.ToString()), EncodeLobbyPresetValue(preset.teamsCfg), EncodeLobbyPresetValue(preset.initialScale),
-                EncodeLobbyPresetValue(preset.startingWeapon), EncodeLobbyPresetValue(preset.respawnWeapon), EncodeLobbyPresetValue(preset.startingAmmo),
-                EncodeLobbyPresetValue(preset.respawnAmmo), EncodeLobbyPresetValue(preset.respawnTime), EncodeLobbyPresetValue(preset.numberOfLives),
-                EncodeLobbyPresetValue(preset.healthFactor), EncodeLobbyPresetValue(preset.regenFactor), EncodeLobbyPresetValue(preset.maxPlayers),
-                EncodeLobbyPresetValue(preset.connectionMode.ToString())
-            }));
-        }
-        File.WriteAllLines(LobbyPresetsPath, lines.ToArray());
-    }
-
-    private static string LobbyPresetsPath => Path.Combine(Paths.ConfigPath, "GunsawMultiplayer.LobbyPresets.txt");
-
-    private static string EncodeLobbyPresetValue(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? ""));
-
-    private static string DecodeLobbyPresetValue(string value)
-    {
-        try { return Encoding.UTF8.GetString(Convert.FromBase64String(value)); }
-        catch (Exception exception)
-        {
-            LogInfo("Invalid encoded lobby-preset field: " + exception.Message);
-            return "";
-        }
-    }
-
-    private static bool DecodeLobbyPresetBool(string value) => bool.TryParse(DecodeLobbyPresetValue(value), out var result) && result;
-
 
     internal void RefreshLobbies()
     {
@@ -764,8 +435,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             using (var ping = new System.Net.NetworkInformation.Ping())
             {
                 var reply = ping.Send(address, 1500);
-                return reply != null && reply.Status == System.Net.NetworkInformation.IPStatus.Success && reply.RoundtripTime <= int.MaxValue
-                    ? (int)reply.RoundtripTime : -1;
+                return reply != null && reply.Status == System.Net.NetworkInformation.IPStatus.Success && reply.RoundtripTime <= int.MaxValue ? (int)reply.RoundtripTime : -1;
             }
         }
         catch { return -1; }
@@ -794,12 +464,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
         try
         {
-            var levelJson = Compression.Decompress(clipboard);
-            var parsed = JsonUtility.FromJson<Level>(levelJson);
-            if (parsed == null || string.IsNullOrWhiteSpace(levelJson))
-                throw new InvalidDataException("The level JSON is invalid.");
-            if (Encoding.UTF8.GetByteCount(levelJson) > 8 * 1024 * 1024)
-                throw new InvalidDataException("The level is larger than 8 MB.");
+            var levelJson = CustomLevelCode.DecodeAndValidateLevelCode(clipboard, 8 * 1024 * 1024);
             CustomLevelProgress.ClearActive();
             customLevelJson = levelJson;
             customLevelCode = Compression.Compress(levelJson);
@@ -831,7 +496,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RPCManager.CheckInstance();
             RPCManager.instance?.UpdateCustomLevel(customLevelCode);
         }
-        catch (Exception exception) { status = "Could not start custom level: " + exception.Message; }
+        catch (Exception e) { status = "Could not start custom level: " + e.Message; }
     }
 
     internal void SuggestCustomLevel()
@@ -881,13 +546,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void StartCatalogCustomLevel(string code, string levelName)
     {
-        if (!MultiplayerSession.IsHosting)
+        var hosting = MultiplayerSession.IsHosting;
+        try
         {
-            try
+            var levelJson = CustomLevelCode.DecodeAndValidateCatalogLevelCode(code, hosting ? 4 * 1024 * 1024 : int.MaxValue);
+            if (!hosting)
             {
-                var levelJson = DecodeCatalogLevelCode(code);
-                if (JsonUtility.FromJson<Level>(levelJson) == null || string.IsNullOrWhiteSpace(levelJson))
-                    throw new InvalidDataException("The level JSON is invalid.");
                 if (!MultiplayerSession.IsConnected)
                 {
                     customLevelJson = levelJson;
@@ -901,34 +565,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 var sizeKiB = (Encoding.UTF8.GetByteCount(levelJson) + 1023) / 1024;
                 MultiplayerSession.SuggestCustomLevel(code, sizeKiB);
                 status = "Custom level suggestion sent to the host.";
+                return;
             }
-            catch (Exception exception) { status = "Could not suggest custom level: " + exception.Message; }
-            return;
-        }
-        
-        try
-        {
-            var levelJson = DecodeCatalogLevelCode(code);
-            if (JsonUtility.FromJson<Level>(levelJson) == null || string.IsNullOrWhiteSpace(levelJson))
-                throw new InvalidDataException("The level JSON is invalid.");
-            if (Encoding.UTF8.GetByteCount(levelJson) > 4 * 1024 * 1024)
-                throw new InvalidDataException("The level is larger than 4 MB.");
             CustomLevelProgress.SetActive(code);
             customLevelJson = levelJson;
             customLevelCode = code;
             status = "Starting custom level: " + levelName;
             StartCustomLevel();
         }
-        catch (Exception exception) { status = "Could not load custom level: " + exception.Message; }
+        catch (Exception e) { status = (hosting ? "Could not load custom level: " : "Could not suggest custom level: ") + e.Message; }
     }
 
     internal void OpenCustomLevelEditor(string code, string levelName)
     {
         try
         {
-            var levelJson = Compression.Decompress(code);
-            if (string.IsNullOrWhiteSpace(levelJson) || JsonUtility.FromJson<Level>(levelJson) == null)
-                throw new InvalidDataException("The level code is invalid.");
+            var levelJson = CustomLevelCode.DecodeAndValidateLevelCode(code);
             var loader = SceneLoader.main;
             if (loader == null)
                 throw new InvalidOperationException("Scene loader is not ready.");
@@ -969,7 +621,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         editedLocalLevelName = "";
     }
 
-    private void StartCustomLevelLocally(string levelJson)
+    internal void StartCustomLevelLocally(string levelJson)
     {
         if (string.IsNullOrWhiteSpace(levelJson)) return;
         var loader = SceneLoader.main;
@@ -985,33 +637,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         try
         {
-            int respawnTime;
-            if (!int.TryParse(createRespawnTime, out respawnTime)) respawnTime = 5;
-            respawnTime = Mathf.Clamp(respawnTime, 0, 3600);
-            createRespawnTime = respawnTime.ToString();
-            int numberOfLives;
-            if (!int.TryParse(createNumberOfLives, out numberOfLives)) numberOfLives = 0;
-            numberOfLives = Mathf.Clamp(numberOfLives, 0, ushort.MaxValue);
-            createNumberOfLives = numberOfLives.ToString();
-            var healthFactor = ParseHealthFactor();
-            var regenFactor = ParseRegenFactor();
-            int maxPlayers;
-            if (!int.TryParse(createMaxPlayers, out maxPlayers)) maxPlayers = 4;
-            maxPlayers = Mathf.Clamp(maxPlayers, 2, 64);
-            createMaxPlayers = maxPlayers.ToString();
-            var body = JsonUtility.ToJson(new CreateLobbyRequest { name = lobbyName, hostName = playerName,
-                map = "Host chooses level", maxPlayers = maxPlayers, hostPort = 27016, pvp = createPvp,
-                canGrab = createCanGrab, grabOnlyUnconscious = createGrabOnlyUnconscious,
-                allowRespawn = createAllowRespawn, respawnTime = respawnTime, numberOfLives = numberOfLives,
-                respawnAtStart = createRespawnAtStart,
-                playerCollisions = createPlayerCollisions, cheats = createCheats, allowSwap = createAllowSwap,
-                allowScaleChanging = createAllowScaleChanging, initialScale = ParseInitialScale(), healthFactor = healthFactor, regenFactor = regenFactor, blackout = createBlackout, restrictLight = createRestrictLight, startingWeapon = createStartingWeapon, respawnWeapon = createRespawnWeapon, startingAmmo = createStartingAmmo, respawnAmmo = createRespawnAmmo,
-                allowObserver = createAllowObserver,
-                teams = createTeams, teamsCfg = createTeamsCfg,
-                brutalMode = MultiplayerSession.ReadBrutalMode(),
-                hostP2P = createConnectionMode != ConnectionMode.Relay,
-                connectionMode = createConnectionMode.ToString(), modVersion = PluginVersion });
-            ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, respawnTime, numberOfLives, healthFactor, regenFactor, maxPlayers));
+            var parsed = lobbySettings.Parse(4);
+            var settings = lobbySettings.Clone();
+            var requestedLobbyName = lobbyName;
+            var requestedPlayerName = playerName;
+            var body = JsonUtility.ToJson(BuildLobbyRequest(settings, parsed, requestedLobbyName, requestedPlayerName, "Host chooses level", 0, false));
+            ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, settings, parsed, requestedLobbyName, requestedPlayerName));
         }
         catch (Exception e) { status = "Could not create lobby: " + e.Message; }
     }
@@ -1023,23 +654,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             status = "Create a lobby first.";
             return;
         }
-        int respawnTime;
-        if (!int.TryParse(createRespawnTime, out respawnTime)) respawnTime = 5;
-        respawnTime = Mathf.Clamp(respawnTime, 0, 3600);
-        createRespawnTime = respawnTime.ToString();
-        int numberOfLives;
-        if (!int.TryParse(createNumberOfLives, out numberOfLives)) numberOfLives = 0;
-        numberOfLives = Mathf.Clamp(numberOfLives, 0, ushort.MaxValue);
-        createNumberOfLives = numberOfLives.ToString();
-        var healthFactor = ParseHealthFactor();
-        var regenFactor = ParseRegenFactor();
-        int maxPlayers;
-        if (!int.TryParse(createMaxPlayers, out maxPlayers)) maxPlayers = MultiplayerSession.MaxPlayers;
-        maxPlayers = Mathf.Clamp(maxPlayers, 2, 64);
-        createMaxPlayers = maxPlayers.ToString();
-        if (!MultiplayerSession.UpdateHostSettings(createPvp, createCanGrab, createGrabOnlyUnconscious,
-            createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-            createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, healthFactor, regenFactor, createBlackout, createRestrictLight, maxPlayers))
+        var parsed = lobbySettings.Parse(MultiplayerSession.MaxPlayers);
+        if (!MultiplayerSession.UpdateHostSettings(lobbySettings, parsed))
         {
             status = "Could not update lobby settings.";
             return;
@@ -1085,7 +701,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             var mode = ConnectionMode.Relay;
             foreach (var lobby in lobbies)
-                if (lobby.id == id) { mode = lobby.connectionMode; break; }
+                if (lobby.id == id)
+                {
+                    mode = lobby.connectionMode;
+                    break;
+                }
             status = "Joining lobby...";
             ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(id, mode));
         }
@@ -1109,11 +729,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 var tag = JsonString(release, "tag_name").Trim();
                 if (string.IsNullOrEmpty(tag)) throw new InvalidDataException("Latest release has no tag.");
                 var comparison = CompareVersions(PluginVersion, tag);
-                result = comparison < 0
-                    ? "UPDATE AVAILABLE: " + tag
-                    : comparison > 0
-                        ? "INSTALLED BUILD IS NEWER THAN (HOW??)" + tag
-                        : "YOU ARE UP TO DATE";
+                result = comparison < 0 ? "UPDATE AVAILABLE: " + tag : comparison > 0 ? "INSTALLED BUILD IS NEWER THAN (HOW??)" + tag : "YOU ARE UP TO DATE";
             }
             catch (Exception exception)
             {
@@ -1166,8 +782,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return _chatCommandSystem != null && _chatCommandSystem.TryHandle(message);
     }
 
-    internal bool CanBanPlayers => MultiplayerSession.IsHosting &&
-        !string.IsNullOrEmpty(hostedLobbyId) && !string.IsNullOrEmpty(hostRelayKey);
+    internal bool CanBanPlayers => MultiplayerSession.IsHosting && !string.IsNullOrEmpty(hostedLobbyId) && !string.IsNullOrEmpty(hostRelayKey);
 
     internal void BanPlayerFromCommand(string playerName, ushort peerId)
     {
@@ -1195,7 +810,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         status = "Connecting via " + mode + " through UDP relay " + address + "...";
     }
 
-    private void CreateLobbyInDirectory(string body, int respawnTime, int numberOfLives, float healthFactor, float regenFactor, int maxPlayers)
+    private void CreateLobbyInDirectory(string body, LobbySettings settings, ParsedLobbySettings parsed, string requestedLobbyName, string requestedPlayerName)
     {
         try
         {
@@ -1204,17 +819,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var relayKey = JsonString(response, "hostRelayKey");
             var relayAddress = JsonString(response, "relayAddress");
             var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 64);
-            if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayAddress();
+            if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayServer;
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
             RunOnMainThread(() =>
             {
-                MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, createPvp, createCanGrab,
-                    createGrabOnlyUnconscious, createAllowRespawn, createAutoRestart, respawnTime, numberOfLives, createRespawnAtStart, createPlayerCollisions, createCheats, createAllowSwap,
-                    createAllowScaleChanging, ParseInitialScale(), createAllowObserver, createTeams, createTeamsCfg, createStartingWeapon, createRespawnWeapon, createStartingAmmo, createRespawnAmmo, healthFactor, regenFactor, createBlackout, createRestrictLight,
-                    playerName, hostPeerId, maxPlayers, createConnectionMode);
-                avatarReplication.Configure(playerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = lobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
-                if (headlessMode) StartHeadlessKeepAlive(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
-                if (headlessMode) headlessStartPending = true;
+                MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, settings, parsed, requestedPlayerName, hostPeerId);
+                avatarReplication.Configure(requestedPlayerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = requestedLobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
+                headlessLobbyService.OnLobbyCreated(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
             });
         }
         catch (Exception exception) { RunOnMainThread(() => status = "Could not create lobby: " + exception.Message); }
@@ -1223,388 +834,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private void FixedUpdate()
     {
         PlayerCarrySystem.FixedTick();
-        if (headlessMode)
-        {
-            var now = Time.realtimeSinceStartup;
-            if (headlessLastFixedTickTime >= 0f)
-            {
-                var intervalMs = (now - headlessLastFixedTickTime) * 1000f;
-                headlessTickIntervalTotalMs += intervalMs;
-                headlessTickIntervalMaxMs = Mathf.Max(headlessTickIntervalMaxMs, intervalMs);
-                headlessTickIntervalCount++;
-                if (intervalMs > Time.fixedDeltaTime * 1500f) headlessLateTickCount++;
-            }
-            headlessLastFixedTickTime = now;
-            Interlocked.Increment(ref headlessFixedTicks);
-        }
-    }
-
-    internal bool TryHandleLobbyChatCommand(ushort senderId, string message)
-    {
-        if (!headlessMode || !MultiplayerSession.IsHost || string.IsNullOrWhiteSpace(message)) return false;
-        var command = message.Trim();
-        if (string.Equals(command, "!help", StringComparison.OrdinalIgnoreCase))
-        {
-            SendHeadlessHelp(senderId);
-            return true;
-        }
-        if (string.Equals(command, "!tps", StringComparison.OrdinalIgnoreCase))
-        {
-            UpdateHeadlessTps();
-            var stats = MultiplayerSession.DebugStats();
-            SendHeadlessChat("TPS: " + headlessTps + " | tick interval: avg " + headlessTickIntervalAverageMs.ToString("0.0", CultureInfo.InvariantCulture) +
-                " ms | max " + headlessTickIntervalMaxMs.ToString("0.0", CultureInfo.InvariantCulture) + " ms | jitter " +
-                headlessTickJitterMs.ToString("0.0", CultureInfo.InvariantCulture) + " ms | late ticks: " + headlessLateTickPercent + "% | RX: " + (stats.ReceivedBytesPerSecond / 1024f).ToString("0.0") +
-                " KiB/s | TX: " + (stats.SentBytesPerSecond / 1024f).ToString("0.0") + " KiB/s");
-            return true;
-        }
-        if (string.Equals(command, "!votedefault", StringComparison.OrdinalIgnoreCase))
-            return RegisterHeadlessVote(senderId, "default", "default map");
-        if (string.Equals(command, "!vote restart", StringComparison.OrdinalIgnoreCase))
-            return RegisterHeadlessVote(senderId, "restart", "restart");
-        const string changePrefix = "!vote change ";
-        if (command.StartsWith(changePrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            var target = command.Substring(changePrefix.Length).Trim();
-            if (string.IsNullOrEmpty(target))
-            {
-                SendHeadlessChat("Usage: !vote change <map name or scene>", senderId);
-                return true;
-            }
-            return RegisterHeadlessVote(senderId, "change:" + target, "change to " + target);
-        }
-        return false;
-    }
-
-    private void SendHeadlessHelpToNewPlayers()
-    {
-        if (!headlessMode || !MultiplayerSession.IsHosting) return;
-        var peers = MultiplayerSession.PeerIds();
-        foreach (var peerId in peers)
-            if (headlessKnownPeers.Add(peerId)) SendHeadlessHelp(peerId);
-        headlessKnownPeers.RemoveWhere(peerId => Array.IndexOf(peers, peerId) < 0);
-    }
-
-    private void StartHeadlessKeepAlive(string lobbyId, string relayKey, string directoryUrl)
-    {
-        if (headlessKeepAliveTimer != null) headlessKeepAliveTimer.Dispose();
-        headlessKeepAliveTimer = new Timer(_ =>
-        {
-            if (Interlocked.CompareExchange(ref headlessKeepAliveInFlight, 1, 0) != 0) return;
-            try
-            {
-                MultiplayerSession.UpdatePing();
-                var players = MultiplayerSession.PlayerCount;
-                HttpAt(directoryUrl, "PUT", "/v1/lobbies/" + lobbyId,
-                    "{\"players\":" + players + ",\"map\":\"LevelLoader\"}", "Bearer " + relayKey);
-            }
-            catch (Exception exception) { Logger.LogInfo("Headless keep-alive failed: " + exception.Message); }
-            finally { Interlocked.Exchange(ref headlessKeepAliveInFlight, 0); }
-        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
-    }
-
-    private void UpdateHeadlessTps()
-    {
-        if (!headlessMode) return;
-        var now = Time.realtimeSinceStartup;
-        if (headlessTpsSampleTime < 0f)
-        {
-            headlessTpsSampleTime = now;
-            headlessFixedTicksAtLastSample = Interlocked.CompareExchange(ref headlessFixedTicks, 0, 0);
-            return;
-        }
-        var elapsed = now - headlessTpsSampleTime;
-        if (elapsed < 0.25f) return;
-        var ticks = Interlocked.CompareExchange(ref headlessFixedTicks, 0, 0);
-        headlessTps = Mathf.RoundToInt((ticks - headlessFixedTicksAtLastSample) / elapsed);
-        if (headlessTickIntervalCount > 0)
-        {
-            headlessTickIntervalAverageMs = headlessTickIntervalTotalMs / headlessTickIntervalCount;
-            headlessTickJitterMs = headlessTickIntervalMaxMs - headlessTickIntervalAverageMs;
-            headlessLateTickPercent = Mathf.RoundToInt(headlessLateTickCount * 100f / headlessTickIntervalCount);
-        }
-        else
-        {
-            headlessTickIntervalAverageMs = 0f;
-            headlessTickJitterMs = 0f;
-            headlessLateTickPercent = 0;
-        }
-        headlessTickIntervalTotalMs = 0f;
-        headlessTickIntervalMaxMs = 0f;
-        headlessTickIntervalCount = 0;
-        headlessLateTickCount = 0;
-        headlessFixedTicksAtLastSample = ticks;
-        headlessTpsSampleTime = now;
-    }
-
-    private void HideHeadlessHostAvatar()
-    {
-        if (!IsHeadlessServer || SceneManager.GetActiveScene().name != "LevelLoader") return;
-        var sceneHandle = SceneManager.GetActiveScene().handle;
-        if (hiddenHeadlessAvatarScene == sceneHandle) return;
-        var player = PlayerScript.player;
-        if (player == null || player.bodyScript == null) return;
-        hiddenHeadlessAvatarScene = sceneHandle;
-        var body = player.bodyScript;
-        body.transform.position = new Vector3(100000f, 100000f, 0f);
-        foreach (var collider in body.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
-        foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
-        {
-            rigidbody.velocity = Vector2.zero;
-            rigidbody.angularVelocity = 0f;
-            rigidbody.simulated = false;
-        }
-    }
-
-    private bool RegisterHeadlessVote(ushort senderId, string target, string description)
-    {
-        foreach (var vote in headlessVotes.Values) vote.Remove(senderId);
-        HashSet<ushort> voters;
-        if (!headlessVotes.TryGetValue(target, out voters))
-        {
-            voters = new HashSet<ushort>();
-            headlessVotes[target] = voters;
-        }
-        voters.Add(senderId);
-        var needed = MultiplayerSession.PeerIds().Length / 2 + 1;
-        SendHeadlessChat("Vote " + description + ": " + voters.Count + "/" + needed + ".");
-        if (voters.Count < needed) return true;
-        headlessVotes.Clear();
-        SendHeadlessChat("Vote passed: " + description + ".");
-        if (target == "restart") RestartHeadlessCurrentLevel();
-        else if (target == "default") StartHeadlessCustomLevel(headlessDefaultMapJson);
-        else StartHeadlessMapChange(target.Substring("change:".Length));
-        return true;
-    }
-
-    private void StartHeadlessMapChange(string mapOrScene)
-    {
-        if (IsBuiltInHeadlessScene(mapOrScene))
-        {
-            try
-            {
-                MultiplayerSession.EndHostCustomLevel(mapOrScene);
-                SceneLoader.main.LoadScene(mapOrScene);
-            }
-            catch (Exception exception) { SendHeadlessChat("Could not load scene: " + exception.Message); }
-            return;
-        }
-        SendHeadlessChat("Looking up map: " + mapOrScene + "...");
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            try
-            {
-                var catalog = new WebClient().DownloadString(CustomLevelsUrl);
-                RunOnMainThread(() => LoadHeadlessCatalogMap(catalog, mapOrScene));
-            }
-            catch (Exception exception) { RunOnMainThread(() => SendHeadlessChat("Could not load map: " + exception.Message)); }
-        });
-    }
-
-    private void LoadHeadlessCatalogMap(string catalog, string requestedName)
-    {
-        try
-        {
-            HeadlessLevelEntry match = null;
-            var requestedKey = NormalizeHeadlessLevelName(requestedName);
-            var catalogEntries = ParseHeadlessCatalog(catalog);
-            foreach (var entry in catalogEntries)
-                if (NormalizeHeadlessLevelName(entry.name) == requestedKey) { match = entry; break; }
-            if (match == null || string.IsNullOrWhiteSpace(match.code))
-            {
-                var suggestions = new List<string>();
-                foreach (var entry in catalogEntries)
-                    if (!string.IsNullOrWhiteSpace(entry.name) &&
-                        NormalizeHeadlessLevelName(entry.name).Contains(requestedKey)) suggestions.Add(entry.name);
-                throw new InvalidDataException(suggestions.Count == 0 ? "map not found" :
-                    "map not found; try: " + string.Join(" | ", suggestions.GetRange(0, Math.Min(3, suggestions.Count)).ToArray()));
-            }
-            var mapJson = DecodeCatalogLevelCode(match.code);
-            if (JsonUtility.FromJson<Level>(mapJson) == null) throw new InvalidDataException("map code is invalid");
-            StartHeadlessCustomLevel(mapJson);
-        }
-        catch (Exception exception) { SendHeadlessChat("Could not load map: " + exception.Message); }
-    }
-
-    private void StartHeadlessCustomLevel(string levelJson)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(levelJson)) throw new InvalidDataException("no default map is loaded");
-            customLevelJson = levelJson;
-            MultiplayerSession.StartHostCustomLevel(levelJson, Compression.Compress(levelJson));
-            MultiplayerSession.NotifyHostSceneReload("LevelLoader", true);
-            StartCustomLevelLocally(levelJson);
-        }
-        catch (Exception exception) { SendHeadlessChat("Could not load map: " + exception.Message); }
-    }
-
-    private void RestartHeadlessCurrentLevel()
-    {
-        try
-        {
-            var loader = SceneLoader.main;
-            if (loader == null) throw new InvalidOperationException("scene loader is not ready");
-            loader.LoadScene(SceneManager.GetActiveScene().name);
-        }
-        catch (Exception exception) { SendHeadlessChat("Could not restart level: " + exception.Message); }
-    }
-
-    private static string DecodeCatalogLevelCode(string value)
-    {
-        var code = (value ?? "").Trim();
-        using (var compressed = new MemoryStream(Convert.FromBase64String(code)))
-        using (var inflater = new DeflateStream(compressed, CompressionMode.Decompress))
-        using (var output = new MemoryStream())
-        {
-            inflater.CopyTo(output);
-            return Encoding.UTF8.GetString(output.ToArray()).Trim();
-        }
-    }
-
-    private static bool IsBuiltInHeadlessScene(string value)
-    {
-        value = (value ?? "").Trim();
-        if (value.StartsWith("actualLevel", StringComparison.OrdinalIgnoreCase)) value = value.Substring("actualLevel".Length);
-        else if (value.StartsWith("campaign", StringComparison.OrdinalIgnoreCase)) value = value.Substring("campaign".Length);
-        else return false;
-        int ignored;
-        return int.TryParse(value, out ignored);
-    }
-
-    private static string NormalizeHeadlessLevelName(string value)
-    {
-        var source = value ?? "";
-        var builder = new StringBuilder(source.Length);
-        foreach (var character in source)
-            if (char.IsLetterOrDigit(character)) builder.Append(char.ToLowerInvariant(character));
-        return builder.ToString();
+        headlessLobbyService.FixedTick();
     }
 
     public string GetCurrentLobbyId()
     {
         if (string.IsNullOrEmpty(joinedLobbyId))
             return hostedLobbyId;
-   else     return joinedLobbyId;
-    }
 
-    private static List<HeadlessLevelEntry> ParseHeadlessCatalog(string catalog)
-    {
-        var result = new List<HeadlessLevelEntry>();
-        var matches = Regex.Matches(catalog ?? "", "\\\"name\\\"\\s*:\\s*\\\"(?<name>(?:\\\\.|[^\\\"])*)\\\".*?\\\"code\\\"\\s*:\\s*\\\"(?<code>(?:\\\\.|[^\\\"])*)\\\"", RegexOptions.Singleline);
-        foreach (Match match in matches)
-        {
-            var name = Regex.Unescape(match.Groups["name"].Value);
-            var code = Regex.Unescape(match.Groups["code"].Value);
-            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(code))
-                result.Add(new HeadlessLevelEntry { name = name, code = code });
-        }
-        if (result.Count == 0) throw new InvalidDataException("level catalog returned no maps");
-        return result;
-    }
-
-    private void SendHeadlessHelp(ushort targetPeerId)
-    {
-        SendHeadlessChat("Maps: !vote change <name>; scenes: actualLevel1/campaign6; !vote restart | !tps | !votedefault | !help", targetPeerId);
-    }
-
-    private static void SendHeadlessChat(string text, ushort targetPeerId = 0)
-    {
-        ChatPacket packet;
-        if (ChatService.TryCreate(text, true, out packet)) MultiplayerSession.Send(packet, targetPeerId);
-    }
-
-    private sealed class HeadlessLevelEntry { public string name; public string code; }
-
-    private static bool HasCommandLineFlag(string flag)
-    {
-        foreach (var arg in Environment.GetCommandLineArgs())
-            if (string.Equals(arg, flag, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
-    }
-
-    private static string CommandLineValue(string flag)
-    {
-        var args = Environment.GetCommandLineArgs();
-        for (var index = 0; index + 1 < args.Length; index++)
-            if (string.Equals(args[index], flag, StringComparison.OrdinalIgnoreCase)) return args[index + 1];
-        return "";
-    }
-
-    private static void ApplyHeadlessBooleanOption(string flag, ref bool value)
-    {
-        var text = CommandLineValue(flag);
-        bool parsed;
-        if (bool.TryParse(text, out parsed))
-        {
-            value = parsed;
-            return;
-        }
-        if (text == "1") { value = true; return; }
-        if (text == "0") { value = false; return; }
-        if (HasCommandLineFlag("--no-" + flag.Substring(2))) { value = false; return; }
-        if (HasCommandLineFlag(flag)) value = true;
-    }
-
-    private void ApplyHeadlessCommandLineOptions()
-    {
-        var value = CommandLineValue("--master");
-        if (!string.IsNullOrWhiteSpace(value) && TryNormalizeServerAddress(value, out var normalized))
-        {
-            masterUrl.Value = normalized;
-            lobbyServerAddress = DisplayServerAddress(normalized);
-        }
-        value = CommandLineValue("--name");
-        if (!string.IsNullOrWhiteSpace(value)) lobbyName = value.Trim();
-        value = CommandLineValue("--host");
-        if (!string.IsNullOrWhiteSpace(value)) playerName = value.Trim();
-        value = CommandLineValue("--max-players");
-        if (!string.IsNullOrWhiteSpace(value)) createMaxPlayers = value;
-        value = CommandLineValue("--respawn-seconds");
-        if (!string.IsNullOrWhiteSpace(value)) createRespawnTime = value;
-        value = CommandLineValue("--lives");
-        if (!string.IsNullOrWhiteSpace(value)) createNumberOfLives = value;
-        value = CommandLineValue("--health-factor");
-        if (!string.IsNullOrWhiteSpace(value)) createHealthFactor = value;
-        value = CommandLineValue("--regen-factor");
-        if (!string.IsNullOrWhiteSpace(value)) createRegenFactor = value;
-        value = CommandLineValue("--teams-cfg");
-        if (!string.IsNullOrWhiteSpace(value)) createTeamsCfg = value;
-        value = CommandLineValue("--initial-scale");
-        if (!string.IsNullOrWhiteSpace(value)) createInitialScale = value;
-        value = CommandLineValue("--starting-weapon");
-        if (!string.IsNullOrWhiteSpace(value)) createStartingWeapon = value;
-        value = CommandLineValue("--respawn-weapon");
-        if (!string.IsNullOrWhiteSpace(value)) createRespawnWeapon = value;
-        value = CommandLineValue("--starting-ammo");
-        if (!string.IsNullOrWhiteSpace(value)) createStartingAmmo = value;
-        value = CommandLineValue("--respawn-ammo");
-        if (!string.IsNullOrWhiteSpace(value)) createRespawnAmmo = value;
-        value = CommandLineValue("--connection");
-        ConnectionMode connectionMode;
-        if (Enum.TryParse(value, true, out connectionMode)) createConnectionMode = connectionMode;
-        ApplyHeadlessBooleanOption("--pvp", ref createPvp);
-        ApplyHeadlessBooleanOption("--can-grab", ref createCanGrab);
-        ApplyHeadlessBooleanOption("--grab-only-unconscious", ref createGrabOnlyUnconscious);
-        ApplyHeadlessBooleanOption("--allow-respawn", ref createAllowRespawn);
-        ApplyHeadlessBooleanOption("--auto-restart", ref createAutoRestart);
-        ApplyHeadlessBooleanOption("--respawn-at-start", ref createRespawnAtStart);
-        ApplyHeadlessBooleanOption("--player-collisions", ref createPlayerCollisions);
-        ApplyHeadlessBooleanOption("--cheats", ref createCheats);
-        ApplyHeadlessBooleanOption("--allow-swap", ref createAllowSwap);
-        ApplyHeadlessBooleanOption("--allow-scale-changing", ref createAllowScaleChanging);
-        ApplyHeadlessBooleanOption("--allow-observer", ref createAllowObserver);
-        ApplyHeadlessBooleanOption("--teams", ref createTeams);
-        if (createGrabOnlyUnconscious) createCanGrab = true;
-        Logger.LogInfo("Headless settings: lobby=" + lobbyName + ", host=" + playerName + ", max=" + createMaxPlayers + ".");
+        return joinedLobbyId;
     }
 
     private void JoinLobbyRequest(string id, ConnectionMode listedMode)
     {
         try
         {
-            var response = Http("POST", "/v1/lobbies/" + id + "/join",
-                JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName, modVersion = PluginVersion }), null);
+            var response = Http("POST", "/v1/lobbies/" + id + "/join", JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName, modVersion = PluginVersion }), null);
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "relayKey");
             var relayAddress = JsonString(response, "relayAddress");
@@ -1613,8 +858,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var maxPlayers = Mathf.Clamp(JsonInt(response, "maxPlayers"), 2, 64);
             var modeText = JsonString(response, "connectionMode");
             var mode = string.IsNullOrEmpty(modeText) ? listedMode : ParseConnectionMode(modeText);
-            if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayAddress();
-            if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
+            if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayServer;
+            if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) 
+                throw new InvalidDataException("Invalid directory response.");
             RunOnMainThread(() =>
             {
                 joinedLobbyId = lobbyId;
@@ -1655,7 +901,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return message;
     }
     
-    private void RunOnMainThread(Action action) { lock (mainThreadActionsLock) mainThreadActions.Enqueue(action); }
+    internal void RunOnMainThread(Action action) { lock (mainThreadActionsLock) mainThreadActions.Enqueue(action); }
 
     private void BanPlayerInDirectory(string lobbyId, string relayKey, string playerName, ushort expectedPeerId)
     {
@@ -1682,17 +928,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         return HttpAt(masterUrl.Value.TrimEnd('/'), method, path, body, authorization);
     }
-
-    private string DefaultRelayAddress()
-    {
-        return "udp://expie.fun:27015";
-    }
-
-    private static string HttpAt(string server, string method, string path, string body, string authorization)
+    
+    internal static string HttpAt(string server, string method, string path, string body, string authorization)
     {
         Uri uri;
-        if (!Uri.TryCreate(server.TrimEnd('/') + path, UriKind.Absolute, out uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        if (!Uri.TryCreate(server.TrimEnd('/') + path, UriKind.Absolute, out uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             throw new InvalidOperationException("Lobby server must use an HTTP or HTTPS URL.");
         return DirectoryRequest(uri, method, body, authorization);
     }
@@ -1720,17 +960,16 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
                 return reader.ReadToEnd();
         }
-        catch (WebException exception)
+        catch (WebException e)
         {
-            var response = exception.Response as HttpWebResponse;
-            if (response == null) throw new InvalidOperationException("Directory request failed: " + exception.Message, exception);
+            var response = e.Response as HttpWebResponse;
+            if (response == null) throw new InvalidOperationException("Directory request failed: " + e.Message, e);
             using (response)
             using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
             {
                 var responseBody = reader.ReadToEnd().Trim();
                 var detail = string.IsNullOrEmpty(responseBody) ? response.StatusDescription : responseBody;
-                throw new InvalidOperationException("Directory request failed (HTTP " +
-                    (int)response.StatusCode + "): " + detail, exception);
+                throw new InvalidOperationException("Directory request failed (HTTP " + (int) response.StatusCode + "): " + detail, e);
             }
         }
     }
@@ -1835,33 +1074,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return JsonInt(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
     }
 
-    private float ParseInitialScale()
-    {
-        float scale;
-        if (!float.TryParse(createInitialScale, NumberStyles.Float, CultureInfo.InvariantCulture, out scale)) scale = 1f;
-        scale = AvatarScaleHandler.Clamp(scale);
-        createInitialScale = scale.ToString("0.##", CultureInfo.InvariantCulture);
-        return scale;
-    }
-
-    private float ParseHealthFactor()
-    {
-        float factor;
-        if (!float.TryParse((createHealthFactor ?? "").Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out factor)) factor = LobbyHealthRule.DefaultFactor;
-        factor = LobbyHealthRule.Clamp(factor);
-        createHealthFactor = factor.ToString("0.##", CultureInfo.InvariantCulture);
-        return factor;
-    }
-
-    private float ParseRegenFactor()
-    {
-        float factor;
-        if (!float.TryParse((createRegenFactor ?? "").Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out factor)) factor = LobbyRegenRule.DefaultFactor;
-        factor = LobbyRegenRule.Clamp(factor);
-        createRegenFactor = factor.ToString("0.##", CultureInfo.InvariantCulture);
-        return factor;
-    }
-
     private static bool JsonBool(string json, string name)
     {
         return JsonBool(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
@@ -1909,47 +1121,54 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         });
     }
 
+    private static CreateLobbyRequest BuildLobbyRequest(LobbySettings settings, ParsedLobbySettings parsed, string requestedLobbyName, string requestedPlayerName, string map, int players, bool live)
+    {
+        return new CreateLobbyRequest
+        {
+            name = requestedLobbyName,
+            hostName = requestedPlayerName,
+            map = map,
+            players = players,
+            maxPlayers = live ? MultiplayerSession.MaxPlayers : parsed.MaxPlayers,
+            hostPort = 27016,
+            pvp = settings.Pvp,
+            canGrab = settings.CanGrab,
+            grabOnlyUnconscious = live ? settings.CanGrab && settings.GrabOnlyUnconscious : settings.GrabOnlyUnconscious,
+            allowRespawn = settings.AllowRespawn,
+            respawnTime = live ? MultiplayerSession.RespawnTimeSeconds : parsed.RespawnTime,
+            numberOfLives = live ? MultiplayerSession.NumberOfLives : parsed.NumberOfLives,
+            healthFactor = live ? MultiplayerSession.HealthFactor : parsed.HealthFactor,
+            regenFactor = live ? MultiplayerSession.RegenFactor : parsed.RegenFactor,
+            blackout = live ? MultiplayerSession.BlackoutEnabled : settings.Blackout,
+            restrictLight = live ? MultiplayerSession.RestrictLightEnabled : settings.RestrictLight,
+            respawnAtStart = live ? settings.AllowRespawn && settings.RespawnAtStart : settings.RespawnAtStart,
+            playerCollisions = settings.PlayerCollisions,
+            cheats = settings.Cheats,
+            allowSwap = settings.AllowSwap,
+            allowScaleChanging = settings.AllowScaleChanging,
+            initialScale = live ? MultiplayerSession.InitialScale : parsed.InitialScale,
+            startingWeapon = settings.StartingWeapon,
+            respawnWeapon = settings.RespawnWeapon,
+            startingAmmo = settings.StartingAmmo,
+            respawnAmmo = settings.RespawnAmmo,
+            allowObserver = settings.AllowObserver,
+            teams = settings.Teams,
+            teamsCfg = settings.TeamsCfg,
+            brutalMode = MultiplayerSession.ReadBrutalMode(),
+            hostP2P = settings.ConnectionMode != ConnectionMode.Relay,
+            connectionMode = settings.ConnectionMode.ToString(),
+            modVersion = PluginVersion
+        };
+    }
+
     private void UpdateHostedLobbyInDirectory()
     {
         try
         {
-            var body = JsonUtility.ToJson(new CreateLobbyRequest
-            {
-                name = lobbyName,
-                hostName = playerName,
-                map = SceneManager.GetActiveScene().name,
-                players = MultiplayerSession.PlayerCount,
-                maxPlayers = MultiplayerSession.MaxPlayers,
-                hostPort = 27016,
-                pvp = createPvp,
-                canGrab = createCanGrab,
-                grabOnlyUnconscious = createCanGrab && createGrabOnlyUnconscious,
-                allowRespawn = createAllowRespawn,
-                respawnTime = MultiplayerSession.RespawnTimeSeconds,
-                numberOfLives = MultiplayerSession.NumberOfLives,
-                healthFactor = MultiplayerSession.HealthFactor,
-                regenFactor = MultiplayerSession.RegenFactor,
-                blackout = MultiplayerSession.BlackoutEnabled,
-                respawnAtStart = createAllowRespawn && createRespawnAtStart,
-                playerCollisions = createPlayerCollisions,
-                cheats = createCheats,
-                allowSwap = createAllowSwap,
-                allowScaleChanging = createAllowScaleChanging,
-                initialScale = ParseInitialScale(),
-                startingWeapon = createStartingWeapon,
-                respawnWeapon = createRespawnWeapon,
-                startingAmmo = createStartingAmmo,
-                respawnAmmo = createRespawnAmmo,
-                allowObserver = createAllowObserver,
-                teams = createTeams, teamsCfg = createTeamsCfg,
-                brutalMode = MultiplayerSession.ReadBrutalMode(),
-                hostP2P = createConnectionMode != ConnectionMode.Relay,
-                connectionMode = createConnectionMode.ToString(),
-                modVersion = PluginVersion
-            });
+            var body = JsonUtility.ToJson(BuildLobbyRequest(lobbySettings, default, lobbyName, playerName, SceneManager.GetActiveScene().name, MultiplayerSession.PlayerCount, true));
             Http("PUT", "/v1/lobbies/" + hostedLobbyId, body, "Bearer " + hostRelayKey);
         }
-        catch (Exception exception) { Logger.LogInfo("Could not update hosted lobby: " + exception.Message); }
+        catch (Exception e) { Logger.LogInfo("Could not update hosted lobby: " + e.Message); }
     }
 
     private void DeleteHostedLobby(string lobbyId, string relayKey)
@@ -1957,7 +1176,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try { Http("DELETE", "/v1/lobbies/" + lobbyId, null, "Bearer " + relayKey); }
-            catch (Exception exception) { Logger.LogInfo("Could not remove hosted lobby: " + exception.Message); }
+            catch (Exception e) { Logger.LogInfo("Could not remove hosted lobby: " + e.Message); }
         });
     }
 
@@ -1973,11 +1192,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private void ShutdownMultiplayer(bool removeHostedLobby)
     {
-        if (headlessKeepAliveTimer != null)
-        {
-            headlessKeepAliveTimer.Dispose();
-            headlessKeepAliveTimer = null;
-        }
+        headlessLobbyService?.Dispose();
         if (shuttingDown) return;
         shuttingDown = true;
         MultiplayerSession.Shutdown();
@@ -1992,7 +1207,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 
-    private static bool TryNormalizeServerAddress(string value, out string normalized)
+    internal static bool TryNormalizeServerAddress(string value, out string normalized)
     {
         normalized = "";
         if (string.IsNullOrWhiteSpace(value)) return false;
@@ -2014,7 +1229,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return true;
     }
 
-    private static string DisplayServerAddress(string value)
+    internal static string DisplayServerAddress(string value)
     {
         Uri uri;
         if (Uri.TryCreate(value, UriKind.Absolute, out uri))
@@ -2120,37 +1335,5 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public bool hostP2P;
         public string connectionMode = "Relay";
         public string modVersion = "";
-    }
-    
-    [Serializable]
-    internal sealed class LobbyPreset
-    {
-        public string name = "";
-        public bool pvp;
-        public bool canGrab;
-        public bool grabOnlyUnconscious;
-        public bool allowRespawn;
-        public bool autoRestart;
-        public bool respawnAtStart;
-        public bool playerCollisions;
-        public bool cheats;
-        public bool allowSwap;
-        public bool allowScaleChanging;
-        public bool allowObserver;
-        public bool teams;
-        public string teamsCfg = "";
-        public string initialScale = "1.0";
-        public string startingWeapon = "Default";
-        public string respawnWeapon = "Default";
-        public string startingAmmo = LobbyAmmoRules.StartingDefault;
-        public string respawnAmmo = LobbyAmmoRules.RespawnDefault;
-        public string respawnTime = "5";
-        public string numberOfLives = "0";
-        public string healthFactor = "1.0";
-        public string regenFactor = "1.0";
-        public bool blackout;
-        public bool restrictLight;
-        public string maxPlayers = "4";
-        public ConnectionMode connectionMode = ConnectionMode.Relay;
     }
 }

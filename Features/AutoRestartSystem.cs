@@ -16,7 +16,7 @@ internal static class AutoRestartSystem
         var alivePlayers = 0;
         var aliveTeams = new HashSet<string>();
         var localBody = PlayerScript.player?.bodyScript;
-        if (!GunsawMultiplayerPlugin.IsHeadlessServer && localBody != null)
+        if (!HeadlessLobbyService.IsHeadlessServer && localBody != null)
         {
             if (localBody.isAlive)
             {

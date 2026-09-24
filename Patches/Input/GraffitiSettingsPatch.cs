@@ -8,7 +8,7 @@ internal static class GraffitiSettingsPatch
 {
     private static void Postfix()
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+        if (HeadlessLobbyService.IsHeadlessMode) return;
         var source = GameObject.Find("Canvas/Settings/CrosshairSettings/CrossToggle");
         var labelSource = GameObject.Find("Canvas/Settings/CrosshairSettings/MainName (13)");
         if (source == null || labelSource == null) return;

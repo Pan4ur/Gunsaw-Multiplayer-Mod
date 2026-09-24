@@ -16,7 +16,7 @@ internal static class RPCSettings
 {
     private static void Postfix(ControlBinder __instance)
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+        if (HeadlessLobbyService.IsHeadlessMode) return;
 
         GameObject crossToggle = GameObject.Find("Canvas/Settings/CrosshairSettings/CrossToggle");
         GameObject rpcToggle = UnityEngine.Object.Instantiate(crossToggle);
@@ -97,7 +97,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     public static void CheckInstance()
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode)
+        if (HeadlessLobbyService.IsHeadlessMode)
         {
             if (instance) UnityEngine.Object.Destroy(instance.gameObject);
             return;
@@ -111,7 +111,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Awake()
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode)
+        if (HeadlessLobbyService.IsHeadlessMode)
         {
             UnityEngine.Object.Destroy(gameObject);
             return;
@@ -124,7 +124,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Update()
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode)
+        if (HeadlessLobbyService.IsHeadlessMode)
         {
             enable = false;
             if (_enable)
@@ -159,7 +159,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     internal void UpdateRichPresence()
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+        if (HeadlessLobbyService.IsHeadlessMode) return;
 
         string playerSpecie = GetCharacterName();
 
@@ -214,7 +214,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     private void Initialize()
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+        if (HeadlessLobbyService.IsHeadlessMode) return;
 
         // Refer to rushellxyz regarding app
         RichPresence.AppId = 1538837414515052575L;
@@ -263,7 +263,7 @@ internal sealed class RPCManager : MonoBehaviour
 
     public void UpdateCustomLevel(string level)
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode || !enable)
+        if (HeadlessLobbyService.IsHeadlessMode || !enable)
             return;
         string levelHash;
         using (SHA256 sha256 = SHA256.Create())

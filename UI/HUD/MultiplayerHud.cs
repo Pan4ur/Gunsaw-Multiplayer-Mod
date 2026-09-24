@@ -142,7 +142,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         while (MultiplayerSession.TryTakeChat(out senderId, out sender, out message))
         {
             if (NetworkAvatarManager.TryBroadcastSwapRequest(senderId, message)) continue;
-            if (GunsawMultiplayerPlugin.Instance.TryHandleLobbyChatCommand(senderId, message)) continue;
+            if (HeadlessLobbyService.Instance?.TryHandleLobbyChatCommand(senderId, message) == true) continue;
             AddMessage(sender, message, false, senderId);
         }
 
@@ -196,7 +196,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (GunsawMultiplayerPlugin.IsHeadlessMode) return;
+        if (HeadlessLobbyService.IsHeadlessMode) return;
         if (nativeUi == null) nativeUi = gameObject.GetComponent<MultiplayerHudUi>() ?? gameObject.AddComponent<MultiplayerHudUi>();
         if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
         {

@@ -2161,7 +2161,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                 return;
             local.UpdateSpectator(player);
 
-            var serverOnlyHost = GunsawMultiplayerPlugin.IsHeadlessServer;
+            var serverOnlyHost = HeadlessLobbyService.IsHeadlessServer;
             var prefab = local.ResolveLocalCharacterPrefab(player.bodyScript);
             var currentIdentity = local.localName + "\n" + prefab;
             var identityChanged = identitySent != currentIdentity;
