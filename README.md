@@ -7,7 +7,7 @@ I only recently learned that another multiplayer project for Gunsaw has been in 
 
 ![icon](img/preview.gif)
 
-https://youtu.be/aYmxX_OQOis | https://youtu.be/p0NstRIiTQ8?si=8Da7j7REXki45iwn
+YT: [Showcase](https://youtu.be/aYmxX_OQOis) | [Gameplay](https://youtu.be/p0NstRIiTQ8)
 
 MP Features:
 
@@ -43,7 +43,7 @@ MP Features:
 Props:
 - NPC spawner
 - Arsenal
-- Logic gates (nand, and, or, xor, t-trigger, d-trigger, clock, rnd...)
+- Logic gates (nand, and, or, xor, t-trigger, d-trigger, clock, rnd...). Guides: [RU](https://github.com/Pan4ur/Gunsaw-Multiplayer-Mod/wiki/Logic-Props-Guide-RU) | [ENG](https://github.com/Pan4ur/Gunsaw-Multiplayer-Mod/wiki/Logic-Props-Guide-EN)
 - Lamps now have an id to toggle
 - Player spawn points now have a team filed (color)
 - Weapons (props) now have a respawn time
