@@ -1516,6 +1516,11 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
+    internal static void NotifyShotLamp(RaycastHit2D hit)
+    {
+        if (hit.collider != null) GunsawMultiplayerPlugin.World?.NotifyLocalLampBroken(hit.collider, hit.point);
+    }
+    
     internal void NotifyLocalLampBroken(Collider2D collider, Vector2 point)
     {
         if (!MultiplayerSession.IsConnected || collider == null || !lampIds.TryGetValue(collider, out var id)) return;
@@ -1524,8 +1529,6 @@ internal sealed class WorldReplication : MonoBehaviour
         if (MultiplayerSession.IsHost) MultiplayerSession.Send(packet);
         else { var writer = new PacketWriter(32); packet.Write(ref writer); MultiplayerSession.SendWorldInteraction(writer.ToArray()); }
     }
-
-
 
     private void ApplyVehicleDamage(string id, ushort peerId, float amount, bool collision)
     {

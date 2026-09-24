@@ -21,7 +21,8 @@ internal sealed class NpcSpawnerData
     public float interval = 5f;
     public int aliveLimit = 0;
     public int activationId;
-    public int enabled = 1;
+    public int mode;
+    public string team = "badguys";
 }
 
 
@@ -73,7 +74,8 @@ internal sealed class NpcSpawnerPropDefinition : CustomPropDefinition<NpcSpawner
                         "Seconds", value => value.interval, (value, number) => value.interval = number, 0f,
                         "Limit count", value => value.aliveLimit, (value, number) => value.aliveLimit = number, 0
                     ),
-                    Integer("Enabled", "State", value => value.enabled, (value, number) => value.enabled = number > 0 ? 1 : 0, 0)
+                    Integer("Mode / Team", "0 off / 1 on / 2 on enable", value => value.mode, (value, number) => value.mode = Mathf.Clamp(number, 0, 2), 0),
+                    Text("Team", "NPC team", value => value.team, (value, text) => value.team = text)
                 };
             }
             return fields;
@@ -107,21 +109,25 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour, IActivationIdReceiver
     internal void Configure(NpcSpawnerData value)
     {
         data = value;
-        active = value != null && value.enabled > 0;
+        active = value != null && value.mode == 1;
         nextSpawn = Time.time + (value == null ? 0f : Mathf.Max(0f, value.interval));
     }
 
     private void Activate(int value)
     {
         if (data == null || value != data.activationId) return;
+        if (data.mode == 2)
+        {
+            Spawn();
+            return;
+        }
         active = !active;
-        data.enabled = active ? 1 : 0;
         if (active) nextSpawn = Time.time;
     }
 
     private void Update()
     {
-        if (data == null || !active || (MultiplayerSession.IsActive && !MultiplayerSession.IsHost)) return;
+        if (data == null || data.mode == 2 || !active || (MultiplayerSession.IsActive && !MultiplayerSession.IsHost)) return;
         if (Time.time < nextSpawn || (data.aliveLimit > 0 && spawnedTotal >= data.aliveLimit)) return;
         nextSpawn = Time.time + Mathf.Max(0.1f, data.interval);
         var body = Spawn();
@@ -139,6 +145,7 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour, IActivationIdReceiver
             Destroy(root);
             return null;
         }
+        body.team = string.IsNullOrWhiteSpace(data.team) ? "badguys" : data.team.Trim();
         StartCoroutine(ConfigureWeapon(body));
         return body;
     }

@@ -882,7 +882,6 @@ internal static class ClientNpcDeathPatch
         if (ChatService.TryCreate(message, true, out packet)) MultiplayerSession.Send(packet);
     }
 
-
     private static string DeathDisplayName(BodyScript body)
     {
         if (body == null) return "Environment";
@@ -1163,7 +1162,7 @@ internal static class MultiplayerWeaponShotPatch
         var replacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.AddForceAtPositionWithPropAuthority));
         var soundReplacement = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.PlayPlayerActionSound));
         var compareTag = AccessTools.Method(typeof(GameObject), nameof(GameObject.CompareTag), new[] { typeof(string) });
-        var notifyLamp = AccessTools.Method(typeof(NetworkAvatarReplication), nameof(NetworkAvatarReplication.NotifyShotLamp));
+        var notifyLamp = AccessTools.Method(typeof(WorldReplication), nameof(WorldReplication.NotifyShotLamp));
         var destroy = AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Destroy), new[] { typeof(UnityEngine.Object) });
 
         for (var index = 3; index < patched.Count - 2; index++)

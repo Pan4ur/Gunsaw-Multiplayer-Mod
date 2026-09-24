@@ -259,19 +259,36 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private void UpdateSpectator()
     {
         var active = NetworkAvatarReplication.IsSpectating;
+        var name = SpectatorTargetName();
         spectatorText.gameObject.SetActive(active);
-        spectatorHint.gameObject.SetActive(active && NetworkAvatarReplication.SpectatorTargetName() != "NO ALIVE PLAYERS");
-        if (active) spectatorText.text = NetworkAvatarReplication.SpectatorTargetName();
+        spectatorHint.gameObject.SetActive(active && name != "NO ALIVE PLAYERS");
+        if (active) spectatorText.text = name;
     }
 
+    internal static string SpectatorTargetName()
+    {
+        if (NetworkAvatarReplication.Instance == null || NetworkAvatarReplication.Instance.spectatorPeerId == 0) return "NO ALIVE PLAYERS";
+        NetworkAvatarReplication replica;
+        return NetworkAvatarRegistry.replicas.TryGetValue(NetworkAvatarReplication.Instance.spectatorPeerId, out replica) && replica != null
+            ? "SPECTATING " + replica.remoteName : "NO ALIVE PLAYERS";
+    }
+    
     private void UpdateStatusPrompts()
     {
-        var countdown = NetworkAvatarReplication.RespawnCountdownText();
+        var countdown = RespawnCountdownText();
         respawnText.gameObject.SetActive(!string.IsNullOrEmpty(countdown));
         if (!string.IsNullOrEmpty(countdown)) respawnText.text = countdown;
         activationText.text = "PRESS [USE] TO REACTIVATE";
         activationText.gameObject.SetActive((WorldReplication.Instance != null && WorldReplication.Instance.HasActivationPrompt) ||
             !string.IsNullOrEmpty(PlayerCarrySystem.Prompt) || !string.IsNullOrEmpty(ArsenalMenu.Prompt));
+    }
+    
+    internal static string RespawnCountdownText()
+    {
+        var player = PlayerScript.player;
+        if (NetworkAvatarReplication.Instance == null || !NetworkAvatarReplication.Instance.CanRespawn || NetworkAvatarReplication.Instance.respawnAt < 0f ||
+            player == null || player.bodyScript == null || player.bodyScript.isAlive) return "";
+        return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(NetworkAvatarReplication.Instance.respawnAt - Time.unscaledTime));
     }
 
     private void UpdatePlayers()

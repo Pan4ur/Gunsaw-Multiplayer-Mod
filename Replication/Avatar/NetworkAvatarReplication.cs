@@ -107,8 +107,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool hasVehicleArmsTarget;
     private readonly List<VehicleTailTarget> vehicleTailTargets = [];
     private readonly List<VehicleTailTransformTarget> vehicleTailTransformTargets = [];
-    private static NetworkAvatarReplication instance;
-    internal static NetworkAvatarReplication Instance => instance;
+    internal static NetworkAvatarReplication Instance { get; private set; }
     private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
     private static readonly Dictionary<int, string> lastDamageSourceNames = new();
     private static readonly Dictionary<int, ushort> lastDamageSourcePeerIds = new();
@@ -167,12 +166,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool localWasAlive = true;
     private int remainingLives;
     private int livesRule = -1;
-    private float respawnAt = -1f;
+    public float respawnAt = -1f;
     private bool localRespawnPending;
     private int localRespawnGeneration;
     private static float localRespawnProtectionUntil = -1f;
     private const float RespawnProtectionSeconds = 3f;
-    private ushort spectatorPeerId;
+    public ushort spectatorPeerId;
     private bool spectating;
     private bool remoteVehicleReflected;
     private bool hasRemoteVehicleReflection;
@@ -183,12 +182,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private bool localVehicleLocked;
     private bool localVehicleWasSimulated;
 
-    internal static int AvatarCoreBytesPerSecond { get { return instance == null ? 0 : instance.avatarCoreBytesPerSecond; } }
-    internal static int AvatarLimbBytesPerSecond { get { return instance == null ? 0 : instance.avatarLimbBytesPerSecond; } }
-    internal static int AvatarRigBytesPerSecond { get { return instance == null ? 0 : instance.avatarRigBytesPerSecond; } }
-    internal static int AvatarWeaponBytesPerSecond { get { return instance == null ? 0 : instance.avatarWeaponBytesPerSecond; } }
-    internal static int AvatarEffectsBytesPerSecond { get { return instance == null ? 0 : instance.avatarEffectsBytesPerSecond; } }
-    internal static int AvatarVisualBytesPerSecond { get { return instance == null ? 0 : instance.avatarVisualBytesPerSecond; } }
+    internal static int AvatarCoreBytesPerSecond => Instance?.avatarCoreBytesPerSecond ?? 0;
+    internal static int AvatarLimbBytesPerSecond => Instance?.avatarLimbBytesPerSecond ?? 0;
+    internal static int AvatarRigBytesPerSecond => Instance?.avatarRigBytesPerSecond ?? 0;
+    internal static int AvatarWeaponBytesPerSecond => Instance?.avatarWeaponBytesPerSecond ?? 0;
+    internal static int AvatarEffectsBytesPerSecond => Instance?.avatarEffectsBytesPerSecond ?? 0;
+    internal static int AvatarVisualBytesPerSecond => Instance?.avatarVisualBytesPerSecond ?? 0;
 
     internal bool TryGetLocalSpawnPosition(out Vector3 position)
     {
@@ -208,30 +207,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         return true;
     }
     
-    internal static bool IsSpectating { get { return instance != null && instance.spectating && !instance.CanRespawn; } }
-
-    internal static string SpectatorTargetName()
-    {
-        if (instance == null || instance.spectatorPeerId == 0) return "NO ALIVE PLAYERS";
-        NetworkAvatarReplication replica;
-        return NetworkAvatarRegistry.replicas.TryGetValue(instance.spectatorPeerId, out replica) && replica != null
-            ? "SPECTATING " + replica.remoteName : "NO ALIVE PLAYERS";
-    }
+    internal static bool IsSpectating { get { return Instance != null && Instance.spectating && !Instance.CanRespawn; } }
 
     internal static BodyScript SpectatorTargetBody()
     {
-        if (instance == null || !instance.spectating || instance.CanRespawn || instance.spectatorPeerId == 0)
+        if (Instance == null || !Instance.spectating || Instance.CanRespawn || Instance.spectatorPeerId == 0)
             return null;
         NetworkAvatarReplication replica;
-        return NetworkAvatarRegistry.replicas.TryGetValue(instance.spectatorPeerId, out replica) && replica != null ? replica.remoteBody : null;
-    }
-
-    internal static string RespawnCountdownText()
-    {
-        var player = PlayerScript.player;
-        if (instance == null || !instance.CanRespawn || instance.respawnAt < 0f ||
-            player == null || player.bodyScript == null || player.bodyScript.isAlive) return "";
-        return "RESPAWN IN " + Mathf.Max(0, Mathf.CeilToInt(instance.respawnAt - Time.unscaledTime));
+        return NetworkAvatarRegistry.replicas.TryGetValue(Instance.spectatorPeerId, out replica) && replica != null ? replica.remoteBody : null;
     }
 
     internal static void ResetExhaustedLives()
@@ -343,7 +326,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         if (player == null || player != PlayerScript.player || player.bodyScript == null)
             return false;
 
-        if (instance != null && instance.localRespawnPending) return false;
+        if (Instance != null && Instance.localRespawnPending) return false;
         var body = player.bodyScript;
         if (!body.gameObject.activeInHierarchy || body.limbs == null || body.limbs.Count < 15 ||
             body.limbs[0] == null || body.limbs[11] == null || body.limbs[14] == null ||
@@ -497,22 +480,30 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             lastDamageWeapons.Remove(id);
             lastDamageSourceTimes.Remove(id);
         }
-        PlayerDeathCause cause;
-        float environmentalTime;
-        if (environmentalDeathCauses.TryGetValue(id, out cause) &&
-            environmentalDeathCauseTimes.TryGetValue(id, out environmentalTime) &&
-            Time.unscaledTime - environmentalTime <= 0.5f) { }
-        else
+        
+        var hasRecentEnvironmentalCause =
+            environmentalDeathCauses.TryGetValue(id, out var cause) &&
+            environmentalDeathCauseTimes.TryGetValue(id, out var environmentalTime) &&
+            Time.unscaledTime - environmentalTime <= 0.5f;
+        
+        if (!hasRecentEnvironmentalCause)
         {
             environmentalDeathCauses.Remove(id);
             environmentalDeathCauseTimes.Remove(id);
             cause = PlayerDeathCause.Unknown;
-            if (body.burnIntensity > 0.01f) cause = PlayerDeathCause.Fire;
-            else if (body.oxygen <= 0.01f && body.headInWater) cause = PlayerDeathCause.Drowning;
-            else if (body.oxygen <= 0.01f && body.forcedOxyLoss > 0) cause = PlayerDeathCause.Suffocation;
-            else if (body.fallDamageCooldown > 0f) cause = PlayerDeathCause.Fall;
+            if (body.burnIntensity > 0.01f)
+                cause = PlayerDeathCause.Fire;
+            else if (body.oxygen <= 0.01f && body.headInWater)
+                cause = PlayerDeathCause.Drowning;
+            else if (body.oxygen <= 0.01f && body.forcedOxyLoss > 0)
+                cause = PlayerDeathCause.Suffocation;
+            else if (body.fallDamageCooldown > 0f)
+                cause = PlayerDeathCause.Fall;
         }
-        if (hasGrabSource && cause == PlayerDeathCause.Fall) cause = PlayerDeathCause.Telekinesis;
+        
+        if (hasGrabSource && cause == PlayerDeathCause.Fall) 
+            cause = PlayerDeathCause.Telekinesis;
+        
         deathCauses[id] = cause;
     }
 
@@ -565,7 +556,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     internal static bool KillLocalPlayer(PlayerDeathCause cause)
     {
         var player = PlayerScript.player;
-        var body = player == null ? null : player.bodyScript;
+        var body = player?.bodyScript;
         if (body == null || !body.isAlive) return false;
         RecordEnvironmentalDeathCause(body, cause);
         body.Death();
@@ -654,8 +645,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         var replica = NetworkAvatarRegistry.ReplicaForBody(body);
         if (replica == null) return "Player";
-        var ping = MultiplayerSession.PingMs;
-        ping = MultiplayerSession.PeerPing(replica.remotePeerId);
+        var ping = MultiplayerSession.PeerPing(replica.remotePeerId);
         var label = replica.remoteName + " [" + (ping < 0 ? "-" : ping.ToString()) + "]";
         if (!body.isAlive) return "DEAD " + label;
         if (!body.IsConsc()) return "K.O. " + label;
@@ -706,12 +696,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     private void Awake()
     {
-        if (instance != null)
+        if (Instance != null)
         {
             coordinator = false;
             return;
         }
-        instance = this;
+        Instance = this;
         coordinator = true;
     }
 
@@ -719,11 +709,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (!coordinator) return;
         localName = string.IsNullOrEmpty(name) ? "Player" : name;
-    }
-
-    private static float CurrentSnapshotInterval()
-    {
-        return SnapshotInterval;
     }
 
     private void Update()
@@ -862,7 +847,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
         if (!serverOnlyHost && Time.unscaledTime >= nextSnapshot)
         {
-            nextSnapshot = Time.unscaledTime + CurrentSnapshotInterval();
+            nextSnapshot = Time.unscaledTime + SnapshotInterval;
             MultiplayerSession.Send(Serialize(PacketSequences.NextPlayerSnapshot(), player.bodyScript));
             if (pendingStatePacket.HasValue) MultiplayerSession.Send(pendingStatePacket.Value);
             if (pendingSpecialLinesPacket.HasValue) MultiplayerSession.Send(pendingSpecialLinesPacket.Value);
@@ -1049,15 +1034,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         remoteTailBases.Clear();
         remoteTailBases.AddRange(GetNetworkTailBodies(remoteBody));
 
-        remoteTails = GetTransforms(remoteBody, "tails");
+        remoteTails = remoteBody.tails ?? [];
         remoteTailSprites.Clear();
         foreach (var tailBase in remoteTailBases)
-            remoteTailSprites.Add(tailBase == null ? new SpriteRenderer[0] :
-                tailBase.GetComponentsInChildren<SpriteRenderer>(true));
+            remoteTailSprites.Add(tailBase == null ? new SpriteRenderer[0] : tailBase.GetComponentsInChildren<SpriteRenderer>(true));
         remoteTailRootSprites.Clear();
         foreach (var tail in remoteTails)
-            remoteTailRootSprites.Add(tail == null ? new SpriteRenderer[0] :
-                tail.GetComponentsInChildren<SpriteRenderer>(true));
+            remoteTailRootSprites.Add(tail == null ? new SpriteRenderer[0] : tail.GetComponentsInChildren<SpriteRenderer>(true));
         foreach (var behaviour in avatar.GetComponentsInChildren<MonoBehaviour>()) behaviour.enabled = false;
         foreach (var animator in avatar.GetComponentsInChildren<Animator>()) animator.enabled = false;
         var remoteCrystalTongue = avatar.GetComponentInChildren<CrystalTongue>(true);
@@ -1305,7 +1288,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
 
             sectionStarted = writer.BaseStream.Position;
-            var limbs = GetList(body, "limbs");
+            var limbs = body.limbs ?? [];
             var limbStates = new PlayerSnapshotLimbState[limbs.Count];
             writer.Write((ushort)limbs.Count);
             var limbIndex = 0;
@@ -1336,7 +1319,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 WriteTailTransform(writer, body.rb, tailBaseTransform, tailBaseRotation);
                 tailBaseStates[tailBaseIndex++] = CreateTailBaseState(body.rb, tailBaseTransform, tailBaseRotation);
             }
-            var tails = GetTransforms(body, "tails");
+            var tails = body.tails;
             var tailStates = new PlayerSnapshotTailState[tails.Length];
             writer.Write((ushort)tails.Length);
             for (var tailIndex = 0; tailIndex < tails.Length; tailIndex++)
@@ -1348,21 +1331,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
 
             var arms = body.Arms;
-            var gunTransform = GetTransform(body, "gunTransform");
-            var gunAnimationTransform = GetTransform(body, "gunAnimTransform");
+            var gunTransform = body.gunTransform;
+            var gunAnimationTransform = body.gunAnimTransform;
             WriteWorldTransform(writer, arms);
             WriteLocalTransform(writer, gunTransform);
             WriteLocalTransform(writer, gunAnimationTransform);
-            var armsTransform = arms == null ? new PlayerSnapshotTransform(0f, 0f, 0f) :
-                new PlayerSnapshotTransform(arms.position.x, arms.position.y, arms.eulerAngles.z);
-            var gunTransformState = gunTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) :
-                new PlayerSnapshotTransform(gunTransform.localPosition.x, gunTransform.localPosition.y,
-                    gunTransform.localEulerAngles.z);
-            var gunAnimationTransformState = gunAnimationTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) :
-                new PlayerSnapshotTransform(gunAnimationTransform.localPosition.x, gunAnimationTransform.localPosition.y,
-                    gunAnimationTransform.localEulerAngles.z);
+            var armsTransform = arms == null ? new PlayerSnapshotTransform(0f, 0f, 0f) : new PlayerSnapshotTransform(arms.position.x, arms.position.y, arms.eulerAngles.z);
+            var gunTransformState = gunTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) : new PlayerSnapshotTransform(gunTransform.localPosition.x, gunTransform.localPosition.y, gunTransform.localEulerAngles.z);
+            var gunAnimationTransformState = gunAnimationTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) : new PlayerSnapshotTransform(gunAnimationTransform.localPosition.x, gunAnimationTransform.localPosition.y, gunAnimationTransform.localEulerAngles.z);
             breakdown.Rig += (int)(writer.BaseStream.Position - sectionStarted);
-
             sectionStarted = writer.BaseStream.Position;
             var health = body.health;
             var isAlive = body.isAlive;
@@ -1383,14 +1360,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             writer.Write(isDecapitated);
             var weaponSlot = body.unarmed ? -1 : body.currentWeapon;
             var weaponAmmo = body.weapon == null ? 0 : body.weapon.ammo;
-            var weapons = GetList(body, "weapons");
+            var weapons = body.weapons ?? [];
             writer.Write(weaponSlot);
             writer.Write(weaponAmmo);
             writer.Write((ushort)weapons.Count);
             var inventoryIds = new ulong[weapons.Count];
             for (var index = 0; index < weapons.Count; index++)
             {
-                var preset = weapons[index] as WeaponPreset;
+                var preset = weapons[index];
                 inventoryIds[index] = NetworkWireId.FromString(preset == null ? "" : SpriteId(preset.sprite));
             }
             var inventoryKey = string.Join("|", inventoryIds);
@@ -1599,7 +1576,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     remoteBody.SwitchDir(true);
                 }
                 
-                var limbs = GetList(remoteBody, "limbs");
+                var limbs = remoteBody.limbs ?? [];
                 var sourceVehicleRoot = Vector2.zero;
                 var sourceVehicleRotation = 0f;
                 if (remoteInVehicle)
@@ -1620,7 +1597,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                         SkipLimb(reader);
                         continue;
                     }
-                    var limb = (LimbScript)limbs[index];
+                    var limb = limbs[index];
                     if (remoteInVehicle) SkipLimb(reader);
                     else SetQuantizedLimbTarget(reader, limb.rb);
                 }
@@ -1635,25 +1612,25 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     ReadTailTarget(reader,
                         index < remoteTailBases.Count ? remoteTailBases[index] : null,
                         index < remoteTailSprites.Count ? remoteTailSprites[index] : null,
-                        remoteVehicleStreamed, sourceVehicleRoot, sourceVehicleRotation);
+                        remoteVehicleStreamed);
                 var tailRootCount = reader.ReadUInt16();
                 for (var index = 0; index < tailRootCount; index++)
                     ReadTailTarget(reader,
                         index < remoteTails.Length ? remoteTails[index] : null,
                         index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null,
-                        remoteVehicleStreamed, sourceVehicleRoot, sourceVehicleRotation);
+                        remoteVehicleStreamed);
                 
                 if (remoteVehicleStreamed)
                 {
-                    ReadVehicleArmsTarget( reader, sourceVehicleRoot, sourceVehicleRotation);
-                    ReadLocalRotationImmediately( reader, GetTransform(remoteBody, "gunTransform"));
-                    ReadLocalRotationImmediately( reader, GetTransform(remoteBody, "gunAnimTransform"));
+                    ReadVehicleArmsTarget(reader, sourceVehicleRoot, sourceVehicleRotation);
+                    ReadLocalRotationImmediately(reader, remoteBody.gunTransform);
+                    ReadLocalRotationImmediately(reader, remoteBody.gunAnimTransform);
                 }
                 else
                 {
                     ReadWorldTransform(reader, remoteBody.Arms);
-                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunTransform"));
-                    ReadLocalTransform(reader, GetTransform(remoteBody, "gunAnimTransform"));
+                    ReadLocalTransform(reader, remoteBody.gunTransform);
+                    ReadLocalTransform(reader, remoteBody.gunAnimTransform);
                 }
                 
                 if (remoteVehicleStreamed) ApplyVehicleHeadRotation();
@@ -1746,7 +1723,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                     ApplyRemoteCharacterScale(reader.ReadSingle());
                 if (reader.BaseStream.Position + sizeof(ushort) <= reader.BaseStream.Length)
                 {
-                    var limbs = GetList(remoteBody, "limbs");
+                    var limbs = remoteBody.limbs ?? [];
                     var count = reader.ReadUInt16();
                     var dismembermentHash = 17;
                     for (var index = 0; index < count; index++)
@@ -1754,7 +1731,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                         var dismembered = reader.ReadBoolean();
                         var burning = reader.ReadBoolean();
                         if (index >= limbs.Count) continue;
-                        var limb = (LimbScript)limbs[index];
+                        var limb = limbs[index];
                         limb.dismembered = dismembered;
                         dismembermentHash = unchecked(dismembermentHash * 31 + (dismembered ? 1 : 0));
                         SetRemoteFire(index, limb, burning);
@@ -1768,16 +1745,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
         }
         catch (EndOfStreamException) { }
-    }
-
-    private static void ApplyTailVisuals(BinaryReader reader, List<SpriteRenderer[]> spritesByTail)
-    {
-        var count = reader.ReadUInt16();
-        for (var index = 0; index < count; index++)
-        {
-            var sprites = spritesByTail != null && index < spritesByTail.Count ? spritesByTail[index] : null;
-            ApplyTailSpriteColor(sprites, reader);
-        }
     }
 
     private void Apply(PlayerSpecialLinesPacket packet)
@@ -1828,7 +1795,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private static void UpdateRemoteLineInterpolation(LineRenderer line, RemoteLineInterpolation interpolation)
     {
         if (line == null || !interpolation.Active || interpolation.To == null || interpolation.From == null) return;
-        var progress = Mathf.Clamp01((Time.unscaledTime - interpolation.StartedAt) / CurrentSnapshotInterval());
+        var progress = Mathf.Clamp01((Time.unscaledTime - interpolation.StartedAt) / SnapshotInterval);
         for (var i = 0; i < interpolation.To.Length; i++)
             line.SetPosition(i, Vector3.Lerp(interpolation.From[i], interpolation.To[i], progress));
     }
@@ -2201,28 +2168,15 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (target.Transform == null)
                 continue;
 
-            var position =
-                target.Transform.position;
+            var position = target.Transform.position;
 
             position.x = seatPosition.x;
             position.y = seatPosition.y;
 
             target.Transform.position = position;
-
-            var progress = Mathf.Clamp01(
-                (Time.unscaledTime - target.StartedAt) /
-                CurrentSnapshotInterval());
-
-            var localRotation = Mathf.LerpAngle(
-                target.FromLocalRotation,
-                target.LocalRotation,
-                progress);
-
-            target.Transform.rotation =
-                Quaternion.Euler(
-                    0f,
-                    0f,
-                    vehicleRotation + localRotation);
+            var progress = Mathf.Clamp01((Time.unscaledTime - target.StartedAt) / SnapshotInterval);
+            var localRotation = Mathf.LerpAngle(target.FromLocalRotation, target.LocalRotation, progress);
+            target.Transform.rotation = Quaternion.Euler( 0f, 0f, vehicleRotation + localRotation);
         }
         
         foreach (var target in vehicleTailTargets)
@@ -2230,24 +2184,11 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             if (target.Body == null)
                 continue;
 
-            var progress = Mathf.Clamp01(
-                (Time.unscaledTime - target.StartedAt) /
-                CurrentSnapshotInterval());
+            var progress = Mathf.Clamp01((Time.unscaledTime - target.StartedAt) / SnapshotInterval);
+            var localRotation = Mathf.LerpAngle(target.FromLocalRotation, target.LocalRotation, progress);
+            var worldRotation = vehicleRotation + localRotation;
 
-            var localRotation = Mathf.LerpAngle(
-                target.FromLocalRotation,
-                target.LocalRotation,
-                progress);
-
-            var worldRotation =
-                vehicleRotation + localRotation;
-
-            target.Body.transform.rotation =
-                Quaternion.Euler(
-                    0f,
-                    0f,
-                    worldRotation);
-
+            target.Body.transform.rotation = Quaternion.Euler(0f, 0f, worldRotation);
             target.Body.rotation = worldRotation;
             target.Body.velocity = Vector2.zero;
             target.Body.angularVelocity = 0f;
@@ -2500,12 +2441,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var woundSprite = packet.WoundSprite;
         var hasSplash = packet.HasSplash;
         var createScreenCrack = packet.CreateScreenCrack;
-        var limbs = GetList(body, "limbs");
+        var limbs = body.limbs ?? [];
         float baseDamage = Mathf.Clamp(packet.BaseDamage, 0f, 1000f);
         
         if (limbIndex >= 0 && limbIndex < limbs.Count)
         {
-            var limb = limbs[limbIndex] as LimbScript;
+            var limb = limbs[limbIndex];
             var preset = WeaponPresetProvider.FindWeaponPreset(weaponSprite);
             
             if (limb != null && preset != null)
@@ -2652,7 +2593,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void UpdateLocalRespawn(PlayerScript player)
     {
         if (localRespawnPending) return;
-        var body = player == null ? null : player.bodyScript;
+        var body = player?.bodyScript;
         if (body == null) return;
         var scene = SceneManager.GetActiveScene();
         if (livesRule != MultiplayerSession.NumberOfLives)
@@ -2729,12 +2670,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private bool CanRespawn => MultiplayerSession.AllowRespawn &&
+    public bool CanRespawn => MultiplayerSession.AllowRespawn &&
         (MultiplayerSession.NumberOfLives == 0 || remainingLives > 0);
 
     private void UpdateSpectator(PlayerScript player)
     {
-        var body = player == null ? null : player.bodyScript;
+        var body = player?.bodyScript;
         if (body == null) return;
         if (CanRespawn || body.isAlive)
         {
@@ -2791,7 +2732,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     internal static void SuppressSpectatorDeathEffects(PlayerScript player)
     {
-        if (instance == null || !instance.spectating || instance.CanRespawn ||
+        if (Instance == null || !Instance.spectating || Instance.CanRespawn ||
             player == null || player.bodyScript == null || player.bodyScript.isAlive) return;
         if (player.deathNoise != null) player.deathNoise.color = Color.clear;
         if (player.deathText != null) player.deathText.SetActive(false);
@@ -3414,7 +3355,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     internal static void TryGrabRemotePlayer(LevitatorScript levitator)
     {
-        if (instance == null || levitator == null || levitator.currentlyLevitating != null ||
+        if (Instance == null || levitator == null || levitator.currentlyLevitating != null ||
             !MultiplayerSession.IsConnected || !MultiplayerSession.CanGrabPlayers) return;
         var camera = Camera.main;
         if (camera == null || levitator.refBody == null) return;
@@ -3452,7 +3393,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
     internal static void QueueRemoteGrab(LevitatorScript levitator)
     {
-        if (instance == null || !MultiplayerSession.IsConnected || levitator == null) return;
+        if (Instance == null || !MultiplayerSession.IsConnected || levitator == null) return;
         var target = levitator.currentlyLevitating;
         var targetBody = target == null ? null : target.GetComponentInParent<BodyScript>();
         var replica = NetworkAvatarRegistry.ReplicaForBody(targetBody);
@@ -3474,16 +3415,16 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         if (hasTarget)
         {
-            if (instance.outgoingGrabPeerId != 0 && instance.outgoingGrabPeerId != replica.remotePeerId)
-                MultiplayerSession.Send(new PlayerGrabPacket(false), instance.outgoingGrabPeerId);
+            if (Instance.outgoingGrabPeerId != 0 && Instance.outgoingGrabPeerId != replica.remotePeerId)
+                MultiplayerSession.Send(new PlayerGrabPacket(false), Instance.outgoingGrabPeerId);
             MultiplayerSession.Send(new PlayerGrabPacket(true, kind, index, levitator.point.x,
                 levitator.point.y, localPoint.x, localPoint.y), replica.remotePeerId);
-            instance.outgoingGrabPeerId = replica.remotePeerId;
+            Instance.outgoingGrabPeerId = replica.remotePeerId;
             return;
         }
-        if (instance.outgoingGrabPeerId == 0) return;
-        MultiplayerSession.Send(new PlayerGrabPacket(false), instance.outgoingGrabPeerId);
-        instance.outgoingGrabPeerId = 0;
+        if (Instance.outgoingGrabPeerId == 0) return;
+        MultiplayerSession.Send(new PlayerGrabPacket(false), Instance.outgoingGrabPeerId);
+        Instance.outgoingGrabPeerId = 0;
     }
 
     private void ReceivePlayerGrab(ushort senderId, PlayerGrabPacket packet)
@@ -3511,7 +3452,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         if (Time.unscaledTime > incomingGrabUntil || !MultiplayerSession.CanGrabPlayers) return;
         var player = PlayerScript.player;
-        var body = player == null ? null : player.bodyScript;
+        var body = player?.bodyScript;
         if (body == null || !CanGrabBody(body)) { incomingGrabUntil = 0f; return; }
         var rigidbody = ResolveLocalPart(body, incomingGrab.Kind, incomingGrab.Index);
         if (rigidbody == null || !rigidbody.simulated) return;
@@ -3528,9 +3469,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         index = 0;
         if (remoteBody == null) return false;
         if (rigidbody == remoteBody.rb) return true;
-        var limbs = GetList(remoteBody, "limbs");
+        var limbs = remoteBody.limbs ?? [];
         for (var position = 0; position < limbs.Count; position++)
-            if (((LimbScript)limbs[position]).rb == rigidbody)
+            if (limbs[position].rb == rigidbody)
             {
                 kind = 1;
                 index = (short)position;
@@ -3538,7 +3479,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             }
         var tails = GetNetworkTailBodies(remoteBody);
         for (var position = 0; position < tails.Count; position++)
-            if ((Rigidbody2D)tails[position] == rigidbody)
+            if (tails[position] == rigidbody)
             {
                 kind = 2;
                 index = (short)position;
@@ -3560,12 +3501,12 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
         if (kind == 1)
         {
-            var limbs = GetList(body, "limbs");
+            var limbs = body.limbs ?? [];
 
             if (index < 0 || index >= limbs.Count)
                 return null;
 
-            return ((LimbScript)limbs[index]).rb;
+            return limbs[index].rb;
         }
 
         if (kind == 2)
@@ -3620,7 +3561,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         }
         var player = PlayerScript.player;
         if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
-            instance == null || player == null || currentShooter != player.bodyScript)
+            Instance == null || player == null || currentShooter != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
             if (replica != null && replica.remoteBody != null && replica.remoteBody.isAlive)
@@ -3643,7 +3584,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         currentShooter = attacker;
         var player = PlayerScript.player;
         if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
-            instance == null || player == null || attacker != player.bodyScript)
+            Instance == null || player == null || attacker != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
             if (replica != null)
@@ -3757,7 +3698,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     }
     internal static void PrepareNpcTarget(AIScript ai)
     {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || instance == null ||
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || Instance == null ||
             ai == null || ai.body == null || ai.followPlayer) return;
         var player = PlayerScript.player;
         var localBody = player == null ? null : player.bodyScript;
@@ -4217,7 +4158,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         var player = PlayerScript.player;
         if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
-            instance == null || projectile == null || player == null ||
+            Instance == null || projectile == null || player == null ||
             shooter != player.bodyScript) return;
         foreach (var projectileCollider in projectile.GetComponentsInChildren<Collider2D>(true))
         foreach (var replica in NetworkAvatarRegistry.replicas.Values)
@@ -4279,7 +4220,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         var replica = limb == null ? null : NetworkAvatarRegistry.ReplicaForBody(limb.body);
         if (!MultiplayerSession.IsConnected || activeShotState == null || replica == null ||
             weapon != activeShotState.Weapon) return;
-        var limbs = GetList(replica.remoteBody, "limbs");
+        var limbs = replica.remoteBody.limbs ?? [];
         var limbIndex = limbs.IndexOf(limb);
         if (limbIndex < 0 || limbIndex > short.MaxValue) return;
         var woundRenderer = FindLatestWound(limb, hitpoint);
@@ -5143,17 +5084,16 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 rotation = rotation,
                 startedAt = now,
                 receivedAt = now,
-                duration = CurrentSnapshotInterval()
+                duration = SnapshotInterval
             };
             return;
         }
 
-        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
-            CurrentSnapshotInterval(), 0.30f);
+        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt, SnapshotInterval, 0.30f);
         targets[body] = new TargetState
         {
-            fromPosition = BufferedRemoteInterpolation ? previous.position : body.transform.position,
-            fromRotation = BufferedRemoteInterpolation ? previous.rotation : body.transform.rotation,
+            fromPosition = previous.position,
+            fromRotation = previous.rotation,
             position = position,
             rotation = rotation,
             startedAt = now,
@@ -5166,9 +5106,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         BinaryReader reader,
         Rigidbody2D body,
         SpriteRenderer[] sprites,
-        bool inVehicle,
-        Vector2 sourceRoot,
-        float sourceRootRotation)
+        bool inVehicle)
     {
         var delta = new Vector2(
             reader.ReadSingle(),
@@ -5188,13 +5126,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
-        SetTailTarget(
-            body,
-            lastAuthoritativePosition + delta,
-            Quaternion.Euler(
-                0f,
-                0f,
-                remoteBody.rb.rotation + deltaAngle));
+        SetTailTarget(body, lastAuthoritativePosition + delta, Quaternion.Euler(0f, 0f, remoteBody.rb.rotation + deltaAngle));
     }
     
     private void SetVehicleTailRotationTarget(
@@ -5208,34 +5140,22 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
 
         var state = vehicleTailTargets[index];
+        var progress = Mathf.Clamp01((Time.unscaledTime - state.StartedAt) / SnapshotInterval);
 
-        var progress = Mathf.Clamp01(
-            (Time.unscaledTime - state.StartedAt) /
-            CurrentSnapshotInterval());
-
-        state.FromLocalRotation = Mathf.LerpAngle(
-            state.FromLocalRotation,
-            state.LocalRotation,
-            progress);
-
+        state.FromLocalRotation = Mathf.LerpAngle(state.FromLocalRotation, state.LocalRotation, progress);
         state.LocalRotation = localRotation;
         state.StartedAt = Time.unscaledTime;
 
         vehicleTailTargets[index] = state;
     }
 
-    private void SetVehicleTailTransformTarget(
-        Transform transform,
-        float localRotation)
+    private void SetVehicleTailTransformTarget(Transform transform, float localRotation)
     {
         if (transform == null)
             return;
 
         var now = Time.unscaledTime;
-
-        var index =
-            vehicleTailTransformTargets.FindIndex(
-                target => target.Transform == transform);
+        var index = vehicleTailTransformTargets.FindIndex(target => target.Transform == transform);
 
         if (index < 0)
         {
@@ -5251,18 +5171,10 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
-        var state =
-            vehicleTailTransformTargets[index];
+        var state = vehicleTailTransformTargets[index];
+        var progress = Mathf.Clamp01((now - state.StartedAt) / SnapshotInterval);
 
-        var progress = Mathf.Clamp01(
-            (now - state.StartedAt) /
-            CurrentSnapshotInterval());
-
-        state.FromLocalRotation = Mathf.LerpAngle(
-            state.FromLocalRotation,
-            state.LocalRotation,
-            progress);
-
+        state.FromLocalRotation = Mathf.LerpAngle(state.FromLocalRotation, state.LocalRotation, progress);
         state.LocalRotation = localRotation;
         state.StartedAt = now;
 
@@ -5273,14 +5185,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         BinaryReader reader,
         Transform transform,
         SpriteRenderer[] sprites,
-        bool inVehicle,
-        Vector2 sourceRoot,
-        float sourceRootRotation)
+        bool inVehicle)
     {
-        var delta = new Vector2(
-            reader.ReadSingle(),
-            reader.ReadSingle());
-
+        var delta = new Vector2(reader.ReadSingle(), reader.ReadSingle());
         var deltaAngle = reader.ReadSingle();
 
         ApplyTailSpriteFlip(sprites, reader.ReadBoolean());
@@ -5291,24 +5198,14 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
 
         if (inVehicle)
         {
-            SetVehicleTailTransformTarget(
-                transform,
-                deltaAngle);
-
+            SetVehicleTailTransformTarget(transform, deltaAngle);
             return;
         }
 
         SetWorldTarget(transform, new TargetState
         {
-            position = new Vector3(
-                lastAuthoritativePosition.x + delta.x,
-                lastAuthoritativePosition.y + delta.y,
-                transform.position.z),
-
-            rotation = Quaternion.Euler(
-                0f,
-                0f,
-                remoteBody.rb.rotation + deltaAngle)
+            position = new Vector3(lastAuthoritativePosition.x + delta.x, lastAuthoritativePosition.y + delta.y, transform.position.z),
+            rotation = Quaternion.Euler(0f, 0f, remoteBody.rb.rotation + deltaAngle)
         });
     }
     
@@ -5345,31 +5242,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     {
         reader.ReadInt16(); reader.ReadInt16(); reader.ReadUInt16();
     }
-
-    private static IList GetList(BodyScript body, string name)
-    {
-        if (body == null) return new ArrayList();
-        switch (name)
-        {
-            case "limbs": return body.limbs ?? new List<LimbScript>();
-            case "tailBases": return body.tailBases ?? new List<Rigidbody2D>();
-            case "weapons": return body.weapons ?? new List<WeaponPreset>();
-            default: return new ArrayList();
-        }
-    }
-
-    private static Transform[] GetTransforms(BodyScript body, string name)
-    {
-        return body != null && name == "tails" && body.tails != null ? body.tails : new Transform[0];
-    }
-
-    private static Transform GetTransform(BodyScript body, string name)
-    {
-        if (body == null) return null;
-        return name == "gunTransform" ? body.gunTransform :
-            name == "gunAnimTransform" ? body.gunAnimTransform : null;
-    }
-
 
     private static void WriteWorldTransform(BinaryWriter writer, Transform transform)
     {
@@ -5448,13 +5320,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 rotation = target.rotation,
                 startedAt = now,
                 receivedAt = now,
-                duration = CurrentSnapshotInterval()
+                duration = SnapshotInterval
             };
             return;
         }
 
         var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
-            CurrentSnapshotInterval(), 0.30f);
+            SnapshotInterval, 0.30f);
         worldTargets[transform] = new WorldTargetState
         {
             fromPosition = BufferedRemoteInterpolation ? previous.position : transform.position,
@@ -5485,13 +5357,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
                 rotation = target.rotation,
                 startedAt = now,
                 receivedAt = now,
-                duration = CurrentSnapshotInterval()
+                duration = SnapshotInterval
             };
             return;
         }
 
         var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
-            CurrentSnapshotInterval(), 0.30f);
+            SnapshotInterval, 0.30f);
         localTargets[transform] = new WorldTargetState
         {
             fromPosition = BufferedRemoteInterpolation ? previous.position : transform.localPosition,
@@ -5995,9 +5867,9 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void CreateRemoteScarf()
     {
         if (remoteBody == null) return;
-        var limbs = GetList(remoteBody, "limbs");
+        var limbs = remoteBody.limbs ?? [];
         if (limbs.Count < 2) return;
-        var parent = ((LimbScript)limbs[1]).transform;
+        var parent = limbs[1].transform;
         if (remoteScarf == null)
         {
             var prefab = Resources.Load<GameObject>("Scarf");
@@ -6327,10 +6199,8 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
     private void UpdateLocalVehicleLock()
     {
         var player = PlayerScript.player;
-        var body = player == null ? null : player.bodyScript;
-        var vehicle = body != null && body.inVehicle
-            ? body.curVehicle
-            : null;
+        var body = player?.bodyScript;
+        var vehicle = body != null && body.inVehicle ? body.curVehicle : null;
         
         var valid =
             MultiplayerSession.IsConnected &&
@@ -6341,15 +6211,13 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
             vehicle.mainPart != null &&
             vehicle.mainPart.rb != null;
         
-
         if (!valid)
         {
             RestoreLocalVehiclePhysics();
             return;
         }
 
-        if (localVehicleLocked &&
-            (localVehicleBody != body || localVehicle != vehicle))
+        if (localVehicleLocked && (localVehicleBody != body || localVehicle != vehicle))
         {
             RestoreLocalVehiclePhysics();
         }
@@ -6373,9 +6241,7 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         position.x = seat.x;
         position.y = seat.y;
 
-        body.transform.SetPositionAndRotation(
-            position,
-            Quaternion.Euler(0f, 0f, angle));
+        body.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, 0f, angle));
 
         body.rb.position = seat;
         body.rb.rotation = angle;
@@ -6521,12 +6387,6 @@ internal sealed class NetworkAvatarReplication : MonoBehaviour
         rb.AddForceAtPosition(force, position, mode);
         TryTakePropAuthority(rb);
     }
-
-    internal static void NotifyShotLamp(RaycastHit2D hit)
-    {
-        if (hit.collider != null) GunsawMultiplayerPlugin.World?.NotifyLocalLampBroken(hit.collider, hit.point);
-    }
-
 
     internal static void AddForceWithPropAuthority(Rigidbody2D rb, Vector2 force, ForceMode2D mode)
     {
