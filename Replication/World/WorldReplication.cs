@@ -86,11 +86,10 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new();
     internal readonly List<AudioSource> staleClientDoorAudio = new();
     private readonly HashSet<SawScript> clientSaws = [];
-    private byte[] lastSerializedWorld;
+    private WorldSnapshotPacket? lastSentWorldSnapshot;
     private byte[] lastSerializedEnvironment;
     private byte[] lastReliableEnvironment;
-    private readonly Dictionary<string, byte[]> lastSerializedBodyStates = new();
-    private readonly Dictionary<string, BodyStateScratch> bodyStateScratch = new();
+    private readonly Dictionary<string, WorldBodySnapshot> lastSerializedBodyStates = new();
     private readonly Dictionary<string, float> lastChangedBodyAt = new();
     internal float nextSnapshot;
     private float nextReliableEnvironment;
@@ -315,7 +314,7 @@ internal sealed class WorldReplication : MonoBehaviour
             var queueStarted = MultiplayerPerformance.StartPhase();
             while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot))
             {
-                if (!TryReadWorldSnapshotSequence(snapshot, out var sequence)) continue;
+                if (!WorldSnapshotPacket.TryReadSequence(snapshot, out var sequence)) continue;
                 if (latestSnapshot == null || IsNewerWorldSnapshotSequence(sequence, latestSnapshotSequence))
                 {
                     latestSnapshot = snapshot;
@@ -404,13 +403,9 @@ internal sealed class WorldReplication : MonoBehaviour
                 {
                     nextSnapshot = Time.unscaledTime + SnapshotInterval;
                     var serializeStarted = MultiplayerPerformance.StartPhase();
-                    var snapshot = SerializeWorld();
+                    var snapshot = BuildWorldSnapshot();
                     MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerialize, serializeStarted);
-                    if (snapshot != null)
-                    {
-                        var snapshotReader = new PacketReader(snapshot);
-                        MultiplayerSession.Send(WorldSnapshotPacket.Read(ref snapshotReader));
-                    }
+                    if (snapshot.HasValue) MultiplayerSession.Send(snapshot.Value);
 
                     if (lastSerializedEnvironment != null &&
                         Time.unscaledTime >= nextReliableEnvironment &&
@@ -665,15 +660,14 @@ internal sealed class WorldReplication : MonoBehaviour
         clientSaws.Clear();
         bodies.wireIds.Clear();
         bodies.idsByWire.Clear();
-        lastSerializedWorld = null;
+        lastSentWorldSnapshot = null;
         worldSnapshotSequence = 0;
         lastReceivedWorldSnapshotSequence = 0;
         hasReceivedWorldSnapshotSequence = false;
         lastSerializedEnvironment = null;
         lastReliableEnvironment = null;
         lastSerializedBodyStates.Clear();
-        foreach (var scratch in bodyStateScratch.Values) scratch.Dispose();
-        bodyStateScratch.Clear();
+        WorldCratePrefabIds.ResetUnknowns();
         lastChangedBodyAt.Clear();
         nextFullWorldSnapshot = 0f;
         nextReliableEnvironment = 0f;
@@ -683,52 +677,49 @@ internal sealed class WorldReplication : MonoBehaviour
         sentPacketsPerSecond = sentStatesPerSecond = receivedPacketsPerSecond = receivedStatesPerSecond = 0;
     }
 
-    private byte[] SerializeWorld()
+    private WorldSnapshotPacket? BuildWorldSnapshot()
     {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
+        var sceneEpoch = MultiplayerSession.SnapshotEpoch;
+        var sequence = ++worldSnapshotSequence;
+        var fullSnapshot = Time.unscaledTime >= nextFullWorldSnapshot;
+        if (fullSnapshot) nextFullWorldSnapshot = Time.unscaledTime + FullSnapshotInterval;
+        var changedStates = new List<WorldBodySnapshot>();
+        var changedPropCount = 0;
+        var changedOtherBodyCount = 0;
+        var bodySerializeStarted = MultiplayerPerformance.StartPhase();
+        foreach (var pair in bodies.bodies)
         {
-            writer.Write(MultiplayerSession.SnapshotEpoch);
-            writer.Write(++worldSnapshotSequence);
-            var fullSnapshot = Time.unscaledTime >= nextFullWorldSnapshot;
-            if (fullSnapshot) nextFullWorldSnapshot = Time.unscaledTime + FullSnapshotInterval;
-            var changedStates = new List<byte[]>();
-            var changedPropCount = 0;
-            var changedOtherBodyCount = 0;
-            var bodySerializeStarted = MultiplayerPerformance.StartPhase();
-            foreach (var pair in bodies.bodies)
+            var body = pair.Value;
+            if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
+            if (!fullSnapshot && IsIdleVehiclePart(body)) continue;
+            var awake = body != null && body.IsAwake();
+            if (!fullSnapshot && body != null && !awake) continue;
+            var state = CaptureWorldBodyState(pair.Key, body, awake);
+            WorldBodySnapshot previous;
+            var stateChanged = !lastSerializedBodyStates.TryGetValue(pair.Key, out previous) ||
+                               !state.WireEquals(previous);
+            if (stateChanged) lastSerializedBodyStates[pair.Key] = state;
+            if (fullSnapshot || stateChanged)
             {
-                var body = pair.Value;
-                if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
-                if (!fullSnapshot && IsIdleVehiclePart(body)) continue;
-                var awake = body != null && body.IsAwake();
-                if (!fullSnapshot && body != null && !awake) continue;
-                byte[] state;
-                var stateChanged = SerializeBodyStateBuffered(pair.Key, body, fullSnapshot, awake, out state);
-                if (fullSnapshot || stateChanged)
-                {
-                    changedStates.Add(state);
-                    if (stateChanged) lastChangedBodyAt[pair.Key] = Time.unscaledTime;
-                    if (body != null && bodies.IsInteractivePropBody(body)) changedPropCount++;
-                    else changedOtherBodyCount++;
-                }
+                changedStates.Add(state);
+                if (stateChanged) lastChangedBodyAt[pair.Key] = Time.unscaledTime;
+                if (body != null && bodies.IsInteractivePropBody(body)) changedPropCount++;
+                else changedOtherBodyCount++;
             }
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeBodies, bodySerializeStarted);
-            writer.Write((ushort)changedStates.Count);
-            foreach (var state in changedStates) writer.Write(state);
-            var environmentSerializeStarted = MultiplayerPerformance.StartPhase();
-            var environment = enviroment.SerializeEnvironment();
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeEnvironment, environmentSerializeStarted);
-            lastSerializedEnvironment = environment;
-            var packet = stream.ToArray();
-            if (!fullSnapshot && WorldSnapshotEquals(lastSerializedWorld, packet)) return null;
-            lastSerializedWorld = packet;
-            lastSentPropCount = changedPropCount;
-            lastSentOtherCount = changedOtherBodyCount;
-            sentPacketsWindow++;
-            sentStatesWindow += changedStates.Count;
-            return packet;
         }
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeBodies, bodySerializeStarted);
+        var environmentSerializeStarted = MultiplayerPerformance.StartPhase();
+        lastSerializedEnvironment = enviroment.SerializeEnvironment();
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeEnvironment, environmentSerializeStarted);
+        var packet = new WorldSnapshotPacket(sceneEpoch, sequence, changedStates.ToArray());
+        if (!fullSnapshot && lastSentWorldSnapshot.HasValue && packet.ContentEquals(lastSentWorldSnapshot.Value))
+            return null;
+        lastSentWorldSnapshot = packet;
+        lastSentPropCount = changedPropCount;
+        lastSentOtherCount = changedOtherBodyCount;
+        sentPacketsWindow++;
+        sentStatesWindow += changedStates.Count;
+        return packet;
     }
 
     internal void SendFullEnvironment(ushort peerId)
@@ -767,85 +758,48 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private bool SerializeBodyStateBuffered(string id, Rigidbody2D body, bool copyUnchanged, bool awake, out byte[] state)
+    private WorldBodySnapshot CaptureWorldBodyState(string id, Rigidbody2D body, bool awake)
     {
-        BodyStateScratch scratch;
-        if (!bodyStateScratch.TryGetValue(id, out scratch))
-        {
-            scratch = new BodyStateScratch(WireId(id));
-            bodyStateScratch[id] = scratch;
-        }
-        
-        var stream = scratch.Stream;
-        var writer = scratch.Writer;
-        stream.Position = 0;
-        stream.SetLength(0);
-        writer.Write(scratch.WireId);
-        var destroyed = body == null;
-        writer.Write(destroyed);
-        if (!destroyed)
-        {
-            DroppedWeapon dropped;
-            droppedWeapons.TryGetValue(body, out dropped);
-            var layout = bodies.BodyLayoutFor(body);
-            var crate = layout.Crate;
-            writer.Write(dropped != null); writer.Write(crate != null);
-            if (crate != null)
-                writer.Write(networkCrateDebrisBodies.Contains(body) ? 0UL : NetworkWireId.FromString(layout.CratePrefabName));
-            BinaryWriterRaw.WriteSingle(writer, body.position.x);
-            BinaryWriterRaw.WriteSingle(writer, body.position.y);
-            BinaryWriterRaw.WriteSingle(writer, body.rotation);
-            BinaryWriterRaw.WriteSingle(writer, body.velocity.x); 
-            BinaryWriterRaw.WriteSingle(writer, body.velocity.y);
-            BinaryWriterRaw.WriteSingle(writer, body.angularVelocity);
-            var hasMechanismTarget = WorldBodyReplication.TryGetMechanismTarget(body, out var mechanismTarget);
-            writer.Write(hasMechanismTarget);
-            if (hasMechanismTarget)
-            {
-                BinaryWriterRaw.WriteSingle(writer, mechanismTarget.x);
-                BinaryWriterRaw.WriteSingle(writer, mechanismTarget.y);
-            }
-            BinaryWriterRaw.WriteSingle(writer, body.gravityScale);
-            writer.Write((int)body.constraints);
-            writer.Write((byte)body.bodyType); writer.Write(body.simulated); writer.Write(awake);
-            var safetyRailing = layout.SafetyRailing;
-            writer.Write(safetyRailing);
-            writer.Write(safetyRailing && IsSafetyRailingAttached(layout));
-            var vehiclePart = layout.VehiclePart;
-            writer.Write(vehiclePart != null);
-            if (vehiclePart != null)
-            {
-                var vehicle = vehiclePart.vehicle ?? layout.Vehicle;
-                var joint = layout.VehicleJoint;
-                BinaryWriterRaw.WriteSingle(writer, vehiclePart.health);
-                BinaryWriterRaw.WriteSingle(writer, vehicle == null ? 0f : vehicle.health);
-                writer.Write(vehicle != null && vehicle.engineDisabled);
-                writer.Write(joint != null && joint.enabled);
-            }
-            if (dropped != null)
-            {
-                writer.Write(NetworkWireId.FromString(dropped.stats == null ? "" : dropped.stats.name));
-                writer.Write(dropped.ammoAmount);
-            }
-        }
-        writer.Flush();
-        byte[] previous;
-        var changed = !lastSerializedBodyStates.TryGetValue(id, out previous) || !StreamEquals(stream, previous);
-        if (changed)
-        {
-            state = stream.ToArray();
-            lastSerializedBodyStates[id] = state;
-        }
-        else state = copyUnchanged ? previous : null;
-        return changed;
-    }
-
-    private static bool StreamEquals(MemoryStream stream, byte[] previous)
-    {
-        if (previous == null || stream.Length != previous.Length) return false;
-        var buffer = stream.GetBuffer();
-        for (var index = 0; index < previous.Length; index++) if (buffer[index] != previous[index]) return false;
-        return true;
+        var wireId = WireId(id);
+        if (body == null) return new WorldBodySnapshot(wireId, true);
+        DroppedWeapon dropped;
+        droppedWeapons.TryGetValue(body, out dropped);
+        var layout = bodies.BodyLayoutFor(body);
+        var crate = layout.Crate;
+        var vehiclePart = layout.VehiclePart;
+        var vehicle = vehiclePart == null ? null : vehiclePart.vehicle ?? layout.Vehicle;
+        var joint = layout.VehicleJoint;
+        var hasMechanismTarget = WorldBodyReplication.TryGetMechanismTarget(body, out var mechanismTarget);
+        return new WorldBodySnapshot(
+            id: wireId,
+            destroyed: false,
+            isDroppedWeapon: dropped != null,
+            isCrate: crate != null,
+            cratePrefabId: crate == null || networkCrateDebrisBodies.Contains(body)
+                ? (byte)0 : WorldCratePrefabIds.GetId(layout.CratePrefabName),
+            positionX: body.position.x,
+            positionY: body.position.y,
+            rotation: body.rotation,
+            velocityX: body.velocity.x,
+            velocityY: body.velocity.y,
+            angularVelocity: body.angularVelocity,
+            hasMechanismTarget: hasMechanismTarget,
+            mechanismTargetX: hasMechanismTarget ? mechanismTarget.x : 0f,
+            mechanismTargetY: hasMechanismTarget ? mechanismTarget.y : 0f,
+            gravityScale: body.gravityScale,
+            constraints: (int)body.constraints,
+            bodyType: (byte)body.bodyType,
+            simulated: body.simulated,
+            awake: awake,
+            safetyRailing: layout.SafetyRailing,
+            safetyRailingAttached: layout.SafetyRailing && IsSafetyRailingAttached(layout),
+            isVehiclePart: vehiclePart != null,
+            vehiclePartHealth: vehiclePart == null ? 0f : vehiclePart.health,
+            vehicleHealth: vehicle == null ? 0f : vehicle.health,
+            vehicleEngineDisabled: vehicle != null && vehicle.engineDisabled,
+            vehicleJointAttached: joint != null && joint.enabled,
+            weaponId: dropped == null ? 0UL : NetworkWireId.FromString(dropped.stats == null ? "" : dropped.stats.name),
+            ammo: dropped == null ? 0 : dropped.ammoAmount);
     }
 
     internal ulong WireId(string id)
@@ -892,25 +846,9 @@ internal sealed class WorldReplication : MonoBehaviour
         return null;
     }
 
-    private static bool TryReadWorldSnapshotSequence(byte[] data, out int sequence)
-    {
-        sequence = 0;
-        if (data == null || data.Length < sizeof(int) * 2) return false;
-        sequence = BitConverter.ToInt32(data, sizeof(int));
-        return true;
-    }
-
     private static bool IsNewerWorldSnapshotSequence(int sequence, int previous)
     {
         return unchecked(sequence - previous) > 0;
-    }
-
-    private static bool WorldSnapshotEquals(byte[] left, byte[] right)
-    {
-        if (left == null || right == null || left.Length != right.Length) return false;
-        for (var index = sizeof(int) * 2; index < left.Length; index++)
-            if (left[index] != right[index]) return false;
-        return true;
     }
 
     private static bool BytesEqual(byte[] left, byte[] right)
@@ -936,24 +874,25 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         try
         {
-            var reader = new SnapshotReader(data);
-            var sceneEpoch = reader.ReadInt32();
+            var reader = new PacketReader(data);
+            WorldSnapshotPacket.ReadHeader(ref reader, out var sceneEpoch, out var sequence);
             if (!MultiplayerSession.IsSnapshotEpochCurrent(sceneEpoch)) return;
-            var sequence = reader.ReadInt32();
-            if (hasReceivedWorldSnapshotSequence && !IsNewerWorldSnapshotSequence(sequence, lastReceivedWorldSnapshotSequence)) return;
+            if (hasReceivedWorldSnapshotSequence &&
+                !IsNewerWorldSnapshotSequence(sequence, lastReceivedWorldSnapshotSequence)) return;
+            var snapshot = WorldSnapshotPacket.ReadBodies(ref reader, sceneEpoch, sequence);
             lastReceivedWorldSnapshotSequence = sequence;
             hasReceivedWorldSnapshotSequence = true;
-            var count = reader.ReadUInt16();
+            var count = snapshot.Bodies.Length;
             receivedPacketsWindow++;
             receivedStatesWindow += count;
             var parseStarted = MultiplayerPerformance.StartPhase();
             for (var index = 0; index < count; index++)
             {
-                var id = ResolveWireId(reader.ReadUInt64());
+                var snapshotBody = snapshot.Bodies[index];
+                var id = ResolveWireId(snapshotBody.Id);
                 var decodeStarted = MultiplayerPerformance.StartPhase();
-                var destroyed = reader.ReadBoolean();
                 Rigidbody2D body;
-                if (destroyed)
+                if (snapshotBody.Destroyed)
                 {
                     MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDecode, decodeStarted);
                     var dispatchStarted = MultiplayerPerformance.StartPhase();
@@ -1010,51 +949,40 @@ internal sealed class WorldReplication : MonoBehaviour
                     continue;
                 }
 
-                var isDropped = reader.ReadBoolean();
-                var isCrate = reader.ReadBoolean();
-                var cratePrefabId = isCrate ? reader.ReadUInt64() : 0UL;
-                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var rotation = reader.ReadSingle();
-                var velocity = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var angularVelocity = reader.ReadSingle();
-                var hasMechanismTarget = reader.ReadBoolean();
-                var mechanismTarget = hasMechanismTarget
-                    ? new Vector2(reader.ReadSingle(), reader.ReadSingle())
-                    : Vector2.zero;
+                var position = new Vector2(snapshotBody.PositionX, snapshotBody.PositionY);
                 var state = new State
                 {
                     position = position,
-                    rotation = rotation,
-                    velocity = velocity,
-                    angularVelocity = angularVelocity,
-                    hasMechanismTarget = hasMechanismTarget,
-                    mechanismTarget = mechanismTarget,
-                    gravityScale = reader.ReadSingle(),
-                    constraints = (RigidbodyConstraints2D)reader.ReadInt32(),
-                    bodyType = (RigidbodyType2D)reader.ReadByte(),
-                    simulated = reader.ReadBoolean(),
-                    awake = reader.ReadBoolean(),
-                    safetyRailing = reader.ReadBoolean(),
-                    safetyRailingAttached = reader.ReadBoolean(),
-                    vehiclePart = reader.ReadBoolean()
+                    rotation = snapshotBody.Rotation,
+                    velocity = new Vector2(snapshotBody.VelocityX, snapshotBody.VelocityY),
+                    angularVelocity = snapshotBody.AngularVelocity,
+                    hasMechanismTarget = snapshotBody.HasMechanismTarget,
+                    mechanismTarget = snapshotBody.HasMechanismTarget
+                        ? new Vector2(snapshotBody.MechanismTargetX, snapshotBody.MechanismTargetY)
+                        : Vector2.zero,
+                    gravityScale = snapshotBody.GravityScale,
+                    constraints = (RigidbodyConstraints2D)snapshotBody.Constraints,
+                    bodyType = (RigidbodyType2D)snapshotBody.BodyType,
+                    simulated = snapshotBody.Simulated,
+                    awake = snapshotBody.Awake,
+                    safetyRailing = snapshotBody.SafetyRailing,
+                    safetyRailingAttached = snapshotBody.SafetyRailingAttached,
+                    vehiclePart = snapshotBody.IsVehiclePart,
+                    vehiclePartHealth = snapshotBody.VehiclePartHealth,
+                    vehicleHealth = snapshotBody.VehicleHealth,
+                    vehicleEngineDisabled = snapshotBody.VehicleEngineDisabled,
+                    vehicleJointAttached = snapshotBody.VehicleJointAttached
                 };
-                if (state.vehiclePart)
-                {
-                    state.vehiclePartHealth = reader.ReadSingle();
-                    state.vehicleHealth = reader.ReadSingle();
-                    state.vehicleEngineDisabled = reader.ReadBoolean();
-                    state.vehicleJointAttached = reader.ReadBoolean();
-                }
 
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotDecode, decodeStarted);
                 var stateDispatchStarted = MultiplayerPerformance.StartPhase();
                 try
                 {
                     if (clientDestroyedBodyIds.Contains(id)) continue;
-                    if (isDropped)
+                    if (snapshotBody.IsDroppedWeapon)
                     {
-                        var weaponId = reader.ReadUInt64();
-                        var ammo = reader.ReadInt32();
+                        var weaponId = snapshotBody.WeaponId;
+                        var ammo = snapshotBody.Ammo;
                         float pendingUntil;
                         if (pendingDestroyedWeaponPickups.TryGetValue(id, out pendingUntil))
                         {
@@ -1080,10 +1008,10 @@ internal sealed class WorldReplication : MonoBehaviour
                             weapons.SynchronizeDroppedWeapon(dropped, weaponId, ammo);
                         }
                     }
-                    else if (isCrate && (!bodies.bodies.TryGetValue(id, out body) || body == null))
+                    else if (snapshotBody.IsCrate && (!bodies.bodies.TryGetValue(id, out body) || body == null))
                     {
                         var objectStarted = MultiplayerPerformance.StartPhase();
-                        body = CreateRuntimeCrate(id, cratePrefabId, state.position, state.rotation);
+                        body = CreateRuntimeCrate(id, snapshotBody.CratePrefabId, state.position, state.rotation);
                         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotObjects,
                             objectStarted);
                     }
@@ -1764,14 +1692,15 @@ internal sealed class WorldReplication : MonoBehaviour
         return ordinal;
     }
 
-    private Rigidbody2D CreateRuntimeCrate(string id, ulong prefabId, Vector2 position, float rotation)
+    private Rigidbody2D CreateRuntimeCrate(string id, byte prefabId, Vector2 position, float rotation)
     {
-        if (prefabId == 0UL) return null;
+        var prefabName = WorldCratePrefabIds.GetName(prefabId);
+        if (prefabName == null) return null;
         GameObject prefab = null;
         foreach (var candidate in Resources.FindObjectsOfTypeAll<GameObject>())
         {
             if (candidate == null || candidate.scene.IsValid() ||
-                NetworkWireId.FromString(CleanCloneName(candidate.name)) != prefabId ||
+                !string.Equals(CleanCloneName(candidate.name), prefabName, StringComparison.Ordinal) ||
                 candidate.GetComponentInChildren<CrateScript>(true) == null) continue;
             prefab = candidate;
             break;
@@ -1791,26 +1720,6 @@ internal sealed class WorldReplication : MonoBehaviour
         bodies.interactivePropBodies.Add(body);
         bodies.MakeClientControlled(body);
         return body;
-    }
-
-    private sealed class BodyStateScratch : IDisposable
-    {
-        internal readonly MemoryStream Stream = new(96);
-        internal readonly BinaryWriter Writer;
-
-        internal readonly ulong WireId;
-
-        internal BodyStateScratch(ulong wireId)
-        {
-            WireId = wireId;
-            Writer = new BinaryWriter(Stream, Encoding.UTF8, true);
-        }
-
-        public void Dispose()
-        {
-            Writer.Dispose();
-            Stream.Dispose();
-        }
     }
 
     internal struct State
@@ -1833,69 +1742,6 @@ internal sealed class WorldReplication : MonoBehaviour
         public float vehicleHealth;
         public bool vehicleEngineDisabled;
         public bool vehicleJointAttached;
-    }
-
-    private struct SnapshotReader
-    {
-        private readonly byte[] data;
-        private int offset;
-
-        public SnapshotReader(byte[] source)
-        {
-            data = source;
-            offset = 0;
-        }
-
-        public byte ReadByte()
-        {
-            Require(1);
-            return data[offset++];
-        }
-
-        public bool ReadBoolean()
-        {
-            return ReadByte() != 0;
-        }
-
-        public ushort ReadUInt16()
-        {
-            Require(2);
-            var value = (ushort)(data[offset] | data[offset + 1] << 8);
-            offset += 2;
-            return value;
-        }
-
-        public int ReadInt32()
-        {
-            Require(4);
-            var value = data[offset] | data[offset + 1] << 8 | data[offset + 2] << 16 |
-                data[offset + 3] << 24;
-            offset += 4;
-            return value;
-        }
-
-        public ulong ReadUInt64()
-        {
-            Require(8);
-            ulong value = data[offset] | (ulong)data[offset + 1] << 8 | (ulong)data[offset + 2] << 16 |
-                (ulong)data[offset + 3] << 24 | (ulong)data[offset + 4] << 32 |
-                (ulong)data[offset + 5] << 40 | (ulong)data[offset + 6] << 48 | (ulong)data[offset + 7] << 56;
-            offset += 8;
-            return value;
-        }
-
-        public float ReadSingle()
-        {
-            Require(4);
-            var value = BitConverter.ToSingle(data, offset);
-            offset += 4;
-            return value;
-        }
-
-        private void Require(int count)
-        {
-            if (count < 0 || offset > data.Length - count) throw new EndOfStreamException();
-        }
     }
 
     internal sealed class BodyLayout
