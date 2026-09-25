@@ -3,6 +3,26 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
+[HarmonyPatch(typeof(LevelEditor), "PlayTest")]
+internal static class MultiplayerLevelEditorPlaytestPatch
+{
+    private static bool Prefix(LevelEditor __instance)
+    {
+        if (!MultiplayerSession.IsHosting) return true;
+        try
+        {
+            var levelJson = __instance.GetLevelCode();
+            MultiplayerSession.StartHostCustomLevel(levelJson, Compression.Compress(levelJson));
+            return true;
+        }
+        catch (System.Exception e)
+        {
+            __instance.SetInfoText("Could not start multiplayer playtest: " + e.Message);
+            return false;
+        }
+    }
+}
+
 [HarmonyPatch(typeof(LevelEditor), "Start")]
 internal static class LocalLevelEditorSavePatch
 {
