@@ -314,6 +314,9 @@ internal static partial class MultiplayerSession
                 TeamsCfg = settings.TeamsCfg;
                 StartingWeapon = settings.StartingWeapon;
                 RespawnWeapon = settings.RespawnWeapon;
+                GunGameEnabled = settings.GunGame;
+                GGSequence = settings.GGSequence;
+                GGOnDeath = settings.GGOnDeath;
                 StartingAmmo = settings.StartingAmmo;
                 RespawnAmmo = settings.RespawnAmmo;
                 HealthFactor = settings.HealthFactor;
@@ -347,7 +350,11 @@ internal static partial class MultiplayerSession
             }
             else if (!isHost && decodedPacket.Type == PacketType.KillScreenEffect && senderId == hostPeerId)
             {
-                NetworkAvatarManager.PlayKillScreenEffect();
+                GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() =>
+                {
+                    GunGameRule.RecordKill();
+                    NetworkAvatarManager.PlayKillScreenEffect();
+                });
             }
             else if (!isHost && decodedPacket.Type == PacketType.ObserverState && senderId == hostPeerId)
             {

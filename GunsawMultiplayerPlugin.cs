@@ -151,6 +151,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             multiplayerLobbyUi?.ShowCustomLevelSuggestion(MultiplayerSession.PlayerName(suggestingPeer), suggestion);
         TeamSystem.Tick();
         ScoreboardSystem.Tick();
+        GunGameRule.Tick();
         AutoRestartSystem.Tick(lobbySettings.AutoRestart);
         MultiplayerSession.SyncBrutalMode();
         BlackoutRule.Tick();
@@ -1132,6 +1133,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             maxPlayers = live ? MultiplayerSession.MaxPlayers : parsed.MaxPlayers,
             hostPort = 27016,
             pvp = settings.Pvp,
+            gunGame = live ? MultiplayerSession.GunGameEnabled : settings.GunGame,
+            ggSequence = live ? MultiplayerSession.GGSequence : settings.GGSequence,
+            ggOnDeath = (live ? MultiplayerSession.GGOnDeath : settings.GGOnDeath).ToString(),
             canGrab = settings.CanGrab,
             grabOnlyUnconscious = live ? settings.CanGrab && settings.GrabOnlyUnconscious : settings.GrabOnlyUnconscious,
             allowRespawn = settings.AllowRespawn,
@@ -1259,6 +1263,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public int players;
         public int maxPlayers;
         public bool pvp;
+        public bool gunGame;
+        public string ggSequence = "";
+        public string ggOnDeath = "Reset";
         public bool canGrab;
         public bool grabOnlyUnconscious;
         public bool allowRespawn;
@@ -1309,6 +1316,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public int maxPlayers;
         public int hostPort;
         public bool pvp;
+        public bool gunGame;
+        public string ggSequence = "";
+        public string ggOnDeath = "Reset";
         public bool canGrab;
         public bool grabOnlyUnconscious;
         public bool allowRespawn;

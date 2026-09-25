@@ -38,6 +38,12 @@ internal static class LobbySettingsSchema
                 field.SetValue(currentSettings(), entry.Value);
                 savers.Add(() => SetIfChanged(entry, (string?)field.GetValue(currentSettings()) ?? ""));
             }
+            else if (field.FieldType == typeof(GunGameDeathMode))
+            {
+                var entry = config.Bind("Lobby", option.ConfigKey, (GunGameDeathMode)field.GetValue(currentSettings())!, option.Description);
+                field.SetValue(currentSettings(), entry.Value);
+                savers.Add(() => SetIfChanged(entry, (GunGameDeathMode)field.GetValue(currentSettings())!));
+            }
             else throw new InvalidOperationException("Unsupported lobby config field: " + field.Name);
         }
         return savers;
@@ -65,6 +71,10 @@ internal static class LobbySettingsSchema
             else if (field.FieldType == typeof(ConnectionMode))
             {
                 if (Enum.TryParse(value, true, out ConnectionMode mode)) field.SetValue(settings, mode);
+            }
+            else if (field.FieldType == typeof(GunGameDeathMode))
+            {
+                if (Enum.TryParse(value, true, out GunGameDeathMode mode) && Enum.IsDefined(typeof(GunGameDeathMode), mode)) field.SetValue(settings, mode);
             }
             else throw new InvalidOperationException("Unsupported lobby command-line field: " + field.Name);
         }

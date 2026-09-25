@@ -839,6 +839,7 @@ internal static class ClientNpcDeathPatch
         if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer &&
             localPlayer != null && localPlayer.bodyScript == __instance)
             __instance.DropAllWeapons();
+        GunGameRule.RecordDeath(__instance);
         NetworkAvatarManager.EndNpcKillScreenEffect(__instance);
         Announce(__instance);
     }

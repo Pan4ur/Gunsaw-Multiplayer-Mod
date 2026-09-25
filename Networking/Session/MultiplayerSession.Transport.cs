@@ -505,6 +505,7 @@ private static UdpClient ConnectRelay(string address, string lobbyId, string rel
             HasHeader(packet, playerTeleportHeader) || HasHeader(packet, vehicleEjectHeader) ||
             HasHeader(packet, vehicleImpactHeader) || HasHeader(packet, missionFinishedHeader) ||
             HasHeader(packet, observerHeader) || HasHeader(packet, observerKillHeader) ||
+            HasHeader(packet, playerKillHeader) || HasHeader(packet, killScreenEffectHeader) ||
             HasHeader(packet, graffitiHeader) || HasHeader(packet, headlampHeader);
     }
 

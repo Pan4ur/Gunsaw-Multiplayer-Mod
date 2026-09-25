@@ -90,6 +90,8 @@ internal static partial class MultiplayerSession
     private static readonly byte[] graffitiHeader = PacketHeader.Create(PacketType.Graffiti);
     private static readonly byte[] headlampHeader = PacketHeader.Create(PacketType.Headlamp);
     private static readonly byte[] playerPerformanceHeader = PacketHeader.Create(PacketType.PlayerPerformance);
+    private static readonly byte[] playerKillHeader = PacketHeader.Create(PacketType.PlayerKill);
+    private static readonly byte[] killScreenEffectHeader = PacketHeader.Create(PacketType.KillScreenEffect);
     
     private static string hostScene = "";
     private static string pendingScene = "";
@@ -272,6 +274,9 @@ internal static partial class MultiplayerSession
             InitialScale = 1f;
             StartingWeapon = "Default";
             RespawnWeapon = "Default";
+            GunGameEnabled = false;
+            GGSequence = "";
+            GGOnDeath = GunGameDeathMode.Reset;
             BrutalModeEnabled = false;
             AllowObserver = true;
             BlackoutEnabled = false;
@@ -434,6 +439,9 @@ internal static partial class MultiplayerSession
     internal static string TeamsCfg { get; private set; } = "";
     internal static string StartingWeapon { get; private set; } = "Default";
     internal static string RespawnWeapon { get; private set; } = "Default";
+    internal static bool GunGameEnabled { get; private set; }
+    internal static string GGSequence { get; private set; } = "";
+    internal static GunGameDeathMode GGOnDeath { get; private set; } = GunGameDeathMode.Reset;
     internal static string StartingAmmo { get; private set; } = LobbyAmmoRules.StartingDefault;
     internal static string RespawnAmmo { get; private set; } = LobbyAmmoRules.RespawnDefault;
     internal static bool LobbySettingsReceived { get; private set; }
@@ -710,6 +718,9 @@ internal static partial class MultiplayerSession
         InitialScale = 1f;
         StartingWeapon = "Default";
         RespawnWeapon = "Default";
+        GunGameEnabled = false;
+        GGSequence = "";
+        GGOnDeath = GunGameDeathMode.Reset;
         BrutalModeEnabled = false;
         AllowObserver = true;
         lock (statusLock)
@@ -745,7 +756,7 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
@@ -768,6 +779,9 @@ internal static partial class MultiplayerSession
         TeamsCfg = settings.TeamsCfg ?? "";
         StartingWeapon = settings.StartingWeapon ?? "Default";
         RespawnWeapon = settings.RespawnWeapon ?? "Default";
+        GunGameEnabled = settings.GunGame;
+        GGSequence = settings.GGSequence ?? "";
+        GGOnDeath = settings.GGOnDeath;
         StartingAmmo = settings.StartingAmmo ?? LobbyAmmoRules.StartingDefault;
         RespawnAmmo = settings.RespawnAmmo ?? LobbyAmmoRules.RespawnDefault;
         HealthFactor = LobbyHealthRule.Clamp(parsed.HealthFactor);

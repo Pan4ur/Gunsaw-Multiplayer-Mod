@@ -1,6 +1,13 @@
 using System.Globalization;
 using UnityEngine;
 
+internal enum GunGameDeathMode : byte
+{
+    Reset,
+    Rollback,
+    None
+}
+
 [Serializable]
 internal sealed class LobbySettings
 {
@@ -56,11 +63,20 @@ internal sealed class LobbySettings
     public string MaxPlayers = "4";
     [LobbySetting(null, "", "--connection")]
     public ConnectionMode ConnectionMode = ConnectionMode.Relay;
+    [LobbySetting("GunGame", "Advance through GG Sequence after each kill.", "--gungame")]
+    public bool GunGame;
+    [LobbySetting("GGSequence", "Weapon names in kill order, separated by semicolons.", "--gg-sequence")]
+    public string GGSequence = "Derringer;Vitya;Sniper rifle";
+    [LobbySetting("GGOnDeath", "GunGame progression after death: Reset, Rollback, or None.", "--gg-on-death")]
+    public GunGameDeathMode GGOnDeath = GunGameDeathMode.Reset;
 
     internal LobbySettings Clone() => (LobbySettings)MemberwiseClone();
 
     internal ParsedLobbySettings Parse(int defaultMaxPlayers)
     {
+        GGSequence = (GGSequence ?? "").Trim();
+        if (GGSequence.Length > 512) GGSequence = GGSequence.Substring(0, 512);
+        if (!Enum.IsDefined(typeof(GunGameDeathMode), GGOnDeath)) GGOnDeath = GunGameDeathMode.Reset;
         if (!int.TryParse(RespawnTime, out var respawnTime)) respawnTime = 5;
         respawnTime = Mathf.Clamp(respawnTime, 0, 3600);
         RespawnTime = respawnTime.ToString();

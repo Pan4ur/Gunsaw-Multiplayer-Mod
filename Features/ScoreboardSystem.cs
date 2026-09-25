@@ -101,6 +101,7 @@ internal static class ScoreboardSystem
         {
             if (!MultiplayerSession.IsHost || senderId == 0 || killPacket.KillerId == 0 || killPacket.KillerId == senderId) continue;
             hostKills[killPacket.KillerId] = KillsFor(killPacket.KillerId) + 1;
+            if (killPacket.KillerId == MultiplayerSession.LocalPeerId) GunGameRule.RecordKill();
             NetworkAvatarManager.RoutePlayerKillScreenEffect(killPacket.KillerId);
         }
 
@@ -126,7 +127,11 @@ internal static class ScoreboardSystem
         var killer = NetworkAvatarManager.DamageSourceFor(victim);
         if (killer == null) return;
         var peerId = killer == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId : (NetworkAvatarManager.ReplicaForBody(killer)?.remotePeerId ?? 0);
-        if (peerId != 0) hostKills[peerId] = KillsFor(peerId) + 1;
+        if (peerId != 0)
+        {
+            hostKills[peerId] = KillsFor(peerId) + 1;
+            if (peerId == MultiplayerSession.LocalPeerId) GunGameRule.RecordKill();
+        }
     }
 
     internal static void RecordHostPvpKill(ushort killerPeerId, ushort victimPeerId)
@@ -134,6 +139,7 @@ internal static class ScoreboardSystem
         if (!MultiplayerSession.IsHost || !MultiplayerSession.PvpEnabled || killerPeerId == 0 ||
             victimPeerId == 0 || killerPeerId == victimPeerId || !hostPvpVictims.Add(victimPeerId)) return;
         hostKills[killerPeerId] = KillsFor(killerPeerId) + 1;
+        if (killerPeerId == MultiplayerSession.LocalPeerId) GunGameRule.RecordKill();
     }
 
     internal static void NoteHostPlayerRespawn(ushort peerId)
@@ -189,8 +195,12 @@ internal static class ScoreboardSystem
         return "S";
     }
 
-    internal static string RankColor(string rank) => rank switch { "X" => "#F05CFF", "U" => "#FFE35A", "S" => "#FFD34D", "A" => "#75E06B", "B" => "#5EC8FF", "C" => "#C9C9C9", _ => "#FF6B6B" };
-    private static bool HasActivity(PlayerPerformance score) => score.Hits != 0 || score.Misses != 0 || score.Heads != 0 || score.Kills != 0 || score.Deaths != 0 || score.DamageDealt > 0f || score.DamageReceived > 0f;
+    internal static string RankColor(string rank) => rank switch
+    {
+        "X" => "#F05CFF", "U" => "#FFE35A", "S" => "#FFD34D", "A" => "#75E06B", "B" => "#5EC8FF", "C" => "#C9C9C9",
+        _ => "#FF6B6B"
+    };
+
     internal static float PerformanceValue(PlayerPerformance score)
     {
         var mission = MissionManager.main;
@@ -198,7 +208,12 @@ internal static class ScoreboardSystem
         var headshotForRank = score.Hits == 0 ? 1f : score.HeadshotRatio;
         return kills * Mathf.Clamp01(score.Accuracy * .86f + headshotForRank * .26f + score.DamageRatio * .86f);
     }
+
     private static int KillsFor(ushort peerId) => hostKills.TryGetValue(peerId, out var kills) ? kills : 0;
-    private static PlayerPerformance FromPacket(PlayerPerformancePacket packet) => new(packet.HitShots, packet.MissedShots, packet.HeadShots, packet.DamageDealt, packet.DamageReceived, packet.Kills, packet.Deaths);
-    private static PlayerPerformancePacket ToPacket(ushort peerId, PlayerPerformance score) => new(peerId, score.Hits, score.Misses, score.Heads, score.DamageDealt, score.DamageReceived, score.Kills, score.Deaths);
+
+    private static PlayerPerformance FromPacket(PlayerPerformancePacket packet) => new(packet.HitShots,
+        packet.MissedShots, packet.HeadShots, packet.DamageDealt, packet.DamageReceived, packet.Kills, packet.Deaths);
+
+    private static PlayerPerformancePacket ToPacket(ushort peerId, PlayerPerformance score) => new(peerId, score.Hits,
+        score.Misses, score.Heads, score.DamageDealt, score.DamageReceived, score.Kills, score.Deaths);
 }

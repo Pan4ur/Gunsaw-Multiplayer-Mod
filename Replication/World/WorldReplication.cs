@@ -1364,6 +1364,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 {
                     return;
                 }
+                if (MultiplayerSession.GunGameEnabled && remoteBody.isPlayer && operation == WorldInteraction.WeaponPickup) return;
                 var dropped = rigidbody.GetComponentInParent<DroppedWeapon>();
                 if (dropped == null || (requestedPosition - (Vector2)dropped.transform.position).sqrMagnitude > 25f)
                 {

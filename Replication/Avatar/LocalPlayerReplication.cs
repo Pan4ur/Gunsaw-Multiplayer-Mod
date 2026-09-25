@@ -1139,6 +1139,11 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     internal void ApplyStartingLobbyLoadout(BodyScript body)
     {
         if (body == null || body == startingLoadoutAppliedBody || localRespawnPending) return;
+        if (MultiplayerSession.GunGameEnabled)
+        {
+            startingLoadoutAppliedBody = body;
+            return;
+        }
         var rule = MultiplayerSession.StartingWeapon;
         if (string.Equals((rule ?? "").Trim(), "Default", StringComparison.OrdinalIgnoreCase)) return;
         ApplyLobbyLoadout(body, rule);
@@ -1148,6 +1153,14 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     internal void ApplyPendingRespawnLobbyLoadout(BodyScript body)
     {
         if (body == null || body != pendingRespawnLoadoutBody || !body.isAlive) return;
+        if (MultiplayerSession.GunGameEnabled)
+        {
+            pendingRespawnLoadoutBody = null;
+            pendingRespawnLoadoutSource = null;
+            startingLoadoutAppliedBody = body;
+            startingAmmoAppliedBody = body;
+            return;
+        }
         var rule = MultiplayerSession.RespawnWeapon;
         if (string.Equals((rule ?? "").Trim(), "Default", StringComparison.OrdinalIgnoreCase))
             ApplyDefaultLobbyLoadout(body, pendingRespawnLoadoutSource);

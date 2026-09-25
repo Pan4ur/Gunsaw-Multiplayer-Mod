@@ -11,8 +11,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GameObject panel;
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, regenFactorInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle, restrictLightToggle;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, regenFactorInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput, ggSequenceInput;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle, restrictLightToggle, gunGameToggle;
+    private Button ggResetButton, ggRollbackButton, ggNoneButton;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
     private TMP_Text lobbyActionText;
@@ -91,6 +92,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetToggle(restrictLightToggle, viewingLobbySettings ? MultiplayerSession.RestrictLightEnabled : plugin.lobbySettings.RestrictLight);
         SetInput(serverInput, plugin.lobbyServerAddress);
         SetToggle(pvpToggle, viewingLobbySettings ? MultiplayerSession.PvpEnabled : plugin.lobbySettings.Pvp);
+        SetToggle(gunGameToggle, viewingLobbySettings ? MultiplayerSession.GunGameEnabled : plugin.lobbySettings.GunGame);
+        SetInput(ggSequenceInput, viewingLobbySettings ? MultiplayerSession.GGSequence : plugin.lobbySettings.GGSequence);
+        var ggOnDeath = viewingLobbySettings ? MultiplayerSession.GGOnDeath : plugin.lobbySettings.GGOnDeath;
+        ggResetButton.interactable = !viewingLobbySettings && ggOnDeath != GunGameDeathMode.Reset;
+        ggRollbackButton.interactable = !viewingLobbySettings && ggOnDeath != GunGameDeathMode.Rollback;
+        ggNoneButton.interactable = !viewingLobbySettings && ggOnDeath != GunGameDeathMode.None;
         SetToggle(grabToggle, viewingLobbySettings ? MultiplayerSession.CanGrabPlayers : plugin.lobbySettings.CanGrab);
         SetToggle(downToggle, viewingLobbySettings ? MultiplayerSession.GrabOnlyUnconscious : plugin.lobbySettings.GrabOnlyUnconscious);
         SetToggle(respawnToggle, viewingLobbySettings ? MultiplayerSession.AllowRespawn : plugin.lobbySettings.AllowRespawn);
@@ -145,6 +152,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         respawnAmmoInput.interactable = interactable;
         teamsCfgInput.interactable = interactable;
         pvpToggle.interactable = interactable;
+        gunGameToggle.interactable = interactable;
+        ggSequenceInput.interactable = interactable;
         grabToggle.interactable = interactable;
         downToggle.interactable = interactable;
         respawnToggle.interactable = interactable;
@@ -320,6 +329,21 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         CreateText(respawnAmmoRow, "RESPAWN AMMO", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
         respawnAmmoInput = CreateInput(respawnAmmoRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 32, value => plugin.lobbySettings.RespawnAmmo = value);
         AddTooltip(respawnAmmoRow.gameObject, "RESPAWN AMMO: Pistol;Rifle;Heavy;Grenade ammo assigned after respawn.");
+        gunGameToggle = CreateToggle(CreateSettingsRow(settings), "GUNGAME", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.GunGame = value);
+        AddTooltip(gunGameToggle.gameObject, "GUNGAME: Each kill advances to the next weapon in GG SEQUENCE.");
+        var ggSequenceRow = CreateSettingsRow(settings);
+        CreateText(ggSequenceRow, "GG SEQUENCE", new Vector2(-145f, 0f), new Vector2(210f, 32f), 14);
+        ggSequenceInput = CreateInput(ggSequenceRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 512, value => plugin.lobbySettings.GGSequence = value);
+        AddTooltip(ggSequenceRow.gameObject, "GG SEQUENCE: Weapon names separated by semicolons, for example Derringer;Vitya;Sniper rifle.");
+        var ggDeathRow = CreateSettingsRow(settings);
+        CreateText(ggDeathRow, "ON DEATH", new Vector2(-190f, 0f), new Vector2(130f, 32f), 14);
+        ggResetButton = CreateButton(ggDeathRow, "RESET", new Vector2(-50f, 0f), new Vector2(100f, 36f));
+        ggRollbackButton = CreateButton(ggDeathRow, "ROLLBACK", new Vector2(80f, 0f), new Vector2(120f, 36f));
+        ggNoneButton = CreateButton(ggDeathRow, "NONE", new Vector2(200f, 0f), new Vector2(100f, 36f));
+        ggResetButton.onClick.AddListener(() => plugin.lobbySettings.GGOnDeath = GunGameDeathMode.Reset);
+        ggRollbackButton.onClick.AddListener(() => plugin.lobbySettings.GGOnDeath = GunGameDeathMode.Rollback);
+        ggNoneButton.onClick.AddListener(() => plugin.lobbySettings.GGOnDeath = GunGameDeathMode.None);
+        AddTooltip(ggDeathRow.gameObject, "ON DEATH: Reset starts the sequence over, Rollback moves back one weapon, None keeps the current weapon.");
 
         CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -120f), new Vector2(125f, 32f), 14);
         connectionModeText = CreateText(lobbyGroup.transform, "AUTO", new Vector2(-105f, -120f), new Vector2(105f, 32f), 14, TextAlignmentOptions.Center);
