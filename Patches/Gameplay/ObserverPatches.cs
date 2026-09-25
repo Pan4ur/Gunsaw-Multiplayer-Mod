@@ -1,3 +1,4 @@
+using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -48,6 +49,25 @@ internal static class ObserverTargetPatch
     {
         if (__state) __instance.observed = true;
         return __exception;
+    }
+}
+
+[HarmonyPatch(typeof(GameManager), nameof(GameManager.Pause))]
+internal static class ObserverPausePatch
+{
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var observed = AccessTools.Field(typeof(PlayerScript), nameof(PlayerScript.observed));
+
+        foreach (var i in instructions)
+        {
+            if (i.LoadsField(observed))
+            {
+                yield return new CodeInstruction(OpCodes.Pop);
+                yield return new CodeInstruction(OpCodes.Ldc_I4_0);
+            }
+            else yield return i;
+        }
     }
 }
 
