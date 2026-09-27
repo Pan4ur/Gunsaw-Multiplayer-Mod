@@ -74,8 +74,6 @@ internal static partial class MultiplayerSession
     private static readonly byte[] playerDamageHeader = PacketHeader.Create(PacketType.PlayerDamage);
     private static readonly byte[] pvpDamageHeader = PacketHeader.Create(PacketType.PvpDamage);
     private static readonly byte[] settingsHeader = PacketHeader.Create(PacketType.Settings);
-    private static readonly byte[] pingHeader = PacketHeader.Create(PacketType.Ping);
-    private static readonly byte[] pongHeader = PacketHeader.Create(PacketType.Pong);
     private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
     private static readonly byte[] peerNameHeader = PacketHeader.Create(PacketType.PeerName);
     private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
@@ -115,7 +113,7 @@ internal static partial class MultiplayerSession
     private static readonly Dictionary<ushort, PlayerStatePacket> playerStates = new Dictionary<ushort, PlayerStatePacket>();
     private static readonly Dictionary<ushort, PlayerSpecialLinesPacket> playerSpecialLines = new Dictionary<ushort, PlayerSpecialLinesPacket>();
     private static readonly Queue<PeerPayload> worldSnapshots = new Queue<PeerPayload>();
-    private static readonly Queue<PeerPayload> worldEnvironments = new Queue<PeerPayload>();
+    private static readonly Queue<PeerPacket<WorldEnvironmentPacket>> worldEnvironments = new Queue<PeerPacket<WorldEnvironmentPacket>>();
     private static readonly Queue<PeerPacket<WorldFirePacket>> worldFires = new Queue<PeerPacket<WorldFirePacket>>();
     private static readonly Queue<PeerPacket<WorldExplosionPacket>> worldExplosions = new Queue<PeerPacket<WorldExplosionPacket>>();
     private static readonly Queue<PeerPacket<WorldInputPacket>> worldInputs = new Queue<PeerPacket<WorldInputPacket>>();

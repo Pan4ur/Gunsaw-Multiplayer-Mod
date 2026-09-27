@@ -5,21 +5,6 @@ using System.Text;
 
 internal static partial class MultiplayerSession
 {
-    private static void Send(byte[] header, byte[] payload, ushort targetId = 0)
-    {
-        var current = socket;
-        if (current == null || !relayConnected) return;
-        try
-        {
-            PacketHeader packetHeader;
-            if (!PacketHeader.TryRead(header, out packetHeader)) return;
-            SendPacket(PacketCodec.Encode(packetHeader.Type, payload), targetId);
-        }
-        catch (ObjectDisposedException) { }
-        catch (SocketException) { }
-        catch (IOException) { }
-    }
-
     private static void SendDisconnectImmediately()
     {
         UdpClient current;
@@ -43,7 +28,8 @@ internal static partial class MultiplayerSession
         catch (SocketException) { }
         catch (IOException) { }
     }
-private static UdpClient ConnectRelay(string address, string lobbyId, string relayKey)
+    
+    private static UdpClient ConnectRelay(string address, string lobbyId, string relayKey)
     {
         if (lobbyId == null || lobbyId.Length != 32 || relayKey == null || relayKey.Length != 32)
             throw new InvalidOperationException("Invalid relay credentials.");

@@ -203,9 +203,8 @@ internal static partial class MultiplayerSession
             }
             else if (!isHost && decodedPacket.Type == PacketType.WorldEnvironment && senderId == hostPeerId)
             {
-                var data = new byte[packet.Length - worldEnvironmentHeader.Length];
-                Buffer.BlockCopy(packet, worldEnvironmentHeader.Length, data, 0, data.Length);
-                EnqueueLatestPayload(worldEnvironments, senderId, data);
+                var reader = new PacketReader(decodedPacket.Payload);
+                EnqueueLatestWorldEnvironment(senderId, WorldEnvironmentPacket.Read(ref reader));
             }
             else if (!isHost && decodedPacket.Type == PacketType.WorldFire && senderId == hostPeerId)
             {
@@ -540,7 +539,7 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     BlackoutRule.ReceiveHeadlamp(senderId, HeadlampPacket.Read(ref reader));
                 }
-                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
+                catch (Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
             else if (decodedPacket.Type == PacketType.Graffiti &&
                      decodedPacket.Payload.Length >= GraffitiPacket.MetadataBytes + GraffitiSystem.MinImageBytes &&
@@ -552,17 +551,16 @@ internal static partial class MultiplayerSession
                     var reader = new PacketReader(decodedPacket.Payload);
                     GraffitiSystem.Receive(senderId, GraffitiPacket.Read(ref reader));
                 }
-                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
+                catch (Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
-            else if (decodedPacket.Type == PacketType.Ping && packet.Length == pingHeader.Length + sizeof(long))
+            else if (decodedPacket.Type == PacketType.Ping && decodedPacket.Payload.Length == sizeof(long))
             {
-                var data = new byte[sizeof(long)];
-                Buffer.BlockCopy(packet, pingHeader.Length, data, 0, data.Length);
-                Send(pongHeader, data, senderId);
+                try { Send(new PongPacket(BitConverter.ToInt64(decodedPacket.Payload, 0)), senderId); }
+                catch (Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
-            else if (decodedPacket.Type == PacketType.Pong && packet.Length == pongHeader.Length + sizeof(long))
+            else if (decodedPacket.Type == PacketType.Pong && decodedPacket.Payload.Length == sizeof(long))
             {
-                var sent = BitConverter.ToInt64(packet, pongHeader.Length);
+                var sent = BitConverter.ToInt64(decodedPacket.Payload, 0);
                 var now = DateTime.UtcNow.Ticks;
                 var ping = -1;
                 lock (statusLock)
@@ -958,6 +956,25 @@ internal static partial class MultiplayerSession
                 while (retained.Count > 0) queue.Enqueue(retained.Dequeue());
             }
             queue.Enqueue(new PeerPayload { PeerId = peerId, Data = data });
+        }
+    }
+
+    private static void EnqueueLatestWorldEnvironment(ushort peerId, WorldEnvironmentPacket packet)
+    {
+        lock (statusLock)
+        {
+            TouchPeerLocked(peerId, null);
+            if (worldEnvironments.Count > 0)
+            {
+                var retained = new Queue<PeerPacket<WorldEnvironmentPacket>>(worldEnvironments.Count + 1);
+                while (worldEnvironments.Count > 0)
+                {
+                    var item = worldEnvironments.Dequeue();
+                    if (item.PeerId != peerId) retained.Enqueue(item);
+                }
+                while (retained.Count > 0) worldEnvironments.Enqueue(retained.Dequeue());
+            }
+            worldEnvironments.Enqueue(new PeerPacket<WorldEnvironmentPacket> { PeerId = peerId, Packet = packet });
         }
     }
 
