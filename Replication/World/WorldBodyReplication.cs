@@ -304,9 +304,20 @@ public class WorldBodyReplication
 
         var classification = ClassificationFor(body);
         var mechanism = classification.Mechanism && !classification.InteractiveProp && !classification.ClientPhysicsJoint;
+        var awaitingNewVelo = false;
        
         if (mechanism && state.hasMechanismTarget)
-            mechanismTargets[body] = state.mechanismTarget;
+        {
+            // Fixes visual bug after dir change due to interp
+            var hasTarget = mechanismTargets.TryGetValue(body, out var previousTarget);
+            var posDelta = state.mechanismTarget - state.position;
+            var targetChanged = !hasTarget || previousTarget != state.mechanismTarget;
+            var wrongDir = targetChanged && posDelta.sqrMagnitude > 0.0001f && Vector2.Dot(posDelta, state.velocity) <= 0f;
+            if (!wrongDir) 
+                mechanismTargets[body] = state.mechanismTarget;
+            else 
+                awaitingNewVelo = !hasTarget;
+        }
         else
             mechanismTargets.Remove(body);
             
@@ -342,12 +353,12 @@ public class WorldBodyReplication
                 {
                     WorldReplication.Instance.initializedBodies.Add(body);
                 }
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
+                body.velocity = awaitingNewVelo ? Vector2.zero : state.velocity;
+                body.angularVelocity = awaitingNewVelo ? 0f : state.angularVelocity;
                 return;
             }
-            if (!WorldReplication.Instance.initializedBodies.Contains(body) ||
-                (state.position - body.position).sqrMagnitude > 256f)
+            
+            if (!WorldReplication.Instance.initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
             {
                 WorldReplication.Instance.initializedBodies.Add(body);
                 vehiclePaths.Remove(body);
