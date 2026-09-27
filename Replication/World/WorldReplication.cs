@@ -160,6 +160,9 @@ internal sealed class WorldReplication : MonoBehaviour
             || float.IsInfinity(packet.Force) || packet.Range <= 0f || packet.Force <= 0f)
             return;
 
+        if (packet.PlaySound)
+            NetworkAvatarManager.CreateRemoteExplosionCracks(pos);
+
         var player = PlayerScript.player;
         var localBody = player == null ? null : player.bodyScript;
         if (localBody == null || packet.ShooterId == MultiplayerSession.LocalPeerId) return;

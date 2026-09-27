@@ -1429,8 +1429,41 @@ internal static class MultiplayerExplosionPatch
     private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
     {
         NetworkAvatarManager.EndWeaponShot(__state);
-        NetworkAvatarManager.ScheduleExplosionCrackCleanup();
         return __exception;
+    }
+}
+
+
+[HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
+internal static class ExplosionCrackLifetimePatch
+{
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
+        var destroy = AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Destroy), new[] { typeof(UnityEngine.Object), typeof(float) });
+        var foundPrefab = false;
+
+        foreach (var instruction in instructions)
+        {
+            yield return instruction;
+
+            if (instruction.opcode == OpCodes.Ldstr && instruction.operand is string path && (path == "Spawnables/BackgroundCrack" || path == "Spawnables/FloorCrack"))
+            {
+                foundPrefab = true;
+                continue;
+            }
+
+            if (!foundPrefab)
+                continue;
+
+            if (instruction.Calls(AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Instantiate), new[] { typeof(UnityEngine.Object), typeof(Vector3), typeof(Quaternion) })))
+            {
+
+                yield return new CodeInstruction(OpCodes.Dup);
+                yield return new CodeInstruction(OpCodes.Ldc_R4, 120f);
+                yield return new CodeInstruction(OpCodes.Call, destroy);
+
+                foundPrefab = false;
+            }
+        }
     }
 }
 

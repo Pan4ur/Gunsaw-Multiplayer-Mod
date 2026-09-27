@@ -102,36 +102,38 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         replicas.Clear();
     }
 
+    internal static void CreateRemoteExplosionCracks(Vector2 position)
+    {
+        var trace = CaptureExplosionTrace(position);
+        CreateRemoteExplosionCracks(new ProjectileImpactPacket(position.x, position.y, "",
+            trace.HasBackgroundCrack, trace.BackgroundCrackRotation, trace.BackgroundCrackFlipX,
+            trace.BackgroundCrackFlipY, trace.HasFloorCrack, trace.FloorCrackPosition.x,
+            trace.FloorCrackPosition.y, trace.FloorCrackFlipX));
+    }
+
     internal static void CreateRemoteExplosionCracks(ProjectileImpactPacket packet)
     {
         var position = new Vector2(packet.PositionX, packet.PositionY);
-        if (!packet.HasExplosionTrace)
-        {
-            var trace = CaptureExplosionTrace(position);
-            packet = new ProjectileImpactPacket(position.x, position.y, "", true, trace.HasBackgroundCrack,
-                trace.BackgroundCrackRotation, trace.BackgroundCrackFlipX, trace.BackgroundCrackFlipY,
-                trace.HasFloorCrack, trace.FloorCrackPosition.x, trace.FloorCrackPosition.y, trace.FloorCrackFlipX);
-        }
         var backgroundCrack = Resources.Load<GameObject>("Spawnables/BackgroundCrack");
         if (packet.HasBackgroundCrack)
         {
-            var crack = InstantiateExplosionCrack(backgroundCrack, position,
-                Quaternion.Euler(0f, 0f, packet.BackgroundCrackRotation));
+            var crack = InstantiateExplosionCrack(backgroundCrack, position, Quaternion.Euler(0f, 0f, packet.BackgroundCrackRotation));
             SetCrackFlip(crack, packet.BackgroundCrackFlipX, packet.BackgroundCrackFlipY);
-            if (crack != null) Destroy(crack, 120f);
+            if (crack != null) 
+                Destroy(crack, 120f);
         }
 
         var floorCrack = Resources.Load<GameObject>("Spawnables/FloorCrack");
         if (packet.HasFloorCrack)
         {
-            var crack = InstantiateExplosionCrack(floorCrack,
-                new Vector2(packet.FloorCrackX, packet.FloorCrackY), Quaternion.identity);
+            var crack = InstantiateExplosionCrack(floorCrack, new Vector2(packet.FloorCrackX, packet.FloorCrackY), Quaternion.identity);
             SetCrackFlip(crack, packet.FloorCrackFlipX, false);
-            if (crack != null) Destroy(crack, 120f);
+            if (crack != null) 
+                Destroy(crack, 120f);
         }
     }
 
-    internal static ExplosionTrace CaptureExplosionTrace(Vector2 position)
+    private static ExplosionTrace CaptureExplosionTrace(Vector2 position)
     {
         var trace = new ExplosionTrace();
         foreach (var wall in GameManager.wallColls)
@@ -166,32 +168,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             renderer.sortingOrder = sourceRenderer.sortingOrder;
         }
         return crack;
-    }
-
-    internal static HashSet<int> CaptureExplosionCracks()
-    {
-        var cracks = new HashSet<int>();
-        foreach (var gameObject in FindObjectsOfType<GameObject>())
-            if (IsExplosionCrack(gameObject)) cracks.Add(gameObject.GetInstanceID());
-        return cracks;
-    }
-
-    internal static void DestroyNewExplosionCracks(HashSet<int> existingCracks)
-    {
-        foreach (var gameObject in FindObjectsOfType<GameObject>())
-            if (IsExplosionCrack(gameObject) && !existingCracks.Contains(gameObject.GetInstanceID())) Destroy(gameObject);
-    }
-
-    internal static void ScheduleExplosionCrackCleanup()
-    {
-        foreach (var gameObject in FindObjectsOfType<GameObject>())
-            if (IsExplosionCrack(gameObject)) Destroy(gameObject, 120f);
-    }
-
-    private static bool IsExplosionCrack(GameObject gameObject)
-    {
-        return gameObject != null && (gameObject.name.StartsWith("BackgroundCrack") ||
-            gameObject.name.StartsWith("FloorCrack"));
     }
 
     private static void SetCrackFlip(GameObject crack, bool flipX, bool flipY)
@@ -754,7 +730,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         var weapon = shooter == null ? null : shooter.weapon;
         var trace = CaptureExplosionTrace(position);
         MultiplayerSession.Send(new ProjectileImpactPacket(position.x, position.y,
-            NetworkAvatarUtilities.SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite), true,
+            NetworkAvatarUtilities.SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite),
             trace.HasBackgroundCrack, trace.BackgroundCrackRotation, trace.BackgroundCrackFlipX,
             trace.BackgroundCrackFlipY, trace.HasFloorCrack, trace.FloorCrackPosition.x,
             trace.FloorCrackPosition.y, trace.FloorCrackFlipX));
@@ -796,14 +772,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         try
         {
             var position = new Vector2(packet.PositionX, packet.PositionY);
-            var existingCracks = packet.HasExplosionTrace ? CaptureExplosionCracks() : null;
-            ExplosionHandler.CreateExplosion(null, position, range, force, damage,
-                Mathf.Clamp(fireAmount, 0, 64), sound);
-            if (existingCracks != null)
-            {
-                DestroyNewExplosionCracks(existingCracks);
-                CreateRemoteExplosionCracks(packet);
-            }
+            ExplosionHandler.CreateExplosion(null, position, range, force, damage, Mathf.Clamp(fireAmount, 0, 64), sound);
+            
             if (impactEffect != null)
             {
                 var effect = Instantiate(impactEffect, position, Quaternion.identity);

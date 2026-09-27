@@ -9,11 +9,11 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     internal static string selectedCharacterPrefab = "";
     internal static string pendingRespawnCharacterPrefab = "";
     internal static float localRespawnProtectionUntil = -1f;
-    private const float RespawnProtectionSeconds = 3f;
+    private const float RespawnProtectionSeconds = 1.5f;
     internal static PlayerScript localPlayerInstance;
     internal static Transform localGlobalBody;
     private const float StateInterval = 1f / 10f;
-    private const float VisualStateInterval = 1f / 2f;
+    private const float VisualStateInterval = 0.3f;
     private const float FullVisualStateInterval = 5f;
     private float nextState;
     internal PlayerStatePacket? pendingStatePacket;

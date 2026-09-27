@@ -1412,8 +1412,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         return rocket == null && grenade == null ? null : result;
     }
 
-    private void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect, AudioClip explosionSound,
-        ProjectileImpactPacket packet)
+    private void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect, AudioClip explosionSound, ProjectileImpactPacket packet)
     {
         if (impactEffect != null)
         {
