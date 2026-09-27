@@ -23,29 +23,10 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     private float nextVisualState;
     private float nextFullVisualSnapshot;
     private float nextAvatarTrafficSample;
-    private int avatarCoreBytesWindow;
-    private int avatarLimbBytesWindow;
-    private int avatarRigBytesWindow;
-    private int avatarWeaponBytesWindow;
-    private int avatarEffectsBytesWindow;
-    private int avatarVisualBytesWindow;
-    private int avatarCoreBytesPerSecond;
-    private int avatarLimbBytesPerSecond;
-    private int avatarRigBytesPerSecond;
-    private int avatarWeaponBytesPerSecond;
-    private int avatarEffectsBytesPerSecond;
-    private int avatarVisualBytesPerSecond;
     private string lastSerializedInventory = "";
     protected float nextFullInventory;
     internal float forceFullInventoryUntil;
     private VisualLayout localVisualLayout;
-
-    internal static int AvatarCoreBytesPerSecond => Instance?.avatarCoreBytesPerSecond ?? 0;
-    internal static int AvatarLimbBytesPerSecond => Instance?.avatarLimbBytesPerSecond ?? 0;
-    internal static int AvatarRigBytesPerSecond => Instance?.avatarRigBytesPerSecond ?? 0;
-    internal static int AvatarWeaponBytesPerSecond => Instance?.avatarWeaponBytesPerSecond ?? 0;
-    internal static int AvatarEffectsBytesPerSecond => Instance?.avatarEffectsBytesPerSecond ?? 0;
-    internal static int AvatarVisualBytesPerSecond => Instance?.avatarVisualBytesPerSecond ?? 0;
 
     internal static LocalPlayerReplication Instance { get; private set; }
     internal string localName;
@@ -104,36 +85,19 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
                 nextFullVisualSnapshot = Time.unscaledTime + FullVisualStateInterval;
             }
         }
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
         {
-            var breakdown = new AvatarWireBreakdown();
-            var sectionStarted = writer.BaseStream.Position;
             var vehicleId = body.inVehicle && body.curVehicle != null && GunsawMultiplayerPlugin.World != null
                 ? GunsawMultiplayerPlugin.World.VehicleWireId(body.curVehicle) : 0UL;
             var inVehicle = vehicleId != 0UL;
             var isVehicleDriver = inVehicle && body.curVehicle.occupant == body;
             var isReflected = body.transform.localScale.x < 0f;
             var isActive = body.transform.root.gameObject.activeInHierarchy;
-            writer.Write(inVehicle);
-            writer.Write(vehicleId);
-            writer.Write(isVehicleDriver);
-            writer.Write((byte)body.CurrentState);
-            writer.Write(body.isRight);
-            writer.Write(isReflected);
-            writer.Write(isActive);
             var headReferenceRotation = vehicleId != 0UL && body.curVehicle.mainPart != null &&
                 body.curVehicle.mainPart.rb != null ? body.curVehicle.mainPart.rb.rotation : body.rb.rotation;
             var headRotation = body.headTransform == null ? 0f :
                 Mathf.DeltaAngle(headReferenceRotation, body.headTransform.eulerAngles.z);
-            writer.Write(headRotation);
-            WriteBody(writer, body.rb);
-            breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
-
-            sectionStarted = writer.BaseStream.Position;
             var limbs = body.limbs ?? [];
             var limbStates = new PlayerSnapshotLimbState[limbs.Count];
-            writer.Write((ushort)limbs.Count);
             var limbIndex = 0;
             foreach (LimbScript limb in limbs)
             {
@@ -141,49 +105,32 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
                     new PlayerSnapshotPose(limb.rb.position.x, limb.rb.position.y, limb.rb.rotation);
                 var dismembered = limb.dismembered;
                 var burning = IsBurning(limb);
-                writer.Write(limbBody.X);
-                writer.Write(limbBody.Y);
-                writer.Write(limbBody.Rotation);
-                writer.Write(dismembered);
-                writer.Write(burning);
                 limbStates[limbIndex++] = new PlayerSnapshotLimbState(limbBody, dismembered, burning);
             }
-            breakdown.Limbs += (int)(writer.BaseStream.Position - sectionStarted);
-
-            sectionStarted = writer.BaseStream.Position;
             var tailBases = GetNetworkTailBodies(body);
             var tailBaseStates = new PlayerSnapshotTailState[tailBases.Count];
-            writer.Write((ushort)tailBases.Count);
             var tailBaseIndex = 0;
             foreach (Rigidbody2D tailBase in tailBases)
             {
                 var tailBaseTransform = tailBase == null ? null : tailBase.transform;
                 var tailBaseRotation = tailBase != null ? tailBase.rotation : 0f;
-                WriteTailTransform(writer, body.rb, tailBaseTransform, tailBaseRotation);
                 tailBaseStates[tailBaseIndex++] = CreateTailBaseState(body.rb, tailBaseTransform, tailBaseRotation);
             }
             var tails = body.tails;
             var tailStates = new PlayerSnapshotTailState[tails.Length];
-            writer.Write((ushort)tails.Length);
             for (var tailIndex = 0; tailIndex < tails.Length; tailIndex++)
             {
                 var tail = tails[tailIndex];
                 var tailRotation = tail == null ? 0f : tail.eulerAngles.z;
-                WriteTailTransform(writer, body.rb, tail, tailRotation);
                 tailStates[tailIndex] = CreateTailBaseState(body.rb, tail, tailRotation);
             }
 
             var arms = body.Arms;
             var gunTransform = body.gunTransform;
             var gunAnimationTransform = body.gunAnimTransform;
-            WriteWorldTransform(writer, arms);
-            WriteLocalTransform(writer, gunTransform);
-            WriteLocalTransform(writer, gunAnimationTransform);
             var armsTransform = arms == null ? new PlayerSnapshotPose(0f, 0f, 0f) : new PlayerSnapshotPose(arms.position.x, arms.position.y, arms.eulerAngles.z);
             var gunTransformState = gunTransform == null ? new PlayerSnapshotPose(0f, 0f, 0f) : new PlayerSnapshotPose(gunTransform.localPosition.x, gunTransform.localPosition.y, gunTransform.localEulerAngles.z);
             var gunAnimationTransformState = gunAnimationTransform == null ? new PlayerSnapshotPose(0f, 0f, 0f) : new PlayerSnapshotPose(gunAnimationTransform.localPosition.x, gunAnimationTransform.localPosition.y, gunAnimationTransform.localEulerAngles.z);
-            breakdown.Rig += (int)(writer.BaseStream.Position - sectionStarted);
-            sectionStarted = writer.BaseStream.Position;
             var health = body.health;
             var isAlive = body.isAlive;
             var deathCause = DeathCauseFor(body);
@@ -193,20 +140,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             var burnIntensity = body.burnIntensity;
             var hasNoLegs = body.noLegs;
             var isDecapitated = body.deHeaded;
-            writer.Write(health);
-            writer.Write(isAlive);
-            writer.Write(stamina);
-            writer.Write(controlState);
-            writer.Write(canBeGrabbed);
-            writer.Write(burnIntensity);
-            writer.Write(hasNoLegs);
-            writer.Write(isDecapitated);
             var weaponSlot = body.unarmed ? -1 : body.currentWeapon;
             var weaponAmmo = body.weapon == null ? 0 : body.weapon.ammo;
             var weapons = body.weapons ?? [];
-            writer.Write(weaponSlot);
-            writer.Write(weaponAmmo);
-            writer.Write((ushort)weapons.Count);
             var inventoryIds = new ulong[weapons.Count];
             for (var index = 0; index < weapons.Count; index++)
             {
@@ -215,34 +151,17 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             }
             var inventoryKey = string.Join("|", inventoryIds);
             var inventoryChanged = inventoryKey != lastSerializedInventory || Time.unscaledTime >= nextFullInventory || Time.unscaledTime < forceFullInventoryUntil;
-            writer.Write(inventoryChanged);
-            if (inventoryChanged)
+            if (inventoryChanged && includeState)
             {
-                foreach (var inventoryId in inventoryIds) writer.Write(inventoryId);
                 lastSerializedInventory = inventoryKey;
                 nextFullInventory = Time.unscaledTime + 1f;
             }
-            breakdown.Weapons += (int)(writer.BaseStream.Position - sectionStarted);
-
-            sectionStarted = writer.BaseStream.Position;
             var weaponLaserState = CreateWeaponLaserState(body.wepLaserLine);
-            WriteLineState(writer, weaponLaserState);
             var player = PlayerScript.player;
             var levitatorLaserState = CreateWeaponLaserState(player == null ? null : player.levitLine);
             var crystalTongue = body.GetComponent<CrystalTongue>();
             var crystalTongueState = CreateWeaponLaserState(crystalTongue == null ? null : crystalTongue.line);
             var scarfState = CreateScarfState(body);
-            WriteScarfState(writer, scarfState);
-            breakdown.Effects += (int)(writer.BaseStream.Position - sectionStarted);
-
-            sectionStarted = writer.BaseStream.Position;
-            writer.Write(includeVisualState);
-            if (includeVisualState) WriteVisualState(writer, visualState);
-            writer.Write((byte)deathCause);
-            writer.Write(body.susnessMult);
-            breakdown.Visual += (int)(writer.BaseStream.Position - sectionStarted);
-            AddAvatarWireBreakdown(breakdown);
-            MultiplayerPerformance.AddAvatarSerialize(performanceStarted);
             var coreBody = body.rb == null ? new PlayerSnapshotPose(0f, 0f, 0f) :
                 new PlayerSnapshotPose(body.rb.position.x, body.rb.position.y, body.rb.rotation);
             var packetVisualState = includeVisualState ? CreatePacketVisualState(visualState) :
@@ -258,30 +177,12 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             if (specialLinesVisible || specialLinesWereVisible)
                 pendingSpecialLinesPacket = new PlayerSpecialLinesPacket(levitatorLaserState, crystalTongueState);
             specialLinesWereVisible = specialLinesVisible;
-            return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
+            var snapshot = new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
                 (byte)body.CurrentState, body.isRight, isReflected, isActive, headRotation, coreBody,
                 armsTransform, gunTransformState, gunAnimationTransformState, limbStates, tailBaseStates, tailStates);
+            MultiplayerPerformance.AddAvatarSerialize(performanceStarted);
+            return snapshot;
         }
-    }
-
-    private void AddAvatarWireBreakdown(AvatarWireBreakdown breakdown)
-    {
-        avatarCoreBytesWindow += breakdown.Core;
-        avatarLimbBytesWindow += breakdown.Limbs;
-        avatarRigBytesWindow += breakdown.Rig;
-        avatarWeaponBytesWindow += breakdown.Weapons;
-        avatarEffectsBytesWindow += breakdown.Effects;
-        avatarVisualBytesWindow += breakdown.Visual;
-        if (Time.unscaledTime < nextAvatarTrafficSample) return;
-        nextAvatarTrafficSample = Time.unscaledTime + 1f;
-        avatarCoreBytesPerSecond = avatarCoreBytesWindow;
-        avatarLimbBytesPerSecond = avatarLimbBytesWindow;
-        avatarRigBytesPerSecond = avatarRigBytesWindow;
-        avatarWeaponBytesPerSecond = avatarWeaponBytesWindow;
-        avatarEffectsBytesPerSecond = avatarEffectsBytesWindow;
-        avatarVisualBytesPerSecond = avatarVisualBytesWindow;
-        avatarCoreBytesWindow = avatarLimbBytesWindow = avatarRigBytesWindow = avatarWeaponBytesWindow =
-            avatarEffectsBytesWindow = avatarVisualBytesWindow = 0;
     }
 
     private static PlayerVisualState SerializeVisualState(VisualLayout layout)

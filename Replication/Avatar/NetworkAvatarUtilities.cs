@@ -132,27 +132,10 @@ internal static class NetworkAvatarUtilities
         return null;
     }
 
-    internal static void ReadLocalRotationImmediately(BinaryReader reader, Transform transform)
+    internal static void ApplyLocalRotationImmediately(PlayerSnapshotPose pose, Transform transform)
     {
-        reader.ReadSingle();
-        reader.ReadSingle();
-
-        var rotation = ReadQuantizedRotation(reader);
-
-        if (transform == null)
-            return;
-
-        transform.localRotation =
-            Quaternion.Euler(0f, 0f, rotation);
+        if (transform != null) transform.localRotation = Quaternion.Euler(0f, 0f, pose.Rotation);
     }
-
-    internal static void ReadVehicleRoot(BinaryReader reader, out Vector2 position, out float rotation)
-    {
-        position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        rotation = ReadQuantizedRotation(reader);
-    }
-
-    internal static float ReadQuantizedRotation(BinaryReader reader) => reader.ReadUInt16() * (360f / 65535f);
 
     internal static void SetRemoteLineTarget(LineRenderer line, GameObject container, PlayerSnapshotLineState state, RemoteLineInterpolation interpolation)
     {
@@ -287,120 +270,28 @@ internal static class NetworkAvatarUtilities
             line.endWidth, points);
     }
 
-    internal static void WriteLineState(BinaryWriter writer, PlayerSnapshotLineState state)
+    internal static void ApplyLineState(LineRenderer line, GameObject container, PlayerSnapshotLineState state)
     {
-        writer.Write(state.Visible);
-        if (!state.Visible) return;
-        writer.Write((byte)state.Points.Length);
-        writer.Write(state.UsesWorldSpace);
-        WriteColor(writer, state.StartColor);
-        WriteColor(writer, state.EndColor);
-        writer.Write(state.StartWidth); writer.Write(state.EndWidth);
-        foreach (var point in state.Points)
-        {
-            writer.Write(point.x);
-            writer.Write(point.y);
-            writer.Write(point.z);
-        }
-    }
-
-    internal static void ReadLineState(BinaryReader reader, LineRenderer line, GameObject container)
-    {
-        var visible = reader.ReadBoolean();
-        if (!visible)
+        if (!state.Visible)
         {
             if (line != null) line.enabled = false;
             if (container != null) container.SetActive(false);
             return;
         }
 
-        var count = reader.ReadByte();
-        var useWorldSpace = reader.ReadBoolean();
-        var startColor = ReadColor(reader);
-        var endColor = ReadColor(reader);
-        var startWidth = reader.ReadSingle();
-        var endWidth = reader.ReadSingle();
-        var points = new Vector3[count];
-        for (var index = 0; index < count; index++)
-            points[index] = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
         if (line == null) return;
 
         if (container != null) container.SetActive(true);
         line.gameObject.SetActive(true);
         line.enabled = true;
-        line.useWorldSpace = useWorldSpace;
-        line.startColor = startColor;
-        line.endColor = endColor;
-        line.startWidth = startWidth;
-        line.endWidth = endWidth;
-        line.positionCount = count;
-        line.SetPositions(points);
+        line.useWorldSpace = state.UsesWorldSpace;
+        line.startColor = state.StartColor;
+        line.endColor = state.EndColor;
+        line.startWidth = state.StartWidth;
+        line.endWidth = state.EndWidth;
+        line.positionCount = state.Points.Length;
+        line.SetPositions(state.Points);
     }
-
-    internal static void WriteColor(BinaryWriter writer, Color color)
-    {
-        var value = (Color32)color;
-        writer.Write(value.r);
-        writer.Write(value.g);
-        writer.Write(value.b);
-        writer.Write(value.a);
-    }
-
-    internal static Color ReadColor(BinaryReader reader)
-    {
-        return new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
-    }
-
-    internal static void WriteVisualState(BinaryWriter writer, PlayerVisualState state)
-    {
-        var renderers = state == null ? [] : state.Renderers;
-        writer.Write((ushort)renderers.Length);
-        for (var index = 0; index < renderers.Length; index++)
-        {
-            var renderer = renderers[index];
-            writer.Write(renderer.Path);
-            writer.Write(renderer.Visible);
-            WriteColor(writer, renderer.Color);
-            writer.Write(renderer.FlipX);
-            writer.Write(renderer.FlipY);
-        }
-
-        var lights = state == null ? [] : state.Lights;
-        writer.Write((ushort)lights.Length);
-        for (var index = 0; index < lights.Length; index++)
-        {
-            var light = lights[index];
-            writer.Write(light.Path);
-            writer.Write(light.Visible);
-            writer.Write(light.Intensity);
-            WriteColor(writer, light.Color);
-        }
-        var expressions = state == null ? Array.Empty<byte>() : state.FacialExpressions;
-        writer.Write((ushort)expressions.Length);
-        for (var index = 0; index < expressions.Length; index++) writer.Write(expressions[index]);
-    }
-
-    internal static PlayerVisualState ReadVisualState(BinaryReader reader)
-    {
-        var rendererCount = reader.ReadUInt16();
-        var renderers = new RendererVisualState[rendererCount];
-        for (var index = 0; index < rendererCount; index++)
-            renderers[index] = new RendererVisualState(reader.ReadString(), reader.ReadBoolean(), ReadColor(reader),
-                reader.ReadBoolean(), reader.ReadBoolean());
-
-        var lightCount = reader.ReadUInt16();
-        var lights = new LightVisualState[lightCount];
-        for (var index = 0; index < lightCount; index++)
-            lights[index] = new LightVisualState(reader.ReadString(), reader.ReadBoolean(), reader.ReadSingle(), ReadColor(reader));
-      
-        var expressionStates = new byte[reader.ReadUInt16()];
-        for (var index = 0; index < expressionStates.Length; index++) 
-            expressionStates[index] = reader.ReadByte();
-      
-        return new PlayerVisualState(renderers, lights, expressionStates);
-    }
-
-    internal static float ReadQuantizedTailOffset(BinaryReader reader) => reader.ReadInt16() / 1024f;
 
     internal static void ApplyTailSpriteFlip(SpriteRenderer[] sprites, bool flipped)
     {
@@ -412,74 +303,13 @@ internal static class NetworkAvatarUtilities
         sprite.transform.localScale = scale;
     }
 
-    internal static void ApplyTailSpriteColor(SpriteRenderer[] sprites, BinaryReader reader)
+    internal static void ApplyTailSpriteColor(SpriteRenderer[] sprites, Color32[] colors)
     {
-        var count = reader.ReadByte();
-        for (var index = 0; index < count; index++)
+        if (colors == null) return;
+        for (var index = 0; index < colors.Length; index++)
         {
-            var color = (Color)new Color32(reader.ReadByte(), reader.ReadByte(),
-                reader.ReadByte(), reader.ReadByte());
             if (sprites == null || index >= sprites.Length || sprites[index] == null) continue;
-            sprites[index].color = color;
-        }
-    }
-
-    internal static void SkipBody(BinaryReader reader)
-    {
-        reader.ReadSingle(); reader.ReadSingle(); reader.ReadUInt16();
-    }
-
-    internal static void SkipLimb(BinaryReader reader)
-    {
-        reader.ReadInt16(); reader.ReadInt16(); reader.ReadUInt16();
-    }
-
-    internal static void WriteWorldTransform(BinaryWriter writer, Transform transform)
-    {
-        if (transform == null) { writer.Write(0f); writer.Write(0f); writer.Write(0f); return; }
-        writer.Write(transform.position.x);
-        writer.Write(transform.position.y);
-        writer.Write(transform.eulerAngles.z);
-    }
-
-    internal static void WriteLocalTransform(BinaryWriter writer, Transform transform)
-    {
-        if (transform == null) { writer.Write(0f); writer.Write(0f); writer.Write(0f); return; }
-        writer.Write(transform.localPosition.x);
-        writer.Write(transform.localPosition.y);
-        writer.Write(transform.localEulerAngles.z);
-    }
-
-    internal static void WriteBody(BinaryWriter writer, Rigidbody2D body)
-    {
-        if (body == null)
-        {
-            writer.Write(0f); writer.Write(0f); writer.Write(0f);
-            return;
-        }
-        writer.Write(body.position.x); writer.Write(body.position.y); writer.Write(body.rotation);
-    }
-
-    internal static void WriteTailTransform(BinaryWriter writer, Rigidbody2D reference,
-        Transform transform, float rotation)
-    {
-        if (reference == null || transform == null)
-        {
-            writer.Write(0f); writer.Write(0f); writer.Write(0f); writer.Write(false);
-            return;
-        }
-        var delta = (Vector2)transform.position - reference.position;
-        writer.Write(delta.x);
-        writer.Write(delta.y);
-        writer.Write(Mathf.DeltaAngle(reference.rotation, rotation));
-        var renderers = transform.GetComponentsInChildren<SpriteRenderer>(true);
-        var sprite = renderers.Length == 0 ? null : renderers[0];
-        writer.Write(sprite != null && sprite.transform.lossyScale.y < 0f);
-        writer.Write((byte)renderers.Length);
-        foreach (var renderer in renderers)
-        {
-            var color = (Color32)renderer.color;
-            writer.Write(color.r); writer.Write(color.g); writer.Write(color.b); writer.Write(color.a);
+            sprites[index].color = colors[index];
         }
     }
 
@@ -591,14 +421,6 @@ internal static class NetworkAvatarUtilities
         if (!visible) return new PlayerSnapshotScarfState(false, default, default);
         return new PlayerSnapshotScarfState(true, (Color32)scarf.pointRenderer.startColor,
             (Color32)scarf.pointRenderer.endColor);
-    }
-
-    internal static void WriteScarfState(BinaryWriter writer, PlayerSnapshotScarfState state)
-    {
-        writer.Write(state.Visible);
-        if (!state.Visible) return;
-        WriteColor(writer, state.StartColor);
-        WriteColor(writer, state.EndColor);
     }
 
     internal static string CleanCloneName(string name)

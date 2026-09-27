@@ -5,7 +5,6 @@ using static NetworkAvatarUtilities;
 
 internal class NetworkAvatarReplication : MonoBehaviour
 {
-    private const bool BufferedRemoteInterpolation = true;
     internal BodyScript remoteBody;
     internal Vector2 lastAuthoritativePosition;
     internal bool hasAuthoritativePosition;
@@ -300,215 +299,227 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     internal void Apply(PlayerSnapshotPacket snapshot)
     {
-        if (remoteBody == null || remoteBody.rb == null) return;
+        if (remoteBody == null || remoteBody.rb == null)
+            return;
+        
         var performanceStarted = MultiplayerPerformance.Start();
         try
         {
-            var packetWriter = new PacketWriter(512);
-            snapshot.Write(ref packetWriter);
-            using (var reader = new BinaryReader(new MemoryStream(packetWriter.ToArray(), false)))
+            var remoteInVehicle = snapshot.InVehicle;
+            var remoteVehicleId = snapshot.VehicleId;
+            var remoteVehicleDriver = snapshot.IsVehicleDriver;
+            var remoteState = (BodyScript.EntityState)snapshot.EntityState;
+            if (remoteState < BodyScript.EntityState.Idle || remoteState > BodyScript.EntityState.MoveLeft)
+                remoteState = BodyScript.EntityState.Idle;
+            var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteVehicleDriver, remoteState);
+            var remoteVehicleStreamed = remoteInVehicle && remoteBody.inVehicle && remoteBody.curVehicle != null && remoteBody.curVehicle.mainPart != null && remoteBody.curVehicle.mainPart.rb != null;
+
+            var isRight = snapshot.IsRight;
+            var reflected = snapshot.IsReflected;
+
+            remoteAvatar.SetActive(snapshot.IsActive);
+            var remoteHeadRotation = snapshot.HeadRotation;
+            var hadVehicleHeadRotation = hasRemoteVehicleHeadRotation;
+
+            hasRemoteVehicleHeadRotation = remoteVehicleStreamed;
+            hasVehicleArmsTarget = remoteVehicleStreamed;
+            hasRemoteVehicleReflection = remoteVehicleStreamed;
+            remoteVehicleReflected = reflected;
+
+            if (remoteVehicleStreamed)
             {
-                reader.ReadInt32();
-                var flags = reader.ReadByte();
-                var remoteInVehicle = (flags & 1) != 0;
-                var remoteVehicleId = remoteInVehicle ? reader.ReadUInt64() : 0UL;
-                var remoteVehicleDriver = (flags & 2) != 0;
-                var remoteState = (BodyScript.EntityState)reader.ReadByte();
-                if (remoteState < BodyScript.EntityState.Idle || remoteState > BodyScript.EntityState.MoveLeft)
-                    remoteState = BodyScript.EntityState.Idle;
-                var remoteVehicleAttached = SynchronizeRemoteVehicle(remoteInVehicle, remoteVehicleId, remoteVehicleDriver, remoteState);
-                var remoteVehicleStreamed = remoteInVehicle && remoteBody.inVehicle && remoteBody.curVehicle != null && remoteBody.curVehicle.mainPart != null && remoteBody.curVehicle.mainPart.rb != null;
-
-                var isRight = (flags & 4) != 0;
-                var reflected = (flags & 8) != 0;
-
-                remoteAvatar.SetActive((flags & 16) != 0);
-                var remoteHeadRotation = ReadQuantizedRotation(reader);
-                var hadVehicleHeadRotation = hasRemoteVehicleHeadRotation;
-
-                hasRemoteVehicleHeadRotation = remoteVehicleStreamed;
-                hasVehicleArmsTarget = remoteVehicleStreamed;
-                hasRemoteVehicleReflection = remoteVehicleStreamed;
-                remoteVehicleReflected = reflected;
-
-                if (remoteVehicleStreamed)
+                if (hadVehicleHeadRotation)
                 {
-                    if (hadVehicleHeadRotation)
-                    {
-                        var progress = Mathf.Clamp01((Time.unscaledTime - vehicleHeadStartedAt) / 0.10f);
-                        vehicleHeadFromRotation = Mathf.LerpAngle(vehicleHeadFromRotation, remoteVehicleHeadRotation, progress);
-                    }
-                    else
-                        vehicleHeadFromRotation = remoteHeadRotation;
-
-                    vehicleHeadStartedAt = Time.unscaledTime;
-                }
-
-                remoteVehicleHeadRotation = remoteHeadRotation;
-
-                if (!remoteVehicleStreamed && remoteBody.isRight != isRight)
-                    remoteBody.SwitchDir(true);
-
-                var limbs = remoteBody.limbs ?? [];
-                var sourceVehicleRoot = Vector2.zero;
-                var sourceVehicleRotation = 0f;
-                if (remoteInVehicle)
-                {
-                    ReadVehicleRoot(reader, out sourceVehicleRoot, out sourceVehicleRotation);
-                    lastAuthoritativePosition = remoteBody.rb.position;
+                    var progress = Mathf.Clamp01((Time.unscaledTime - vehicleHeadStartedAt) / 0.10f);
+                    vehicleHeadFromRotation = Mathf.LerpAngle(vehicleHeadFromRotation, remoteVehicleHeadRotation, progress);
                 }
                 else
-                    lastAuthoritativePosition = SetTarget(reader, remoteBody.rb);
-                
-                hasAuthoritativePosition = true;
-                var limbCount = reader.ReadUInt16();
-                for (var index = 0; index < limbCount; index++)
-                {
-                    if (index >= limbs.Count)
-                    {
-                        SkipLimb(reader);
-                        continue;
-                    }
-                    var limb = limbs[index];
-                    if (remoteInVehicle) SkipLimb(reader);
-                    else SetQuantizedLimbTarget(reader, limb.rb);
-                }
-                var tailCount = reader.ReadUInt16();
-                if (!remoteVehicleStreamed)
-                {
-                    vehicleTailTargets.Clear();
-                    vehicleTailTransformTargets.Clear();
-                }
+                    vehicleHeadFromRotation = remoteHeadRotation;
 
-                for (var index = 0; index < tailCount; index++)
-                    ReadTailTarget(reader, index < remoteTailBases.Count ? remoteTailBases[index] : null, index < remoteTailSprites.Count ? remoteTailSprites[index] : null, remoteVehicleStreamed);
-                var tailRootCount = reader.ReadUInt16();
-                for (var index = 0; index < tailRootCount; index++)
-                    ReadTailTarget(reader, index < remoteTails.Length ? remoteTails[index] : null, index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null, remoteVehicleStreamed);
-
-                if (remoteVehicleStreamed)
-                {
-                    ReadVehicleArmsTarget(reader, sourceVehicleRoot, sourceVehicleRotation);
-                    ReadLocalRotationImmediately(reader, remoteBody.gunTransform);
-                    ReadLocalRotationImmediately(reader, remoteBody.gunAnimTransform);
-                }
-                else
-                {
-                    ReadWorldTransform(reader, remoteBody.Arms);
-                    ReadLocalTransform(reader, remoteBody.gunTransform);
-                    ReadLocalTransform(reader, remoteBody.gunAnimTransform);
-                }
-
-                if (remoteVehicleStreamed) ApplyVehicleHeadRotation();
-                receivedFirstSnapshot = true;
+                vehicleHeadStartedAt = Time.unscaledTime;
             }
+
+            remoteVehicleHeadRotation = remoteHeadRotation;
+
+            if (!remoteVehicleStreamed && remoteBody.isRight != isRight)
+                remoteBody.SwitchDir(true);
+
+            var limbs = remoteBody.limbs ?? [];
+            var sourceVehicleRoot = Vector2.zero;
+            var sourceVehicleRotation = 0f;
+            if (remoteInVehicle)
+            {
+                sourceVehicleRoot = new Vector2(snapshot.Body.X, snapshot.Body.Y);
+                sourceVehicleRotation = snapshot.Body.Rotation;
+                lastAuthoritativePosition = remoteBody.rb.position;
+            }
+            else
+                lastAuthoritativePosition = SetTarget(snapshot.Body, remoteBody.rb);
+
+            hasAuthoritativePosition = true;
+            for (var index = 0; index < snapshot.Limbs.Length; index++)
+            {
+                if (index >= limbs.Count)
+                    continue;
+                var limb = limbs[index];
+                if (!remoteInVehicle)
+                    SetQuantizedLimbTarget(snapshot.Limbs[index].Body, limb.rb);
+            }
+
+            if (!remoteVehicleStreamed)
+            {
+                vehicleTailTargets.Clear();
+                vehicleTailTransformTargets.Clear();
+            }
+
+            for (var index = 0; index < snapshot.TailBases.Length; index++)
+                ApplyTailTarget(snapshot.TailBases[index],
+                    index < remoteTailBases.Count ? remoteTailBases[index] : null,
+                    index < remoteTailSprites.Count ? remoteTailSprites[index] : null, remoteVehicleStreamed);
+            for (var index = 0; index < snapshot.Tails.Length; index++)
+                ApplyTailTarget(snapshot.Tails[index], index < remoteTails.Length ? remoteTails[index] : null,
+                    index < remoteTailRootSprites.Count ? remoteTailRootSprites[index] : null, remoteVehicleStreamed);
+
+            if (remoteVehicleStreamed)
+            {
+                ApplyVehicleArmsTarget(snapshot.ArmsTransform, sourceVehicleRoot, sourceVehicleRotation);
+                ApplyLocalRotationImmediately(snapshot.GunTransform, remoteBody.gunTransform);
+                ApplyLocalRotationImmediately(snapshot.GunAnimationTransform, remoteBody.gunAnimTransform);
+            }
+            else
+            {
+                ApplyWorldTransform(snapshot.ArmsTransform, remoteBody.Arms);
+                ApplyLocalTransform(snapshot.GunTransform, remoteBody.gunTransform);
+                ApplyLocalTransform(snapshot.GunAnimationTransform, remoteBody.gunAnimTransform);
+            }
+
+            if (remoteVehicleStreamed)
+                ApplyVehicleHeadRotation();
+            receivedFirstSnapshot = true;
         }
-        catch (EndOfStreamException) { }
-        finally { MultiplayerPerformance.AddAvatarApply(performanceStarted); }
+        catch (Exception e)
+        {
+            GunsawMultiplayerPlugin.LogInfo("Failed to apply player snapshot packet: " + e);
+        }
+        finally
+        {
+            MultiplayerPerformance.AddAvatarApply(performanceStarted);
+        }
     }
 
     internal void Apply(PlayerStatePacket packet)
     {
-        if (remoteBody == null) return;
-        try
+        if (remoteBody == null)
+            return;
+        
+        var remoteHealth = packet.Health;
+        var wasRemoteAlive = lastRemoteAlive;
+        remoteBody.health = remoteHealth;
+        remoteBody.isAlive = packet.IsAlive;
+        remoteBody.stamina = packet.Stamina;
+        remoteBody.controlState = (BodyScript.RagdollState)packet.ControlState;
+        remoteCanBeGrabbed = packet.CanBeGrabbed;
+        lastRemoteHealth = remoteBody.health;
+        lastRemoteAlive = remoteBody.isAlive;
+        if (MultiplayerSession.IsHost && wasRemoteAlive && !lastRemoteAlive)
+            remoteBody.DropAllWeapons();
+        if (lastRemoteAlive && !wasRemoteAlive)
         {
-            var packetWriter = new PacketWriter(256);
-            packet.Write(ref packetWriter);
-            using (var reader = new BinaryReader(new MemoryStream(packetWriter.ToArray(), false)))
+            if (MultiplayerSession.IsHost)
+                ScoreboardSystem.NoteHostPlayerRespawn(remotePeerId);
+            ClearReplicaBloodEffects(remoteBody);
+        }
+
+        remoteBody.burnIntensity = packet.BurnIntensity;
+        remoteBody.noLegs = packet.HasNoLegs;
+        remoteBody.deHeaded = packet.IsDecapitated;
+        if (remoteBody.limbMat != null)
+            remoteBody.limbMat.SetFloat("BurnIntensity", remoteBody.burnIntensity);
+        var weaponSlot = packet.WeaponSlot;
+        var weaponAmmo = packet.WeaponAmmo;
+        var inventoryCount = packet.InventorySpriteIds.Length;
+        var inventoryChanged = packet.InventoryChanged;
+        var inventorySprites = new ulong[inventoryCount];
+        if (inventoryChanged)
+            Array.Copy(packet.InventorySpriteIds, inventorySprites, inventoryCount);
+        else
+            for (var index = 0; index < inventoryCount && index < remoteBody.weapons.Count; index++)
+                inventorySprites[index] = NetworkWireId.FromString(remoteBody.weapons[index] == null
+                    ? ""
+                    : NetworkAvatarUtilities.SpriteId(remoteBody.weapons[index].sprite));
+      
+        var weaponSprite = weaponSlot >= 0 && weaponSlot < inventorySprites.Length
+            ? inventorySprites[weaponSlot]
+            : 0UL;
+        
+        var inventoryKey = weaponSlot + "|" + string.Join("|", inventorySprites);
+        if (inventoryKey != appliedInventory)
+        {
+            while (remoteBody.weapons.Count < inventorySprites.Length)
+                remoteBody.weapons.Add(null);
+            while (remoteBody.weaponAmmos.Count < inventorySprites.Length)
+                remoteBody.weaponAmmos.Add(0);
+            for (var index = 0; index < inventorySprites.Length; index++)
+                remoteBody.weapons[index] =
+                    WeaponPresetProvider.FindWeaponPresetBySpriteHash(inventorySprites[index]);
+        }
+
+        if (weaponSlot >= 0 && weaponSlot < remoteBody.weaponAmmos.Count)
+            remoteBody.weaponAmmos[weaponSlot] = weaponAmmo;
+        
+        if (weaponSlot < 0)
+        {
+            if (!remoteBody.unarmed)
+                remoteBody.ChangeToUnarmed();
+
+            appliedWeapon = -1;
+            appliedWeaponSprite = 0UL;
+            appliedInventory = inventoryKey;
+        }
+        else if (weaponSlot != appliedWeapon || inventoryKey != appliedInventory)
+        {
+            remoteBody.ChangeWeapon(weaponSlot);
+            appliedWeapon = weaponSlot;
+        }
+
+        if (weaponSlot >= 0 && remoteBody.weapon != null)
+        {
+            remoteBody.weapon.ammo = weaponAmmo;
+            if (weaponSprite != appliedWeaponSprite || inventoryKey != appliedInventory)
             {
-                var remoteHealth = reader.ReadSingle();
-                var wasRemoteAlive = lastRemoteAlive;
-                remoteBody.health = remoteHealth;
-                remoteBody.isAlive = reader.ReadBoolean();
-                remoteBody.stamina = reader.ReadSingle();
-                remoteBody.controlState = (BodyScript.RagdollState)reader.ReadByte();
-                remoteCanBeGrabbed = reader.ReadBoolean();
-                lastRemoteHealth = remoteBody.health;
-                lastRemoteAlive = remoteBody.isAlive;
-                if (MultiplayerSession.IsHost && wasRemoteAlive && !lastRemoteAlive) remoteBody.DropAllWeapons();
-                if (lastRemoteAlive && !wasRemoteAlive)
-                {
-                    if (MultiplayerSession.IsHost) ScoreboardSystem.NoteHostPlayerRespawn(remotePeerId);
-                    ClearReplicaBloodEffects(remoteBody);
-                }
-                remoteBody.burnIntensity = reader.ReadSingle();
-                remoteBody.noLegs = reader.ReadBoolean();
-                remoteBody.deHeaded = reader.ReadBoolean();
-                if (remoteBody.limbMat != null) remoteBody.limbMat.SetFloat("BurnIntensity", remoteBody.burnIntensity);
-                var weaponSlot = reader.ReadInt32();
-                var weaponAmmo = reader.ReadInt32();
-                var inventoryCount = reader.ReadUInt16();
-                var inventoryChanged = reader.ReadBoolean();
-                var inventorySprites = new ulong[inventoryCount];
-                if (inventoryChanged)
-                    for (var index = 0; index < inventoryCount; index++) inventorySprites[index] = reader.ReadUInt64();
-                else
-                    for (var index = 0; index < inventoryCount && index < remoteBody.weapons.Count; index++)
-                        inventorySprites[index] = NetworkWireId.FromString(remoteBody.weapons[index] == null ? "" : NetworkAvatarUtilities.SpriteId(remoteBody.weapons[index].sprite));
-                var weaponSprite = weaponSlot >= 0 && weaponSlot < inventorySprites.Length ? inventorySprites[weaponSlot] : 0UL;
-                var inventoryKey = weaponSlot + "|" + string.Join("|", inventorySprites);
-                if (inventoryKey != appliedInventory)
-                {
-                    while (remoteBody.weapons.Count < inventorySprites.Length) remoteBody.weapons.Add(null);
-                    while (remoteBody.weaponAmmos.Count < inventorySprites.Length) remoteBody.weaponAmmos.Add(0);
-                    for (var index = 0; index < inventorySprites.Length; index++) remoteBody.weapons[index] = WeaponPresetProvider.FindWeaponPresetBySpriteHash(inventorySprites[index]);
-                }
-                if (weaponSlot >= 0 && weaponSlot < remoteBody.weaponAmmos.Count) remoteBody.weaponAmmos[weaponSlot] = weaponAmmo;
-                if (weaponSlot < 0)
-                {
-                    if (!remoteBody.unarmed)
-                        remoteBody.ChangeToUnarmed();
-                    
-                    appliedWeapon = -1;
-                    appliedWeaponSprite = 0UL;
-                    appliedInventory = inventoryKey;
-                }
-                else if (weaponSlot != appliedWeapon || inventoryKey != appliedInventory)
-                {
-                    remoteBody.ChangeWeapon(weaponSlot);
-                    appliedWeapon = weaponSlot;
-                }
-                if (weaponSlot >= 0 && remoteBody.weapon != null)
-                {
-                    remoteBody.weapon.ammo = weaponAmmo;
-                    if (weaponSprite != appliedWeaponSprite || inventoryKey != appliedInventory)
-                    {
-                        ApplyWeaponVisual(remoteBody, weaponSprite, weaponSlot, inventorySprites);
-                        appliedWeaponSprite = weaponSprite; appliedInventory = inventoryKey;
-                    }
-                }
-                ReadLineState(reader, remoteBody.wepLaserLine, remoteBody.wepLaser);
-                ReadScarfState(reader);
-                if (reader.ReadBoolean()) ApplyVisualState(ReadVisualState(reader), remoteBody.transform);
-                if (reader.BaseStream.Position < reader.BaseStream.Length) reader.ReadByte();
-                if (reader.BaseStream.Position + sizeof(float) <= reader.BaseStream.Length)
-                    remoteBody.susnessMult = Mathf.Clamp(reader.ReadSingle(), 0.25f, 1f);
-                if (reader.BaseStream.Position + sizeof(float) <= reader.BaseStream.Length)
-                    ApplyRemoteCharacterScale(reader.ReadSingle());
-                if (reader.BaseStream.Position + sizeof(ushort) <= reader.BaseStream.Length)
-                {
-                    var limbs = remoteBody.limbs ?? [];
-                    var count = reader.ReadUInt16();
-                    var dismembermentHash = 17;
-                    for (var index = 0; index < count; index++)
-                    {
-                        var dismembered = reader.ReadBoolean();
-                        var burning = reader.ReadBoolean();
-                        if (index >= limbs.Count) continue;
-                        var limb = limbs[index];
-                        limb.dismembered = dismembered;
-                        dismembermentHash = unchecked(dismembermentHash * 31 + (dismembered ? 1 : 0));
-                        SetRemoteFire(index, limb, burning);
-                    }
-                    if (dismembermentHash != appliedDismembermentHash)
-                    {
-                        appliedDismembermentHash = dismembermentHash;
-                        ApplyDismembermentVisuals();
-                    }
-                }
+                ApplyWeaponVisual(remoteBody, weaponSprite, weaponSlot, inventorySprites);
+                appliedWeaponSprite = weaponSprite;
+                appliedInventory = inventoryKey;
             }
         }
-        catch (EndOfStreamException) { }
+
+        ApplyLineState(remoteBody.wepLaserLine, remoteBody.wepLaser, packet.WeaponLaser);
+        ApplyScarfState(packet.Scarf);
+        if (packet.IncludesVisualState && packet.VisualState.HasValue)
+            ApplyVisualState(packet.VisualState.Value, remoteBody.transform);
+        remoteBody.susnessMult = Mathf.Clamp(packet.SusnessMultiplier, 0.25f, 1f);
+        ApplyRemoteCharacterScale(packet.CharacterScale);
+        {
+            var limbs = remoteBody.limbs ?? [];
+            var dismembermentHash = 17;
+            for (var index = 0; index < packet.LimbDismembered.Length; index++)
+            {
+                var dismembered = packet.LimbDismembered[index];
+                var burning = packet.LimbBurning[index];
+                if (index >= limbs.Count)
+                    continue;
+                var limb = limbs[index];
+                limb.dismembered = dismembered;
+                dismembermentHash = unchecked(dismembermentHash * 31 + (dismembered ? 1 : 0));
+                SetRemoteFire(index, limb, burning);
+            }
+
+            if (dismembermentHash != appliedDismembermentHash)
+            {
+                appliedDismembermentHash = dismembermentHash;
+                ApplyDismembermentVisuals();
+            }
+        }
     }
 
     internal void Apply(PlayerSpecialLinesPacket packet)
@@ -756,10 +767,10 @@ internal class NetworkAvatarReplication : MonoBehaviour
         remoteBody.headTransform.rotation = Quaternion.Euler(0f, 0f, remoteBody.curVehicle.mainPart.rb.rotation + relativeRotation);
     }
 
-    private void ReadVehicleArmsTarget(BinaryReader reader, Vector2 sourceRoot, float sourceRootRotation)
+    private void ApplyVehicleArmsTarget(PlayerSnapshotPose pose, Vector2 sourceRoot, float sourceRootRotation)
     {
-        var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        var rotation = ReadQuantizedRotation(reader);
+        var position = new Vector2(pose.X, pose.Y);
+        var rotation = pose.Rotation;
         if (remoteBody == null || remoteBody.curVehicle == null || remoteBody.curVehicle.mainPart == null || remoteBody.curVehicle.mainPart.rb == null)
             return;
         
@@ -1522,20 +1533,19 @@ internal class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private Vector2 SetTarget(BinaryReader reader, Rigidbody2D body)
+    private Vector2 SetTarget(PlayerSnapshotPose pose, Rigidbody2D body)
     {
-        var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        var rotation = Quaternion.Euler(0f, 0f, ReadQuantizedRotation(reader));
+        var position = new Vector2(pose.X, pose.Y);
+        var rotation = Quaternion.Euler(0f, 0f, pose.Rotation);
         if (body == null) return position;
         SetTailTarget(body, position, rotation);
         return position;
     }
 
-    private Vector2 SetQuantizedLimbTarget(BinaryReader reader, Rigidbody2D body)
+    private Vector2 SetQuantizedLimbTarget(PlayerSnapshotPose pose, Rigidbody2D body)
     {
-        var position = lastAuthoritativePosition + new Vector2(ReadQuantizedTailOffset(reader),
-            ReadQuantizedTailOffset(reader));
-        var rotation = Quaternion.Euler(0f, 0f, ReadQuantizedRotation(reader));
+        var position = new Vector2(pose.X, pose.Y);
+        var rotation = Quaternion.Euler(0f, 0f, pose.Rotation);
         if (body != null) SetTailTarget(body, position, rotation);
         return position;
     }
@@ -1584,20 +1594,13 @@ internal class NetworkAvatarReplication : MonoBehaviour
         };
     }
 
-    private void ReadTailTarget(
-        BinaryReader reader,
-        Rigidbody2D body,
-        SpriteRenderer[] sprites,
-        bool inVehicle)
+    private void ApplyTailTarget(PlayerSnapshotTailState state, Rigidbody2D body, SpriteRenderer[] sprites, bool inVehicle)
     {
-        var delta = new Vector2(
-            reader.ReadSingle(),
-            reader.ReadSingle());
+        var delta = new Vector2(state.OffsetX, state.OffsetY);
+        var deltaAngle = state.Rotation;
 
-        var deltaAngle = reader.ReadSingle();
-
-        ApplyTailSpriteFlip(sprites, reader.ReadBoolean());
-        ApplyTailSpriteColor(sprites, reader);
+        ApplyTailSpriteFlip(sprites, state.Flipped);
+        ApplyTailSpriteColor(sprites, state.Colors);
 
         if (body == null)
             return;
@@ -1611,9 +1614,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         SetTailTarget(body, lastAuthoritativePosition + delta, Quaternion.Euler(0f, 0f, remoteBody.rb.rotation + deltaAngle));
     }
 
-    private void SetVehicleTailRotationTarget(
-        Rigidbody2D body,
-        float localRotation)
+    private void SetVehicleTailRotationTarget(Rigidbody2D body, float localRotation)
     {
         var index = vehicleTailTargets.FindIndex(
             target => target.Body == body);
@@ -1663,17 +1664,13 @@ internal class NetworkAvatarReplication : MonoBehaviour
         vehicleTailTransformTargets[index] = state;
     }
 
-    private void ReadTailTarget(
-        BinaryReader reader,
-        Transform transform,
-        SpriteRenderer[] sprites,
-        bool inVehicle)
+    private void ApplyTailTarget(PlayerSnapshotTailState state, Transform transform, SpriteRenderer[] sprites, bool inVehicle)
     {
-        var delta = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-        var deltaAngle = reader.ReadSingle();
+        var delta = new Vector2(state.OffsetX, state.OffsetY);
+        var deltaAngle = state.Rotation;
 
-        ApplyTailSpriteFlip(sprites, reader.ReadBoolean());
-        ApplyTailSpriteColor(sprites, reader);
+        ApplyTailSpriteFlip(sprites, state.Flipped);
+        ApplyTailSpriteColor(sprites, state.Colors);
 
         if (transform == null)
             return;
@@ -1691,34 +1688,25 @@ internal class NetworkAvatarReplication : MonoBehaviour
         });
     }
 
-    private void ReadWorldTransform(BinaryReader reader, Transform transform)
-    {
-        SetWorldTarget(transform, ReadWorldTarget(reader, transform));
-    }
-
-    private void ReadLocalTransform(BinaryReader reader, Transform transform)
-    {
-        if (transform == null)
-        {
-            SkipBody(reader);
-            return;
-        }
-        var target = new TargetState
-        {
-            position = new Vector3(reader.ReadSingle(), reader.ReadSingle(), transform.localPosition.z),
-            rotation = Quaternion.Euler(0f, 0f, ReadQuantizedRotation(reader))
-        };
-        SetLocalTarget(transform, target);
-    }
-
-    private TargetState ReadWorldTarget(BinaryReader reader, Transform transform)
+    private void ApplyWorldTransform(PlayerSnapshotPose pose, Transform transform)
     {
         var z = transform == null ? 0f : transform.position.z;
-        return new TargetState
+        SetWorldTarget(transform, new TargetState
         {
-            position = new Vector3(reader.ReadSingle(), reader.ReadSingle(), z),
-            rotation = Quaternion.Euler(0f, 0f, ReadQuantizedRotation(reader))
+            position = new Vector3(pose.X, pose.Y, z),
+            rotation = Quaternion.Euler(0f, 0f, pose.Rotation)
+        });
+    }
+
+    private void ApplyLocalTransform(PlayerSnapshotPose pose, Transform transform)
+    {
+        if (transform == null) return;
+        var target = new TargetState
+        {
+            position = new Vector3(pose.X, pose.Y, transform.localPosition.z),
+            rotation = Quaternion.Euler(0f, 0f, pose.Rotation)
         };
+        SetLocalTarget(transform, target);
     }
 
     private void SetWorldTarget(Transform transform, TargetState target)
@@ -1757,12 +1745,11 @@ internal class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
-        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
-            SnapshotInterval, 0.30f);
+        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt, SnapshotInterval, 0.30f);
         worldTargets[transform] = new WorldTargetState
         {
-            fromPosition = BufferedRemoteInterpolation ? previous.position : transform.position,
-            fromRotation = BufferedRemoteInterpolation ? previous.rotation : transform.rotation,
+            fromPosition = previous.position,
+            fromRotation = previous.rotation,
             position = target.position,
             rotation = target.rotation,
             startedAt = now,
@@ -1794,12 +1781,11 @@ internal class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
-        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt,
-            SnapshotInterval, 0.30f);
+        var arrivalInterval = Mathf.Clamp(now - previous.receivedAt, SnapshotInterval, 0.30f);
         localTargets[transform] = new WorldTargetState
         {
-            fromPosition = BufferedRemoteInterpolation ? previous.position : transform.localPosition,
-            fromRotation = BufferedRemoteInterpolation ? previous.rotation : transform.localRotation,
+            fromPosition = previous.position,
+            fromRotation = previous.rotation,
             position = target.position,
             rotation = target.rotation,
             startedAt = now,
@@ -1828,7 +1814,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         collisionRuleApplied = true;
     }
 
-    private void ApplyVisualState(PlayerVisualState state, Transform root)
+    private void ApplyVisualState(PlayerSnapshotVisualState state, Transform root)
     {
         remoteVisualLayout = GetVisualLayout(remoteVisualLayout, root);
         foreach (var rendererState in state.Renderers)
@@ -1863,10 +1849,9 @@ internal class NetworkAvatarReplication : MonoBehaviour
         HideChildrenOfDisabledHeadAccessories(root);
     }
 
-    private void ReadScarfState(BinaryReader reader)
+    private void ApplyScarfState(PlayerSnapshotScarfState state)
     {
-        var visible = reader.ReadBoolean();
-        if (!visible)
+        if (!state.Visible)
         {
             if (remoteScarf != null) Destroy(remoteScarf);
             if (remoteScarfHold != null) Destroy(remoteScarfHold);
@@ -1875,8 +1860,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
-        var startColor = ReadColor(reader);
-        var endColor = ReadColor(reader);
+        var startColor = (Color)state.StartColor;
+        var endColor = (Color)state.EndColor;
         if (remoteScarf == null || remoteScarfHold == null) CreateRemoteScarf();
         if (remoteScarf == null) return;
         var scarf = remoteScarf.GetComponent<ScarfPhysics>();

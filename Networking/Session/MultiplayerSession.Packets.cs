@@ -34,11 +34,7 @@ internal static partial class MultiplayerSession
                 string customLevel;
                 lock (statusLock) customLevel = hostCustomLevel;
                 if (!string.IsNullOrEmpty(customLevel)) QueueCustomLevelTransfer(customLevel, senderId);
-                var scene = Encoding.UTF8.GetBytes(hostScene + "\n" + hostSceneEpoch);
-                var scenePacket = new byte[sceneHeader.Length + scene.Length];
-                Buffer.BlockCopy(sceneHeader, 0, scenePacket, 0, sceneHeader.Length);
-                Buffer.BlockCopy(scene, 0, scenePacket, sceneHeader.Length, scene.Length);
-                SendPacket(scenePacket, senderId, false);
+                Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), senderId, false);
                 Send(CreateSettingsPacket(), senderId);
                 SendPeerNames(senderId);
                 Send(new PeerNamePacket(senderId, connectedName));

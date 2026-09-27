@@ -308,9 +308,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 "TX MIX  NPC {27:0.0}KB {28:0}%  WORLD {29:0.0}KB {30:0}%\n" +
                 "        AVATAR {31:0.0}KB {32:0}%  OTHER {33:0.0}KB {34:0}%\n" +
                 "NPC PART  core {35:0.0}  rig {36:0.0}  limbs {37:0.0} KB/s\n" +
-                "          tails {38:0.0}  weapon {39:0.0}  fx {40:0.0} KB/s\n" +
-                "AV PART   core {41:0.0}  limbs {42:0.0}  rig {43:0.0}  weapon {44:0.0}\n" +
-                "          fx {45:0.0}  visual {46:0.0} KB/s",
+                "          tails {38:0.0}  weapon {39:0.0}  fx {40:0.0} KB/s\n",
                 stats.PingMs < 0 ? "-" : stats.PingMs.ToString(),
                 stats.ReceivedBytesPerSecond / 1024f,
                 stats.SentBytesPerSecond / 1024f,
@@ -351,13 +349,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 (npc == null ? 0 : npc.LimbBytesPerSecond) / 1024f,
                 (npc == null ? 0 : npc.TailBytesPerSecond) / 1024f,
                 (npc == null ? 0 : npc.WeaponBytesPerSecond) / 1024f,
-                (npc == null ? 0 : npc.EffectsBytesPerSecond) / 1024f,
-                LocalPlayerReplication.AvatarCoreBytesPerSecond / 1024f,
-                LocalPlayerReplication.AvatarLimbBytesPerSecond / 1024f,
-                LocalPlayerReplication.AvatarRigBytesPerSecond / 1024f,
-                LocalPlayerReplication.AvatarWeaponBytesPerSecond / 1024f,
-                LocalPlayerReplication.AvatarEffectsBytesPerSecond / 1024f,
-                LocalPlayerReplication.AvatarVisualBytesPerSecond / 1024f);
+                (npc == null ? 0 : npc.EffectsBytesPerSecond) / 1024f);
             networkStatsTextValue += string.Format("\nWORLD CPU  disc {0:0.0}  ser {1:0.0}  read {2:0.0}  apply {3:0.0}\n" +
                 "           input {4:0.0}  contacts {5:0.0} ms/s\n" +
                 "NPC CPU    disc {6:0.0}  anim {7:0.0}  ser {8:0.0}  read {9:0.0}\n" +
