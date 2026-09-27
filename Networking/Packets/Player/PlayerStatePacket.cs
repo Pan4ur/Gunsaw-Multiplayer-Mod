@@ -1,3 +1,5 @@
+using UnityEngine;
+
 internal readonly struct PlayerStatePacket : INetworkPacket
 {
     internal readonly float Health, Stamina, BurnIntensity, SusnessMultiplier, CharacterScale;
@@ -115,7 +117,7 @@ internal readonly struct PlayerStatePacket : INetworkPacket
         var scale = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
         var limbs = new PlayerSnapshotLimbState[reader.Remaining >= sizeof(ushort) ? reader.ReadUInt16() : 0];
         for (var i = 0; i < limbs.Length; i++)
-            limbs[i] = new PlayerSnapshotLimbState(default(PlayerSnapshotBodyState), reader.ReadBoolean(),
+            limbs[i] = new PlayerSnapshotLimbState(default(PlayerSnapshotPose), reader.ReadBoolean(),
                 reader.ReadBoolean());
         var tailBases = ReadTailVisuals(ref reader);
         var tails = ReadTailVisuals(ref reader);
@@ -129,14 +131,14 @@ internal readonly struct PlayerStatePacket : INetworkPacket
         writer.WriteUInt16((ushort)tails.Length);
         foreach (var tail in tails)
         {
-            var colors = tail.Colors ?? new PlayerSnapshotByteColor[0];
+            var colors = tail.Colors ?? new Color32[0];
             writer.WriteByte((byte)colors.Length);
             foreach (var color in colors)
             {
-                writer.WriteByte(color.Red);
-                writer.WriteByte(color.Green);
-                writer.WriteByte(color.Blue);
-                writer.WriteByte(color.Alpha);
+                writer.WriteByte(color.r);
+                writer.WriteByte(color.g);
+                writer.WriteByte(color.b);
+                writer.WriteByte(color.a);
             }
         }
     }
@@ -146,9 +148,9 @@ internal readonly struct PlayerStatePacket : INetworkPacket
         var tails = new PlayerSnapshotTailState[reader.ReadUInt16()];
         for (var i = 0; i < tails.Length; i++)
         {
-            var colors = new PlayerSnapshotByteColor[reader.ReadByte()];
+            var colors = new Color32[reader.ReadByte()];
             for (var j = 0; j < colors.Length; j++)
-                colors[j] = new PlayerSnapshotByteColor(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(),
+                colors[j] = new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(),
                     reader.ReadByte());
             tails[i] = new PlayerSnapshotTailState(0f, 0f, 0f, false, colors);
         }

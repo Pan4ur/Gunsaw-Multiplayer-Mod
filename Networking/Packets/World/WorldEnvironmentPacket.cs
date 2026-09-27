@@ -1,3 +1,5 @@
+using UnityEngine;
+
 internal readonly struct EnvironmentButtonState
 {
     internal readonly ulong Id;
@@ -17,20 +19,14 @@ internal readonly struct EnvironmentLampPowerState
     internal readonly ulong Id;
     internal readonly bool Powered;
     internal readonly float Intensity;
-    internal readonly float Red;
-    internal readonly float Green;
-    internal readonly float Blue;
-    internal readonly float Alpha;
+    internal readonly Color32 Color;
     
-    internal EnvironmentLampPowerState(ulong id, bool powered, float intensity, float red, float green, float blue, float alpha)
+    internal EnvironmentLampPowerState(ulong id, bool powered, float intensity, Color32 color)
     {
         Id = id;
         Powered = powered;
         Intensity = intensity;
-        Red = red;
-        Green = green;
-        Blue = blue;
-        Alpha = alpha;
+        Color = color;
     }
 }
 
@@ -132,21 +128,35 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
 
     public void Write(ref PacketWriter writer)
     {
-        writer.WriteInt32(SceneEpoch); writer.WriteSingle(GravityX); writer.WriteSingle(GravityY);
-        WriteButtons(ref writer, Buttons); WriteIds(ref writer, DestroyedGlassIds);
-        WriteFires(ref writer, Fires); WriteAudio(ref writer, Audio); WriteIds(ref writer, DestroyedDroneIds);
-        writer.WriteSingle(RainIntensity); writer.WriteSingle(SnowIntensity); writer.WriteSingle(FogIntensity);
-        writer.WriteInt32(EnemyKills); writer.WriteInt32(EnemyTotal);
+        writer.WriteInt32(SceneEpoch);
+        writer.WriteSingle(GravityX);
+        writer.WriteSingle(GravityY);
+        WriteButtons(ref writer, Buttons);
+        WriteIds(ref writer, DestroyedGlassIds);
+        WriteFires(ref writer, Fires);
+        WriteAudio(ref writer, Audio);
+        WriteIds(ref writer, DestroyedDroneIds);
+        writer.WriteSingle(RainIntensity);
+        writer.WriteSingle(SnowIntensity);
+        writer.WriteSingle(FogIntensity);
+        writer.WriteInt32(EnemyKills);
+        writer.WriteInt32(EnemyTotal);
         WriteLampPower(ref writer, LampPower);
     }
 
     internal static WorldEnvironmentPacket Read(ref PacketReader reader)
     {
         var sceneEpoch = reader.ReadInt32();
-        var gravityX = reader.ReadSingle(); var gravityY = reader.ReadSingle();
-        var buttons = ReadButtons(ref reader); var glass = ReadIds(ref reader);
-        var fires = ReadFires(ref reader); var audio = ReadAudio(ref reader); var drones = ReadIds(ref reader);
-        var rain = reader.ReadSingle(); var snow = reader.ReadSingle(); var fog = reader.ReadSingle();
+        var gravityX = reader.ReadSingle();
+        var gravityY = reader.ReadSingle();
+        var buttons = ReadButtons(ref reader);
+        var glass = ReadIds(ref reader);
+        var fires = ReadFires(ref reader);
+        var audio = ReadAudio(ref reader);
+        var drones = ReadIds(ref reader);
+        var rain = reader.ReadSingle();
+        var snow = reader.ReadSingle();
+        var fog = reader.ReadSingle();
         var enemyKills = reader.Remaining >= sizeof(int) * 2 ? reader.ReadInt32() : -1;
         var enemyTotal = reader.Remaining >= sizeof(int) ? reader.ReadInt32() : -1;
         var lampPower = ReadLampPower(ref reader);
@@ -157,7 +167,11 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     {
         writer.WriteUInt16((ushort) Math.Min(values.Length, ushort.MaxValue));
         for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
-        { writer.WriteUInt64(values[index].Id); writer.WriteBoolean(values[index].Active); writer.WriteUInt32(values[index].Activations); }
+        {
+            writer.WriteUInt64(values[index].Id);
+            writer.WriteBoolean(values[index].Active);
+            writer.WriteUInt32(values[index].Activations);
+        }
     }
 
     private static EnvironmentButtonState[] ReadButtons(ref PacketReader reader)
@@ -190,10 +204,10 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
             writer.WriteUInt64(values[index].Id);
             writer.WriteBoolean(values[index].Powered);
             writer.WriteSingle(values[index].Intensity);
-            writer.WriteSingle(values[index].Red);
-            writer.WriteSingle(values[index].Green);
-            writer.WriteSingle(values[index].Blue);
-            writer.WriteSingle(values[index].Alpha);
+            writer.WriteByte(values[index].Color.r);
+            writer.WriteByte(values[index].Color.g);
+            writer.WriteByte(values[index].Color.b);
+            writer.WriteByte(values[index].Color.a);
         }
     }
 
@@ -201,13 +215,13 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     {
         var values = new EnvironmentLampPowerState[reader.ReadUInt16()];
         for (var index = 0; index < values.Length; index++)
-            values[index] = new EnvironmentLampPowerState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+            values[index] = new EnvironmentLampPowerState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadSingle(), new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte()));
         return values;
     }
 
     private static void WriteFires(ref PacketWriter writer, EnvironmentFireState[] values)
     {
-        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        writer.WriteUInt16((ushort) Math.Min(values.Length, ushort.MaxValue));
         for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
         {
             var value = values[index];

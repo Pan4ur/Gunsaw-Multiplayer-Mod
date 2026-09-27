@@ -137,8 +137,8 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             var limbIndex = 0;
             foreach (LimbScript limb in limbs)
             {
-                var limbBody = limb.rb == null ? new PlayerSnapshotBodyState(0f, 0f, 0f) :
-                    new PlayerSnapshotBodyState(limb.rb.position.x, limb.rb.position.y, limb.rb.rotation);
+                var limbBody = limb.rb == null ? new PlayerSnapshotPose(0f, 0f, 0f) :
+                    new PlayerSnapshotPose(limb.rb.position.x, limb.rb.position.y, limb.rb.rotation);
                 var dismembered = limb.dismembered;
                 var burning = IsBurning(limb);
                 writer.Write(limbBody.X);
@@ -179,9 +179,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             WriteWorldTransform(writer, arms);
             WriteLocalTransform(writer, gunTransform);
             WriteLocalTransform(writer, gunAnimationTransform);
-            var armsTransform = arms == null ? new PlayerSnapshotTransform(0f, 0f, 0f) : new PlayerSnapshotTransform(arms.position.x, arms.position.y, arms.eulerAngles.z);
-            var gunTransformState = gunTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) : new PlayerSnapshotTransform(gunTransform.localPosition.x, gunTransform.localPosition.y, gunTransform.localEulerAngles.z);
-            var gunAnimationTransformState = gunAnimationTransform == null ? new PlayerSnapshotTransform(0f, 0f, 0f) : new PlayerSnapshotTransform(gunAnimationTransform.localPosition.x, gunAnimationTransform.localPosition.y, gunAnimationTransform.localEulerAngles.z);
+            var armsTransform = arms == null ? new PlayerSnapshotPose(0f, 0f, 0f) : new PlayerSnapshotPose(arms.position.x, arms.position.y, arms.eulerAngles.z);
+            var gunTransformState = gunTransform == null ? new PlayerSnapshotPose(0f, 0f, 0f) : new PlayerSnapshotPose(gunTransform.localPosition.x, gunTransform.localPosition.y, gunTransform.localEulerAngles.z);
+            var gunAnimationTransformState = gunAnimationTransform == null ? new PlayerSnapshotPose(0f, 0f, 0f) : new PlayerSnapshotPose(gunAnimationTransform.localPosition.x, gunAnimationTransform.localPosition.y, gunAnimationTransform.localEulerAngles.z);
             breakdown.Rig += (int)(writer.BaseStream.Position - sectionStarted);
             sectionStarted = writer.BaseStream.Position;
             var health = body.health;
@@ -243,8 +243,8 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             breakdown.Visual += (int)(writer.BaseStream.Position - sectionStarted);
             AddAvatarWireBreakdown(breakdown);
             MultiplayerPerformance.AddAvatarSerialize(performanceStarted);
-            var coreBody = body.rb == null ? new PlayerSnapshotBodyState(0f, 0f, 0f) :
-                new PlayerSnapshotBodyState(body.rb.position.x, body.rb.position.y, body.rb.rotation);
+            var coreBody = body.rb == null ? new PlayerSnapshotPose(0f, 0f, 0f) :
+                new PlayerSnapshotPose(body.rb.position.x, body.rb.position.y, body.rb.rotation);
             var packetVisualState = includeVisualState ? CreatePacketVisualState(visualState) :
                 (PlayerSnapshotVisualState?)null;
             if (includeState)
@@ -338,17 +338,14 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         for (var index = 0; index < sourceRenderers.Length; index++)
         {
             var renderer = sourceRenderers[index];
-            renderers[index] = new PlayerSnapshotRendererState(renderer.Path, renderer.Visible,
-                new PlayerSnapshotColor(renderer.Color.r, renderer.Color.g, renderer.Color.b, renderer.Color.a),
-                renderer.FlipX, renderer.FlipY);
+            renderers[index] = new PlayerSnapshotRendererState(renderer.Path, renderer.Visible, (Color32) renderer.Color, renderer.FlipX, renderer.FlipY);
         }
         var sourceLights = state == null || state.Lights == null ? new LightVisualState[0] : state.Lights;
         var lights = new PlayerSnapshotLightState[sourceLights.Length];
         for (var index = 0; index < sourceLights.Length; index++)
         {
             var light = sourceLights[index];
-            lights[index] = new PlayerSnapshotLightState(light.Path, light.Visible, light.Intensity,
-                new PlayerSnapshotColor(light.Color.r, light.Color.g, light.Color.b, light.Color.a));
+            lights[index] = new PlayerSnapshotLightState(light.Path, light.Visible, light.Intensity, (Color32) light.Color);
         }
         return new PlayerSnapshotVisualState(renderers, lights, state == null ? Array.Empty<byte>() : state.FacialExpressions);
     }
@@ -406,10 +403,8 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
     private static bool IsProtogenBody(BodyScript body)
     {
-        var root = body == null || body.transform.root == null ? "" :
-            NetworkAvatarUtilities.CleanCloneName(body.transform.root.name);
-        return string.Equals(root, "RobotEnemy", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(body.characterName, "G4", StringComparison.OrdinalIgnoreCase);
+        var root = body == null || body.transform.root == null ? "" :  NetworkAvatarUtilities.CleanCloneName(body.transform.root.name);
+        return string.Equals(root, "RobotEnemy", StringComparison.OrdinalIgnoreCase) || string.Equals(body.characterName, "G4", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static bool BlockLocalRespawnDeath(BodyScript body)

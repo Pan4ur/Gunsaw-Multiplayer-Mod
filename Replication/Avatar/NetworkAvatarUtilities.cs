@@ -168,13 +168,13 @@ internal static class NetworkAvatarUtilities
         line.gameObject.SetActive(true);
         line.enabled = true;
         line.useWorldSpace = state.UsesWorldSpace;
-        line.startColor = new Color(state.StartColor.Red, state.StartColor.Green, state.StartColor.Blue, state.StartColor.Alpha);
-        line.endColor = new Color(state.EndColor.Red, state.EndColor.Green, state.EndColor.Blue, state.EndColor.Alpha);
+        line.startColor = state.StartColor;
+        line.endColor = state.EndColor;
         line.startWidth = state.StartWidth;
         line.endWidth = state.EndWidth;
         var count = state.Points == null ? 0 : state.Points.Length;
         var target = new Vector3[count];
-        for (var i = 0; i < count; i++) target[i] = new Vector3(state.Points[i].X, state.Points[i].Y, state.Points[i].Z);
+        if (count > 0) Array.Copy(state.Points, target, count);
         if (!interpolation.Active || line.positionCount != count)
         {
             line.positionCount = count;
@@ -279,17 +279,11 @@ internal static class NetworkAvatarUtilities
             return new PlayerSnapshotLineState(false, false, default, default, 0f, 0f, []);
 
         var count = Mathf.Min(line.positionCount, 16);
-        var points = new PlayerSnapshotVector3[count];
+        var points = new Vector3[count];
         for (var index = 0; index < count; index++)
-        {
-            var point = line.GetPosition(index);
-            points[index] = new PlayerSnapshotVector3(point.x, point.y, point.z);
-        }
-        var startColor = line.startColor;
-        var endColor = line.endColor;
+            points[index] = line.GetPosition(index);
         return new PlayerSnapshotLineState(true, line.useWorldSpace,
-            new PlayerSnapshotColor(startColor.r, startColor.g, startColor.b, startColor.a),
-            new PlayerSnapshotColor(endColor.r, endColor.g, endColor.b, endColor.a), line.startWidth,
+            (Color32)line.startColor, (Color32)line.endColor, line.startWidth,
             line.endWidth, points);
     }
 
@@ -299,16 +293,14 @@ internal static class NetworkAvatarUtilities
         if (!state.Visible) return;
         writer.Write((byte)state.Points.Length);
         writer.Write(state.UsesWorldSpace);
-        writer.Write(state.StartColor.Red); writer.Write(state.StartColor.Green);
-        writer.Write(state.StartColor.Blue); writer.Write(state.StartColor.Alpha);
-        writer.Write(state.EndColor.Red); writer.Write(state.EndColor.Green);
-        writer.Write(state.EndColor.Blue); writer.Write(state.EndColor.Alpha);
+        WriteColor(writer, state.StartColor);
+        WriteColor(writer, state.EndColor);
         writer.Write(state.StartWidth); writer.Write(state.EndWidth);
         foreach (var point in state.Points)
         {
-            writer.Write(point.X);
-            writer.Write(point.Y);
-            writer.Write(point.Z);
+            writer.Write(point.x);
+            writer.Write(point.y);
+            writer.Write(point.z);
         }
     }
 
@@ -347,15 +339,16 @@ internal static class NetworkAvatarUtilities
 
     internal static void WriteColor(BinaryWriter writer, Color color)
     {
-        writer.Write(color.r);
-        writer.Write(color.g);
-        writer.Write(color.b);
-        writer.Write(color.a);
+        var value = (Color32)color;
+        writer.Write(value.r);
+        writer.Write(value.g);
+        writer.Write(value.b);
+        writer.Write(value.a);
     }
 
     internal static Color ReadColor(BinaryReader reader)
     {
-        return new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+        return new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
     }
 
     internal static void WriteVisualState(BinaryWriter writer, PlayerVisualState state)
@@ -398,10 +391,12 @@ internal static class NetworkAvatarUtilities
         var lightCount = reader.ReadUInt16();
         var lights = new LightVisualState[lightCount];
         for (var index = 0; index < lightCount; index++)
-            lights[index] = new LightVisualState(reader.ReadString(), reader.ReadBoolean(), reader.ReadSingle(),
-                ReadColor(reader));
+            lights[index] = new LightVisualState(reader.ReadString(), reader.ReadBoolean(), reader.ReadSingle(), ReadColor(reader));
+      
         var expressionStates = new byte[reader.ReadUInt16()];
-        for (var index = 0; index < expressionStates.Length; index++) expressionStates[index] = reader.ReadByte();
+        for (var index = 0; index < expressionStates.Length; index++) 
+            expressionStates[index] = reader.ReadByte();
+      
         return new PlayerVisualState(renderers, lights, expressionStates);
     }
 
@@ -496,11 +491,11 @@ internal static class NetworkAvatarUtilities
 
         var delta = (Vector2)transform.position - reference.position;
         var renderers = transform.GetComponentsInChildren<SpriteRenderer>(true);
-        var colors = new PlayerSnapshotByteColor[renderers.Length];
+        var colors = new Color32[renderers.Length];
         for (var index = 0; index < renderers.Length; index++)
         {
             var color = (Color32)renderers[index].color;
-            colors[index] = new PlayerSnapshotByteColor(color.r, color.g, color.b, color.a);
+            colors[index] = color;
         }
         var sprite = renderers.Length == 0 ? null : renderers[0];
         return new PlayerSnapshotTailState(delta.x, delta.y, Mathf.DeltaAngle(reference.rotation, rotation),
@@ -594,20 +589,16 @@ internal static class NetworkAvatarUtilities
         var scarf = body.GetComponentInChildren<ScarfPhysics>(true);
         var visible = scarf != null && scarf.gameObject.activeInHierarchy && scarf.pointRenderer != null;
         if (!visible) return new PlayerSnapshotScarfState(false, default, default);
-        var startColor = scarf.pointRenderer.startColor;
-        var endColor = scarf.pointRenderer.endColor;
-        return new PlayerSnapshotScarfState(true, new PlayerSnapshotColor(startColor.r, startColor.g, startColor.b,
-            startColor.a), new PlayerSnapshotColor(endColor.r, endColor.g, endColor.b, endColor.a));
+        return new PlayerSnapshotScarfState(true, (Color32)scarf.pointRenderer.startColor,
+            (Color32)scarf.pointRenderer.endColor);
     }
 
     internal static void WriteScarfState(BinaryWriter writer, PlayerSnapshotScarfState state)
     {
         writer.Write(state.Visible);
         if (!state.Visible) return;
-        writer.Write(state.StartColor.Red); writer.Write(state.StartColor.Green);
-        writer.Write(state.StartColor.Blue); writer.Write(state.StartColor.Alpha);
-        writer.Write(state.EndColor.Red); writer.Write(state.EndColor.Green);
-        writer.Write(state.EndColor.Blue); writer.Write(state.EndColor.Alpha);
+        WriteColor(writer, state.StartColor);
+        WriteColor(writer, state.EndColor);
     }
 
     internal static string CleanCloneName(string name)

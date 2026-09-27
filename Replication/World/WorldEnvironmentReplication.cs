@@ -556,8 +556,7 @@ public class WorldEnvironmentReplication
             if (lamps.Count >= ushort.MaxValue) break;
             var runtime = ToggleableLampSystem.RuntimeForLamp(pair.Value);
             if (runtime == null) continue;
-            var color = runtime.Color;
-            lamps.Add(new EnvironmentLampPowerState(world.WireId(pair.Key), runtime.Powered, runtime.Intensity, color.r, color.g, color.b, color.a));
+            lamps.Add(new EnvironmentLampPowerState(world.WireId(pair.Key), runtime.Powered, runtime.Intensity, (Color32) runtime.Color));
         }
         var manager = GameManager.main;
         var mission = MissionManager.main;
@@ -592,8 +591,7 @@ public class WorldEnvironmentReplication
         ApplyWeather(packet.RainIntensity, packet.SnowIntensity, packet.FogIntensity);
         ApplyMissionEnemyCount(packet.EnemyKills, packet.EnemyTotal);
         foreach (var lamp in packet.LampPower)
-            ApplyLampState(WorldReplication.Instance.ResolveWireId(lamp.Id), lamp.Powered, lamp.Intensity,
-                new Color(lamp.Red, lamp.Green, lamp.Blue, lamp.Alpha));
+            ApplyLampState(WorldReplication.Instance.ResolveWireId(lamp.Id), lamp.Powered, lamp.Intensity, lamp.Color);
     }
 
     private void ApplyLampState(string id, bool powered, float intensity, Color color)

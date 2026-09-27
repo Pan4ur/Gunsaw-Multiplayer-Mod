@@ -1,3 +1,5 @@
+using UnityEngine;
+
 internal enum PlayerDeathCause : byte
 {
     Unknown,
@@ -27,19 +29,19 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal readonly bool IsReflected;
     internal readonly bool IsActive;
     internal readonly float HeadRotation;
-    internal readonly PlayerSnapshotBodyState Body;
+    internal readonly PlayerSnapshotPose Body;
     internal readonly PlayerSnapshotLimbState[] Limbs;
     internal readonly PlayerSnapshotTailState[] TailBases;
     internal readonly PlayerSnapshotTailState[] Tails;
-    internal readonly PlayerSnapshotTransform ArmsTransform;
-    internal readonly PlayerSnapshotTransform GunTransform;
-    internal readonly PlayerSnapshotTransform GunAnimationTransform;
+    internal readonly PlayerSnapshotPose ArmsTransform;
+    internal readonly PlayerSnapshotPose GunTransform;
+    internal readonly PlayerSnapshotPose GunAnimationTransform;
 
     internal PlayerSnapshotPacket(int sequence, bool inVehicle, ulong vehicleId,
         bool isVehicleDriver, byte entityState, bool isRight, bool isReflected, bool isActive,
-        float headRotation, PlayerSnapshotBodyState body,
-        PlayerSnapshotTransform armsTransform, PlayerSnapshotTransform gunTransform,
-        PlayerSnapshotTransform gunAnimationTransform,
+        float headRotation, PlayerSnapshotPose body,
+        PlayerSnapshotPose armsTransform, PlayerSnapshotPose gunTransform,
+        PlayerSnapshotPose gunAnimationTransform,
         PlayerSnapshotLimbState[] limbs, PlayerSnapshotTailState[] tailBases, PlayerSnapshotTailState[] tails)
     {
         Sequence = sequence;
@@ -76,7 +78,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         if (InVehicle) writer.WriteUInt64(VehicleId);
         writer.WriteByte(EntityState);
         WriteRotation(ref writer, HeadRotation);
-        WriteBody(ref writer, Body);
+        WritePose(ref writer, Body);
         writer.WriteUInt16((ushort)Limbs.Length);
         foreach (var limb in Limbs)
         {
@@ -85,19 +87,12 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
 
         WriteTails(ref writer, TailBases);
         WriteTails(ref writer, Tails);
-        WriteTransform(ref writer, ArmsTransform);
-        WriteTransform(ref writer, GunTransform);
-        WriteTransform(ref writer, GunAnimationTransform);
+        WritePose(ref writer, ArmsTransform);
+        WritePose(ref writer, GunTransform);
+        WritePose(ref writer, GunAnimationTransform);
     }
 
-    private static void WriteBody(ref PacketWriter writer, PlayerSnapshotBodyState value)
-    {
-        writer.WriteSingle(value.X);
-        writer.WriteSingle(value.Y);
-        WriteRotation(ref writer, value.Rotation);
-    }
-
-    private static void WriteTransform(ref PacketWriter writer, PlayerSnapshotTransform value)
+    private static void WritePose(ref PacketWriter writer, PlayerSnapshotPose value)
     {
         writer.WriteSingle(value.X);
         writer.WriteSingle(value.Y);
@@ -113,22 +108,22 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
             writer.WriteSingle(value.OffsetY);
             writer.WriteSingle(value.Rotation);
             writer.WriteBoolean(value.Flipped);
-            var colors = value.Colors ?? new PlayerSnapshotByteColor[0];
+            var colors = value.Colors ?? new Color32[0];
             writer.WriteByte((byte)colors.Length);
             foreach (var color in colors)
             {
-                writer.WriteByte(color.Red); writer.WriteByte(color.Green);
-                writer.WriteByte(color.Blue); writer.WriteByte(color.Alpha);
+                writer.WriteByte(color.r); writer.WriteByte(color.g);
+                writer.WriteByte(color.b); writer.WriteByte(color.a);
             }
         }
     }
 
-    private static void WriteColor(ref PacketWriter writer, PlayerSnapshotColor value)
+    private static void WriteColor(ref PacketWriter writer, Color32 value)
     {
-        writer.WriteSingle(value.Red);
-        writer.WriteSingle(value.Green);
-        writer.WriteSingle(value.Blue);
-        writer.WriteSingle(value.Alpha);
+        writer.WriteByte(value.r);
+        writer.WriteByte(value.g);
+        writer.WriteByte(value.b);
+        writer.WriteByte(value.a);
     }
 
     internal static void WriteLine(ref PacketWriter writer, PlayerSnapshotLineState value)
@@ -143,9 +138,9 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         writer.WriteSingle(value.EndWidth);
         foreach (var point in value.Points)
         {
-            writer.WriteSingle(point.X);
-            writer.WriteSingle(point.Y);
-            writer.WriteSingle(point.Z);
+            writer.WriteSingle(point.x);
+            writer.WriteSingle(point.y);
+            writer.WriteSingle(point.z);
         }
     }
 
@@ -199,31 +194,29 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var isReflected = (flags & 8) != 0;
         var isActive = (flags & 16) != 0;
         var headRotation = ReadRotation(ref reader);
-        var body = ReadBody(ref reader);
+        var body = ReadPose(ref reader);
         var limbs = new PlayerSnapshotLimbState[reader.ReadUInt16()];
         for (var i = 0; i < limbs.Length; i++)
             limbs[i] = new PlayerSnapshotLimbState(ReadLimb(ref reader, body), false, false);
         var tailBases = ReadTails(ref reader);
         var tails = ReadTails(ref reader);
-        var arms = ReadTransform(ref reader);
-        var gun = ReadTransform(ref reader);
-        var gunAnimation = ReadTransform(ref reader);
+        var arms = ReadPose(ref reader);
+        var gun = ReadPose(ref reader);
+        var gunAnimation = ReadPose(ref reader);
         return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight,
             isReflected, isActive, headRotation, body, arms, gun, gunAnimation, limbs, tailBases, tails);
     }
 
-    private static PlayerSnapshotBodyState ReadBody(ref PacketReader reader) => new (reader.ReadSingle(), reader.ReadSingle(), ReadRotation(ref reader));
+    private static PlayerSnapshotPose ReadPose(ref PacketReader reader) => new (reader.ReadSingle(), reader.ReadSingle(), ReadRotation(ref reader));
 
-    private static PlayerSnapshotTransform ReadTransform(ref PacketReader reader) => new (reader.ReadSingle(), reader.ReadSingle(), ReadRotation(ref reader));
-
-    private static void WriteLimb(ref PacketWriter writer, PlayerSnapshotBodyState limb, PlayerSnapshotBodyState root)
+    private static void WriteLimb(ref PacketWriter writer, PlayerSnapshotPose limb, PlayerSnapshotPose root)
     {
         WriteTailOffset(ref writer, limb.X - root.X);
         WriteTailOffset(ref writer, limb.Y - root.Y);
         WriteRotation(ref writer, limb.Rotation);
     }
 
-    private static PlayerSnapshotBodyState ReadLimb(ref PacketReader reader, PlayerSnapshotBodyState root) =>
+    private static PlayerSnapshotPose ReadLimb(ref PacketReader reader, PlayerSnapshotPose root) =>
         new (root.X + ReadTailOffset(ref reader), root.Y + ReadTailOffset(ref reader), ReadRotation(ref reader));
 
     private static PlayerSnapshotTailState[] ReadTails(ref PacketReader reader)
@@ -235,14 +228,14 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
             var y = reader.ReadSingle();
             var rotation = reader.ReadSingle();
             var flipped = reader.ReadBoolean();
-            var colors = new PlayerSnapshotByteColor[reader.ReadByte()];
+            var colors = new Color32[reader.ReadByte()];
             for (var j = 0; j < colors.Length; j++)
             {
                 var red = reader.ReadByte();
                 var green = reader.ReadByte();
                 var blue = reader.ReadByte();
                 var alpha = reader.ReadByte();
-                colors[j] = new PlayerSnapshotByteColor(red, green, blue, alpha);
+                colors[j] = new Color32(red, green, blue, alpha);
             }
             values[i] = new PlayerSnapshotTailState(x, y, rotation, flipped, colors);
         }
@@ -264,23 +257,23 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
 
     private static float ReadTailOffset(ref PacketReader reader) => reader.ReadInt16() / 1024f;
 
-    private static PlayerSnapshotColor ReadColor(ref PacketReader reader) =>
-        new PlayerSnapshotColor(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+    private static Color32 ReadColor(ref PacketReader reader) =>
+        new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte());
 
     internal static PlayerSnapshotLineState ReadLine(ref PacketReader reader)
     {
         var visible = reader.ReadBoolean();
         if (!visible)
-            return new PlayerSnapshotLineState(false, false, default(PlayerSnapshotColor), default(PlayerSnapshotColor),
-                0f, 0f, new PlayerSnapshotVector3[0]);
-        var points = new PlayerSnapshotVector3[reader.ReadByte()];
+            return new PlayerSnapshotLineState(false, false, default(Color32), default(Color32),
+                0f, 0f, new Vector3[0]);
+        var points = new Vector3[reader.ReadByte()];
         var world = reader.ReadBoolean();
         var start = ReadColor(ref reader);
         var end = ReadColor(ref reader);
         var startWidth = reader.ReadSingle();
         var endWidth = reader.ReadSingle();
         for (var i = 0; i < points.Length; i++)
-            points[i] = new PlayerSnapshotVector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
+            points[i] = new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
         return new PlayerSnapshotLineState(true, world, start, end, startWidth, endWidth, points);
     }
 
@@ -289,7 +282,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var visible = reader.ReadBoolean();
         return visible
             ? new PlayerSnapshotScarfState(true, ReadColor(ref reader), ReadColor(ref reader))
-            : new PlayerSnapshotScarfState(false, default(PlayerSnapshotColor), default(PlayerSnapshotColor));
+            : new PlayerSnapshotScarfState(false, default(Color32), default(Color32));
     }
 
     internal static PlayerSnapshotVisualState ReadVisualState(ref PacketReader reader)
@@ -308,11 +301,11 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     }
 }
 
-internal readonly struct PlayerSnapshotBodyState
+internal readonly struct PlayerSnapshotPose
 {
     internal readonly float X, Y, Rotation;
 
-    internal PlayerSnapshotBodyState(float x, float y, float rotation)
+    internal PlayerSnapshotPose(float x, float y, float rotation)
     {
         X = x;
         Y = y;
@@ -322,10 +315,10 @@ internal readonly struct PlayerSnapshotBodyState
 
 internal readonly struct PlayerSnapshotLimbState
 {
-    internal readonly PlayerSnapshotBodyState Body;
+    internal readonly PlayerSnapshotPose Body;
     internal readonly bool Dismembered, Burning;
 
-    internal PlayerSnapshotLimbState(PlayerSnapshotBodyState body, bool dismembered, bool burning)
+    internal PlayerSnapshotLimbState(PlayerSnapshotPose body, bool dismembered, bool burning)
     {
         Body = body;
         Dismembered = dismembered;
@@ -337,10 +330,9 @@ internal readonly struct PlayerSnapshotTailState
 {
     internal readonly float OffsetX, OffsetY, Rotation;
     internal readonly bool Flipped;
-    internal readonly PlayerSnapshotByteColor[] Colors;
+    internal readonly Color32[] Colors;
 
-    internal PlayerSnapshotTailState(float offsetX, float offsetY, float rotation, bool flipped,
-        PlayerSnapshotByteColor[] colors)
+    internal PlayerSnapshotTailState(float offsetX, float offsetY, float rotation, bool flipped, Color32[] colors)
     {
         OffsetX = offsetX;
         OffsetY = offsetY;
@@ -350,65 +342,14 @@ internal readonly struct PlayerSnapshotTailState
     }
 }
 
-internal readonly struct PlayerSnapshotByteColor
-{
-    internal readonly byte Red, Green, Blue, Alpha;
-
-    internal PlayerSnapshotByteColor(byte red, byte green, byte blue, byte alpha)
-    {
-        Red = red;
-        Green = green;
-        Blue = blue;
-        Alpha = alpha;
-    }
-}
-
-internal readonly struct PlayerSnapshotColor
-{
-    internal readonly float Red, Green, Blue, Alpha;
-
-    internal PlayerSnapshotColor(float red, float green, float blue, float alpha)
-    {
-        Red = red;
-        Green = green;
-        Blue = blue;
-        Alpha = alpha;
-    }
-}
-
-internal readonly struct PlayerSnapshotTransform
-{
-    internal readonly float X, Y, Rotation;
-
-    internal PlayerSnapshotTransform(float x, float y, float rotation)
-    {
-        X = x;
-        Y = y;
-        Rotation = rotation;
-    }
-}
-
-internal readonly struct PlayerSnapshotVector3
-{
-    internal readonly float X, Y, Z;
-
-    internal PlayerSnapshotVector3(float x, float y, float z)
-    {
-        X = x;
-        Y = y;
-        Z = z;
-    }
-}
-
 internal readonly struct PlayerSnapshotLineState
 {
     internal readonly bool Visible, UsesWorldSpace;
-    internal readonly PlayerSnapshotColor StartColor, EndColor;
+    internal readonly Color32 StartColor, EndColor;
     internal readonly float StartWidth, EndWidth;
-    internal readonly PlayerSnapshotVector3[] Points;
+    internal readonly Vector3[] Points;
 
-    internal PlayerSnapshotLineState(bool visible, bool usesWorldSpace, PlayerSnapshotColor startColor,
-        PlayerSnapshotColor endColor, float startWidth, float endWidth, PlayerSnapshotVector3[] points)
+    internal PlayerSnapshotLineState(bool visible, bool usesWorldSpace, Color32 startColor, Color32 endColor, float startWidth, float endWidth, Vector3[] points)
     {
         Visible = visible;
         UsesWorldSpace = usesWorldSpace;
@@ -423,9 +364,9 @@ internal readonly struct PlayerSnapshotLineState
 internal readonly struct PlayerSnapshotScarfState
 {
     internal readonly bool Visible;
-    internal readonly PlayerSnapshotColor StartColor, EndColor;
+    internal readonly Color32 StartColor, EndColor;
 
-    internal PlayerSnapshotScarfState(bool visible, PlayerSnapshotColor startColor, PlayerSnapshotColor endColor)
+    internal PlayerSnapshotScarfState(bool visible, Color32 startColor, Color32 endColor)
     {
         Visible = visible;
         StartColor = startColor;
@@ -437,9 +378,9 @@ internal readonly struct PlayerSnapshotRendererState
 {
     internal readonly string Path;
     internal readonly bool Visible, FlipX, FlipY;
-    internal readonly PlayerSnapshotColor Color;
+    internal readonly Color32 Color;
 
-    internal PlayerSnapshotRendererState(string path, bool visible, PlayerSnapshotColor color, bool flipX, bool flipY)
+    internal PlayerSnapshotRendererState(string path, bool visible, Color32 color, bool flipX, bool flipY)
     {
         Path = path;
         Visible = visible;
@@ -454,9 +395,9 @@ internal readonly struct PlayerSnapshotLightState
     internal readonly string Path;
     internal readonly bool Visible;
     internal readonly float Intensity;
-    internal readonly PlayerSnapshotColor Color;
+    internal readonly Color32 Color;
 
-    internal PlayerSnapshotLightState(string path, bool visible, float intensity, PlayerSnapshotColor color)
+    internal PlayerSnapshotLightState(string path, bool visible, float intensity, Color32 color)
     {
         Path = path;
         Visible = visible;
@@ -471,8 +412,7 @@ internal readonly struct PlayerSnapshotVisualState
     internal readonly PlayerSnapshotLightState[] Lights;
     internal readonly byte[] FacialExpressions;
 
-    internal PlayerSnapshotVisualState(PlayerSnapshotRendererState[] renderers, PlayerSnapshotLightState[] lights,
-        byte[] facialExpressions)
+    internal PlayerSnapshotVisualState(PlayerSnapshotRendererState[] renderers, PlayerSnapshotLightState[] lights, byte[] facialExpressions)
     {
         Renderers = renderers;
         Lights = lights;
