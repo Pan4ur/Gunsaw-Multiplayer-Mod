@@ -1137,13 +1137,6 @@ internal sealed class WorldReplication : MonoBehaviour
         return new WorldInputPacket(states);
     }
 
-    private void ApplyPushes(ushort peerId, WorldInputPacket packet)
-    {
-        var writer = new PacketWriter(2 + packet.States.Length * 36);
-        packet.Write(ref writer);
-        ApplyPushes(peerId, writer.ToArray());
-    }
-
     private WorldDamagePacket SerializeDamage()
     {
         var entries = new WorldDamageEntry[damage.Count];
@@ -1156,60 +1149,45 @@ internal sealed class WorldReplication : MonoBehaviour
         return new WorldDamagePacket(entries);
     }
 
-    private void ApplyPushes(ushort peerId, byte[] data)
+    private void ApplyPushes(ushort peerId, WorldInputPacket packet)
     {
-        try
+        foreach (var state in packet.States)
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
+            var id = ResolveWireId(state.BodyId);
+            var predicted = new ClientBodyState
             {
-                var count = reader.ReadUInt16();
-                for (var index = 0; index < count; index++)
-                {
-                    var id = ResolveWireId(reader.ReadUInt64());
-                    var predicted = new ClientBodyState
-                    {
-                        position = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-                        rotation = reader.ReadSingle(),
-                        velocity = new Vector2(reader.ReadSingle(), reader.ReadSingle()),
-                        angularVelocity = reader.ReadSingle()
-                    };
-                    Rigidbody2D body;
-                    if (!bodies.bodies.TryGetValue(id, out body) || body == null)
-                    {
-                        continue;
-                    }
-                    if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body) && !WorldBodyReplication.IsClientAuthorityJointBody(body))
-                    {
-                        continue;
-                    }
-                    PropAuthority authority;
-                    if (bodies.propAuthorities.TryGetValue(id, out authority) &&
-                        authority.expiresAt >= Time.unscaledTime && authority.peerId != peerId)
-                    {
-                        continue;
-                    }
-                    if ((body.position - predicted.position).sqrMagnitude > 9f)
-                    {
-                        continue;
-                    }
-                    bodies.propAuthorities[id] = new PropAuthority
-                    {
-                        peerId = peerId,
-                        expiresAt = Time.unscaledTime + ClientAuthorityGrace
-                    };
-                    body.simulated = true;
-                    body.bodyType = RigidbodyType2D.Dynamic;
-                    body.position = predicted.position;
-                    body.rotation = predicted.rotation;
-                    body.velocity = predicted.velocity;
-                    body.angularVelocity = predicted.angularVelocity;
-                    body.WakeUp();
-                }
-            }
-        }
-        catch (EndOfStreamException e)
-        {
-            GunsawMultiplayerPlugin.LogInfo("Dropped truncated world input: " + e.Message);
+                position = new Vector2(state.PositionX, state.PositionY),
+                rotation = state.Rotation,
+                velocity = new Vector2(state.VelocityX, state.VelocityY),
+                angularVelocity = state.AngularVelocity
+            };
+            Rigidbody2D body;
+            
+            if (!bodies.bodies.TryGetValue(id, out body) || body == null)
+                continue;
+           
+            if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body) && !WorldBodyReplication.IsClientAuthorityJointBody(body))
+                continue;
+           
+            PropAuthority authority;
+            if (bodies.propAuthorities.TryGetValue(id, out authority) && authority.expiresAt >= Time.unscaledTime && authority.peerId != peerId)
+                continue;
+            
+            if ((body.position - predicted.position).sqrMagnitude > 9f)
+                continue;
+            
+            bodies.propAuthorities[id] = new PropAuthority
+            {
+                peerId = peerId,
+                expiresAt = Time.unscaledTime + ClientAuthorityGrace
+            };
+            body.simulated = true;
+            body.bodyType = RigidbodyType2D.Dynamic;
+            body.position = predicted.position;
+            body.rotation = predicted.rotation;
+            body.velocity = predicted.velocity;
+            body.angularVelocity = predicted.angularVelocity;
+            body.WakeUp();
         }
     }
 
