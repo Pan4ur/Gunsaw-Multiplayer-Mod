@@ -126,24 +126,8 @@ internal static partial class MultiplayerSession
     internal static bool TryTakeNpcSpeech(out ushort peerId, out NpcSpeechPacket packet)
         => TryTakePacket(npcSpeech, out peerId, out packet);
 
-    internal static bool TryTakeWorldInteraction(out ushort peerId, out byte[] data)
-    {
-        lock (statusLock)
-        {
-            if (worldInteractions.Count == 0)
-            {
-                peerId = 0;
-                data = null;
-                return false;
-            }
-            var item = worldInteractions.Dequeue();
-            peerId = item.PeerId;
-            var writer = new PacketWriter(32);
-            item.Packet.Write(ref writer);
-            data = writer.ToArray();
-            return true;
-        }
-    }
+    internal static bool TryTakeWorldInteraction(out ushort peerId, out WorldInteractionPacket packet)
+        => TryTakePacket(worldInteractions, out peerId, out packet);
 
     internal static bool TryTakePlayerDamage(out ushort peerId, out PlayerDamagePacket packet)
     {
@@ -284,21 +268,6 @@ internal static partial class MultiplayerSession
             message = chat == null ? "" : chat.Message;
             return !string.IsNullOrEmpty(message);
         }
-    }
-
-    // TODO remove the legacy shit
-    internal static void SendWorldInteraction(byte[] serialized)
-    {
-        if (serialized == null || !IsConnected || IsHost) return;
-        try
-        {
-            var reader = new PacketReader(serialized);
-            Send(WorldInteractionPacket.Read(ref reader), 1);
-        }
-        catch (System.IO.InvalidDataException) { }
-        catch (System.IndexOutOfRangeException) { }
-        catch (System.IO.IOException) { }
-        catch (ObjectDisposedException) { }
     }
 
     private static bool TryTakePayload(Queue<PeerPayload> queue, out ushort peerId, out byte[] data)

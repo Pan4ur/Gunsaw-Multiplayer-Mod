@@ -87,7 +87,6 @@ internal static partial class MultiplayerSession
     private static readonly byte[] observerKillHeader = PacketHeader.Create(PacketType.ObserverKill);
     private static readonly byte[] graffitiHeader = PacketHeader.Create(PacketType.Graffiti);
     private static readonly byte[] headlampHeader = PacketHeader.Create(PacketType.Headlamp);
-    private static readonly byte[] playerPerformanceHeader = PacketHeader.Create(PacketType.PlayerPerformance);
     private static readonly byte[] playerKillHeader = PacketHeader.Create(PacketType.PlayerKill);
     private static readonly byte[] killScreenEffectHeader = PacketHeader.Create(PacketType.KillScreenEffect);
     

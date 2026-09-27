@@ -28,48 +28,32 @@ public class DroppedWeaponReplication
         if (slot < 0 || slot >= body.weapons.Count || slot >= body.weaponAmmos.Count ||
             body.weapons[slot] == null) return false;
 
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write((byte) WorldReplication.WorldInteraction.WeaponDrop);
-            writer.Write(0UL);
-            writer.Write(slot);
-            writer.Write(NetworkWireId.FromString(body.weapons[slot].name));
-            writer.Write(body.weaponAmmos[slot]);
-            writer.Write(false);
-            writer.Write(body.transform.position.x);
-            writer.Write(body.transform.position.y);
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.WeaponDrop, 0UL, slot, NetworkWireId.FromString(body.weapons[slot].name), body.weaponAmmos[slot], false, body.transform.position.x, body.transform.position.y), 1);
         return true;
     }
     
-    internal void QueueWeaponInteraction(DroppedWeapon dropped, BodyScript body, byte operation)
+    internal void QueueWeaponInteraction(DroppedWeapon dropped, BodyScript body, InteractionType type)
     {
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || dropped == null || body == null ||
             PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        if (type != InteractionType.WeaponPickup && type != InteractionType.WeaponAmmoGet) return;
         var rigidbody = dropped.GetComponent<Rigidbody2D>();
         if (rigidbody == null) rigidbody = dropped.GetComponentInChildren<Rigidbody2D>(true);
         if (rigidbody == null || !WorldBodyReplication.IsWorldBody(rigidbody)) return;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            var id = WorldReplication.Instance.Id(rigidbody);
-            writer.Write(operation);
-            writer.Write(WorldReplication.Instance.WireId(id));
-            var slot = dropped.stats == null ? -1 : dropped.stats.slot;
-            var oldWeapon = slot >= 0 && slot < body.weapons.Count ? body.weapons[slot] : null;
-            var oldAmmo = slot >= 0 && slot < body.weaponAmmos.Count ? body.weaponAmmos[slot] : 0;
-            if ((WorldReplication.WorldInteraction) operation == WorldReplication.WorldInteraction.WeaponPickup && oldWeapon == null)
-                WorldReplication.Instance.pendingDestroyedWeaponPickups[id] = Time.unscaledTime + 1.5f;
-            writer.Write(slot);
-            writer.Write(NetworkWireId.FromString(oldWeapon == null ? "" : oldWeapon.name));
-            writer.Write(oldAmmo);
-            writer.Write(dropped.stats != null && body.weapons.Contains(dropped.stats));
-            writer.Write(body.transform.position.x);
-            writer.Write(body.transform.position.y);
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        var id = WorldReplication.Instance.Id(rigidbody);
+        var targetId = WorldReplication.Instance.WireId(id);
+        var slot = dropped.stats == null ? -1 : dropped.stats.slot;
+        var oldWeapon = slot >= 0 && slot < body.weapons.Count ? body.weapons[slot] : null;
+        var oldAmmo = slot >= 0 && slot < body.weaponAmmos.Count ? body.weaponAmmos[slot] : 0;
+        if (type == InteractionType.WeaponPickup && oldWeapon == null)
+            WorldReplication.Instance.pendingDestroyedWeaponPickups[id] = Time.unscaledTime + 1.5f;
+        var oldWeaponId = NetworkWireId.FromString(oldWeapon == null ? "" : oldWeapon.name);
+        var clientOwnsWeapon = dropped.stats != null && body.weapons.Contains(dropped.stats);
+        var position = body.transform.position;
+        var packet = type == InteractionType.WeaponPickup
+            ? new WorldInteractionPacket(InteractionType.WeaponPickup, targetId, slot, oldWeaponId, oldAmmo, clientOwnsWeapon, position.x, position.y)
+            : new WorldInteractionPacket(InteractionType.WeaponAmmoGet, targetId, slot, oldWeaponId, oldAmmo, clientOwnsWeapon, position.x, position.y);
+        MultiplayerSession.Send(packet, 1);
     }
     
     internal Rigidbody2D CreateDroppedWeapon(string id, ulong weaponId, int ammo, Vector2 position, float rotation)

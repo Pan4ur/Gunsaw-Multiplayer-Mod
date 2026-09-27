@@ -419,7 +419,7 @@ public class WorldEnvironmentReplication
     {
         if (string.IsNullOrEmpty(id) || WorldReplication.Instance.destroyedLamps.Contains(id)) return;
         ApplyRemoteLampBreak(id, point);
-        MultiplayerSession.Send(WorldInteractionPacket.LampBreak(WorldReplication.Instance.WireId(id), point.x, point.y));
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.LampBreak, WorldReplication.Instance.WireId(id), positionX: point.x, positionY: point.y));
     }
 
     internal void ApplyRemoteLampBreak(string id, Vector2 point)

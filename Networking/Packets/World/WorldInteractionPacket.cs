@@ -1,4 +1,4 @@
-internal enum WorldInteractionOperation : byte
+internal enum InteractionType : byte
 {
     WeaponPickup = 1,
     WeaponAmmoGet = 2,
@@ -15,7 +15,7 @@ internal enum WorldInteractionOperation : byte
 
 internal readonly struct WorldInteractionPacket : INetworkPacket
 {
-    internal readonly WorldInteractionOperation Operation;
+    internal readonly InteractionType InteractionType;
     internal readonly ulong TargetId;
     internal readonly int WeaponSlot;
     internal readonly ulong PreviousWeaponId;
@@ -28,12 +28,10 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
     internal readonly bool Manual;
     internal readonly bool Collision;
 
-    private WorldInteractionPacket(WorldInteractionOperation operation, ulong targetId, int weaponSlot = 0,
-        ulong previousWeaponId = 0, int previousAmmo = 0, bool clientOwnsWeapon = false,
-        float positionX = 0f, float positionY = 0f, float positionZ = 0f, float damage = 0f,
-        bool manual = false, bool collision = false)
+    public WorldInteractionPacket(InteractionType type, ulong targetId, int weaponSlot = 0, ulong previousWeaponId = 0, int previousAmmo = 0,
+        bool clientOwnsWeapon = false, float positionX = 0f, float positionY = 0f, float positionZ = 0f, float damage = 0f, bool manual = false, bool collision = false)
     {
-        Operation = operation;
+        InteractionType = type;
         TargetId = targetId;
         WeaponSlot = weaponSlot;
         PreviousWeaponId = previousWeaponId;
@@ -47,78 +45,38 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
         Collision = collision;
     }
 
-    internal static WorldInteractionPacket WeaponPickup(ulong targetId, int weaponSlot, ulong previousWeaponId,
-        int previousAmmo, bool clientOwnsWeapon, float positionX, float positionY)
-        => new WorldInteractionPacket(WorldInteractionOperation.WeaponPickup, targetId, weaponSlot,
-            previousWeaponId, previousAmmo, clientOwnsWeapon, positionX, positionY);
-
-    internal static WorldInteractionPacket WeaponAmmoGet(ulong targetId, int weaponSlot, ulong previousWeaponId,
-        int previousAmmo, bool clientOwnsWeapon, float positionX, float positionY)
-        => new WorldInteractionPacket(WorldInteractionOperation.WeaponAmmoGet, targetId, weaponSlot,
-            previousWeaponId, previousAmmo, clientOwnsWeapon, positionX, positionY);
-
-    internal static WorldInteractionPacket WeaponDrop(int weaponSlot, ulong weaponId, int ammo,
-        float positionX, float positionY)
-        => new WorldInteractionPacket(WorldInteractionOperation.WeaponDrop, 0UL, weaponSlot, weaponId,
-            ammo, false, positionX, positionY);
-
-    internal static WorldInteractionPacket ButtonActivate(ulong targetId)
-        => new WorldInteractionPacket(WorldInteractionOperation.ButtonActivate, targetId);
-
-    internal static WorldInteractionPacket DoorActivate(ulong targetId)
-        => new WorldInteractionPacket(WorldInteractionOperation.DoorActivate, targetId);
-
-    internal static WorldInteractionPacket ZoneActivate(ulong targetId, bool manual)
-        => new WorldInteractionPacket(WorldInteractionOperation.ZoneActivate, targetId, manual: manual);
-
-    internal static WorldInteractionPacket GlassDamage(ulong targetId, float damage, float positionX,
-        float positionY, float positionZ)
-        => new WorldInteractionPacket(WorldInteractionOperation.GlassDamage, targetId, positionX: positionX,
-            positionY: positionY, positionZ: positionZ, damage: damage);
-
-    internal static WorldInteractionPacket VehicleDamage(ulong targetId, float damage, bool collision)
-        => new WorldInteractionPacket(WorldInteractionOperation.VehicleDamage, targetId, damage: damage,
-            collision: collision);
-
-    internal static WorldInteractionPacket DroneDamage(ulong targetId, float damage)
-        => new WorldInteractionPacket(WorldInteractionOperation.DroneDamage, targetId, damage: damage);
-
-    internal static WorldInteractionPacket LampBreak(ulong targetId, float x, float y)
-        => new WorldInteractionPacket(WorldInteractionOperation.LampBreak, targetId, positionX: x, positionY: y);
-
-    internal static WorldInteractionPacket LampHistoryRequest()
-        => new WorldInteractionPacket(WorldInteractionOperation.LampHistoryRequest, 0UL);
-
     public PacketType Type => PacketType.WorldInteraction;
 
     public void Write(ref PacketWriter writer)
     {
-        writer.WriteByte((byte)Operation);
+        writer.WriteByte((byte)InteractionType);
         writer.WriteUInt64(TargetId);
-        switch (Operation)
+        switch (InteractionType)
         {
-            case WorldInteractionOperation.ButtonActivate:
-            case WorldInteractionOperation.DoorActivate:
+            case InteractionType.ButtonActivate:
+            case InteractionType.DoorActivate:
                 return;
-            case WorldInteractionOperation.ZoneActivate:
+            case InteractionType.ZoneActivate:
                 writer.WriteBoolean(Manual);
                 return;
-            case WorldInteractionOperation.GlassDamage:
+            case InteractionType.GlassDamage:
                 writer.WriteSingle(Damage);
                 writer.WriteSingle(PositionX);
                 writer.WriteSingle(PositionY);
                 writer.WriteSingle(PositionZ);
                 return;
-            case WorldInteractionOperation.VehicleDamage:
+            case InteractionType.VehicleDamage:
                 writer.WriteSingle(Damage);
                 writer.WriteBoolean(Collision);
                 return;
-            case WorldInteractionOperation.DroneDamage:
+            case InteractionType.DroneDamage:
                 writer.WriteSingle(Damage);
                 return;
-            case WorldInteractionOperation.LampBreak:
-                writer.WriteSingle(PositionX); writer.WriteSingle(PositionY); return;
-            case WorldInteractionOperation.LampHistoryRequest:
+            case InteractionType.LampBreak:
+                writer.WriteSingle(PositionX); 
+                writer.WriteSingle(PositionY);
+                return;
+            case InteractionType.LampHistoryRequest:
                 return;
             default:
                 writer.WriteInt32(WeaponSlot);
@@ -133,34 +91,23 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
 
     internal static WorldInteractionPacket Read(ref PacketReader reader)
     {
-        var operation = (WorldInteractionOperation)reader.ReadByte();
+        var operation = (InteractionType)reader.ReadByte();
         var targetId = reader.ReadUInt64();
         switch (operation)
         {
-            case WorldInteractionOperation.ButtonActivate: return ButtonActivate(targetId);
-            case WorldInteractionOperation.DoorActivate: return DoorActivate(targetId);
-            case WorldInteractionOperation.ZoneActivate: return ZoneActivate(targetId, reader.Remaining > 0 && reader.ReadBoolean());
-            case WorldInteractionOperation.GlassDamage:
-                return GlassDamage(targetId, reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
-            case WorldInteractionOperation.VehicleDamage: return VehicleDamage(targetId, reader.ReadSingle(), reader.ReadBoolean());
-            case WorldInteractionOperation.DroneDamage: return DroneDamage(targetId, reader.ReadSingle());
-            case WorldInteractionOperation.LampBreak: return LampBreak(targetId, reader.ReadSingle(), reader.ReadSingle());
-            case WorldInteractionOperation.LampHistoryRequest: return LampHistoryRequest();
-            case WorldInteractionOperation.WeaponPickup:
-                return WeaponPickup(targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(),
-                    reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
-            case WorldInteractionOperation.WeaponAmmoGet:
-                return WeaponAmmoGet(targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(),
-                    reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
-            case WorldInteractionOperation.WeaponDrop:
-            {
-                var slot = reader.ReadInt32();
-                var weaponId = reader.ReadUInt64();
-                var ammo = reader.ReadInt32();
-                reader.ReadBoolean();
-                return WeaponDrop(slot, weaponId, ammo, reader.ReadSingle(), reader.ReadSingle());
-            }
-            default: throw new System.IO.InvalidDataException("Unknown world interaction operation.");
+            case InteractionType.ButtonActivate: return new WorldInteractionPacket(InteractionType.ButtonActivate, targetId);
+            case InteractionType.DoorActivate: return new WorldInteractionPacket(InteractionType.DoorActivate, targetId);
+            case InteractionType.ZoneActivate: return new WorldInteractionPacket(InteractionType.ZoneActivate,targetId, manual: reader.ReadBoolean());
+            case InteractionType.GlassDamage: return new WorldInteractionPacket(InteractionType.GlassDamage, targetId, positionX: reader.ReadSingle(), positionY: reader.ReadSingle(), positionZ: reader.ReadSingle(), damage: reader.ReadSingle());
+            case InteractionType.VehicleDamage: return new WorldInteractionPacket(InteractionType.VehicleDamage, targetId, damage: reader.ReadSingle(), collision: reader.ReadBoolean());
+            case InteractionType.DroneDamage: return new WorldInteractionPacket(InteractionType.DroneDamage, targetId, damage: reader.ReadSingle());
+            case InteractionType.LampBreak: return new WorldInteractionPacket(InteractionType.LampBreak, targetId, positionX: reader.ReadSingle(), positionY: reader.ReadSingle());
+            case InteractionType.LampHistoryRequest: return new WorldInteractionPacket(InteractionType.LampHistoryRequest, 0UL);
+            case InteractionType.WeaponPickup: return new WorldInteractionPacket(InteractionType.WeaponPickup, targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
+            case InteractionType.WeaponAmmoGet: return new WorldInteractionPacket(InteractionType.WeaponAmmoGet, targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
+            case InteractionType.WeaponDrop: return new WorldInteractionPacket(InteractionType.WeaponDrop, 0UL, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(), reader.ReadBoolean() ? false : false, reader.ReadSingle(), reader.ReadSingle());
+            
+            default: throw new InvalidDataException("Unknown world interaction operation.");
         }
     }
 }

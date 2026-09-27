@@ -1045,7 +1045,7 @@ internal static class ClientDroppedWeaponPickupPatch
     private static void Prefix(DroppedWeapon __instance, BodyScript body)
     {
         if (GunsawMultiplayerPlugin.World != null)
-            GunsawMultiplayerPlugin.World.weapons.QueueWeaponInteraction(__instance, body, (byte) WorldReplication.WorldInteraction.WeaponPickup);
+            GunsawMultiplayerPlugin.World.weapons.QueueWeaponInteraction(__instance, body, InteractionType.WeaponPickup);
     }
 }
 
@@ -1089,7 +1089,7 @@ internal static class ClientDroppedWeaponAmmoPatch
         pendingWeapons[weaponId] = now + 5f;
 
         __instance.pickupCool = -1f;
-        world.weapons.QueueWeaponInteraction(__instance, body, (byte) WorldReplication.WorldInteraction.WeaponAmmoGet);
+        world.weapons.QueueWeaponInteraction(__instance, body, InteractionType.WeaponAmmoGet);
 
         return true;
     }

@@ -6,21 +6,6 @@ internal sealed class WorldReplication : MonoBehaviour
 {
     internal static WorldReplication Instance;
     
-    internal enum WorldInteraction : byte
-    {
-        WeaponPickup = 1,
-        WeaponAmmoGet = 2,
-        ButtonActivate = 3,
-        DoorActivate = 4,
-        ZoneActivate = 5,
-        GlassDamage = 6,
-        VehicleDamage = 7,
-        DroneDamage = 8,
-        WeaponDrop = 9,
-        LampBreak = 10,
-        LampHistoryRequest = 11
-    }
-
     // Ill just leave it like this for now (It's becoming painful to drive the karts)
     private const float SnapshotInterval = 1f / 50f;
 
@@ -288,10 +273,10 @@ internal sealed class WorldReplication : MonoBehaviour
                 enviroment.UpdateButtonReactivationPrompt();
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, zonePromptStarted);
                 var inputStarted = MultiplayerPerformance.StartPhase();
-                byte[] interaction;
+                WorldInteractionPacket interaction;
                 ushort interactionPeer;
                 while (MultiplayerSession.TryTakeWorldInteraction(out interactionPeer, out interaction))
-                    ApplyWeaponInteraction(interactionPeer, interaction);
+                    ApplyWorldInteraction(interactionPeer, interaction);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldInput, inputStarted);
                 return;
             }
@@ -305,7 +290,7 @@ internal sealed class WorldReplication : MonoBehaviour
                 lampHistoryRequested = true;
                 RequestLampHistory();
             }
-            byte[] remoteInteraction; ushort remotePeer;
+            WorldInteractionPacket remoteInteraction; ushort remotePeer;
             while (MultiplayerSession.TryTakeWorldInteraction(out remotePeer, out remoteInteraction)) ApplyRemoteLampBreak(remoteInteraction);
 
             byte[] snapshot;
@@ -1087,43 +1072,24 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal void QueueButtonActivation(ButtonScript button)
     {
-        if (MultiplayerSession.IsHost || button == null) return;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || button == null) return;
         var id = ButtonId(button);
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write((byte) WorldInteraction.ButtonActivate);
-            writer.Write(WireId(id));
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.ButtonActivate, WireId(id)), 1);
     }
 
     internal void QueueDoorActivation(QDoorOpen opener)
     {
-        if (MultiplayerSession.IsHost || opener == null) return;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write((byte) WorldInteraction.DoorActivate);
-            writer.Write(WireId(ProximityDoorId(opener)));
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || opener == null) return;
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.DoorActivate, WireId(ProximityDoorId(opener))), 1);
     }
 
     //TODO
     internal void QueueZoneActivation(ActivateZoneScript zone, bool manual = false)
     {
-        if (MultiplayerSession.IsHost || zone == null) return;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || zone == null) return;
         var id = ActivationZoneId(zone);
         if (!manual) localZonePrompts.Add(id);
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write((byte) WorldInteraction.ZoneActivate);
-            writer.Write(WireId(id));
-            writer.Write(manual);
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.ZoneActivate, WireId(id), manual: manual), 1);
     }
 
     internal void NotifyButtonActivated(ButtonScript button)
@@ -1135,33 +1101,17 @@ internal sealed class WorldReplication : MonoBehaviour
         buttonActivations[id] = count + 1;
     }
 
-    internal void QueueGlassDamage(GlassScript glass, float damage, Vector3 bulletPosition)
+    internal void QueueGlassDamage(GlassScript glass, float damage, Vector3 pos)
     {
-        if (MultiplayerSession.IsHost || glass == null || damage <= 0f) return;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || glass == null || damage <= 0f) return;
         var id = GlassId(glass);
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write((byte) WorldInteraction.GlassDamage);
-            writer.Write(WireId(id));
-            writer.Write(damage);
-            writer.Write(bulletPosition.x); writer.Write(bulletPosition.y); writer.Write(bulletPosition.z);
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.GlassDamage, WireId(id), damage: damage, positionX: pos.x, positionY: pos.y, positionZ: pos.z), 1);
     }
 
     internal void QueueVehicleDamage(VehiclePart part, float amount, bool collision)
     {
-        if (MultiplayerSession.IsHost || part == null || part.rb == null || amount <= 0f) return;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write((byte) WorldInteraction.VehicleDamage);
-            writer.Write(WireId(Id(part.rb)));
-            writer.Write(Mathf.Min(100f, amount));
-            writer.Write(collision);
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || part == null || part.rb == null || amount <= 0f) return;
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.VehicleDamage,WireId(Id(part.rb)), damage: Mathf.Min(100f, amount), collision: collision), 1);
     }
 
     private WorldInputPacket SerializePushes()
@@ -1276,166 +1226,168 @@ internal sealed class WorldReplication : MonoBehaviour
         }
     }
 
-    private void ApplyWeaponInteraction(ushort peerId, byte[] data)
+    private void ApplyWorldInteraction(ushort peerId, WorldInteractionPacket packet)
     {
-        try
+        var type = packet.InteractionType;
+        var id = ResolveWireId(packet.TargetId);
+
+        switch (type)
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                var operation = (WorldInteraction) reader.ReadByte();
-                var id = ResolveWireId(reader.ReadUInt64());
-                if (operation == WorldInteraction.LampHistoryRequest)
-                {
-                    SendLampHistory(peerId);
-                    return;
-                }
-                if (operation == WorldInteraction.ButtonActivate)
-                {
-                    enviroment.ApplyButtonActivation(id, peerId);
-                    return;
-                }
-                if (operation == WorldInteraction.DoorActivate)
-                {
-                    enviroment.ApplyDoorActivation(id, peerId);
-                    return;
-                }
-                if (operation == WorldInteraction.ZoneActivate)
-                {
-                    enviroment.ApplyZoneActivation(id, peerId, reader.BaseStream.Position < reader.BaseStream.Length && reader.ReadBoolean());
-                    return;
-                }
-                if (operation == WorldInteraction.GlassDamage)
-                {
-                    enviroment.ApplyGlassDamage(id, peerId, reader.ReadSingle(),
-                        new Vector3(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle()));
-                    return;
-                }
-                if (operation == WorldInteraction.VehicleDamage)
-                {
-                    ApplyVehicleDamage(id, peerId, reader.ReadSingle(), reader.ReadBoolean());
-                    return;
-                }
-                if (operation == WorldInteraction.DroneDamage)
-                {
-                    enviroment.ApplyDroneDamage(id, reader.ReadSingle());
-                    return;
-                }
-                if (operation == WorldInteraction.LampBreak)
-                {
-                    enviroment.ApplyClientLampBreak(id, new Vector2(reader.ReadSingle(), reader.ReadSingle())); return;
-                }
-                var slot = reader.ReadInt32();
-                var oldWeaponId = reader.ReadUInt64();
-                var oldAmmo = reader.ReadInt32();
-                var clientOwnsWeapon = reader.ReadBoolean();
-                var requestedPosition = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                Rigidbody2D rigidbody;
-                var remoteBody = NetworkAvatarManager.RemoteBodyForPeer(peerId);
-                if (operation == WorldInteraction.WeaponDrop)
-                {
-                    var requestedWeapon = WeaponPresetProvider.FindWeaponPresetByNameHash(oldWeaponId);
-                    if (remoteBody == null || !remoteBody.isAlive || requestedWeapon == null || slot < 0 ||
-                        slot >= remoteBody.weapons.Count || slot >= remoteBody.weaponAmmos.Count ||
-                        (requestedPosition - (Vector2)remoteBody.transform.position).sqrMagnitude > 25f)
-                    {
-                        return;
-                    }
-                    if (remoteBody.weapons[slot] != null &&
-                        NetworkWireId.FromString(remoteBody.weapons[slot].name) != oldWeaponId)
-                    {
-                        return;
-                    }
-                    remoteBody.weapons[slot] = requestedWeapon;
-                    remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
-                    remoteBody.ChangeWeapon(slot);
-                    if (remoteBody.weapon != null) remoteBody.weapon.ammo = remoteBody.weaponAmmos[slot];
-                    remoteBody.DropWeaponSingle();
-                    return;
-                }
-                if ((operation != WorldInteraction.WeaponPickup && operation != WorldInteraction.WeaponAmmoGet) || remoteBody == null ||
-                    !remoteBody.isAlive || !bodies.bodies.TryGetValue(id, out rigidbody) || rigidbody == null)
-                {
-                    return;
-                }
-                if (MultiplayerSession.GunGameEnabled && remoteBody.isPlayer && operation == WorldInteraction.WeaponPickup) return;
-                var dropped = rigidbody.GetComponentInParent<DroppedWeapon>();
-                if (dropped == null || (requestedPosition - (Vector2)dropped.transform.position).sqrMagnitude > 25f)
-                {
-                    return;
-                }
-                if (operation == WorldInteraction.WeaponPickup && (slot < 0 || slot >= remoteBody.weapons.Count ||
-                                                                   slot >= remoteBody.weaponAmmos.Count || dropped.stats == null))
-                {
-                    return;
-                }
-                if (operation == WorldInteraction.WeaponAmmoGet && clientOwnsWeapon && dropped.stats != null &&
-                    slot >= 0 && slot < remoteBody.weapons.Count)
-                {
-                    remoteBody.weapons[slot] = dropped.stats;
-                }
-                var wasPlayer = remoteBody.isPlayer;
-                remoteBody.isPlayer = false;
-                try
-                {
-                    if (operation == WorldInteraction.WeaponPickup)
-                    {
-                        var pickedWeapon = dropped.stats;
-                        var previousWeapon = slot >= 0 && slot < remoteBody.weapons.Count
-                            ? remoteBody.weapons[slot] : null;
-                        remoteBody.weapons[slot] = WeaponPresetProvider.FindWeaponPresetByNameHash(oldWeaponId);
-                        remoteBody.weaponAmmos[slot] = Mathf.Max(0, oldAmmo);
-                        weapons.ReplaceDroppedWeaponWithPrevious(dropped, remoteBody, pickedWeapon);
-                        remoteBody.weapons[slot] = pickedWeapon;
-                        remoteBody.weaponAmmos[slot] = 0;
-                        remoteBody.ChangeWeapon(slot);
-                        if (previousWeapon == null)
-                            Destroy(dropped.gameObject);
-                    }
-                    else if (clientOwnsWeapon) dropped.AmmoGet(remoteBody);
-                    else weapons.UnloadDroppedWeapon(dropped);
-                }
-                finally { remoteBody.isPlayer = wasPlayer; }
-            }
-        }
-        catch (EndOfStreamException e)
-        {
-            GunsawMultiplayerPlugin.LogInfo("Dropped truncated world interaction: " + e.Message);
+            case InteractionType.LampHistoryRequest:
+                SendLampHistory(peerId);
+                return;
+
+            case InteractionType.ButtonActivate:
+                enviroment.ApplyButtonActivation(id, peerId);
+                return;
+
+            case InteractionType.DoorActivate:
+                enviroment.ApplyDoorActivation(id, peerId);
+                return;
+
+            case InteractionType.ZoneActivate:
+                enviroment.ApplyZoneActivation(id, peerId, packet.Manual);
+                return;
+
+            case InteractionType.GlassDamage:
+                enviroment.ApplyGlassDamage(id, peerId, packet.Damage, new Vector3(packet.PositionX, packet.PositionY, packet.PositionZ));
+                return;
+
+            case InteractionType.VehicleDamage:
+                ApplyVehicleDamage(id, peerId, packet.Damage, packet.Collision);
+                return;
+
+            case InteractionType.DroneDamage:
+                enviroment.ApplyDroneDamage(id, packet.Damage);
+                return;
+
+            case InteractionType.LampBreak:
+                enviroment.ApplyClientLampBreak(id, new Vector2(packet.PositionX, packet.PositionY));
+                return;
+
+            case InteractionType.WeaponDrop:
+            case InteractionType.WeaponPickup:
+            case InteractionType.WeaponAmmoGet:
+                ApplyWeaponInteraction(peerId, id, packet);
+                return;
         }
     }
 
-    private void ApplyRemoteLampBreak(byte[] data)
+    private void ApplyWeaponInteraction(ushort peerId, string id, WorldInteractionPacket packet)
     {
+        var type = packet.InteractionType;
+        var slot = packet.WeaponSlot;
+        var remoteBody = NetworkAvatarManager.RemoteBodyForPeer(peerId);
+        var requestedPosition = new Vector2(packet.PositionX, packet.PositionY);
+
+        if (type == InteractionType.WeaponDrop)
+        {
+            ApplyWeaponDrop(remoteBody, slot, packet.PreviousWeaponId, packet.PreviousAmmo, requestedPosition);
+            return;
+        }
+
+        if (remoteBody == null || !remoteBody.isAlive || !bodies.bodies.TryGetValue(id, out var rigidbody) || rigidbody == null)
+            return;
+
+        if (MultiplayerSession.GunGameEnabled && remoteBody.isPlayer && type == InteractionType.WeaponPickup)
+            return;
+
+        var dropped = rigidbody.GetComponentInParent<DroppedWeapon>();
+        if (dropped == null || (requestedPosition - (Vector2)dropped.transform.position).sqrMagnitude > 25f)
+            return;
+
+        if (type == InteractionType.WeaponPickup && (slot < 0 || slot >= remoteBody.weapons.Count || slot >= remoteBody.weaponAmmos.Count || dropped.stats == null))
+            return;
+
+        if (type == InteractionType.WeaponAmmoGet && packet.ClientOwnsWeapon && dropped.stats != null && slot >= 0 && slot < remoteBody.weapons.Count)
+            remoteBody.weapons[slot] = dropped.stats;
+
+        var wasPlayer = remoteBody.isPlayer;
+        remoteBody.isPlayer = false;
+
         try
         {
-            using (var reader = new BinaryReader(new MemoryStream(data)))
-            {
-                if ((WorldInteraction)reader.ReadByte() != WorldInteraction.LampBreak) return;
-                var id = ResolveWireId(reader.ReadUInt64());
-                enviroment.ApplyRemoteLampBreak(id, new Vector2(reader.ReadSingle(), reader.ReadSingle()));
-            }
+            if (type == InteractionType.WeaponPickup)
+                ApplyWeaponPickup(remoteBody, dropped, slot, packet.PreviousWeaponId, packet.PreviousAmmo);
+            else if (packet.ClientOwnsWeapon)
+                dropped.AmmoGet(remoteBody);
+            else
+                weapons.UnloadDroppedWeapon(dropped);
         }
-        catch (Exception e)
+        catch(Exception e)
         {
-            GunsawMultiplayerPlugin.LogInfo("Could not apply remote lamp break: " + e.GetType().Name + ": " + e.Message);
+            GunsawMultiplayerPlugin.LogInfo("Failed to apply weapon interaction: " + e);
         }
+        finally
+        {
+            remoteBody.isPlayer = wasPlayer;
+        }
+    }
+
+    private void ApplyWeaponDrop(BodyScript remoteBody, int slot, ulong previousWeaponId, int previousAmmo, Vector2 requestedPosition)
+    {
+        var requestedWeapon = WeaponPresetProvider.FindWeaponPresetByNameHash(previousWeaponId);
+
+        if (remoteBody == null ||
+            !remoteBody.isAlive ||
+            requestedWeapon == null ||
+            slot < 0 ||
+            slot >= remoteBody.weapons.Count ||
+            slot >= remoteBody.weaponAmmos.Count ||
+            (requestedPosition - (Vector2)remoteBody.transform.position).sqrMagnitude > 25f)
+            return;
+
+        var weapon = remoteBody.weapons[slot];
+        if (weapon != null && NetworkWireId.FromString(weapon.name) != previousWeaponId)
+            return;
+
+        remoteBody.weapons[slot] = requestedWeapon;
+        remoteBody.weaponAmmos[slot] = Mathf.Max(0, previousAmmo);
+        remoteBody.ChangeWeapon(slot);
+
+        if (remoteBody.weapon != null)
+            remoteBody.weapon.ammo = remoteBody.weaponAmmos[slot];
+
+        remoteBody.DropWeaponSingle();
+    }
+
+    private void ApplyWeaponPickup(BodyScript remoteBody, DroppedWeapon dropped, int slot, ulong prevWeaponId, int prevAmmo)
+    {
+        var pickedWeapon = dropped.stats;
+        var prevWeapon = remoteBody.weapons[slot];
+
+        remoteBody.weapons[slot] = WeaponPresetProvider.FindWeaponPresetByNameHash(prevWeaponId);
+        remoteBody.weaponAmmos[slot] = Mathf.Max(0, prevAmmo);
+
+        weapons.ReplaceDroppedWeaponWithPrevious(dropped, remoteBody, pickedWeapon);
+
+        remoteBody.weapons[slot] = pickedWeapon;
+        remoteBody.weaponAmmos[slot] = 0;
+        remoteBody.ChangeWeapon(slot);
+
+        if (prevWeapon == null)
+            Destroy(dropped.gameObject);
+    }
+
+    private void ApplyRemoteLampBreak(WorldInteractionPacket packet)
+    {
+        if (packet.InteractionType != InteractionType.LampBreak) return;
+        var id = ResolveWireId(packet.TargetId);
+        enviroment.ApplyRemoteLampBreak(id, new Vector2(packet.PositionX, packet.PositionY));
     }
 
     private void RequestLampHistory()
     {
-        var packet = WorldInteractionPacket.LampHistoryRequest();
-        var writer = new PacketWriter(16);
-        packet.Write(ref writer);
-        MultiplayerSession.SendWorldInteraction(writer.ToArray());
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.LampHistoryRequest, 0UL), 1);
     }
 
     private void SendLampHistory(ushort peerId)
     {
         enviroment.CaptureDestroyedLampIds(destroyedLamps);
         foreach (var id in destroyedLamps)
-        {
-            if (!lamps.TryGetValue(id, out var lamp)) continue;
-            MultiplayerSession.Send(WorldInteractionPacket.LampBreak(WireId(id), lamp.Position.x, lamp.Position.y), peerId);
-        }
+            if (lamps.TryGetValue(id, out var lamp))
+                MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.LampBreak, WireId(id), positionX: lamp.Position.x, positionY: lamp.Position.y), peerId);
     }
 
     internal static void NotifyShotLamp(RaycastHit2D hit)
@@ -1447,9 +1399,9 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (!MultiplayerSession.IsConnected || collider == null || !lampIds.TryGetValue(collider, out var id)) return;
         destroyedLamps.Add(id);
-        var packet = WorldInteractionPacket.LampBreak(WireId(id), point.x, point.y);
+        var packet = new WorldInteractionPacket(InteractionType.LampBreak, WireId(id), positionX: point.x, positionY: point.y);
         if (MultiplayerSession.IsHost) MultiplayerSession.Send(packet);
-        else { var writer = new PacketWriter(32); packet.Write(ref writer); MultiplayerSession.SendWorldInteraction(writer.ToArray()); }
+        else MultiplayerSession.Send(packet, 1);
     }
 
     private void ApplyVehicleDamage(string id, ushort peerId, float amount, bool collision)
@@ -1484,17 +1436,10 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal void QueueDroneDamage(DroneScript drone, float amount)
     {
-        if (MultiplayerSession.IsHost || drone == null || amount <= 0f) return;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || drone == null || amount <= 0f) return;
         var body = drone.GetComponent<Rigidbody2D>();
         if (body == null) return;
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
-        {
-            writer.Write((byte) WorldInteraction.DroneDamage);
-            writer.Write(WireId(Id(body)));
-            writer.Write(Mathf.Min(100f, amount));
-            MultiplayerSession.SendWorldInteraction(stream.ToArray());
-        }
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.DroneDamage, WireId(Id(body)), damage: Mathf.Min(100f, amount)), 1);
     }
 
     internal string GlassId(GlassScript glass)
