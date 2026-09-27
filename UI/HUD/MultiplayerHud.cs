@@ -603,11 +603,11 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 }
                 return;
             }
-            if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase)) return;
+            
+            if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) && !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase)) 
+                return;
 
             var namePrefix = input.Substring(separator).TrimStart();
-            AddPlayerSuggestion(MultiplayerSession.LocalPlayerName, commandName, namePrefix);
             foreach (var peerId in MultiplayerSession.PeerIds())
                 AddPlayerSuggestion(MultiplayerSession.PlayerName(peerId), commandName, namePrefix);
         }

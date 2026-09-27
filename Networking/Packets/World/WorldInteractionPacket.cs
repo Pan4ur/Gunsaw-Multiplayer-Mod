@@ -60,10 +60,10 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
                 writer.WriteBoolean(Manual);
                 return;
             case InteractionType.GlassDamage:
-                writer.WriteSingle(Damage);
                 writer.WriteSingle(PositionX);
                 writer.WriteSingle(PositionY);
                 writer.WriteSingle(PositionZ);
+                writer.WriteSingle(Damage);
                 return;
             case InteractionType.VehicleDamage:
                 writer.WriteSingle(Damage);
