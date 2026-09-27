@@ -50,6 +50,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         SetActive(hostPanel, MultiplayerSession.IsHosting);
         SetActive(playersPanel, Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
         SetActive(chatPanel, true);
+        chatOpenBackground.raycastTarget = hud.ChatOpen;
        // hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
        // hostText.gameObject.SetActive(null == PlayerScript.player || PlayerScript.player.canvasVisible);
         if (playersPanel.activeSelf) UpdatePlayers();

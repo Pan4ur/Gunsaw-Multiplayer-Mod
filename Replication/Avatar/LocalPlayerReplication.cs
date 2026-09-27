@@ -22,7 +22,6 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     private PlayerVisualState lastSerializedVisualState;
     private float nextVisualState;
     private float nextFullVisualSnapshot;
-    private float nextAvatarTrafficSample;
     private string lastSerializedInventory = "";
     protected float nextFullInventory;
     internal float forceFullInventoryUntil;

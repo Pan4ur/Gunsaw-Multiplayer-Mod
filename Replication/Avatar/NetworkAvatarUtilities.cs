@@ -527,17 +527,7 @@ internal static class NetworkAvatarUtilities
         return null;
     }
     
-    internal struct AvatarWireBreakdown
-    {
-        internal int Core;
-        internal int Limbs;
-        internal int Rig;
-        internal int Weapons;
-        internal int Effects;
-        internal int Visual;
-    }
-    
-        internal sealed class VisualLayout
+    internal sealed class VisualLayout
     {
         internal Transform Root;
         internal SpriteRenderer[] Renderers;
