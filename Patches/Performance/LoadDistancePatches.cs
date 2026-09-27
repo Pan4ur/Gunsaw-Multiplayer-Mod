@@ -79,21 +79,29 @@ internal static class MultiplayerCrateSpawnerTickCullPatch
         if (___curSpawnCool >= 0f || __instance.spawnCool == 0f) return false;
 
         ___curSpawnCool = __instance.spawnCool;
-        var occupied = false;
-        foreach (var collider in Physics2D.OverlapCircleAll(__instance.transform.position, 0.5f,
-                     LayerMask.GetMask("Ground")))
-        {
-            if (collider.gameObject != __instance.gameObject) occupied = true;
-        }
-
-        var renderer = __instance.GetComponent<SpriteRenderer>();
-        if (occupied || renderer == null || !renderer.enabled) return false;
-
-        var spawned = UnityEngine.Object.Instantiate(__instance.spawnPrefab, __instance.transform.position,
-            __instance.transform.rotation);
-        if (spawned != null) spawned.AddComponent<RuntimeSpawnedCrate>();
-        GunsawMultiplayerPlugin.World.bodies.RegisterRuntimeWorldBodies(spawned);
+        TrySpawn(__instance);
         return false;
+    }
+
+    internal static void TrySpawn(MiniCrateSpawner spawner)
+    {
+        if (spawner == null || spawner.spawnPrefab == null)
+            return;
+
+        foreach (var collider in Physics2D.OverlapCircleAll(spawner.transform.position, 0.5f, LayerMask.GetMask("Ground")))
+            if (collider.gameObject != spawner.gameObject)
+                return;
+
+        var renderer = spawner.GetComponent<SpriteRenderer>();
+        if (renderer == null || !renderer.enabled) 
+            return;
+
+        var spawned = UnityEngine.Object.Instantiate(spawner.spawnPrefab, spawner.transform.position, spawner.transform.rotation);
+        if (spawned == null)
+            return;
+            
+        spawned.AddComponent<RuntimeSpawnedCrate>();
+        GunsawMultiplayerPlugin.World.bodies.RegisterRuntimeWorldBodies(spawned);
     }
 }
 

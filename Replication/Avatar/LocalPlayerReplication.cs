@@ -935,9 +935,6 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
             if (localPlayerInstance.bloodBars != null)
                 localPlayerInstance.bloodBars.body = newBody;
-
-        GunsawMultiplayerPlugin.LogInfo("Local player respawned at " +
-                (MultiplayerSession.RespawnAtStart ? "level start." : "death position."));
         }
         finally
         {

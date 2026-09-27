@@ -87,8 +87,8 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly List<AudioSource> staleClientDoorAudio = new();
     private readonly HashSet<SawScript> clientSaws = [];
     private WorldSnapshotPacket? lastSentWorldSnapshot;
-    private byte[] lastSerializedEnvironment;
-    private byte[] lastReliableEnvironment;
+    private WorldEnvironmentPacket? lastCapturedEnvironment;
+    private WorldEnvironmentPacket? lastReliableEnvironment;
     private readonly Dictionary<string, WorldBodySnapshot> lastSerializedBodyStates = new();
     private readonly Dictionary<string, float> lastChangedBodyAt = new();
     internal float nextSnapshot;
@@ -330,15 +330,15 @@ internal sealed class WorldReplication : MonoBehaviour
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
             }
 
-            byte[] environment;
-            byte[] latestEnvironment = null;
+            WorldEnvironmentPacket environment;
+            WorldEnvironmentPacket? latestEnvironment = null;
             queueStarted = MultiplayerPerformance.StartPhase();
             while (MultiplayerSession.TryTakeWorldEnvironment(out environment)) latestEnvironment = environment;
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
-            if (latestEnvironment != null)
+            if (latestEnvironment.HasValue)
             {
                 var readStarted = MultiplayerPerformance.StartPhase();
-                enviroment.ApplyEnvironment(latestEnvironment);
+                enviroment.ApplyEnvironment(latestEnvironment.Value);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
             }
 
@@ -407,13 +407,14 @@ internal sealed class WorldReplication : MonoBehaviour
                     MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerialize, serializeStarted);
                     if (snapshot.HasValue) MultiplayerSession.Send(snapshot.Value);
 
-                    if (lastSerializedEnvironment != null &&
+                    if (lastCapturedEnvironment.HasValue &&
                         Time.unscaledTime >= nextReliableEnvironment &&
-                        !BytesEqual(lastReliableEnvironment, lastSerializedEnvironment))
+                        (!lastReliableEnvironment.HasValue ||
+                         !lastReliableEnvironment.Value.ContentEquals(lastCapturedEnvironment.Value)))
                     {
                         nextReliableEnvironment = Time.unscaledTime + 0.1f;
-                        MultiplayerSession.Send(new WorldEnvironmentPacket(lastSerializedEnvironment));
-                        lastReliableEnvironment = lastSerializedEnvironment;
+                        MultiplayerSession.Send(lastCapturedEnvironment.Value);
+                        lastReliableEnvironment = lastCapturedEnvironment;
                     }
                 }
 
@@ -664,7 +665,7 @@ internal sealed class WorldReplication : MonoBehaviour
         worldSnapshotSequence = 0;
         lastReceivedWorldSnapshotSequence = 0;
         hasReceivedWorldSnapshotSequence = false;
-        lastSerializedEnvironment = null;
+        lastCapturedEnvironment = null;
         lastReliableEnvironment = null;
         lastSerializedBodyStates.Clear();
         WorldCratePrefabIds.ResetUnknowns();
@@ -709,7 +710,7 @@ internal sealed class WorldReplication : MonoBehaviour
         }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeBodies, bodySerializeStarted);
         var environmentSerializeStarted = MultiplayerPerformance.StartPhase();
-        lastSerializedEnvironment = enviroment.SerializeEnvironment();
+        lastCapturedEnvironment = enviroment.CaptureEnvironment();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeEnvironment, environmentSerializeStarted);
         var packet = new WorldSnapshotPacket(sceneEpoch, sequence, changedStates.ToArray());
         if (!fullSnapshot && lastSentWorldSnapshot.HasValue && packet.ContentEquals(lastSentWorldSnapshot.Value))
@@ -727,9 +728,9 @@ internal sealed class WorldReplication : MonoBehaviour
         if (!MultiplayerSession.IsHost || peerId == 0 || !environmentSentPeers.Add(peerId)) 
             return;
         
-        var env = enviroment.SerializeEnvironment();
-        lastSerializedEnvironment = env;
-        MultiplayerSession.Send(new WorldEnvironmentPacket(env), peerId);
+        var packet = enviroment.CaptureEnvironment();
+        lastCapturedEnvironment = packet;
+        MultiplayerSession.Send(packet, peerId);
         enviroment.SendFireStates(peerId);
     }
 
@@ -849,14 +850,6 @@ internal sealed class WorldReplication : MonoBehaviour
     private static bool IsNewerWorldSnapshotSequence(int sequence, int previous)
     {
         return unchecked(sequence - previous) > 0;
-    }
-
-    private static bool BytesEqual(byte[] left, byte[] right)
-    {
-        if (left == right) return true;
-        if (left == null || right == null || left.Length != right.Length) return false;
-        for (var index = 0; index < left.Length; index++) if (left[index] != right[index]) return false;
-        return true;
     }
 
     private void SampleActivity()

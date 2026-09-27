@@ -89,9 +89,9 @@ internal static partial class MultiplayerSession
         ushort ignored; return TryTakePayload(worldSnapshots, out ignored, out data);
     }
 
-    internal static bool TryTakeWorldEnvironment(out byte[] data)
+    internal static bool TryTakeWorldEnvironment(out WorldEnvironmentPacket packet)
     {
-        ushort ignored; return TryTakePayload(worldEnvironments, out ignored, out data);
+        ushort ignored; return TryTakePacket(worldEnvironments, out ignored, out packet);
     }
 
     internal static bool TryTakeWorldInput(out ushort peerId, out WorldInputPacket packet)

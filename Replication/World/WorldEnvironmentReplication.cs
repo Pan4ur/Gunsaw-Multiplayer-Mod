@@ -156,7 +156,7 @@ public class WorldEnvironmentReplication
         var hadPrevious = WorldReplication.Instance.receivedButtonActivations.TryGetValue(id, out previous);
         WorldReplication.Instance.receivedButtonActivations[id] = activations;
         if (hadPrevious && activations > previous && button != null && button.activateSound != null)
-            Sound.Play(button.activateSound, button.transform.position, false, false, null, 1f, 1f);
+            Sound.Play(button.activateSound, button.transform.position, false, false);
         if (button != null && button.activateOnce && activations > 0) OneTimeButtonReactivation.SetInactive(button);
         if (!exists && button != null) SetButtonInactive(button);
     }
@@ -216,7 +216,7 @@ public class WorldEnvironmentReplication
             target.SendMessage("Activate", zone.id, SendMessageOptions.DontRequireReceiver);
     }
 
-    internal static bool ActivatesTeleport(ActivateZoneScript zone)
+    private static bool ActivatesTeleport(ActivateZoneScript zone)
     {
         if (zone == null) return false;
         var hasTeleport = false;
@@ -235,7 +235,7 @@ public class WorldEnvironmentReplication
         return hasTeleport;
     }
     
-    internal static void SetButtonInactive(ButtonScript button)
+    private static void SetButtonInactive(ButtonScript button)
     {
         if (button.transform.childCount > 0)
         {
@@ -306,7 +306,7 @@ public class WorldEnvironmentReplication
         if (IsGlassBroken(glass)) WorldReplication.Instance.destroyedGlass.Add(id);
     }
 
-    internal void ApplyGlassState(string id)
+    private void ApplyGlassState(string id)
     {
         GlassScript glass;
         if (!WorldReplication.Instance.glasses.TryGetValue(id, out glass) || glass == null)
@@ -320,7 +320,7 @@ public class WorldEnvironmentReplication
         finally { MultiplayerGlassDamagePatch.ApplyingNetworkState = false; }
     }
 
-    internal void ApplyFireState(string id, Vector2 position, float rotation, float fuel, bool canIgnite, float damageMult, float fuelConsMult)
+    private void ApplyFireState(string id, Vector2 position, float rotation, float fuel, bool canIgnite, float damageMult, float fuelConsMult)
     {
         FireScript fire;
         if (!WorldReplication.Instance.fires.TryGetValue(id, out fire) || fire == null)
@@ -365,8 +365,8 @@ public class WorldEnvironmentReplication
         if (string.IsNullOrEmpty(packet.Id)) return;
         if (packet.Exists)
         {
-            ApplyFireState(packet.Id, new Vector2(packet.PositionX, packet.PositionY), packet.Rotation,
-                packet.Fuel, packet.CanIgnite, packet.DamageMult, packet.FuelConsMult);
+            ApplyFireState(packet.Id, new Vector2(packet.PositionX, packet.PositionY), packet.Rotation, packet.Fuel, packet.CanIgnite, packet.DamageMult, packet.FuelConsMult);
+           
             if (!string.IsNullOrEmpty(packet.ParentId) &&
                 WorldReplication.Instance.bodies.bodies.TryGetValue(packet.ParentId, out var parent) &&
                 parent != null &&
@@ -402,7 +402,7 @@ public class WorldEnvironmentReplication
             SendFireState(pair.Key, pair.Value, peerId);
     }
 
-    internal void SendFireState(string id, FireScript f, ushort peerId = 0)
+    private void SendFireState(string id, FireScript f, ushort peerId = 0)
     {
         if (f == null || string.IsNullOrEmpty(id)) return;
         var pos = f.transform.position;
@@ -427,7 +427,6 @@ public class WorldEnvironmentReplication
         if (string.IsNullOrEmpty(id) || WorldReplication.Instance.destroyedLamps.Contains(id)) return;
         if (WorldReplication.Instance.lamps.TryGetValue(id, out var lamp)) BreakLamp(id, lamp, point);
     }
-
     
     private void BreakLamp(string id, WorldReplication.LampState lamp, Vector2 hitPoint)
     {
@@ -470,23 +469,7 @@ public class WorldEnvironmentReplication
         WorldReplication.Destroy(drone);
     }
     
-    internal void RemoveMissingFires(HashSet<string> seen)
-    {
-        var missing = new List<string>();
-        foreach (var pair in WorldReplication.Instance.fires)
-            if (!seen.Contains(pair.Key)) missing.Add(pair.Key);
-        foreach (var id in missing)
-        {
-            var fire = WorldReplication.Instance.fires[id];
-            WorldReplication.Instance.fires.Remove(id);
-            if (fire == null) continue;
-            WorldReplication.Instance.fireIds.Remove(fire);
-            if (WorldReplication.Instance.clientCreatedFires.Remove(fire)) WorldReplication.Destroy(fire.gameObject);
-            else fire.gameObject.SetActive(false);
-        }
-    }
-    
-    internal void ApplyMechanismAudio(string id, bool playing, bool loop, float volume, float pitch)
+    private void ApplyMechanismAudio(string id, bool playing, bool loop, float volume, float pitch)
     {
         AudioSource source;
         if (!WorldReplication.Instance.mechanismAudio.TryGetValue(id, out source) || source == null) return;
@@ -527,8 +510,7 @@ public class WorldEnvironmentReplication
             }
             if (Time.unscaledTime - pair.Value < 0.2f) continue;
             if (body == null || body.velocity.sqrMagnitude > 0.0001f || door.point1 == null || door.point2 == null) continue;
-            var closeEnough = Mathf.Min(Vector2.Distance(door.transform.position, door.point1.position),
-                Vector2.Distance(door.transform.position, door.point2.position)) < door.speed * 0.05f;
+            var closeEnough = Mathf.Min(Vector2.Distance(door.transform.position, door.point1.position), Vector2.Distance(door.transform.position, door.point2.position)) < door.speed * 0.05f;
             if (!closeEnough) continue;
             source.Stop();
             stale.Add(source);
@@ -536,151 +518,85 @@ public class WorldEnvironmentReplication
         foreach (var source in stale) WorldReplication.Instance.clientDoorAudioStartedAt.Remove(source);
     }
     
-    internal byte[] SerializeEnvironment()
+    internal WorldEnvironmentPacket CaptureEnvironment()
     {
-        using (var stream = new MemoryStream())
-        using (var writer = new BinaryWriter(stream))
+        var world = WorldReplication.Instance;
+        var buttons = new List<EnvironmentButtonState>();
+        foreach (var pair in world.buttons)
         {
-            writer.Write(MultiplayerSession.SnapshotEpoch);
-            BinaryWriterRaw.WriteSingle(writer, Physics2D.gravity.x); BinaryWriterRaw.WriteSingle(writer, Physics2D.gravity.y);
-            writer.Write((ushort)WorldReplication.Instance.buttons.Count);
-            foreach (var pair in WorldReplication.Instance.buttons)
-            {
-                writer.Write(WorldReplication.Instance.WireId(pair.Key)); writer.Write(pair.Value != null);
-                uint activations; WorldReplication.Instance.buttonActivations.TryGetValue(pair.Key, out activations); writer.Write(activations);
-            }
-            CaptureDestroyedGlass();
-            writer.Write((ushort)Math.Min(ushort.MaxValue, WorldReplication.Instance.destroyedGlass.Count));
-            var writtenGlass = 0;
-            foreach (var id in WorldReplication.Instance.destroyedGlass)
-            {
-                if (writtenGlass++ >= ushort.MaxValue) break;
-                writer.Write(WorldReplication.Instance.WireId(id));
-            }
-            writer.Write((ushort)0);
-            var audioCount = 0;
-            foreach (var pair in WorldReplication.Instance.mechanismAudio) if (pair.Value != null && audioCount < ushort.MaxValue) audioCount++;
-            writer.Write((ushort)audioCount);
-            var writtenAudio = 0;
-            foreach (var pair in WorldReplication.Instance.mechanismAudio)
-            {
-                if (pair.Value == null || writtenAudio >= audioCount) continue;
-                writer.Write(WorldReplication.Instance.WireId(pair.Key)); writer.Write(pair.Value.isPlaying); writer.Write(pair.Value.loop);
-                BinaryWriterRaw.WriteSingle(writer, pair.Value.volume);
-                BinaryWriterRaw.WriteSingle(writer, pair.Value.pitch); writtenAudio++;
-            }
-            CaptureDestroyedDrones();
-            writer.Write((ushort)Math.Min(ushort.MaxValue, WorldReplication.Instance.destroyedDrones.Count));
-            var writtenDrones = 0;
-            foreach (var id in WorldReplication.Instance.destroyedDrones)
-            {
-                if (writtenDrones++ >= ushort.MaxValue) break;
-                writer.Write(WorldReplication.Instance.WireId(id));
-            }
-            var manager = GameManager.main;
-            BinaryWriterRaw.WriteSingle(writer, manager == null ? 0f : manager.rainIntensity);
-            BinaryWriterRaw.WriteSingle(writer, manager == null ? 0f : manager.snowIntensity);
-            BinaryWriterRaw.WriteSingle(writer, manager == null ? 0f : manager.fogIntensity);
-            var mission = MissionManager.main;
-            writer.Write(mission == null ? -1 : mission.killAmount);
-            writer.Write(mission == null ? -1 : mission.totalEnemyCount);
-
-            var poweredLampCount = 0;
-            foreach (var pair in WorldReplication.Instance.lamps)
-            {
-                if (ToggleableLampSystem.RuntimeForLamp(pair.Value) != null && poweredLampCount < ushort.MaxValue)
-                    poweredLampCount++;
-            }
-            writer.Write((ushort)poweredLampCount);
-            var writtenPoweredLamps = 0;
-            foreach (var pair in WorldReplication.Instance.lamps)
-            {
-                if (writtenPoweredLamps >= poweredLampCount) break;
-                var runtime = ToggleableLampSystem.RuntimeForLamp(pair.Value);
-                if (runtime == null) continue;
-                writer.Write(WorldReplication.Instance.WireId(pair.Key));
-                writer.Write(runtime.Powered);
-                BinaryWriterRaw.WriteSingle(writer, runtime.Intensity);
-                BinaryWriterRaw.WriteSingle(writer, runtime.Color.r);
-                BinaryWriterRaw.WriteSingle(writer, runtime.Color.g);
-                BinaryWriterRaw.WriteSingle(writer, runtime.Color.b);
-                BinaryWriterRaw.WriteSingle(writer, runtime.Color.a);
-                writtenPoweredLamps++;
-            }
-            return stream.ToArray();
+            if (buttons.Count >= ushort.MaxValue) break;
+            world.buttonActivations.TryGetValue(pair.Key, out var activations);
+            buttons.Add(new EnvironmentButtonState(world.WireId(pair.Key), pair.Value != null, activations));
         }
+        CaptureDestroyedGlass();
+        var glass = new List<ulong>();
+        foreach (var id in world.destroyedGlass)
+        {
+            if (glass.Count >= ushort.MaxValue) break;
+            glass.Add(world.WireId(id));
+        }
+        var audio = new List<EnvironmentAudioState>();
+        foreach (var pair in world.mechanismAudio)
+        {
+            if (audio.Count >= ushort.MaxValue) break;
+            if (pair.Value == null) continue;
+            audio.Add(new EnvironmentAudioState(world.WireId(pair.Key), pair.Value.isPlaying, pair.Value.loop,
+                pair.Value.volume, pair.Value.pitch));
+        }
+        CaptureDestroyedDrones();
+        var drones = new List<ulong>();
+        foreach (var id in world.destroyedDrones)
+        {
+            if (drones.Count >= ushort.MaxValue) break;
+            drones.Add(world.WireId(id));
+        }
+        var lamps = new List<EnvironmentLampPowerState>();
+        foreach (var pair in world.lamps)
+        {
+            if (lamps.Count >= ushort.MaxValue) break;
+            var runtime = ToggleableLampSystem.RuntimeForLamp(pair.Value);
+            if (runtime == null) continue;
+            var color = runtime.Color;
+            lamps.Add(new EnvironmentLampPowerState(world.WireId(pair.Key), runtime.Powered, runtime.Intensity, color.r, color.g, color.b, color.a));
+        }
+        var manager = GameManager.main;
+        var mission = MissionManager.main;
+        return new WorldEnvironmentPacket(MultiplayerSession.SnapshotEpoch, Physics2D.gravity.x, Physics2D.gravity.y,
+            buttons.ToArray(), glass.ToArray(), new EnvironmentFireState[0], audio.ToArray(), drones.ToArray(),
+            manager == null ? 0f : manager.rainIntensity, manager == null ? 0f : manager.snowIntensity,
+            manager == null ? 0f : manager.fogIntensity, mission == null ? -1 : mission.killAmount,
+            mission == null ? -1 : mission.totalEnemyCount, lamps.ToArray());
     }
     
-    internal void ApplyEnvironment(byte[] data)
+    internal void ApplyEnvironment(WorldEnvironmentPacket packet)
     {
-        using (var reader = new BinaryReader(new MemoryStream(data)))
+        if (!MultiplayerSession.IsSnapshotEpochCurrent(packet.SceneEpoch)) return;
+        Physics2D.gravity = new Vector2(packet.GravityX, packet.GravityY);
+        foreach (var button in packet.Buttons)
+            ApplyButtonState(WorldReplication.Instance.ResolveWireId(button.Id), button.Active, button.Activations);
+        foreach (var id in packet.DestroyedGlassIds)
+            ApplyGlassState(WorldReplication.Instance.ResolveWireId(id));
+        foreach (var fire in packet.Fires)
+            ApplyFireState(WorldReplication.Instance.ResolveWireId(fire.Id),
+                new Vector2(fire.PositionX, fire.PositionY), fire.Rotation, fire.Fuel, fire.CanIgnite, fire.DamageMultiplier, fire.FuelConsumptionMultiplier);
+        seenSnapshotAudio.Clear();
+        foreach (var audio in packet.Audio)
         {
-            var sceneEpoch = reader.ReadInt32();
-            if (!MultiplayerSession.IsSnapshotEpochCurrent(sceneEpoch)) return;
-            Physics2D.gravity = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-            var buttonCount = reader.ReadUInt16();
-            for (var index = 0; index < buttonCount; index++)
-                ApplyButtonState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()), reader.ReadBoolean(), reader.ReadUInt32());
-            var glassCount = reader.ReadUInt16();
-            for (var index = 0; index < glassCount; index++)
-                ApplyGlassState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()));
-            var fireCount = reader.ReadUInt16();
-            for (var index = 0; index < fireCount; index++)
-            {
-                var id = WorldReplication.Instance.ResolveWireId(reader.ReadUInt64());
-                var position = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                var rotation = reader.ReadSingle(); var fuel = reader.ReadSingle(); var canIgnite = reader.ReadBoolean();
-                var damageMult = reader.ReadSingle(); var fuelConsMult = reader.ReadSingle();
-                ApplyFireState(id, position, rotation, fuel, canIgnite, damageMult, fuelConsMult);
-            }
-            seenSnapshotAudio.Clear();
-            var audioCount = reader.ReadUInt16();
-            for (var index = 0; index < audioCount; index++)
-            {
-                var id = WorldReplication.Instance.ResolveWireId(reader.ReadUInt64());
-                var playing = reader.ReadBoolean(); var loop = reader.ReadBoolean();
-                var volume = reader.ReadSingle(); var pitch = reader.ReadSingle();
-                seenSnapshotAudio.Add(id); ApplyMechanismAudio(id, playing, loop, volume, pitch);
-            }
-            StopMissingMechanismAudio(seenSnapshotAudio);
-            var droneCount = reader.ReadUInt16();
-            for (var index = 0; index < droneCount; index++)
-                ApplyDroneState(WorldReplication.Instance.ResolveWireId(reader.ReadUInt64()));
-            var rain = reader.ReadSingle();
-            var snow = reader.ReadSingle();
-            var fog = reader.ReadSingle();
-            ApplyWeather(rain, snow, fog);
-            if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(int) * 2)
-                ApplyMissionEnemyCount(reader.ReadInt32(), reader.ReadInt32());
-            if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(ushort))
-            {
-                var poweredLampCount = reader.ReadUInt16();
-                for (var index = 0; index < poweredLampCount &&
-                     reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(ulong) + 1; index++)
-                {
-                    var id = WorldReplication.Instance.ResolveWireId(reader.ReadUInt64());
-                    var powered = reader.ReadBoolean();
-                    if (reader.BaseStream.Length - reader.BaseStream.Position >= sizeof(float) * 5)
-                    {
-                        var intensity = reader.ReadSingle();
-                        var color = new Color(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
-                        ApplyLampState(id, powered, intensity, color);
-                    }
-                    else ApplyLampPowerState(id, powered);
-                }
-            }
+            var id = WorldReplication.Instance.ResolveWireId(audio.Id);
+            seenSnapshotAudio.Add(id);
+            ApplyMechanismAudio(id, audio.IsPlaying, audio.Loop, audio.Volume, audio.Pitch);
         }
-    }
-    
-    internal void ApplyLampPowerState(string id, bool powered)
-    {
-        WorldReplication.LampState lamp;
-        if (!WorldReplication.Instance.lamps.TryGetValue(id, out lamp)) return;
-        var runtime = ToggleableLampSystem.RuntimeForLamp(lamp);
-        if (runtime != null) runtime.SetPowered(powered);
+        StopMissingMechanismAudio(seenSnapshotAudio);
+        foreach (var id in packet.DestroyedDroneIds)
+            ApplyDroneState(WorldReplication.Instance.ResolveWireId(id));
+        ApplyWeather(packet.RainIntensity, packet.SnowIntensity, packet.FogIntensity);
+        ApplyMissionEnemyCount(packet.EnemyKills, packet.EnemyTotal);
+        foreach (var lamp in packet.LampPower)
+            ApplyLampState(WorldReplication.Instance.ResolveWireId(lamp.Id), lamp.Powered, lamp.Intensity,
+                new Color(lamp.Red, lamp.Green, lamp.Blue, lamp.Alpha));
     }
 
-    internal void ApplyLampState(string id, bool powered, float intensity, Color color)
+    private void ApplyLampState(string id, bool powered, float intensity, Color color)
     {
         WorldReplication.LampState lamp;
         if (!WorldReplication.Instance.lamps.TryGetValue(id, out lamp)) return;
@@ -691,7 +607,7 @@ public class WorldEnvironmentReplication
         runtime.SetPowered(powered);
     }
 
-    internal static void ApplyMissionEnemyCount(int killed, int total)
+    private static void ApplyMissionEnemyCount(int killed, int total)
     {
         if (killed < 0 || total < 0) return;
         var mission = MissionManager.main;
@@ -702,7 +618,7 @@ public class WorldEnvironmentReplication
             mission.killsText.text = "Enemies: " + Mathf.Max(0, total - killed) + "/" + total;
     }
 
-    internal static void ApplyWeather(float rain, float snow, float fog)
+    private static void ApplyWeather(float rain, float snow, float fog)
     {
         var manager = GameManager.main;
         if (manager == null) return;
@@ -726,10 +642,8 @@ public class WorldEnvironmentReplication
     private void StopMissingMechanismAudio(HashSet<string> seen)
     {
         foreach (var pair in WorldReplication.Instance.mechanismAudio)
-        {
             if (pair.Value != null && !seen.Contains(pair.Key) && pair.Value.isPlaying)
                 pair.Value.Stop();
-        }
     }
     
     private void CaptureDestroyedGlass()
@@ -738,11 +652,7 @@ public class WorldEnvironmentReplication
             if (IsGlassBroken(pair.Value)) WorldReplication.Instance.destroyedGlass.Add(pair.Key);
     }
     
-    private static bool IsGlassBroken(GlassScript glass)
-    {
-        if (glass == null) return true;
-        return glass.health <= 0f;
-    }
+    private static bool IsGlassBroken(GlassScript glass) => glass == null || glass.health <= 0f;
     
     private void CaptureDestroyedDrones()
     {
@@ -757,9 +667,6 @@ public class WorldEnvironmentReplication
             if (LampIsDestroyed(pair.Value)) ids.Add(pair.Key);
     }
     
-    private static bool LampIsDestroyed(WorldReplication.LampState lamp)
-    {
-        return lamp == null || lamp.Object == null || !lamp.Object.activeSelf ||
-               lamp.Light == null || !lamp.Light.enabled || lamp.Collider == null || !lamp.Collider.enabled;
-    }
+    private static bool LampIsDestroyed(WorldReplication.LampState l) =>
+        l == null || l.Object == null || !l.Object.activeSelf || l.Light == null || !l.Light.enabled || l.Collider == null || !l.Collider.enabled;
 }

@@ -3,14 +3,35 @@ internal readonly struct EnvironmentButtonState
     internal readonly ulong Id;
     internal readonly bool Active;
     internal readonly uint Activations;
-    internal EnvironmentButtonState(ulong id, bool active, uint activations) { Id = id; Active = active; Activations = activations; }
+
+    internal EnvironmentButtonState(ulong id, bool active, uint activations)
+    {
+        Id = id;
+        Active = active;
+        Activations = activations;
+    }
 }
 
 internal readonly struct EnvironmentLampPowerState
 {
     internal readonly ulong Id;
     internal readonly bool Powered;
-    internal EnvironmentLampPowerState(ulong id, bool powered) { Id = id; Powered = powered; }
+    internal readonly float Intensity;
+    internal readonly float Red;
+    internal readonly float Green;
+    internal readonly float Blue;
+    internal readonly float Alpha;
+    
+    internal EnvironmentLampPowerState(ulong id, bool powered, float intensity, float red, float green, float blue, float alpha)
+    {
+        Id = id;
+        Powered = powered;
+        Intensity = intensity;
+        Red = red;
+        Green = green;
+        Blue = blue;
+        Alpha = alpha;
+    }
 }
 
 internal readonly struct EnvironmentFireState
@@ -23,11 +44,16 @@ internal readonly struct EnvironmentFireState
     internal readonly bool CanIgnite;
     internal readonly float DamageMultiplier;
     internal readonly float FuelConsumptionMultiplier;
-    internal EnvironmentFireState(ulong id, float positionX, float positionY, float rotation, float fuel,
-        bool canIgnite, float damageMultiplier, float fuelConsumptionMultiplier)
+    
+    internal EnvironmentFireState(ulong id, float positionX, float positionY, float rotation, float fuel, bool canIgnite, float damageMultiplier, float fuelConsumptionMultiplier)
     {
-        Id = id; PositionX = positionX; PositionY = positionY; Rotation = rotation; Fuel = fuel;
-        CanIgnite = canIgnite; DamageMultiplier = damageMultiplier;
+        Id = id;
+        PositionX = positionX;
+        PositionY = positionY;
+        Rotation = rotation;
+        Fuel = fuel;
+        CanIgnite = canIgnite;
+        DamageMultiplier = damageMultiplier;
         FuelConsumptionMultiplier = fuelConsumptionMultiplier;
     }
 }
@@ -39,9 +65,14 @@ internal readonly struct EnvironmentAudioState
     internal readonly bool Loop;
     internal readonly float Volume;
     internal readonly float Pitch;
+    
     internal EnvironmentAudioState(ulong id, bool isPlaying, bool loop, float volume, float pitch)
     {
-        Id = id; IsPlaying = isPlaying; Loop = loop; Volume = volume; Pitch = pitch;
+        Id = id;
+        IsPlaying = isPlaying;
+        Loop = loop;
+        Volume = volume;
+        Pitch = pitch;
     }
 }
 
@@ -78,12 +109,26 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         LampPower = lampPower ?? new EnvironmentLampPowerState[0];
     }
 
-    internal WorldEnvironmentPacket(byte[] payload)
-    {
-        var reader = new PacketReader(payload);
-        this = Read(ref reader);
-    }
     public PacketType Type => PacketType.WorldEnvironment;
+
+    internal bool ContentEquals(WorldEnvironmentPacket other)
+    {
+        return SceneEpoch == other.SceneEpoch && GravityX.Equals(other.GravityX) && GravityY.Equals(other.GravityY) &&
+            ArraysEqual(Buttons, other.Buttons) && ArraysEqual(DestroyedGlassIds, other.DestroyedGlassIds) &&
+            ArraysEqual(Fires, other.Fires) && ArraysEqual(Audio, other.Audio) &&
+            ArraysEqual(DestroyedDroneIds, other.DestroyedDroneIds) && RainIntensity.Equals(other.RainIntensity) &&
+            SnowIntensity.Equals(other.SnowIntensity) && FogIntensity.Equals(other.FogIntensity) &&
+            EnemyKills == other.EnemyKills && EnemyTotal == other.EnemyTotal && ArraysEqual(LampPower, other.LampPower);
+    }
+
+    private static bool ArraysEqual<T>(T[] left, T[] right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if (left == null || right == null || left.Length != right.Length) return false;
+        for (var index = 0; index < left.Length; index++)
+            if (!EqualityComparer<T>.Default.Equals(left[index], right[index])) return false;
+        return true;
+    }
 
     public void Write(ref PacketWriter writer)
     {
@@ -104,14 +149,13 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var rain = reader.ReadSingle(); var snow = reader.ReadSingle(); var fog = reader.ReadSingle();
         var enemyKills = reader.Remaining >= sizeof(int) * 2 ? reader.ReadInt32() : -1;
         var enemyTotal = reader.Remaining >= sizeof(int) ? reader.ReadInt32() : -1;
-        var lampPower = reader.Remaining >= sizeof(ushort) ? ReadLampPower(ref reader) : new EnvironmentLampPowerState[0];
-        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, fires, audio, drones,
-            rain, snow, fog, enemyKills, enemyTotal, lampPower);
+        var lampPower = ReadLampPower(ref reader);
+        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, fires, audio, drones, rain, snow, fog, enemyKills, enemyTotal, lampPower);
     }
 
     private static void WriteButtons(ref PacketWriter writer, EnvironmentButtonState[] values)
     {
-        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        writer.WriteUInt16((ushort) Math.Min(values.Length, ushort.MaxValue));
         for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
         { writer.WriteUInt64(values[index].Id); writer.WriteBoolean(values[index].Active); writer.WriteUInt32(values[index].Activations); }
     }
@@ -126,24 +170,30 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
 
     private static void WriteIds(ref PacketWriter writer, ulong[] values)
     {
-        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        writer.WriteUInt16((ushort) Math.Min(values.Length, ushort.MaxValue));
         for (var index = 0; index < values.Length && index < ushort.MaxValue; index++) writer.WriteUInt64(values[index]);
     }
 
     private static ulong[] ReadIds(ref PacketReader reader)
     {
         var values = new ulong[reader.ReadUInt16()];
-        for (var index = 0; index < values.Length; index++) values[index] = reader.ReadUInt64();
+        for (var index = 0; index < values.Length; index++) 
+            values[index] = reader.ReadUInt64();
         return values;
     }
 
     private static void WriteLampPower(ref PacketWriter writer, EnvironmentLampPowerState[] values)
     {
-        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        writer.WriteUInt16((ushort) Math.Min(values.Length, ushort.MaxValue));
         for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
         {
             writer.WriteUInt64(values[index].Id);
             writer.WriteBoolean(values[index].Powered);
+            writer.WriteSingle(values[index].Intensity);
+            writer.WriteSingle(values[index].Red);
+            writer.WriteSingle(values[index].Green);
+            writer.WriteSingle(values[index].Blue);
+            writer.WriteSingle(values[index].Alpha);
         }
     }
 
@@ -151,7 +201,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     {
         var values = new EnvironmentLampPowerState[reader.ReadUInt16()];
         for (var index = 0; index < values.Length; index++)
-            values[index] = new EnvironmentLampPowerState(reader.ReadUInt64(), reader.ReadBoolean());
+            values[index] = new EnvironmentLampPowerState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
         return values;
     }
 
@@ -160,33 +210,45 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
         for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
         {
-            var value = values[index]; writer.WriteUInt64(value.Id); writer.WriteSingle(value.PositionX); writer.WriteSingle(value.PositionY);
-            writer.WriteSingle(value.Rotation); writer.WriteSingle(value.Fuel); writer.WriteBoolean(value.CanIgnite);
-            writer.WriteSingle(value.DamageMultiplier); writer.WriteSingle(value.FuelConsumptionMultiplier);
+            var value = values[index];
+            writer.WriteUInt64(value.Id);
+            writer.WriteSingle(value.PositionX);
+            writer.WriteSingle(value.PositionY);
+            writer.WriteSingle(value.Rotation);
+            writer.WriteSingle(value.Fuel);
+            writer.WriteBoolean(value.CanIgnite);
+            writer.WriteSingle(value.DamageMultiplier);
+            writer.WriteSingle(value.FuelConsumptionMultiplier);
         }
     }
 
     private static EnvironmentFireState[] ReadFires(ref PacketReader reader)
     {
         var values = new EnvironmentFireState[reader.ReadUInt16()];
-        for (var index = 0; index < values.Length; index++) values[index] = new EnvironmentFireState(reader.ReadUInt64(),
-            reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadBoolean(),
-            reader.ReadSingle(), reader.ReadSingle());
+        for (var index = 0; index < values.Length; index++) 
+            values[index] = new EnvironmentFireState(reader.ReadUInt64(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
         return values;
     }
 
     private static void WriteAudio(ref PacketWriter writer, EnvironmentAudioState[] values)
     {
-        writer.WriteUInt16((ushort)System.Math.Min(values.Length, ushort.MaxValue));
+        writer.WriteUInt16((ushort)Math.Min(values.Length, ushort.MaxValue));
         for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
-        { var value = values[index]; writer.WriteUInt64(value.Id); writer.WriteBoolean(value.IsPlaying); writer.WriteBoolean(value.Loop); writer.WriteSingle(value.Volume); writer.WriteSingle(value.Pitch); }
+        {
+            var value = values[index];
+            writer.WriteUInt64(value.Id);
+            writer.WriteBoolean(value.IsPlaying);
+            writer.WriteBoolean(value.Loop);
+            writer.WriteSingle(value.Volume);
+            writer.WriteSingle(value.Pitch);
+        }
     }
 
     private static EnvironmentAudioState[] ReadAudio(ref PacketReader reader)
     {
         var values = new EnvironmentAudioState[reader.ReadUInt16()];
-        for (var index = 0; index < values.Length; index++) values[index] = new EnvironmentAudioState(reader.ReadUInt64(),
-            reader.ReadBoolean(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
+        for (var index = 0; index < values.Length; index++)
+            values[index] = new EnvironmentAudioState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
         return values;
     }
 }

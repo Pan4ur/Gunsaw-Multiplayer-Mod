@@ -229,7 +229,6 @@ internal class NetworkAvatarReplication : MonoBehaviour
         UpdateRemotePhysicsMode();
         CacheDismembermentVisuals();
         CreateRemoteLevitLine(avatar.transform);
-        GunsawMultiplayerPlugin.LogInfo("Spawned remote avatar for " + name + ".");
     }
 
     internal void DestroyRemote()
