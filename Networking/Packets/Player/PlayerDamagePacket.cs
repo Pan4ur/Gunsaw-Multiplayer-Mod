@@ -6,6 +6,7 @@ internal enum PlayerDamageEffect : byte
 
 internal readonly struct PlayerDamagePacket : INetworkPacket
 {
+    internal const float TriggerDeathDamage = 9999f;
     internal readonly float Amount;
     internal readonly bool Critical;
     internal readonly PlayerDamageEffect Effect;

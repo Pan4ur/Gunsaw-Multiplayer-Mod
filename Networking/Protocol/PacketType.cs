@@ -52,5 +52,6 @@ internal enum PacketType : byte
     WorldFire = 0x34,
     WorldExplosion = 0x35,
     PlayerSound = 0x36,
-    Headlamp = 0x37
+    Headlamp = 0x37,
+    HalfControl = 0x38
 }

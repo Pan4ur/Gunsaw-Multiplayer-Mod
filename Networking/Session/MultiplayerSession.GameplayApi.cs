@@ -234,6 +234,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakeVehicleImpact(out ushort peerId, out VehicleImpactPacket packet)
         => TryTakePacket(vehicleImpacts, out peerId, out packet);
 
+    internal static bool TryTakeHalfControl(out ushort peerId, out HalfControlPacket packet)
+        => TryTakePacket(halfControlEvents, out peerId, out packet);
+
     internal static bool TryTakeTeleportRequest(out ushort peerId, out TeleportRequestPacket packet)
         => TryTakePacket(teleportRequests, out peerId, out packet);
 

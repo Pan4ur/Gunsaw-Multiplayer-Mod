@@ -434,6 +434,17 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
             }
+            else if (!isHost && decodedPacket.Type == PacketType.HalfControl && senderId == hostPeerId)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    var effect = HalfControlPacket.Read(ref reader);
+                    if (!float.IsNaN(effect.Duration) && !float.IsInfinity(effect.Duration))
+                        EnqueueEvent(halfControlEvents, senderId, effect);
+                }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Length, exception); }
+            }
             else if (!isHost && decodedPacket.Type == PacketType.MissionFinished)
             {
                 try
@@ -796,6 +807,7 @@ internal static partial class MultiplayerSession
         playerTeleports.Clear();
         vehicleEjects.Clear();
         vehicleImpacts.Clear();
+        halfControlEvents.Clear();
         teleportRequests.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();

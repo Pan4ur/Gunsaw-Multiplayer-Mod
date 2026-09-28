@@ -87,6 +87,7 @@ internal static partial class MultiplayerSession
     private static readonly byte[] observerKillHeader = PacketHeader.Create(PacketType.ObserverKill);
     private static readonly byte[] graffitiHeader = PacketHeader.Create(PacketType.Graffiti);
     private static readonly byte[] headlampHeader = PacketHeader.Create(PacketType.Headlamp);
+    private static readonly byte[] halfControlHeader = PacketHeader.Create(PacketType.HalfControl);
     private static readonly byte[] playerKillHeader = PacketHeader.Create(PacketType.PlayerKill);
     private static readonly byte[] killScreenEffectHeader = PacketHeader.Create(PacketType.KillScreenEffect);
     
@@ -131,6 +132,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<PlayerTeleportPacket>> playerTeleports = new Queue<PeerPacket<PlayerTeleportPacket>>();
     private static readonly Queue<PeerPacket<VehicleEjectPacket>> vehicleEjects = new Queue<PeerPacket<VehicleEjectPacket>>();
     private static readonly Queue<PeerPacket<VehicleImpactPacket>> vehicleImpacts = new Queue<PeerPacket<VehicleImpactPacket>>();
+    private static readonly Queue<PeerPacket<HalfControlPacket>> halfControlEvents = new Queue<PeerPacket<HalfControlPacket>>();
     private static readonly Queue<PeerPacket<TeleportRequestPacket>> teleportRequests = new Queue<PeerPacket<TeleportRequestPacket>>();
     private static readonly Queue<PeerPacket<PlayerGrabPacket>> playerGrabs = new Queue<PeerPacket<PlayerGrabPacket>>();
     private static readonly Queue<PeerPacket<NpcGrabPacket>> npcGrabs = new Queue<PeerPacket<NpcGrabPacket>>();

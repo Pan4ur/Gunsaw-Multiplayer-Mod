@@ -492,7 +492,8 @@ internal static partial class MultiplayerSession
             HasHeader(packet, vehicleImpactHeader) || HasHeader(packet, missionFinishedHeader) ||
             HasHeader(packet, observerHeader) || HasHeader(packet, observerKillHeader) ||
             HasHeader(packet, playerKillHeader) || HasHeader(packet, killScreenEffectHeader) ||
-            HasHeader(packet, graffitiHeader) || HasHeader(packet, headlampHeader);
+            HasHeader(packet, graffitiHeader) || HasHeader(packet, headlampHeader) ||
+            HasHeader(packet, halfControlHeader);
     }
 
     private static bool ProcessReliablePacket(ref byte[] packet, ushort senderId)

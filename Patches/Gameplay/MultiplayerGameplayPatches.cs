@@ -185,7 +185,7 @@ internal static class MultiplayerPlayerSlowmoPatch
             LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
         if (MultiplayerSession.IsConnected)
         {
-            NetworkAvatarManager.EnsurePlayerSingletonForUpdate();
+            LocalPlayerReplication.EnsureLocalPlayerSingleton();
             if (!LocalPlayerReplication.PrepareLocalPlayerUpdate(__instance))
                 return false;
         }
@@ -942,7 +942,6 @@ internal static class ClientNpcDropAllWeaponsPatch
         if (NetworkAvatarManager.BlockNetworkPlayerDrop(__instance, true)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
-
 }
 
 [HarmonyPatch(typeof(LimbScript), "OnCollisionEnter2D")]
@@ -1108,6 +1107,49 @@ internal static class ClientDroppedWeaponAmmoPatch
             pendingWeapons.Remove(expiredWeapons[i]);
 
         expiredWeapons.Clear();
+    }
+}
+
+[HarmonyPatch(typeof(SpecialTrigger), "Activate")]
+internal static class SpecialTriggerActivatePatch
+{
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var enableAllAis = AccessTools.Method(typeof(GameManager), nameof(GameManager.EnableAllAis));
+
+        var broadcastDeath = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.BroadcastDeathByTrigger));
+        var broadcastHalfControl = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.BroadcastHalfControlByTrigger));
+
+        var textField = AccessTools.Field(typeof(SpecialTrigger), nameof(SpecialTrigger.text));
+        var numberField = AccessTools.Field(typeof(SpecialTrigger), nameof(SpecialTrigger.number));
+
+        var enableAllAisCount = 0;
+
+        foreach (var instruction in instructions)
+        {
+            yield return instruction;
+
+            if (!instruction.Calls(enableAllAis))
+                continue;
+
+            enableAllAisCount++;
+
+            if (enableAllAisCount == 1)
+            {
+                yield return new CodeInstruction(OpCodes.Ldarg_0);
+                yield return new CodeInstruction(OpCodes.Ldfld, textField);
+                yield return new CodeInstruction(OpCodes.Call, broadcastDeath);
+            }
+            else if (enableAllAisCount == 2)
+            {
+                yield return new CodeInstruction(OpCodes.Ldarg_0);
+                yield return new CodeInstruction(OpCodes.Ldfld, textField);
+                yield return new CodeInstruction(OpCodes.Ldarg_0);
+                yield return new CodeInstruction(OpCodes.Ldfld, numberField);
+                yield return new CodeInstruction(OpCodes.Call, broadcastHalfControl);
+            }
+        }
     }
 }
 
@@ -1433,7 +1475,6 @@ internal static class MultiplayerExplosionPatch
     }
 }
 
-
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class ExplosionCrackLifetimePatch
 {
@@ -1456,7 +1497,6 @@ internal static class ExplosionCrackLifetimePatch
 
             if (instruction.Calls(AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Instantiate), new[] { typeof(UnityEngine.Object), typeof(Vector3), typeof(Quaternion) })))
             {
-
                 yield return new CodeInstruction(OpCodes.Dup);
                 yield return new CodeInstruction(OpCodes.Ldc_R4, 120f);
                 yield return new CodeInstruction(OpCodes.Call, destroy);

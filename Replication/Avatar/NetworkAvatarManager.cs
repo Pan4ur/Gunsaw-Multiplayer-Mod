@@ -5,6 +5,30 @@ using static NetworkAvatarUtilities;
 internal sealed class NetworkAvatarManager : MonoBehaviour
 {
     internal static readonly Dictionary<ushort, NetworkAvatarReplication> replicas = new();
+    internal const string ProtogenPrefabPath = "Enemies/RobotEnemy";
+    private const string AlbinoPrefabPath = "Enemies/AlbinoEnemy";
+    internal static readonly List<string> knownCharacterPrefabs = [];
+    private static readonly Dictionary<string, string> characterDisplayNames = new();
+    private string identitySent = "";
+    private float nextIdentity;
+    private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
+    private static readonly Dictionary<int, string> lastDamageSourceNames = new();
+    internal static readonly Dictionary<int, ushort> lastDamageSourcePeerIds = new();
+    private static readonly Dictionary<int, string> lastDamageWeapons = new();
+    private static readonly Dictionary<int, float> lastDamageSourceTimes = new();
+    private static readonly Dictionary<int, float> lastGrabSourceTimes = new();
+    private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses = new();
+    private static readonly Dictionary<int, float> environmentalDeathCauseTimes = new();
+    private static readonly Dictionary<int, PlayerDeathCause> deathCauses = new();
+    private static readonly Dictionary<int, float> localKillBloodTimes = new();
+    private static readonly HashSet<int> announcedDeaths = [];
+    internal static readonly HashSet<string> exhaustedLivesLobbies = [];
+    private static BodyScript suppressNpcKillEffectFor;
+    internal static BodyScript currentShooter;
+    internal static ShotState activeShotState;
+    internal static bool applyingNetworkPlayerDamage;
+    private static int suppressedTargetScreenEffects;
+    private static float suppressedCameraUntil = -1f;
 
     internal static void UnregisterReplica(NetworkAvatarReplication replica)
     {
@@ -191,17 +215,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             Position = body.transform.position;
             IsPlayer = body.isPlayer;
         }
-    }
-
-    internal struct ExplosionTrace
-    {
-        internal bool HasBackgroundCrack;
-        internal float BackgroundCrackRotation;
-        internal bool BackgroundCrackFlipX;
-        internal bool BackgroundCrackFlipY;
-        internal bool HasFloorCrack;
-        internal Vector2 FloorCrackPosition;
-        internal bool FloorCrackFlipX;
     }
 
     internal static void RecordBodyColliderHit(BodyScript body, LimbScript limb)
@@ -1237,6 +1250,12 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static void ApplyPlayerDamage(BodyScript body, PlayerDamagePacket playerDamage)
     {
         if (body == null) return;
+        if (playerDamage.Effect == PlayerDamageEffect.Damage &&
+            playerDamage.Amount == PlayerDamagePacket.TriggerDeathDamage)
+        {
+            if (body.isAlive) body.Death();
+            return;
+        }
         if (KartPassengers.IsProtectedPassenger(body))
         {
             return;
@@ -1716,8 +1735,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         RecordEnvironmentalDeathCause(body, PlayerDeathCause.Incinerator);
     }
 
-
-
     public static void RecordEnvironmentalDeathCause(BodyScript body, PlayerDeathCause cause)
     {
         if (body == null) return;
@@ -1849,24 +1866,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         camera.screenShakeAmount = 0f;
     }
 
-    private static readonly Dictionary<int, BodyScript> lastDamageSources = new();
-    private static readonly Dictionary<int, string> lastDamageSourceNames = new();
-    internal static readonly Dictionary<int, ushort> lastDamageSourcePeerIds = new();
-    private static readonly Dictionary<int, string> lastDamageWeapons = new();
-    private static readonly Dictionary<int, float> lastDamageSourceTimes = new();
-    private static readonly Dictionary<int, float> lastGrabSourceTimes = new();
-    private static readonly Dictionary<int, PlayerDeathCause> environmentalDeathCauses = new();
-    private static readonly Dictionary<int, float> environmentalDeathCauseTimes = new();
-    private static readonly Dictionary<int, PlayerDeathCause> deathCauses = new();
-    private static readonly Dictionary<int, float> localKillBloodTimes = new();
-    private static readonly HashSet<int> announcedDeaths = [];
-    internal static readonly HashSet<string> exhaustedLivesLobbies = [];
-    private static BodyScript suppressNpcKillEffectFor;
-    internal static BodyScript currentShooter;
-    internal static ShotState activeShotState;
-    internal static bool applyingNetworkPlayerDamage;
-    private static int suppressedTargetScreenEffects;
-    private static float suppressedCameraUntil = -1f;
     internal static IEnumerable<string> SwapCharacterNames()
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1955,11 +1954,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         RefreshRemotePropCollisions();
     }
 
-    internal static void EnsurePlayerSingletonForUpdate()
-    {
-        LocalPlayerReplication.EnsureLocalPlayerSingleton();
-    }
-
     internal static void CaptureCharacterMenu(MainMenuManager menu)
     {
         if (menu == null) return;
@@ -1993,13 +1987,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         if (!string.IsNullOrEmpty(selectedCharacterPrefab))
             PlayerPrefs.SetString("charPrefab", selectedCharacterPrefab);
     }
-
-    internal const string ProtogenPrefabPath = "Enemies/RobotEnemy";
-    private const string AlbinoPrefabPath = "Enemies/AlbinoEnemy";
-    internal static readonly List<string> knownCharacterPrefabs = [];
-    private static readonly Dictionary<string, string> characterDisplayNames = new();
-    private string identitySent = "";
-    private float nextIdentity;
 
     private void Update()
     {
@@ -2047,6 +2034,14 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                 return;
 
             ushort senderId;
+            HalfControlPacket halfControl;
+            while (MultiplayerSession.TryTakeHalfControl(out senderId, out halfControl))
+            {
+                if (!player.bodyScript.CanMove()) continue;
+                player.bodyScript.EnterHalfControl();
+                player.bodyScript.shockTime = halfControl.Duration;
+            }
+
             PlayerTeleportPacket playerTeleport;
             while (MultiplayerSession.TryTakePlayerTeleport(out senderId, out playerTeleport))
                 ApplyRemoteTeleport(player.bodyScript, playerTeleport);
@@ -2192,5 +2187,38 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         {
             MultiplayerPerformance.AddAvatar(performanceStarted);
         }
+    }
+
+    public static void BroadcastDeathByTrigger(string team)
+    {
+        if (!MultiplayerSession.IsHost || !MultiplayerSession.IsConnected || !string.Equals(team, "goodguys", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var packet = PlayerDamagePacket.Damage(PlayerDamagePacket.TriggerDeathDamage, false);
+        foreach (var replica in replicas.Values)
+            if (replica != null && replica.remotePeerId != 0)
+                MultiplayerSession.Send(packet, replica.remotePeerId);
+    }
+
+    public static void BroadcastHalfControlByTrigger(string team, float duration)
+    {
+        if (!MultiplayerSession.IsHost || !MultiplayerSession.IsConnected || (!string.IsNullOrEmpty(team) && !string.Equals(team, "goodguys", StringComparison.OrdinalIgnoreCase))) 
+            return;
+
+        var packet = new HalfControlPacket(duration);
+        foreach (var replica in replicas.Values)
+            if (replica != null && replica.remotePeerId != 0)
+                MultiplayerSession.Send(packet, replica.remotePeerId);
+    }
+
+    internal struct ExplosionTrace
+    {
+        internal bool HasBackgroundCrack;
+        internal float BackgroundCrackRotation;
+        internal bool BackgroundCrackFlipX;
+        internal bool BackgroundCrackFlipY;
+        internal bool HasFloorCrack;
+        internal Vector2 FloorCrackPosition;
+        internal bool FloorCrackFlipX;
     }
 }
