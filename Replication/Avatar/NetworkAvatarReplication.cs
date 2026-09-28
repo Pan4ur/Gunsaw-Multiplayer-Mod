@@ -510,7 +510,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                     continue;
                 var limb = limbs[index];
                 limb.dismembered = dismembered;
-                dismembermentHash = unchecked(dismembermentHash * 31 + (dismembered ? 1 : 0));
+                dismembermentHash = unchecked((dismembermentHash * 31) + (dismembered ? 1 : 0));
                 SetRemoteFire(index, limb, burning);
             }
 
@@ -809,7 +809,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
         var vehicle = remoteBody.curVehicle;
         var vehicleRotation = vehicle.mainPart.rb.rotation;
-        var seatPosition = KartPassengers.SeatPosition(vehicle, remoteBody) - (Vector2) vehicle.mainPart.transform.right * 0.15f; // оффсет так называемой попы (мне кажется я делаю что-то не так)
+        var seatPosition = KartPassengers.SeatPosition(vehicle, remoteBody) - ((Vector2) vehicle.mainPart.transform.right * 0.15f); // оффсет так называемой попы (мне кажется я делаю что-то не так)
 
         foreach (var target in vehicleTailTransformTargets)
         {
@@ -962,7 +962,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
             downwardVelocity += Physics2D.gravity.y * (0.1f * deltaTime);
             visualTransform.position += Vector3.up * (downwardVelocity * deltaTime);
 
-            var velocity = ((Vector2)visual.transform.right * speed + Vector2.up * downwardVelocity).normalized;
+            var velocity = (((Vector2)visual.transform.right * speed) + (Vector2.up * downwardVelocity)).normalized;
             visual.transform.right = velocity;
             visual.transform.eulerAngles -= new Vector3(0f, 0f, Time.deltaTime * 10f);
             RaycastHit2D hit = default(RaycastHit2D);
@@ -1153,7 +1153,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 for (var index = 0; index < projectileCount; index++)
                 {
                     var exactDirection = index < exactDirections.Length ? new Vector2(exactDirections[index].X, exactDirections[index].Y) : Vector2.zero;
-                    var projectileDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
+                    var projectileDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + (up * (preset.bulletSpread * SpreadValue(spreadSeed, index)))).normalized;
                     PlayRemoteProjectile(preset, origin, projectileDirection, !npcShot);
                 }
                 return;
@@ -1173,7 +1173,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 exactDirection = new Vector2(dir.X, dir.Y);
             }
 
-            Vector2 shotDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
+            Vector2 shotDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + (up * (preset.bulletSpread * SpreadValue(spreadSeed, index)))).normalized;
 
             CreateRemoteTracer(preset, origin, FindRemoteShotEnd(origin, shotDirection, !npcShot));
             CreateRemoteBulletImpact(preset, origin, shotDirection, !npcShot);
@@ -1280,7 +1280,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
             visual.transform.position = origin;
             visual.transform.right = direction;
             var line = AddFallbackTracer(visual);
-            line.SetPosition(0, origin - direction * 0.7f);
+            line.SetPosition(0, origin - (direction * 0.7f));
             line.SetPosition(1, origin);
         }
         remoteProjectiles.Enqueue(new RemoteProjectileVisual
@@ -1311,7 +1311,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 visual.transform.position = end;
                 break;
             }
-            visual.transform.position = current + direction * step;
+            visual.transform.position = current + (direction * step);
             speed += speedIncrease * Time.deltaTime;
             maximumLifetime -= Time.deltaTime;
             yield return null;
@@ -1327,7 +1327,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         {
             var current = (Vector2)visual.transform.position;
             velocity += Physics2D.gravity * gravityScale * Time.deltaTime;
-            var next = current + velocity * Time.deltaTime;
+            var next = current + (velocity * Time.deltaTime);
             var hit = FindRemoteProjectileCollision(current, next, ignoreRemoteAvatar);
             visual.transform.position = hit.HasValue ? hit.Value : next;
             if (velocity.sqrMagnitude > 0.01f) visual.transform.right = velocity;
@@ -1356,7 +1356,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 collision = hit;
                 break;
             }
-            if (collision.collider == null) visual.transform.position = position + direction * distance;
+            if (collision.collider == null) visual.transform.position = position + (direction * distance);
             else
             {
                 visual.transform.position = collision.point;
@@ -1364,7 +1364,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 if (ricochets <= 0 || (layer != LayerMask.NameToLayer("Ground") && layer != LayerMask.NameToLayer("Default"))) break;
                 ricochets--;
                 direction = Vector2.Reflect(direction, collision.normal).normalized;
-                visual.transform.position = collision.point + direction * 0.01f;
+                visual.transform.position = collision.point + (direction * 0.01f);
                 visual.transform.right = direction;
             }
             lifetime -= Time.deltaTime;
@@ -1453,7 +1453,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     private Vector2 FindRemoteShotEnd(Vector2 origin, Vector2 direction, bool ignoreRemoteAvatar)
     {
-        var end = origin + direction * 100f;
+        var end = origin + (direction * 100f);
         var closest = 100f;
         foreach (var hit in Physics2D.RaycastAll(origin, direction, 100f))
         {
@@ -1522,7 +1522,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 renderer.sortingOrder = surface.sortingOrder + 1;
                 renderer.sortingLayerName = surface.sortingLayerName;
                 renderer.material = Resources.Load<Material>("BaseSpriteMaterial");
-                hole.transform.position = hit.point + hit.normal * UnityEngine.Random.Range(-0.03f, -0.25f);
+                hole.transform.position = hit.point + (hit.normal * UnityEngine.Random.Range(-0.03f, -0.25f));
                 hole.transform.rotation = Quaternion.FromToRotation(Vector3.right, hit.normal);
                 hole.transform.SetParent(collider.transform);
             }
