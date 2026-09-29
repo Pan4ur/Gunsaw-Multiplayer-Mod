@@ -2,7 +2,6 @@
 
 public class WorldEnvironmentReplication
 {
-    private readonly HashSet<string> seenSnapshotFires = [];
     private readonly HashSet<string> seenSnapshotAudio = [];
     
     internal void RefreshButtons()
@@ -39,19 +38,7 @@ public class WorldEnvironmentReplication
         }
     }
     
-    internal void RefreshGlasses()
-    {
-        foreach (var glass in WorldReplication.FindObjectsOfType<GlassScript>())
-        {
-            if (glass == null || WorldReplication.Instance.glassIds.ContainsKey(glass)) continue;
-            var id = WorldReplication.Instance.GlassId(glass);
-            WorldReplication.Instance.glassIds[glass] = id;
-            WorldReplication.Instance.glasses[id] = glass;
-        }
-        RefreshLamps();
-    }
-    
-    private void RefreshLamps()
+    internal void RefreshLamps()
     {
         foreach (var collider in WorldReplication.FindObjectsOfType<Collider2D>())
         {
@@ -295,31 +282,6 @@ public class WorldEnvironmentReplication
             world.QueueButtonActivation(world.promptButton);
     }
     
-    internal void ApplyGlassDamage(string id, ushort peerId, float damage, Vector3 bulletPosition)
-    {
-        GlassScript glass;
-        var remoteBody = NetworkAvatarManager.RemoteBodyForPeer(peerId);
-        if (!WorldReplication.Instance.glasses.TryGetValue(id, out glass) || glass == null || remoteBody == null ||
-            !remoteBody.isAlive || ((Vector2)remoteBody.transform.position - (Vector2)glass.transform.position).sqrMagnitude > 10000f)
-            return;
-        glass.Damage(Mathf.Max(0f, damage), bulletPosition);
-        if (IsGlassBroken(glass)) WorldReplication.Instance.destroyedGlass.Add(id);
-    }
-
-    private void ApplyGlassState(string id)
-    {
-        GlassScript glass;
-        if (!WorldReplication.Instance.glasses.TryGetValue(id, out glass) || glass == null)
-        {
-            RefreshGlasses();
-            if (!WorldReplication.Instance.glasses.TryGetValue(id, out glass) || glass == null) return;
-        }
-        if (IsGlassBroken(glass)) return;
-        MultiplayerGlassDamagePatch.ApplyingNetworkState = true;
-        try { glass.Damage(float.MaxValue, glass.transform.position); }
-        finally { MultiplayerGlassDamagePatch.ApplyingNetworkState = false; }
-    }
-
     private void ApplyFireState(string id, Vector2 position, float rotation, float fuel, bool canIgnite, float damageMult, float fuelConsMult)
     {
         FireScript fire;
@@ -528,13 +490,6 @@ public class WorldEnvironmentReplication
             world.buttonActivations.TryGetValue(pair.Key, out var activations);
             buttons.Add(new EnvironmentButtonState(world.WireId(pair.Key), pair.Value != null, activations));
         }
-        CaptureDestroyedGlass();
-        var glass = new List<ulong>();
-        foreach (var id in world.destroyedGlass)
-        {
-            if (glass.Count >= ushort.MaxValue) break;
-            glass.Add(world.WireId(id));
-        }
         var audio = new List<EnvironmentAudioState>();
         foreach (var pair in world.mechanismAudio)
         {
@@ -561,7 +516,7 @@ public class WorldEnvironmentReplication
         var manager = GameManager.main;
         var mission = MissionManager.main;
         return new WorldEnvironmentPacket(MultiplayerSession.SnapshotEpoch, Physics2D.gravity.x, Physics2D.gravity.y,
-            buttons.ToArray(), glass.ToArray(), new EnvironmentFireState[0], audio.ToArray(), drones.ToArray(),
+            buttons.ToArray(), audio.ToArray(), drones.ToArray(),
             manager == null ? 0f : manager.rainIntensity, manager == null ? 0f : manager.snowIntensity,
             manager == null ? 0f : manager.fogIntensity, mission == null ? -1 : mission.killAmount,
             mission == null ? -1 : mission.totalEnemyCount, lamps.ToArray());
@@ -573,11 +528,6 @@ public class WorldEnvironmentReplication
         Physics2D.gravity = new Vector2(packet.GravityX, packet.GravityY);
         foreach (var button in packet.Buttons)
             ApplyButtonState(WorldReplication.Instance.ResolveWireId(button.Id), button.Active, button.Activations);
-        foreach (var id in packet.DestroyedGlassIds)
-            ApplyGlassState(WorldReplication.Instance.ResolveWireId(id));
-        foreach (var fire in packet.Fires)
-            ApplyFireState(WorldReplication.Instance.ResolveWireId(fire.Id),
-                new Vector2(fire.PositionX, fire.PositionY), fire.Rotation, fire.Fuel, fire.CanIgnite, fire.DamageMultiplier, fire.FuelConsumptionMultiplier);
         seenSnapshotAudio.Clear();
         foreach (var audio in packet.Audio)
         {
@@ -643,14 +593,6 @@ public class WorldEnvironmentReplication
             if (pair.Value != null && !seen.Contains(pair.Key) && pair.Value.isPlaying)
                 pair.Value.Stop();
     }
-    
-    private void CaptureDestroyedGlass()
-    {
-        foreach (var pair in WorldReplication.Instance.glasses)
-            if (IsGlassBroken(pair.Value)) WorldReplication.Instance.destroyedGlass.Add(pair.Key);
-    }
-    
-    private static bool IsGlassBroken(GlassScript glass) => glass == null || glass.health <= 0f;
     
     private void CaptureDestroyedDrones()
     {

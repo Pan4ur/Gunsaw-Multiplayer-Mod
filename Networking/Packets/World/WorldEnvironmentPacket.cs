@@ -30,30 +30,6 @@ internal readonly struct EnvironmentLampPowerState
     }
 }
 
-internal readonly struct EnvironmentFireState
-{
-    internal readonly ulong Id;
-    internal readonly float PositionX;
-    internal readonly float PositionY;
-    internal readonly float Rotation;
-    internal readonly float Fuel;
-    internal readonly bool CanIgnite;
-    internal readonly float DamageMultiplier;
-    internal readonly float FuelConsumptionMultiplier;
-    
-    internal EnvironmentFireState(ulong id, float positionX, float positionY, float rotation, float fuel, bool canIgnite, float damageMultiplier, float fuelConsumptionMultiplier)
-    {
-        Id = id;
-        PositionX = positionX;
-        PositionY = positionY;
-        Rotation = rotation;
-        Fuel = fuel;
-        CanIgnite = canIgnite;
-        DamageMultiplier = damageMultiplier;
-        FuelConsumptionMultiplier = fuelConsumptionMultiplier;
-    }
-}
-
 internal readonly struct EnvironmentAudioState
 {
     internal readonly ulong Id;
@@ -78,8 +54,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly float GravityX;
     internal readonly float GravityY;
     internal readonly EnvironmentButtonState[] Buttons;
-    internal readonly ulong[] DestroyedGlassIds;
-    internal readonly EnvironmentFireState[] Fires;
     internal readonly EnvironmentAudioState[] Audio;
     internal readonly ulong[] DestroyedDroneIds;
     internal readonly float RainIntensity;
@@ -90,14 +64,12 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly EnvironmentLampPowerState[] LampPower;
 
     internal WorldEnvironmentPacket(int sceneEpoch, float gravityX, float gravityY, EnvironmentButtonState[] buttons,
-        ulong[] destroyedGlassIds, EnvironmentFireState[] fires,
-        EnvironmentAudioState[] audio, ulong[] destroyedDroneIds, float rainIntensity, float snowIntensity,
+        EnvironmentAudioState[] audio, ulong[] destroyedDroneIds,
+        float rainIntensity, float snowIntensity,
         float fogIntensity, int enemyKills = -1, int enemyTotal = -1, EnvironmentLampPowerState[] lampPower = null)
     {
         SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
         Buttons = buttons ?? new EnvironmentButtonState[0];
-        DestroyedGlassIds = destroyedGlassIds ?? new ulong[0];
-        Fires = fires ?? new EnvironmentFireState[0];
         Audio = audio ?? new EnvironmentAudioState[0];
         DestroyedDroneIds = destroyedDroneIds ?? new ulong[0];
         RainIntensity = rainIntensity; SnowIntensity = snowIntensity; FogIntensity = fogIntensity;
@@ -110,8 +82,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal bool ContentEquals(WorldEnvironmentPacket other)
     {
         return SceneEpoch == other.SceneEpoch && GravityX.Equals(other.GravityX) && GravityY.Equals(other.GravityY) &&
-            ArraysEqual(Buttons, other.Buttons) && ArraysEqual(DestroyedGlassIds, other.DestroyedGlassIds) &&
-            ArraysEqual(Fires, other.Fires) && ArraysEqual(Audio, other.Audio) &&
+            ArraysEqual(Buttons, other.Buttons) && ArraysEqual(Audio, other.Audio) &&
             ArraysEqual(DestroyedDroneIds, other.DestroyedDroneIds) && RainIntensity.Equals(other.RainIntensity) &&
             SnowIntensity.Equals(other.SnowIntensity) && FogIntensity.Equals(other.FogIntensity) &&
             EnemyKills == other.EnemyKills && EnemyTotal == other.EnemyTotal && ArraysEqual(LampPower, other.LampPower);
@@ -132,8 +103,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         writer.WriteSingle(GravityX);
         writer.WriteSingle(GravityY);
         WriteButtons(ref writer, Buttons);
-        WriteIds(ref writer, DestroyedGlassIds);
-        WriteFires(ref writer, Fires);
         WriteAudio(ref writer, Audio);
         WriteIds(ref writer, DestroyedDroneIds);
         writer.WriteSingle(RainIntensity);
@@ -150,17 +119,15 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var gravityX = reader.ReadSingle();
         var gravityY = reader.ReadSingle();
         var buttons = ReadButtons(ref reader);
-        var glass = ReadIds(ref reader);
-        var fires = ReadFires(ref reader);
         var audio = ReadAudio(ref reader);
         var drones = ReadIds(ref reader);
         var rain = reader.ReadSingle();
         var snow = reader.ReadSingle();
         var fog = reader.ReadSingle();
-        var enemyKills = reader.Remaining >= sizeof(int) * 2 ? reader.ReadInt32() : -1;
-        var enemyTotal = reader.Remaining >= sizeof(int) ? reader.ReadInt32() : -1;
+        var enemyKills = reader.ReadInt32();
+        var enemyTotal = reader.ReadInt32();
         var lampPower = ReadLampPower(ref reader);
-        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, glass, fires, audio, drones, rain, snow, fog, enemyKills, enemyTotal, lampPower);
+        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, audio, drones, rain, snow, fog, enemyKills, enemyTotal, lampPower);
     }
 
     private static void WriteButtons(ref PacketWriter writer, EnvironmentButtonState[] values)
@@ -216,31 +183,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var values = new EnvironmentLampPowerState[reader.ReadUInt16()];
         for (var index = 0; index < values.Length; index++)
             values[index] = new EnvironmentLampPowerState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadSingle(), new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte()));
-        return values;
-    }
-
-    private static void WriteFires(ref PacketWriter writer, EnvironmentFireState[] values)
-    {
-        writer.WriteUInt16((ushort) Math.Min(values.Length, ushort.MaxValue));
-        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
-        {
-            var value = values[index];
-            writer.WriteUInt64(value.Id);
-            writer.WriteSingle(value.PositionX);
-            writer.WriteSingle(value.PositionY);
-            writer.WriteSingle(value.Rotation);
-            writer.WriteSingle(value.Fuel);
-            writer.WriteBoolean(value.CanIgnite);
-            writer.WriteSingle(value.DamageMultiplier);
-            writer.WriteSingle(value.FuelConsumptionMultiplier);
-        }
-    }
-
-    private static EnvironmentFireState[] ReadFires(ref PacketReader reader)
-    {
-        var values = new EnvironmentFireState[reader.ReadUInt16()];
-        for (var index = 0; index < values.Length; index++) 
-            values[index] = new EnvironmentFireState(reader.ReadUInt64(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
         return values;
     }
 

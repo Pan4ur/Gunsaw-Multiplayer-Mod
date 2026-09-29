@@ -78,8 +78,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private int effectsBytesPerSecond;
     internal static NpcReplication Instance;
     internal static bool ApplyingAuthoritativeDeath;
-
-
+    
     internal static bool IsEvaluatingAuthoritativePose { get; private set; }
 
     internal static void AlertForRemoteShot(ushort peerId, Vector2 position)
@@ -132,81 +131,103 @@ internal sealed class NpcReplication : MonoBehaviour
         var performanceStarted = MultiplayerPerformance.Start();
         try
         {
-        SampleActivity();
-        var scene = SceneManager.GetActiveScene();
-        var isHost = MultiplayerSession.IsHost;
-        var sceneChanged = activeSceneHandle != scene.handle;
-        var roleChanged = wasConnected && wasHost != isHost;
-        if (sceneChanged || roleChanged)
-        {
-            ResetReplication(wasConnected && !wasHost);
-            activeSceneHandle = scene.handle;
-            nextDiscovery = 0f;
-        }
-
-        if (!MultiplayerSession.IsConnected)
-        {
-            if (wasConnected) ResetReplication(true);
-            wasConnected = false;
-            wasHost = isHost;
-            return;
-        }
-        if (!wasConnected) nextDiscovery = 0f;
-        wasConnected = true;
-        wasHost = isHost;
-
-        var player = PlayerScript.player;
-        if (player == null || player.bodyScript == null) return;
-        var refreshDiscovery = Time.unscaledTime >= nextDiscovery;
-        if (refreshDiscovery) nextDiscovery = Time.unscaledTime + DiscoveryInterval;
-        if (isHost)
-        {
-            if (refreshDiscovery)
+            SampleActivity();
+            var scene = SceneManager.GetActiveScene();
+            var isHost = MultiplayerSession.IsHost;
+            var sceneChanged = activeSceneHandle != scene.handle;
+            var roleChanged = wasConnected && wasHost != isHost;
+            if (sceneChanged || roleChanged)
             {
-                var discoveryStarted = MultiplayerPerformance.StartPhase();
-                DiscoverBodies();
-                RefreshHostNpcs(player.bodyScript);
-                bodyRegistryReady = true;
-                pendingBodies.Clear();
-                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDiscovery, discoveryStarted);
+                ResetReplication(wasConnected && !wasHost);
+                activeSceneHandle = scene.handle;
+                nextDiscovery = 0f;
             }
-            ProcessPendingBodies(player.bodyScript);
-            NpcDamagePacket damagePacket;
-            ushort damagePeer;
-            while (MultiplayerSession.TryTakeNpcDamage(out damagePeer, out damagePacket))
-                ApplyClientDamage(damagePeer, damagePacket);
-            NpcGrabPacket grabPacket;
-            ushort grabPeer;
-            while (MultiplayerSession.TryTakeNpcGrab(out grabPeer, out grabPacket))
-                ApplyClientGrab(grabPeer, grabPacket);
-            if (Time.unscaledTime >= nextSnapshot)
+
+            if (!MultiplayerSession.IsConnected)
             {
-                nextSnapshot = Time.unscaledTime + SnapshotInterval;
-                var animationStarted = MultiplayerPerformance.StartPhase();
-                AnimateHostNpcs();
-                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcAnimation, animationStarted);
-                var serializeStarted = MultiplayerPerformance.StartPhase();
-                var snapshot = SerializeSnapshot();
-                MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSerialize, serializeStarted);
-                if (snapshot != null)
+                if (wasConnected)
+                    ResetReplication(true);
+                wasConnected = false;
+                wasHost = isHost;
+                return;
+            }
+
+            if (!wasConnected)
+                nextDiscovery = 0f;
+            
+            wasConnected = true;
+            wasHost = isHost;
+
+            var player = PlayerScript.player;
+            if (player == null || player.bodyScript == null)
+                return;
+            
+            var refreshDiscovery = Time.unscaledTime >= nextDiscovery;
+            if (refreshDiscovery)
+                nextDiscovery = Time.unscaledTime + DiscoveryInterval;
+            
+            if (isHost)
+                UpdateHostNPCs(player, refreshDiscovery);
+            else
+                UpdateClientNPCs(player, refreshDiscovery);
+        }
+        finally
+        {
+            MultiplayerPerformance.AddNpc(performanceStarted);
+        }
+    }
+
+    private void UpdateHostNPCs(PlayerScript? player, bool refreshDiscovery)
+    {
+        if (refreshDiscovery)
+        {
+            var discoveryStarted = MultiplayerPerformance.StartPhase();
+            DiscoverBodies();
+            RefreshHostNpcs(player.bodyScript);
+            bodyRegistryReady = true;
+            pendingBodies.Clear();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDiscovery, discoveryStarted);
+        }
+
+        ProcessPendingBodies(player.bodyScript);
+        NpcDamagePacket damagePacket;
+        ushort damagePeer;
+        while (MultiplayerSession.TryTakeNpcDamage(out damagePeer, out damagePacket))
+            ApplyClientDamage(damagePeer, damagePacket);
+        NpcGrabPacket grabPacket;
+        ushort grabPeer;
+        while (MultiplayerSession.TryTakeNpcGrab(out grabPeer, out grabPacket))
+            ApplyClientGrab(grabPeer, grabPacket);
+        if (Time.unscaledTime >= nextSnapshot)
+        {
+            nextSnapshot = Time.unscaledTime + SnapshotInterval;
+            var animationStarted = MultiplayerPerformance.StartPhase();
+            AnimateHostNpcs();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcAnimation, animationStarted);
+            var serializeStarted = MultiplayerPerformance.StartPhase();
+            var snapshot = SerializeSnapshot();
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSerialize, serializeStarted);
+            if (snapshot != null)
+            {
+                const int chunkSize = 60 * 1024;
+                var transferId = PacketSequences.NextNpcTransfer();
+                var chunkCount = Math.Max(1, (snapshot.Length + chunkSize - 1) / chunkSize);
+                for (var index = 0; index < chunkCount; index++)
                 {
-                    const int chunkSize = 60 * 1024;
-                    var transferId = PacketSequences.NextNpcTransfer();
-                    var chunkCount = Math.Max(1, (snapshot.Length + chunkSize - 1) / chunkSize);
-                    for (var index = 0; index < chunkCount; index++)
-                    {
-                        var offset = index * chunkSize;
-                        var length = Math.Min(chunkSize, snapshot.Length - offset);
-                        var chunk = new byte[length];
-                        if (length > 0) Buffer.BlockCopy(snapshot, offset, chunk, 0, length);
-                        MultiplayerSession.Send(new NpcSnapshotPacket(transferId, (ushort)index,
-                            (ushort)chunkCount, snapshot.Length, chunk));
-                    }
+                    var offset = index * chunkSize;
+                    var length = Math.Min(chunkSize, snapshot.Length - offset);
+                    var chunk = new byte[length];
+                    if (length > 0)
+                        Buffer.BlockCopy(snapshot, offset, chunk, 0, length);
+                    MultiplayerSession.Send(new NpcSnapshotPacket(transferId, (ushort)index,
+                        (ushort)chunkCount, snapshot.Length, chunk));
                 }
             }
-            return;
         }
-
+    }
+    
+    private void UpdateClientNPCs(PlayerScript? player, bool refreshDiscovery)
+    {
         if (refreshDiscovery)
         {
             var discoveryStarted = MultiplayerPerformance.StartPhase();
@@ -216,16 +237,19 @@ internal sealed class NpcReplication : MonoBehaviour
             pendingBodies.Clear();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcDiscovery, discoveryStarted);
         }
+
         ProcessPendingBodies(player.bodyScript);
         byte[] packet;
         byte[] latestPacket = null;
-        while (MultiplayerSession.TryTakeNpcSnapshot(out packet)) latestPacket = packet;
+        while (MultiplayerSession.TryTakeNpcSnapshot(out packet))
+            latestPacket = packet;
         if (latestPacket != null)
         {
             var readStarted = MultiplayerPerformance.StartPhase();
             ApplySnapshot(latestPacket);
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcSnapshotRead, readStarted);
         }
+
         NpcSpeechPacket speechPacket;
         ushort speechPeer;
         while (MultiplayerSession.TryTakeNpcSpeech(out speechPeer, out speechPacket))
@@ -234,11 +258,6 @@ internal sealed class NpcReplication : MonoBehaviour
             var speechId = ResolveWireId(speechPacket.NpcId);
             if (clientNpcs.TryGetValue(speechId, out speechProxy))
                 speechProxy.PendingSpeech = speechPacket;
-        }
-        }
-        finally
-        {
-            MultiplayerPerformance.AddNpc(performanceStarted);
         }
     }
 
@@ -1492,9 +1511,10 @@ internal sealed class NpcReplication : MonoBehaviour
                 ApplyProxyWeaponSlot(body, state);
                 proxy.AppliedWeapon = state.WeaponSlot;
             }
-            catch (Exception ignored)
+            catch (Exception e)
             {
                 proxy.AppliedWeapon = -2;
+                GunsawMultiplayerPlugin.LogInfo($"Failed to apply NPC weapon: {e}");
             }
             FreezeProxy(proxy);
         }
@@ -1505,9 +1525,10 @@ internal sealed class NpcReplication : MonoBehaviour
                 ApplyProxyUnarmed(body);
                 proxy.AppliedWeapon = -1;
             }
-            catch (Exception ignored)
+            catch (Exception e)
             {
                 proxy.AppliedWeapon = -2;
+                GunsawMultiplayerPlugin.LogInfo($"Failed to apply NPC weapon: {e}");
             }
             FreezeProxy(proxy);
         }
@@ -1566,21 +1587,13 @@ internal sealed class NpcReplication : MonoBehaviour
             var renderer = weapon.GetComponent<SpriteRenderer>();
             if (renderer != null) renderer.sprite = null;
             if (GameManager.main != null) weapon.stats = GameManager.main.unarmedWep;
+            weapon.ammo = 0;
         }
         body.currentWeapon = -1;
         body.unarmed = true;
         if (body.wepLaser != null) Destroy(body.wepLaser);
         body.wepLaser = null;
         body.wepLaserLine = null;
-        weapon.ammo = 0;
-        body.unarmed = true;
-        var laser = body.wepLaser;
-        if (laser != null)
-        {
-            Destroy(laser);
-            body.wepLaser = null;
-            body.wepLaserLine = null;
-        }
     }
 
     private static void SetTarget(NpcProxy proxy, Rigidbody2D body, Pose pose)
@@ -1674,7 +1687,6 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void InterpolateClientNpc(NpcProxy proxy)
     {
-
         if (proxy == null || proxy.LastVisualInterpolationFrame == Time.frameCount)
             return;
 
@@ -2617,24 +2629,23 @@ internal sealed class NpcReplication : MonoBehaviour
     private sealed class HostNpcLayout : IDisposable
     {
         public GameObject Root;
-        public AIScript[] AiControllers = Array.Empty<AIScript>();
-        public Rigidbody2D[] SimulationBodies = Array.Empty<Rigidbody2D>();
+        public AIScript[] AiControllers = [];
+        public Rigidbody2D[] SimulationBodies = [];
         public IList DestroyOnDeath = new ArrayList();
-        public Rigidbody2D[] RigBodies = new Rigidbody2D[0];
-        public ulong[] RigIds = new ulong[0];
-        public LimbScript[] Limbs = Array.Empty<LimbScript>();
-        public FireScript[] LimbFires = new FireScript[0];
-        public Rigidbody2D[] TailBases = Array.Empty<Rigidbody2D>();
-        public Transform[] Tails = new Transform[0];
+        public Rigidbody2D[] RigBodies = [];
+        public ulong[] RigIds = [];
+        public LimbScript[] Limbs = [];
+        public FireScript[] LimbFires = [];
+        public Rigidbody2D[] TailBases = [];
+        public Transform[] Tails = [];
         public Transform GunTransform;
         public Transform GunAnimationTransform;
-        public WeaponPreset[] Weapons = Array.Empty<WeaponPreset>();
+        public WeaponPreset[] Weapons = [];
         public LineRenderer WeaponLaserLine;
-        public SpriteRenderer[] SpriteRenderers = new SpriteRenderer[0];
-        public ParticleSystem[] Particles = new ParticleSystem[0];
-        public UnityEngine.Experimental.Rendering.Universal.Light2D[] Lights =
-            new UnityEngine.Experimental.Rendering.Universal.Light2D[0];
-        public FacialExpression[] FacialExpressions = Array.Empty<FacialExpression>();
+        public SpriteRenderer[] SpriteRenderers = [];
+        public ParticleSystem[] Particles = [];
+        public UnityEngine.Experimental.Rendering.Universal.Light2D[] Lights = [];
+        public FacialExpression[] FacialExpressions = [];
         public byte[] VisualState;
         public float NextVisualState;
         public readonly MemoryStream VisualStream = new();
@@ -2705,33 +2716,33 @@ internal sealed class NpcReplication : MonoBehaviour
         public float LocalPhysicsUntil;
         public int LastVisualInterpolationFrame = -1;
         public int AppliedWeapon = -2;
-        public ulong[] AppliedWeapons = Array.Empty<ulong>();
+        public ulong[] AppliedWeapons = [];
         public NpcNetworkReplica Marker;
-        public readonly Dictionary<MonoBehaviour, bool> Behaviours = new Dictionary<MonoBehaviour, bool>();
-        public readonly Dictionary<Behaviour, bool> OtherBehaviours = new Dictionary<Behaviour, bool>();
-        public readonly Dictionary<Rigidbody2D, RigidbodySettings> RigidbodySettings = new Dictionary<Rigidbody2D, RigidbodySettings>();
-        public readonly Dictionary<Rigidbody2D, Pose> BodyTargets = new Dictionary<Rigidbody2D, Pose>();
-        public readonly List<Rigidbody2D> CompletedBodyTargets = new List<Rigidbody2D>();
-        public readonly Dictionary<ulong, Rigidbody2D> RigBodies = new Dictionary<ulong, Rigidbody2D>();
-        public readonly Dictionary<Transform, TransformTarget> TransformTargets = new Dictionary<Transform, TransformTarget>();
-        public readonly Dictionary<Transform, TransformOrder> TransformOrderByTransform = new Dictionary<Transform, TransformOrder>();
-        public readonly List<Transform> OrderedTransformTargets = new List<Transform>();
-        public readonly Dictionary<int, GameObject> FireVisuals = new Dictionary<int, GameObject>();
-        public readonly Dictionary<GameObject, bool> OriginalFireActive = new Dictionary<GameObject, bool>();
-        public readonly HashSet<GameObject> OwnedFireVisuals = new HashSet<GameObject>();
-        public readonly Dictionary<SpriteRenderer, Sprite> OriginalDismemberSprites = new Dictionary<SpriteRenderer, Sprite>();
-        public readonly Dictionary<Joint2D, bool> OriginalJointStates = new Dictionary<Joint2D, bool>();
-        public DismemberManager[] DismemberManagers = new DismemberManager[0];
-        public AIScript[] AiControllers = Array.Empty<AIScript>();
-        public WeaponBackShow[] WeaponBackShows = Array.Empty<WeaponBackShow>();
-        public bool[] DismemberedLimbs = Array.Empty<bool>();
+        public readonly Dictionary<MonoBehaviour, bool> Behaviours = new ();
+        public readonly Dictionary<Behaviour, bool> OtherBehaviours = new ();
+        public readonly Dictionary<Rigidbody2D, RigidbodySettings> RigidbodySettings = new ();
+        public readonly Dictionary<Rigidbody2D, Pose> BodyTargets = new ();
+        public readonly List<Rigidbody2D> CompletedBodyTargets = [];
+        public readonly Dictionary<ulong, Rigidbody2D> RigBodies = new ();
+        public readonly Dictionary<Transform, TransformTarget> TransformTargets = new ();
+        public readonly Dictionary<Transform, TransformOrder> TransformOrderByTransform = new ();
+        public readonly List<Transform> OrderedTransformTargets = [];
+        public readonly Dictionary<int, GameObject> FireVisuals = new ();
+        public readonly Dictionary<GameObject, bool> OriginalFireActive = new ();
+        public readonly HashSet<GameObject> OwnedFireVisuals = [];
+        public readonly Dictionary<SpriteRenderer, Sprite> OriginalDismemberSprites = new ();
+        public readonly Dictionary<Joint2D, bool> OriginalJointStates = new ();
+        public DismemberManager[] DismemberManagers = [];
+        public AIScript[] AiControllers = [];
+        public WeaponBackShow[] WeaponBackShows = [];
+        public bool[] DismemberedLimbs = [];
         public bool DismembermentDirty = true;
-        public SpriteRenderer[] SpriteRenderers = new SpriteRenderer[0];
-        public bool[] ReplicatedSpriteRenderers = new bool[0];
-        public ParticleSystem[] Particles = new ParticleSystem[0];
-        public UnityEngine.Experimental.Rendering.Universal.Light2D[] Lights = new UnityEngine.Experimental.Rendering.Universal.Light2D[0];
-        public FacialExpression[] FacialExpressions = Array.Empty<FacialExpression>();
-        public byte[] FacialExpressionStates = Array.Empty<byte>();
+        public SpriteRenderer[] SpriteRenderers = [];
+        public bool[] ReplicatedSpriteRenderers = [];
+        public ParticleSystem[] Particles = [];
+        public UnityEngine.Experimental.Rendering.Universal.Light2D[] Lights = [];
+        public FacialExpression[] FacialExpressions = [];
+        public byte[] FacialExpressionStates = [];
         public NpcSpeechPacket? PendingSpeech;
         public bool HasVisualState;
         public NpcVisualState LastVisualState = new NpcVisualState();
@@ -2815,7 +2826,6 @@ internal sealed class NpcReplication : MonoBehaviour
         public bool Active;
         public bool Playing;
     }
-
 
     private struct LightVisualState
     {

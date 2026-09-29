@@ -5,7 +5,6 @@ internal enum InteractionType : byte
     ButtonActivate = 3,
     DoorActivate = 4,
     ZoneActivate = 5,
-    GlassDamage = 6,
     VehicleDamage = 7,
     DroneDamage = 8,
     WeaponDrop = 9,
@@ -59,12 +58,6 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
             case InteractionType.ZoneActivate:
                 writer.WriteBoolean(Manual);
                 return;
-            case InteractionType.GlassDamage:
-                writer.WriteSingle(PositionX);
-                writer.WriteSingle(PositionY);
-                writer.WriteSingle(PositionZ);
-                writer.WriteSingle(Damage);
-                return;
             case InteractionType.VehicleDamage:
                 writer.WriteSingle(Damage);
                 writer.WriteBoolean(Collision);
@@ -98,7 +91,6 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
             case InteractionType.ButtonActivate: return new WorldInteractionPacket(InteractionType.ButtonActivate, targetId);
             case InteractionType.DoorActivate: return new WorldInteractionPacket(InteractionType.DoorActivate, targetId);
             case InteractionType.ZoneActivate: return new WorldInteractionPacket(InteractionType.ZoneActivate,targetId, manual: reader.ReadBoolean());
-            case InteractionType.GlassDamage: return new WorldInteractionPacket(InteractionType.GlassDamage, targetId, positionX: reader.ReadSingle(), positionY: reader.ReadSingle(), positionZ: reader.ReadSingle(), damage: reader.ReadSingle());
             case InteractionType.VehicleDamage: return new WorldInteractionPacket(InteractionType.VehicleDamage, targetId, damage: reader.ReadSingle(), collision: reader.ReadBoolean());
             case InteractionType.DroneDamage: return new WorldInteractionPacket(InteractionType.DroneDamage, targetId, damage: reader.ReadSingle());
             case InteractionType.LampBreak: return new WorldInteractionPacket(InteractionType.LampBreak, targetId, positionX: reader.ReadSingle(), positionY: reader.ReadSingle());

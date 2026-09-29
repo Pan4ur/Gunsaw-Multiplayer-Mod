@@ -71,7 +71,7 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             peerId = 0;
-            packet = default(PlayerSnapshotPacket);
+            packet = default;
             foreach (var pair in snapshots)
             {
                 peerId = pair.Key;
@@ -86,12 +86,12 @@ internal static partial class MultiplayerSession
 
     internal static bool TryTakeWorldSnapshot(out byte[] data)
     {
-        ushort ignored; return TryTakePayload(worldSnapshots, out ignored, out data);
+        return TryTakePayload(worldSnapshots, out _, out data);
     }
 
     internal static bool TryTakeWorldEnvironment(out WorldEnvironmentPacket packet)
     {
-        ushort ignored; return TryTakePacket(worldEnvironments, out ignored, out packet);
+        return TryTakePacket(worldEnvironments, out _, out packet);
     }
 
     internal static bool TryTakeWorldInput(out ushort peerId, out WorldInputPacket packet)
@@ -100,7 +100,7 @@ internal static partial class MultiplayerSession
         {
             var item = worldInputs.Count == 0 ? null : worldInputs.Dequeue();
             peerId = item == null ? (ushort)0 : item.PeerId;
-            packet = item == null ? default(WorldInputPacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }
@@ -110,14 +110,14 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             var item = worldDamage.Count == 0 ? null : worldDamage.Dequeue();
-            packet = item == null ? default(WorldDamagePacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }
 
     internal static bool TryTakeNpcSnapshot(out byte[] data)
     {
-        ushort ignored; return TryTakePayload(npcSnapshots, out ignored, out data);
+        return TryTakePayload(npcSnapshots, out _, out data);
     }
 
     internal static bool TryTakeNpcDamage(out ushort peerId, out NpcDamagePacket packet)
@@ -135,7 +135,7 @@ internal static partial class MultiplayerSession
         {
             var item = playerDamage.Count == 0 ? null : playerDamage.Dequeue();
             peerId = item == null ? (ushort)0 : item.PeerId;
-            packet = item == null ? default(PlayerDamagePacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }
@@ -146,7 +146,7 @@ internal static partial class MultiplayerSession
         {
             var item = pvpDamage.Count == 0 ? null : pvpDamage.Dequeue();
             peerId = item == null ? (ushort)0 : item.PeerId;
-            packet = item == null ? default(PlayerDamagePacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }
@@ -156,7 +156,7 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             var item = worldFires.Count == 0 ? null : worldFires.Dequeue();
-            packet = item == null ? default(WorldFirePacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }
@@ -166,7 +166,7 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             var item = worldExplosions.Count == 0 ? null : worldExplosions.Dequeue();
-            packet = item == null ? default(WorldExplosionPacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }
@@ -177,7 +177,7 @@ internal static partial class MultiplayerSession
         {
             var item = shotVisuals.Count == 0 ? null : shotVisuals.Dequeue();
             peerId = item == null ? (ushort)0 : item.PeerId;
-            packet = item == null ? default(ShotVisualPacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }
@@ -187,7 +187,7 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             peerId = 0;
-            packet = default(PlayerStatePacket);
+            packet = default;
             foreach (var pair in playerStates)
             {
                 peerId = pair.Key;
@@ -205,7 +205,7 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             peerId = 0;
-            packet = default(PlayerSpecialLinesPacket);
+            packet = default;
             foreach (var pair in playerSpecialLines) { peerId = pair.Key; packet = pair.Value; break; }
             if (peerId == 0) return false;
             playerSpecialLines.Remove(peerId);
@@ -291,7 +291,7 @@ internal static partial class MultiplayerSession
         {
             var item = queue.Count == 0 ? null : queue.Dequeue();
             peerId = item == null ? (ushort)0 : item.PeerId;
-            packet = item == null ? default(TPacket) : item.Packet;
+            packet = item == null ? default : item.Packet;
             return item != null;
         }
     }

@@ -476,12 +476,18 @@ internal static partial class MultiplayerSession
     }
 
     internal static bool ReadBrutalMode() => PlayerPrefs.GetInt("difficulty") > 0;
-    
-    internal static int PingMs { get { lock (statusLock)
+
+    internal static int PingMs
+    {
+        get
         {
-            PeerState host;
-            return peers.TryGet(hostPeerId, out host) ? host.PingMs : -1;
-        } } }
+            lock (statusLock)
+            {
+                PeerState host;
+                return peers.TryGet(hostPeerId, out host) ? host.PingMs : -1;
+            }
+        }
+    }
     internal static string LocalPlayerName { get { lock (statusLock) return localPlayerName; } }
     internal static ushort LocalPeerId { get { lock (statusLock) return localPeerId; } }
     internal static ushort HostPeerId { get { lock (statusLock) return hostPeerId; } }

@@ -110,8 +110,8 @@ internal static class ClientCrystalTongueRemotePlayerPatch
             foreach (var collider in remote.Body.GetComponentsInChildren<Collider2D>(true))
             {
                 if (collider == null) continue;
-                if (!TryHitBounds(origin, direction, collider.bounds, out var hitDistance) ||
-                    hitDistance >= closestDistance) continue;
+                if (!TryHitBounds(origin, direction, collider.bounds, out var hitDistance) || hitDistance >= closestDistance)
+                    continue;
                 closestDistance = hitDistance;
                 closestCollider = collider;
                 closestPoint = origin + direction * hitDistance;
@@ -136,18 +136,14 @@ internal static class ClientCrystalTongueRemotePlayerPatch
         return true;
     }
 
-    private static bool ClipAxis(float origin, float direction, float minimum, float maximum, ref float enter,
-        ref float exit)
+    private static bool ClipAxis(float origin, float direction, float minimum, float maximum, ref float enter, ref float exit)
     {
         if (Mathf.Abs(direction) < 0.00001f) return origin >= minimum && origin <= maximum;
         var first = (minimum - origin) / direction;
         var second = (maximum - origin) / direction;
         if (first > second)
-        {
-            var swap = first;
-            first = second;
-            second = swap;
-        }
+            (first, second) = (second, first);
+        
         enter = Mathf.Max(enter, first);
         exit = Mathf.Min(exit, second);
         return enter <= exit && exit >= 0f;
@@ -215,8 +211,7 @@ internal static class MultiplayerPlayerSlowmoPatch
         return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen;
     }
 
-    private static Exception Finalizer(PlayerScript __instance, Exception __exception,
-        MultiplayerTimeControl.SlowmoKeyState __state)
+    private static Exception Finalizer(PlayerScript __instance, Exception __exception, MultiplayerTimeControl.SlowmoKeyState __state)
     {
         MultiplayerTimeControl.EndPlayerUpdate(__instance, __state);
         return __exception;
@@ -280,7 +275,6 @@ internal static class MultiplayerGameManagerFocusPatch
         if (!initializedAiObjects.Add(gameObject.GetInstanceID())) return;
         if (gameObject.activeSelf != requested) gameObject.SetActive(requested);
     }
-
 }
 
 [HarmonyPatch(typeof(GameManager), "MainMenu")]
@@ -529,7 +523,6 @@ internal static class MultiplayerLimbAnimationPatch
         if (NpcReplication.IsHostNpc(body)) return NpcReplication.IsEvaluatingAuthoritativePose;
         return true;
     }
-
 }
 
 [HarmonyPatch(typeof(ScreenFXManager), "Update")]
@@ -798,8 +791,7 @@ internal static class MultiplayerOneTimeButtonPatch
 [HarmonyPatch(typeof(BodyScript), "Damaged")]
 internal static class ClientNpcDamagePatch
 {
-    private static bool Prefix(BodyScript __instance, bool isCrit,
-        out NetworkAvatarManager.TargetScreenEffectState __state)
+    private static bool Prefix(BodyScript __instance, bool isCrit, out NetworkAvatarManager.TargetScreenEffectState __state)
     {
         __state = NetworkAvatarManager.BeginTargetScreenEffect(__instance);
         if (KartPassengers.IsProtectedPassenger(__instance)) return false;
@@ -809,8 +801,7 @@ internal static class ClientNpcDamagePatch
         return !NpcReplication.HandleClientDamaged(__instance, isCrit);
     }
 
-    private static Exception Finalizer(Exception __exception,
-        NetworkAvatarManager.TargetScreenEffectState __state)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarManager.TargetScreenEffectState __state)
     {
         NetworkAvatarManager.EndTargetScreenEffect(__state);
         return __exception;
@@ -931,7 +922,6 @@ internal static class ClientNpcDropWeaponSinglePatch
         if (NetworkAvatarManager.BlockNetworkPlayerDrop(__instance, false)) return false;
         return !NpcReplication.BlockClientWeaponDrop(__instance);
     }
-
 }
 
 [HarmonyPatch(typeof(BodyScript), "DropAllWeapons")]
@@ -1156,8 +1146,7 @@ internal static class SpecialTriggerActivatePatch
 [HarmonyPatch(typeof(Chatter), "Say")]
 internal static class MultiplayerNpcChatterPatch
 {
-    private static bool Prefix(Chatter __instance, int prior, ref int ___curPriority, ref float ___curShowTime,
-        out bool __state)
+    private static bool Prefix(Chatter __instance, int prior, ref int ___curPriority, ref float ___curShowTime, out bool __state)
     {
         __state = prior > ___curPriority || ___curShowTime < 0f;
         if (!MultiplayerSession.IsConnected) return true;
@@ -1177,9 +1166,8 @@ internal static class MultiplayerWeaponShotPatch
     private static bool Prefix(WeaponScript __instance, out NetworkAvatarManager.ShotState __state)
     {
         __state = NetworkAvatarManager.BeginWeaponShot(__instance);
-        return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost ||
-            __instance == null || (__instance.GetComponentInParent<NpcNetworkReplica>() == null &&
-            !NpcReplication.IsClientProxy(__instance.body));
+        return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost || __instance == null 
+               || (__instance.GetComponentInParent<NpcNetworkReplica>() == null && !NpcReplication.IsClientProxy(__instance.body));
     }
 
     private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
@@ -1192,15 +1180,7 @@ internal static class MultiplayerWeaponShotPatch
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var patched = new List<CodeInstruction>(instructions);
-        var original = AccessTools.Method(
-            typeof(Rigidbody2D),
-            nameof(Rigidbody2D.AddForceAtPosition),
-            new[]
-            {
-                typeof(Vector2),
-                typeof(Vector2),
-                typeof(ForceMode2D)
-            });
+        var original = AccessTools.Method(typeof(Rigidbody2D), nameof(Rigidbody2D.AddForceAtPosition), new[] { typeof(Vector2), typeof(Vector2), typeof(ForceMode2D) });
 
         var replacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.AddForceAtPositionWithPropAuthority));
         var soundReplacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.PlayPlayerActionSound));
@@ -1255,15 +1235,7 @@ internal static class MultiplayerPlayerKickDelayedPatch
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
-        var original = AccessTools.Method(
-            typeof(Rigidbody2D),
-            nameof(Rigidbody2D.AddForce),
-            new[]
-            {
-                typeof(Vector2),
-                typeof(ForceMode2D)
-            });
-
+        var original = AccessTools.Method(typeof(Rigidbody2D), nameof(Rigidbody2D.AddForce), new[] { typeof(Vector2), typeof(ForceMode2D) });
         var replacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.AddForceWithPropAuthority));
         var soundReplacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.PlayPlayerActionSound));
 
