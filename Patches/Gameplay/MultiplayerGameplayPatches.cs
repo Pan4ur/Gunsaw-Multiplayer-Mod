@@ -967,9 +967,16 @@ internal static class ClientSawCollisionStayPatch
 [HarmonyPatch(typeof(WaterScript), "OnTriggerStay2D")]
 internal static class AcidDeathCausePatch
 {
-    private static void Prefix(WaterScript __instance, Collider2D collision)
+    private static bool Prefix(WaterScript __instance, Collider2D collision)
     {
+        if (MultiplayerSession.IsHost && collision != null)
+        {
+            var limb = collision.GetComponent<LimbScript>();
+            var body = limb == null ? collision.GetComponent<BodyScript>() : limb.body;
+            if (NetworkAvatarManager.IsRemoteAvatarBody(body)) return false;
+        }
         NetworkAvatarManager.RecordAcidDamage(__instance, collision);
+        return true;
     }
 }
 

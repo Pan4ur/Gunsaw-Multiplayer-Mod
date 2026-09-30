@@ -29,7 +29,11 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static bool applyingNetworkPlayerDamage;
     private static int suppressedTargetScreenEffects;
     private static float suppressedCameraUntil = -1f;
-
+    private static int remoteAvatarCreationDepth;
+    private static BodyScript initialScaleAppliedBody;
+    private static float initialScaleBase = float.NaN;
+    private static float appliedInitialScale = float.NaN;
+    
     internal static void UnregisterReplica(NetworkAvatarReplication replica)
     {
         if (ReferenceEquals(replica, null)) return;
@@ -58,11 +62,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         return null;
     }
 
-    internal static BodyScript RemoteBodyForPeer(ushort peerId)
-    {
-        NetworkAvatarReplication replica;
-        return replicas.TryGetValue(peerId, out replica) && replica != null ? replica.remoteBody : null;
-    }
+    internal static BodyScript RemoteBodyForPeer(ushort peerId) =>
+        replicas.TryGetValue(peerId, out var replica) && replica != null ? replica.remoteBody : null;
 
     internal static RemotePlayerInfo[] RemotePlayers()
     {
@@ -404,10 +405,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                 var direction = state.ShotDirections[index];
                 exactDirections[index] = new ShotVisualDirection(direction.x, direction.y);
             }
-            MultiplayerSession.Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x,
-                state.Direction.y, state.Up.x, state.Up.y, state.WeaponSprite, hostNpcShot,
-                targetPeers.ToArray(), state.SpreadSeed, exactDirections,
-                Array.Empty<string>()));
+            MultiplayerSession.Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x, state.Direction.y, state.Up.x, state.Up.y,
+                state.WeaponSprite, hostNpcShot, targetPeers.ToArray(), state.SpreadSeed, exactDirections, []));
             foreach (var wound in state.Wounds)
                 SendRemotePlayerWound(wound, wound.BaseDamage > 20f || wound.Critical);
         }
@@ -651,15 +650,19 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         if (!animatedSoundIds.TryGetValue(soundName ?? "", out soundId)) return;
         MultiplayerSession.Send(new PlayerSoundPacket(0x20000000u | soundId, body.transform.position.x, body.transform.position.y, 64, 64));
     }
+    
     internal static void PrepareNpcTarget(AIScript ai)
     {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || LocalPlayerReplication.Instance == null ||
-            ai == null || ai.body == null || ai.followPlayer) return;
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || LocalPlayerReplication.Instance == null || ai == null || ai.body == null || ai.followPlayer)
+            return;
+        
         var player = PlayerScript.player;
         var localBody = player == null ? null : player.bodyScript;
         if (localBody == null) return;
         var current = ai.targetBody;
-        if (current != null && current != localBody && NetworkAvatarManager.ReplicaForBody(current) == null) return;
+        
+        if (current != null && current != localBody && NetworkAvatarManager.ReplicaForBody(current) == null)
+            return;
 
         BodyScript best = null;
         var bestDistance = float.MaxValue;
@@ -675,26 +678,21 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         if (best != null) ai.targetBody = best;
     }
 
-    private static void SelectNpcPlayerTarget(BodyScript npc, BodyScript candidate,
-        ref BodyScript best, ref float bestDistance)
+    private static void SelectNpcPlayerTarget(BodyScript npc, BodyScript candidate, ref BodyScript best, ref float bestDistance)
     {
-        if (candidate == null || !candidate.isAlive || !candidate.gameObject.activeInHierarchy ||
-            candidate.team == npc.team) return;
+        if (candidate == null || !candidate.isAlive || !candidate.gameObject.activeInHierarchy || candidate.team == npc.team) 
+            return;
+        
         var distance = Vector2.Distance(npc.transform.position, candidate.transform.position);
         if (distance > 40f || distance >= bestDistance) return;
         var from = npc.headTransform == null ? (Vector2)npc.transform.position : (Vector2)npc.headTransform.position;
-        var to = candidate.headTransform == null
-            ? (Vector2)candidate.transform.position
-            : (Vector2)candidate.headTransform.position;
+        var to = candidate.headTransform == null ? (Vector2)candidate.transform.position : (Vector2)candidate.headTransform.position;
         if (distance >= 3.5f && Physics2D.Linecast(from, to, LayerMask.GetMask("Ground"))) return;
         best = candidate;
         bestDistance = distance;
     }
 
-    internal static string RemoteTeam(BodyScript localBody)
-    {
-        return MultiplayerSession.PvpEnabled ? PvpRemoteTeam : localBody.team;
-    }
+    internal static string RemoteTeam(BodyScript localBody) => MultiplayerSession.PvpEnabled ? PvpRemoteTeam : localBody.team;
 
     internal static ShotState BeginProjectileExplosion(GameObject projectile)
     {
@@ -721,25 +719,25 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         activeRocketProjectile = previous;
     }
 
-    internal static GameObject ResolveExplosionProjectile(GameObject projectile)
-    {
-        return projectile == null && activeRocketProjectile != null
-            ? activeRocketProjectile.gameObject : projectile;
-    }
+    internal static GameObject ResolveExplosionProjectile(GameObject projectile) =>
+        projectile == null && activeRocketProjectile != null ? activeRocketProjectile.gameObject : projectile;
 
     internal static void ReplicateProjectileImpact(GameObject projectile, Vector2 position)
     {
-        if (!MultiplayerSession.IsConnected || projectile == null || !NetworkAvatarUtilities.IsFinite(position.x) ||
-            !NetworkAvatarUtilities.IsFinite(position.y)) return;
+        if (!MultiplayerSession.IsConnected || projectile == null || !IsFinite(position.x) || !IsFinite(position.y))
+            return;
+        
         var rocket = projectile.GetComponentInChildren<RocketProjectile>(true);
         var grenade = projectile.GetComponentInChildren<GrenadeScript>(true);
         if (rocket == null && grenade == null) return;
         var shooter = ProjectileOwner(projectile);
         var player = PlayerScript.player;
         var localPlayerShot = shooter != null && player != null && shooter == player.bodyScript;
-        var hostNpcShot = MultiplayerSession.IsHost && shooter != null && !shooter.isPlayer &&
-            shooter.GetComponentInParent<NetworkReplica>() == null;
-        if (!localPlayerShot && !hostNpcShot) return;
+        var hostNpcShot = MultiplayerSession.IsHost && shooter != null && !shooter.isPlayer && shooter.GetComponentInParent<NetworkReplica>() == null;
+       
+        if (!localPlayerShot && !hostNpcShot)
+            return;
+       
         var weapon = shooter == null ? null : shooter.weapon;
         var trace = CaptureExplosionTrace(position);
         MultiplayerSession.Send(new ProjectileImpactPacket(position.x, position.y,
@@ -751,23 +749,28 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     internal static bool ShouldSuppressClientProjectileFires(GameObject projectile)
     {
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || projectile == null ||
-            (projectile.GetComponentInChildren<RocketProjectile>(true) == null &&
-             projectile.GetComponentInChildren<GrenadeScript>(true) == null)) return false;
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || projectile == null || (projectile.GetComponentInChildren<RocketProjectile>(true) == null &&
+             projectile.GetComponentInChildren<GrenadeScript>(true) == null)) 
+            return false;
         var player = PlayerScript.player;
         return player != null && ProjectileOwner(projectile) == player.bodyScript;
     }
 
     internal static bool ApplyRemoteProjectileExplosion(ushort senderId, ProjectileImpactPacket packet)
     {
-        if (senderId == 0 || !NetworkAvatarUtilities.IsFinite(packet.PositionX) || !NetworkAvatarUtilities.IsFinite(packet.PositionY)) return false;
+        if (senderId == 0 || !IsFinite(packet.PositionX) || !IsFinite(packet.PositionY)) 
+            return false;
+        
         var replica = NetworkAvatarManager.GetOrCreateReplica(senderId);
         var shooter = replica == null ? null : replica.remoteBody;
         var preset = WeaponPresetProvider.FindWeaponPreset(packet.WeaponSpriteId);
         var projectile = preset == null ? null : preset.tracerLine;
         var rocket = projectile == null ? null : projectile.GetComponentInChildren<RocketProjectile>(true);
         var grenade = projectile == null ? null : projectile.GetComponentInChildren<GrenadeScript>(true);
-        if (shooter == null || (rocket == null && grenade == null)) return false;
+      
+        if (shooter == null || (rocket == null && grenade == null))
+            return false;
+        
         var range = rocket == null ? grenade.range : rocket.range;
         var force = rocket == null ? grenade.force : rocket.force;
         var damage = rocket == null ? grenade.damage : rocket.damage;
@@ -775,8 +778,9 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         var fireAmount = rocket == null ? grenade.fireAmount : rocket.fireAmount;
         var sound = rocket == null ? grenade.explosionSound : rocket.sound;
         var impactEffect = rocket == null ? grenade.objOnDestroy : rocket.objOnDestroy;
-        if (!NetworkAvatarUtilities.IsFinite(range) || !NetworkAvatarUtilities.IsFinite(force) || !NetworkAvatarUtilities.IsFinite(damage) || range <= 0f || force <= 0f ||
-            damage < 0f) return false;
+       
+        if (!IsFinite(range) || !IsFinite(force) || !IsFinite(damage) || range <= 0f || force <= 0f || damage < 0f) 
+            return false;
 
         var previousShooter = replicatedExplosionShooter;
         var previousExclusionPeerId = replicatedExplosionImpulseExclusionPeerId;
@@ -812,19 +816,18 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         var origin = (Vector2)body.headTransform.position - (Vector2)body.headTransform.up * 0.2f;
         foreach (var candidate in FindObjectsOfType<WebScript>())
         {
-            if (candidate == null || localVelvetWebs.Contains(candidate) ||
-                ((Vector2)candidate.transform.position - origin).sqrMagnitude > 1f) continue;
+            if (candidate == null || localVelvetWebs.Contains(candidate) || ((Vector2)candidate.transform.position - origin).sqrMagnitude > 1f)
+                continue;
             web = candidate;
             break;
         }
         if (web == null) return;
         localVelvetWebs.Add(web);
         localVelvetWebs.RemoveWhere(candidate => candidate == null);
-        var direction = (Vector2)web.transform.right;
+        var direction = (Vector2) web.transform.right;
         if (direction.sqrMagnitude < 0.01f) return;
         var normalizedDirection = direction.normalized;
-        MultiplayerSession.Send(new VelvetWebPacket(web.transform.position.x, web.transform.position.y,
-            normalizedDirection.x, normalizedDirection.y));
+        MultiplayerSession.Send(new VelvetWebPacket(web.transform.position.x, web.transform.position.y, normalizedDirection.x, normalizedDirection.y));
     }
 
     internal static void ReplicateTeleportZone(TeleportZone zone, int activationId)
@@ -834,8 +837,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         var collider = zone.GetComponent<BoxCollider2D>();
         if (collider == null) return;
         var teleported = new HashSet<BodyScript>();
-        foreach (var candidate in Physics2D.OverlapBoxAll(zone.transform.position, collider.size,
-            zone.transform.eulerAngles.z))
+        foreach (var candidate in Physics2D.OverlapBoxAll(zone.transform.position, collider.size, zone.transform.eulerAngles.z))
         {
             BodyScript body;
             if (!candidate.TryGetComponent(out body))
@@ -844,29 +846,37 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                 if (!candidate.TryGetComponent(out limb) || limb == null) continue;
                 body = limb.body;
             }
-            if (body == null || !teleported.Add(body)) continue;
+
+            if (body != null)
+                teleported.Add(body);
         }
         foreach (var replica in NetworkAvatarManager.replicas.Values)
         {
-            if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0) continue;
-            if (!teleported.Contains(replica.remoteBody) &&
-                !IsInsideTeleportZone(replica.remoteBody, zone.transform, collider)) continue;
+            if (replica == null || replica.remoteBody == null || replica.remotePeerId == 0) 
+                continue;
+            
+            if (!teleported.Contains(replica.remoteBody) && !IsInsideTeleportZone(replica.remoteBody, zone.transform, collider)) 
+                continue;
+            
             if (MultiplayerSession.IsHost)
-                MultiplayerSession.Send(new PlayerTeleportPacket(zone.teleportPoint.position.x,
-                    zone.teleportPoint.position.y), replica.remotePeerId);
+                MultiplayerSession.Send(new PlayerTeleportPacket(zone.teleportPoint.position.x, zone.teleportPoint.position.y), replica.remotePeerId);
         }
     }
 
     internal static List<SuppressedTeleportBody> SuppressRemoteTeleportEffects(TeleportZone zone, int activationId)
     {
         var suppressed = new List<SuppressedTeleportBody>();
-        if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId) return suppressed;
+        if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId)
+            return suppressed;
+        
         var collider = zone.GetComponent<BoxCollider2D>();
         if (collider == null) return suppressed;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
         {
             var body = replica == null ? null : replica.remoteBody;
-            if (body == null || !body.isPlayer || !IsInsideTeleportZone(body, zone.transform, collider)) continue;
+            if (body == null || !body.isPlayer || !IsInsideTeleportZone(body, zone.transform, collider))
+                continue;
+            
             suppressed.Add(new SuppressedTeleportBody(body));
             body.isPlayer = false;
         }
@@ -878,7 +888,9 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         if (suppressed == null) return;
         foreach (var state in suppressed)
         {
-            if (state.Body == null) continue;
+            if (state.Body == null) 
+                continue;
+            
             state.Body.transform.position = state.Position;
             state.Body.isPlayer = state.IsPlayer;
         }
@@ -886,9 +898,13 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     private static bool IsInsideTeleportZone(BodyScript body, Transform zone, BoxCollider2D collider)
     {
-        if (IsInsideTeleportZone(body.transform.position, zone, collider)) return true;
+        if (IsInsideTeleportZone(body.transform.position, zone, collider)) 
+            return true;
+        
         foreach (var limb in body.GetComponentsInChildren<LimbScript>(true))
-            if (limb != null && IsInsideTeleportZone(limb.transform.position, zone, collider)) return true;
+            if (limb != null && IsInsideTeleportZone(limb.transform.position, zone, collider)) 
+                return true;
+        
         return false;
     }
 
@@ -901,27 +917,39 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     internal static void ApplyRemoteTeleport(BodyScript body, PlayerTeleportPacket packet)
     {
-        if (body == null || MultiplayerSession.IsHost) return;
+        if (body == null || MultiplayerSession.IsHost)
+            return;
+        
         var position = new Vector2(packet.PositionX, packet.PositionY);
-        if (!NetworkAvatarUtilities.IsFinite(position.x) || !NetworkAvatarUtilities.IsFinite(position.y)) return;
+        if (!NetworkAvatarUtilities.IsFinite(position.x) || !NetworkAvatarUtilities.IsFinite(position.y))
+            return;
+        
         body.transform.position = position;
-        if (CameraFollow.cam != null) CameraFollow.cam.CenterToPlayer();
-        if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
+     
+        if (CameraFollow.cam != null) 
+            CameraFollow.cam.CenterToPlayer();
+      
+        if (ScreenFXManager.main != null) 
+            ScreenFXManager.main.Teleported();
+       
         foreach (var unloader in FindObjectsOfType<ObjectUnloader>())
-            if (unloader != null) unloader.CheckDistance();
+            if (unloader != null)
+                
+                unloader.CheckDistance();
         var sound = Resources.Load<AudioClip>("Sounds/Teleport");
         if (sound != null) Sound.Play(sound, position, false, false);
     }
 
     internal static void RouteVehicleImpact(BodyScript body, float impact, Vector2 position, bool ragdoll)
     {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || body == null ||
-            !NetworkAvatarUtilities.IsFinite(impact) || impact <= 6f) return;
+        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || body == null || !NetworkAvatarUtilities.IsFinite(impact) || impact <= 6f) 
+            return;
+        
         var replica = NetworkAvatarManager.ReplicaForBody(body);
-        if (replica == null || replica.remotePeerId == 0 || !replica.receivedFirstSnapshot ||
-            KartPassengers.IsProtectedPassenger(body)) return;
-        MultiplayerSession.Send(new VehicleImpactPacket(impact, position.x, position.y, ragdoll),
-            replica.remotePeerId);
+        if (replica == null || replica.remotePeerId == 0 || !replica.receivedFirstSnapshot || KartPassengers.IsProtectedPassenger(body)) 
+            return;
+        
+        MultiplayerSession.Send(new VehicleImpactPacket(impact, position.x, position.y, ragdoll), replica.remotePeerId);
     }
 
     internal static void ApplyVehicleImpact(BodyScript body, VehicleImpactPacket packet)
@@ -951,7 +979,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             body.EnterHalfControl();
             body.Damaged();
         }
-
     }
 
     internal static void HandleTeleportRequest(ushort requesterId, TeleportRequestPacket request)
@@ -1357,7 +1384,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                         localPlayer.aimPunchAmount *= -1f;
                     }
                 }
-
                 else if (limb.limbType == 2) // leg (reduce jump height)
                     body.temporarySlowdown += baseDamage * 0.065f;
 
@@ -1453,9 +1479,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         }
         if (!body.unarmed) body.ChangeToUnarmed();
     }
-
-
-
+    
     internal static void ApplyPvpDamage(BodyScript body, ushort senderId, PlayerDamagePacket packet)
     {
         if (!MultiplayerSession.PvpEnabled || body == null || TeamSystem.Same(MultiplayerSession.LocalPeerId, senderId)) return;
@@ -1500,10 +1524,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         appliedInitialScale = target;
     }
 
-    internal static bool IsCreatingRemoteAvatar()
-    {
-        return remoteAvatarCreationDepth > 0;
-    }
+    internal static bool IsCreatingRemoteAvatar() => remoteAvatarCreationDepth > 0;
 
     internal static IDisposable BeginRemoteAvatarCreation()
     {
@@ -1529,11 +1550,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             }
         }
     }
-
-    private static int remoteAvatarCreationDepth;
-    private static BodyScript initialScaleAppliedBody;
-    private static float initialScaleBase = float.NaN;
-    private static float appliedInitialScale = float.NaN;
+    
     internal static void RecordDamageSource(BodyScript victim)
     {
         if (victim == null) return;

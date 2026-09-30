@@ -861,7 +861,6 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
                 playerHash = playerHash * 31 + peerId * 31 + MultiplayerSession.PeerPing(peerId) + MultiplayerSession.PlayerName(peerId).GetHashCode();
             if (playerHash == renderedLobbyHash) return;
             renderedLobbyHash = playerHash;
-            statusText.text = "CURRENT LOBBY  -  " + (peerIds.Length + 1) + " PLAYER" + (peerIds.Length == 0 ? "" : "S");
             for (var index = lobbyRows.childCount - 1; index >= 0; index--) Destroy(lobbyRows.GetChild(index).gameObject);
             AddCurrentLobbyPlayerRow(MultiplayerSession.LocalPlayerName, MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs,
                 MultiplayerSession.IsHost);
