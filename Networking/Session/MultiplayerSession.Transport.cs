@@ -393,7 +393,6 @@ internal static partial class MultiplayerSession
 
         if (targetId == 0 && connectionMode != ConnectionMode.Relay)
         {
-
             ushort[] targets;
             lock (statusLock)
             {
@@ -448,8 +447,7 @@ internal static partial class MultiplayerSession
             throw new IOException("Relay connection is closed.");
         SendPacketBlocking(current, cancellation, RoutePacket(packet, targetId));
     }
-
-
+    
     private static void EnqueueRoutedPacket(byte[] routed, bool? priority = null)
     {
         var queue = (priority ?? IsLatencySensitivePacket(routed)) ? prioritySendQueue : sendQueue;
@@ -491,7 +489,8 @@ internal static partial class MultiplayerSession
             HasHeader(packet, playerTeleportHeader) || HasHeader(packet, vehicleEjectHeader) ||
             HasHeader(packet, vehicleImpactHeader) || HasHeader(packet, missionFinishedHeader) ||
             HasHeader(packet, observerHeader) || HasHeader(packet, observerKillHeader) ||
-            HasHeader(packet, playerKillHeader) || HasHeader(packet, killScreenEffectHeader) ||
+            HasHeader(packet, playerKillHeader) || HasHeader(packet, playerCarryHeader) ||
+            HasHeader(packet, killScreenEffectHeader) ||
             HasHeader(packet, graffitiHeader) || HasHeader(packet, headlampHeader) ||
             HasHeader(packet, halfControlHeader);
     }

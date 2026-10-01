@@ -169,7 +169,16 @@ internal static class PlayerCarrySystem
             }
             else
             {
-                if (!carrying || (sender != carrierId && sender != targetId)) return;
+                if (!carrying)
+                {
+                    if (sender != 0 && (sender == packet.CarrierId || sender == packet.TargetId))
+                        MultiplayerSession.Send(new PlayerCarryPacket(false, 0, 0), sender, true);
+                    return;
+                }
+                
+                if ((sender != carrierId && sender != targetId) || packet.CarrierId != carrierId || packet.TargetId != targetId) 
+                    return;
+                
                 carrying = false;
                 carrierId = targetId = 0;
                 ClearTargetPoses();

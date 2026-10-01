@@ -284,8 +284,7 @@ internal static partial class MultiplayerSession
         }
     }
 
-    private static bool TryTakePacket<TPacket>(Queue<PeerPacket<TPacket>> queue, out ushort peerId,
-        out TPacket packet)
+    private static bool TryTakePacket<TPacket>(Queue<PeerPacket<TPacket>> queue, out ushort peerId, out TPacket packet)
     {
         lock (statusLock)
         {
@@ -295,5 +294,4 @@ internal static partial class MultiplayerSession
             return item != null;
         }
     }
-
 }
