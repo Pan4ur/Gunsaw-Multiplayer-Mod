@@ -1051,6 +1051,8 @@ internal sealed class WorldReplication : MonoBehaviour
 
     internal void QueueBodyState(Rigidbody2D body)
     {
+        if (body == null || body.bodyType == RigidbodyType2D.Kinematic) return;
+        if (bodies.localSettings.TryGetValue(body, out var settings) && settings.bodyType == RigidbodyType2D.Kinematic) return;
         bodies.locallyControlledUntil[body] = Time.unscaledTime + ClientAuthorityGrace;
         clientFastSerializeState = ClientAuthorityGrace;
         body.simulated = true;
@@ -1171,6 +1173,8 @@ internal sealed class WorldReplication : MonoBehaviour
            
             if (!bodies.IsInteractivePropBody(body) && !droneBodies.Contains(body) && !WorldBodyReplication.IsClientAuthorityJointBody(body))
                 continue;
+
+            if (body.bodyType == RigidbodyType2D.Kinematic) continue;
            
             PropAuthority authority;
             if (bodies.propAuthorities.TryGetValue(id, out authority) && authority.expiresAt >= Time.unscaledTime && authority.peerId != peerId)

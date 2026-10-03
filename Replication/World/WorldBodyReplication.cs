@@ -324,7 +324,7 @@ public class WorldBodyReplication
         float controlUntil;
         if (!mechanism && locallyControlledUntil.TryGetValue(body, out controlUntil))
         {
-            if (Time.unscaledTime < controlUntil)
+            if (state.bodyType != RigidbodyType2D.Kinematic && Time.unscaledTime < controlUntil)
             {
                 body.simulated = true;
                 body.bodyType = RigidbodyType2D.Dynamic;
