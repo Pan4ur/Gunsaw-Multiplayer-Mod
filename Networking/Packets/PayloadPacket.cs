@@ -1,18 +1,13 @@
-internal readonly struct PayloadPacket : INetworkPacket
+internal readonly struct PayloadPacket
 {
     internal readonly PacketType PacketType;
-    internal readonly byte[] Payload;
+    internal readonly ArraySegment<byte> Payload;
 
-    internal PayloadPacket(PacketType packetType, byte[] payload)
+    internal PayloadPacket(PacketType type, ArraySegment<byte> payload)
     {
-        PacketType = packetType;
-        Payload = payload ?? new byte[0];
+        PacketType = type;
+        Payload = payload;
     }
 
     public PacketType Type => PacketType;
-
-    public void Write(ref PacketWriter writer) => writer.WriteBytes(Payload);
-
-    internal static PayloadPacket Read(PacketType type, ref PacketReader reader)
-        => new PayloadPacket(type, reader.ReadRemainingBytes());
 }

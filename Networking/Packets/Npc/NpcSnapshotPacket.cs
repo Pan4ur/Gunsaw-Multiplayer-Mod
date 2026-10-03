@@ -12,10 +12,12 @@ internal readonly struct NpcSnapshotPacket : INetworkPacket
         ChunkIndex = chunkIndex;
         ChunkCount = chunkCount;
         TotalLength = totalLength;
-        Data = data ?? new byte[0];
+        Data = data ?? [];
     }
 
     public PacketType Type => PacketType.NpcSnapshot;
+    
+    public DeliverySettings Settings => new ( false, true, false);
 
     public void Write(ref PacketWriter writer)
     {
@@ -26,6 +28,5 @@ internal readonly struct NpcSnapshotPacket : INetworkPacket
         writer.WriteBytes(Data);
     }
 
-    internal static NpcSnapshotPacket Read(ref PacketReader reader) => new NpcSnapshotPacket(
-        reader.ReadInt32(), reader.ReadUInt16(), reader.ReadUInt16(), reader.ReadInt32(), reader.ReadRemainingBytes());
+    internal static NpcSnapshotPacket Read(ref PacketReader reader) => new (reader.ReadInt32(), reader.ReadUInt16(), reader.ReadUInt16(), reader.ReadInt32(), reader.ReadRemainingBytes());
 }

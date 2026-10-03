@@ -1,11 +1,8 @@
-using System.Text;
-
 internal static partial class MultiplayerSession
 {
-    internal static void Send(INetworkPacket packet, ushort targetPeerId = 0, bool? priority = null)
+    internal static bool Send(INetworkPacket packet, ushort targetPeerId = 0, bool? priority = null)
     {
-        if (packet == null) return;
-        SendPacket(PacketCodec.Encode(packet), targetPeerId, priority);
+        return SendPacket(packet, targetPeerId, priority);
     }
 
     internal static void UpdatePing()
@@ -20,30 +17,12 @@ internal static partial class MultiplayerSession
             pendingPingTicks = now;
             targets = isHost ? peers.Ids() : (hostPeerId == 0 ? [] : [hostPeerId]);
         }
-        var packet = PacketCodec.Encode(new PingPacket(now));
+        var packet = new PingPacket(now);
         foreach (var target in targets)
         {
             try { SendPacket(packet, target); }
             catch (IOException) { return; }
         }
-    }
-
-    private static int QueueCustomLevelTransfer(string levelCode, ushort targetId = 0)
-    {
-        var data = Encoding.UTF8.GetBytes(levelCode);
-        const int chunkSize = 60 * 1024;
-        var transferId = Interlocked.Increment(ref customLevelTransferId);
-        var chunkCount = Math.Max(1, (data.Length + chunkSize - 1) / chunkSize);
-        for (var index = 0; index < chunkCount; index++)
-        {
-            var sourceOffset = index * chunkSize;
-            var length = Math.Min(chunkSize, data.Length - sourceOffset);
-            var chunk = new byte[length];
-            if (length > 0) Buffer.BlockCopy(data, sourceOffset, chunk, 0, length);
-            SendPacket(PacketCodec.Encode(new CustomLevelPacket(transferId, (ushort)index,
-                (ushort)chunkCount, data.Length, chunk)), targetId);
-        }
-        return transferId;
     }
 
     internal static bool TryTakeIdentity(out ushort peerId, out string identity)
@@ -63,8 +42,8 @@ internal static partial class MultiplayerSession
         Send(new CustomLevelSuggestionPacket(levelCode, sizeKiB), hostPeerId, true);
     }
 
-    internal static bool TryTakeCustomLevelSuggestion(out ushort peerId, out CustomLevelSuggestionPacket suggestion)
-        => TryTakePacket(customLevelSuggestions, out peerId, out suggestion);
+    internal static bool TryTakeCustomLevelSuggestion(out ushort peerId, out CustomLevelSuggestionPacket suggestion) => 
+        TryTakePacket(customLevelSuggestions, out peerId, out suggestion);
 
     internal static bool TryTakeSnapshot(out ushort peerId, out PlayerSnapshotPacket packet)
     {
@@ -84,15 +63,9 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static bool TryTakeWorldSnapshot(out byte[] data)
-    {
-        return TryTakePayload(worldSnapshots, out _, out data);
-    }
-
-    internal static bool TryTakeWorldEnvironment(out WorldEnvironmentPacket packet)
-    {
-        return TryTakePacket(worldEnvironments, out _, out packet);
-    }
+    internal static bool TryTakeWorldSnapshot(out byte[] data) => TryTakePayload(worldSnapshots, out _, out data);
+    
+    internal static bool TryTakeWorldEnvironment(out WorldEnvironmentPacket packet) => TryTakePacket(worldEnvironments, out _, out packet);
 
     internal static bool TryTakeWorldInput(out ushort peerId, out WorldInputPacket packet)
     {
@@ -115,19 +88,13 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static bool TryTakeNpcSnapshot(out byte[] data)
-    {
-        return TryTakePayload(npcSnapshots, out _, out data);
-    }
+    internal static bool TryTakeNpcSnapshot(out byte[] data) => TryTakePayload(npcSnapshots, out _, out data);
 
-    internal static bool TryTakeNpcDamage(out ushort peerId, out NpcDamagePacket packet)
-        => TryTakePacket(npcDamage, out peerId, out packet);
+    internal static bool TryTakeNpcDamage(out ushort peerId, out NpcDamagePacket packet) => TryTakePacket(npcDamage, out peerId, out packet);
 
-    internal static bool TryTakeNpcSpeech(out ushort peerId, out NpcSpeechPacket packet)
-        => TryTakePacket(npcSpeech, out peerId, out packet);
+    internal static bool TryTakeNpcSpeech(out ushort peerId, out NpcSpeechPacket packet) => TryTakePacket(npcSpeech, out peerId, out packet);
 
-    internal static bool TryTakeWorldInteraction(out ushort peerId, out WorldInteractionPacket packet)
-        => TryTakePacket(worldInteractions, out peerId, out packet);
+    internal static bool TryTakeWorldInteraction(out ushort peerId, out WorldInteractionPacket packet) => TryTakePacket(worldInteractions, out peerId, out packet);
 
     internal static bool TryTakePlayerDamage(out ushort peerId, out PlayerDamagePacket packet)
     {

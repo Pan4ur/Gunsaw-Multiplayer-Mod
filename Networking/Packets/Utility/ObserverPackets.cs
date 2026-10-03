@@ -1,12 +1,14 @@
 internal readonly struct ObserverEventPacket : INetworkPacket
 {
     public PacketType Type => PacketType.Observer;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
     public void Write(ref PacketWriter writer) { }
 }
 
 internal readonly struct ObserverKillPacket : INetworkPacket
 {
     public PacketType Type => PacketType.ObserverKill;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
     public void Write(ref PacketWriter writer) { }
 }
 
@@ -26,6 +28,8 @@ internal readonly struct ObserverStatePacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.ObserverState;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

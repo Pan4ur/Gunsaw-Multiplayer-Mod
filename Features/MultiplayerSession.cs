@@ -13,36 +13,6 @@ internal enum ConnectionMode
 
 internal static partial class MultiplayerSession
 {
-    private static UdpClient socket;
-    private static volatile bool relayConnected;
-    private static IPEndPoint relayEndpoint;
-    private static CancellationTokenSource socketCancellation;
-    private static readonly object sendLock = new();
-    private static readonly object sendQueueLock = new();
-    private static readonly Queue<byte[]> prioritySendQueue = new();
-    private static readonly Queue<byte[]> sendQueue = new();
-    private static readonly AutoResetEvent sendSignal = new(false);
-    private static Thread sendThread;
-    private static readonly byte[] udpMagic = new byte[] { 0x47, 0x55, 0x44, 0x50 };
-    private const byte UdpAuth = 1;
-    private const byte UdpAuthOk = 2;
-    private const byte UdpData = 3;
-    private const byte UdpForwarded = 4;
-    private const byte UdpAuthFailed = 5;
-    private const byte UdpP2PEnable = 6;
-    private const byte UdpCandidate = 7;
-    private const byte UdpDirectData = 8;
-    private const byte UdpKeepAlive = 9;
-    private const int P2PKeySize = 16;
-    private const long P2PConnectTimeoutTicks = TimeSpan.TicksPerSecond * 5;
-    private const long P2PKeepAliveTicks = TimeSpan.TicksPerSecond * 10;
-    private const long P2PProbeRetryTicks = TimeSpan.TicksPerMillisecond * 500;
-    private const int UdpFragmentPayload = 1000;
-    private const int MaxFragmentTransfers = 128;
-    private static int transportMessageSequence;
-    private static readonly Dictionary<long, FragmentTransfer> fragmentTransfers = new();
-    private static readonly ReliableChannel reliableChannel = new();
-    private const int MaxQueuedPackets = 2048;
     private const int MaxPendingEventPackets = 256;
     private const int MaxPendingIdentities = 64;
     private static readonly object statusLock = new();
@@ -55,43 +25,7 @@ internal static partial class MultiplayerSession
     private static long nextP2PKeepAliveTicks;
     private static byte[] p2pKey;
     private static readonly Dictionary<ushort, P2PPeer> p2pPeers = new();
-    
-    private static readonly byte[] hello = PacketHeader.Create(PacketType.Hello);
-    private static readonly byte[] accepted = PacketHeader.Create(PacketType.Accepted);
-    private static readonly byte[] sceneHeader = PacketHeader.Create(PacketType.Scene);
-    private static readonly byte[] identityHeader = PacketHeader.Create(PacketType.Identity);
-    private static readonly byte[] snapshotHeader = PacketHeader.Create(PacketType.PlayerSnapshot);
-    private static readonly byte[] playerStateHeader = PacketHeader.Create(PacketType.PlayerState);
-    private static readonly byte[] playerSpecialLinesHeader = PacketHeader.Create(PacketType.PlayerSpecialLines);
-    private static readonly byte[] worldHeader = PacketHeader.Create(PacketType.WorldSnapshot);
-    private static readonly byte[] worldInputHeader = PacketHeader.Create(PacketType.WorldInput);
-    private static readonly byte[] worldDamageHeader = PacketHeader.Create(PacketType.WorldDamage);
-    private static readonly byte[] npcHeader = PacketHeader.Create(PacketType.NpcSnapshot);
-    private static readonly byte[] npcDamageHeader = PacketHeader.Create(PacketType.NpcDamage);
-    private static readonly byte[] npcGrabHeader = PacketHeader.Create(PacketType.NpcGrab);
-    private static readonly byte[] npcSpeechHeader = PacketHeader.Create(PacketType.NpcSpeech);
-    private static readonly byte[] worldInteractionHeader = PacketHeader.Create(PacketType.WorldInteraction);
-    private static readonly byte[] playerDamageHeader = PacketHeader.Create(PacketType.PlayerDamage);
-    private static readonly byte[] pvpDamageHeader = PacketHeader.Create(PacketType.PvpDamage);
-    private static readonly byte[] settingsHeader = PacketHeader.Create(PacketType.Settings);
-    private static readonly byte[] customLevelHeader = PacketHeader.Create(PacketType.CustomLevel);
-    private static readonly byte[] peerNameHeader = PacketHeader.Create(PacketType.PeerName);
-    private static readonly byte[] worldEnvironmentHeader = PacketHeader.Create(PacketType.WorldEnvironment);
-    private static readonly byte[] worldFireHeader = PacketHeader.Create(PacketType.WorldFire);
-    private static readonly byte[] worldExplosionHeader = PacketHeader.Create(PacketType.WorldExplosion);
-    private static readonly byte[] playerTeleportHeader = PacketHeader.Create(PacketType.PlayerTeleport);
-    private static readonly byte[] vehicleEjectHeader = PacketHeader.Create(PacketType.VehicleEject);
-    private static readonly byte[] vehicleImpactHeader = PacketHeader.Create(PacketType.VehicleImpact);
-    private static readonly byte[] missionFinishedHeader = PacketHeader.Create(PacketType.MissionFinished);
-    private static readonly byte[] observerHeader = PacketHeader.Create(PacketType.Observer);
-    private static readonly byte[] observerKillHeader = PacketHeader.Create(PacketType.ObserverKill);
-    private static readonly byte[] graffitiHeader = PacketHeader.Create(PacketType.Graffiti);
-    private static readonly byte[] headlampHeader = PacketHeader.Create(PacketType.Headlamp);
-    private static readonly byte[] halfControlHeader = PacketHeader.Create(PacketType.HalfControl);
-    private static readonly byte[] playerKillHeader = PacketHeader.Create(PacketType.PlayerKill);
-    private static readonly byte[] playerCarryHeader = PacketHeader.Create(PacketType.PlayerCarry);
-    private static readonly byte[] killScreenEffectHeader = PacketHeader.Create(PacketType.KillScreenEffect);
-    
+
     private static string hostScene = "";
     private static string pendingScene = "";
     private static bool pendingSceneReload;
@@ -148,6 +82,8 @@ internal static partial class MultiplayerSession
     private static readonly Queue<long> receivedChatOrder = new Queue<long>();
     private static readonly Dictionary<int, NpcTransfer> npcTransfers = new Dictionary<int, NpcTransfer>();
     private static CustomLevelTransfer customLevelTransfer;
+    private static int receivedCustomLevelTransferId;
+    private static bool receivedCustomLevelComplete;
     private static int customLevelTransferId;
     private static int hostCustomLevelTransferId;
     private static long nextPingTicks;
@@ -223,7 +159,8 @@ internal static partial class MultiplayerSession
         TeamSystem.Configure(TeamsEnabled, TeamsCfg);
         RefreshHostBrutalMode();
         ResetPing();
-        ThreadPool.QueueUserWorkItem(_ => Receive(null));
+        var receiveSocket = socket;
+        ThreadPool.QueueUserWorkItem(_ => Receive(receiveSocket));
         RPCManager.CheckInstance();
         GunsawMultiplayerPlugin.LogInfo("Host connected to UDP relay " + relayAddress + " for lobby " + lobbyId + ".");
     }
@@ -285,7 +222,8 @@ internal static partial class MultiplayerSession
             socket = ConnectRelay(relayAddress, lobbyId, relayKey);
             if (connectionMode == ConnectionMode.Relay) SendInitialHello();
             else EnableP2P();
-            ThreadPool.QueueUserWorkItem(_ => Receive(null));
+            var receiveSocket = socket;
+            ThreadPool.QueueUserWorkItem(_ => Receive(receiveSocket));
             RPCManager.CheckInstance();
             GunsawMultiplayerPlugin.LogInfo("UDP relay handshake sent to " + relayAddress + ".");
             return true;
@@ -396,8 +334,7 @@ internal static partial class MultiplayerSession
         Send(CreateSettingsPacket());
     }
 
-    internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced,
-        out int customLevelTransferId)
+    internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced, out int customLevelTransferId)
     {
         lock (statusLock)
         {
@@ -509,6 +446,7 @@ internal static partial class MultiplayerSession
             return true;
         }
     }
+    
     internal static string ActiveTransport
     {
         get
@@ -689,8 +627,7 @@ internal static partial class MultiplayerSession
     {
         if (p2pHelloSent) return;
         p2pHelloSent = true;
-        var helloPacket = PacketCodec.Encode(new HelloPacket(localPlayerName));
-        SendPacket(helloPacket, hostPeerId, true, true, true);
+        Send(new HelloPacket(localPlayerName), hostPeerId, true);
     }
 
     internal static bool TryTakeHostDisconnected()
@@ -706,7 +643,7 @@ internal static partial class MultiplayerSession
     internal static void Shutdown()
     {
         SendDisconnectImmediately();
-        CloseSocket(true);
+        CloseSocket();
         isHost = false;
         PvpEnabled = false;
         CanGrabPlayers = false;
@@ -831,21 +768,6 @@ internal static partial class MultiplayerSession
         }
     }
 
-    private sealed class FragmentTransfer
-    {
-        internal readonly int TotalLength;
-        internal readonly byte[][] Fragments;
-        internal readonly long CreatedTicks;
-        internal int Received;
-
-        internal FragmentTransfer(int totalLength, int fragmentCount)
-        {
-            TotalLength = totalLength;
-            Fragments = new byte[fragmentCount][];
-            CreatedTicks = DateTime.UtcNow.Ticks;
-        }
-    }
-
     private sealed class P2PPeer
     {
         internal IPEndPoint Endpoint;
@@ -892,4 +814,3 @@ internal struct NetworkDebugStats
     internal int SentOtherBytesPerSecond;
     internal float PacketLossPercent;
 }
-

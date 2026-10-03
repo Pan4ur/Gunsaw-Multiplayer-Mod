@@ -12,6 +12,8 @@ internal readonly struct ChatPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.Chat;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

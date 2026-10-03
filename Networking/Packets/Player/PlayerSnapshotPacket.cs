@@ -63,6 +63,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.PlayerSnapshot;
+    public DeliverySettings Settings => new (false, true, true);
 
     public void Write(ref PacketWriter writer)
     {

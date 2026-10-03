@@ -201,6 +201,8 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.WorldSnapshot;
+    
+    public DeliverySettings Settings => new (false, true, false);
 
     internal bool ContentEquals(WorldSnapshotPacket other)
     {

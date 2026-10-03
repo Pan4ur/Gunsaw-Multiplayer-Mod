@@ -10,6 +10,7 @@ internal readonly struct IdentityPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.Identity;
+    public DeliverySettings Settings => new (false, true, true);
 
     public void Write(ref PacketWriter writer) => writer.WriteUtf8(Name + "\n" + Prefab);
 

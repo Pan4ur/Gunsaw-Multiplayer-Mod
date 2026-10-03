@@ -14,6 +14,8 @@ internal readonly struct NpcSpeechPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.NpcSpeech;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

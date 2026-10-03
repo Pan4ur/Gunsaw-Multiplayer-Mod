@@ -64,6 +64,8 @@ internal readonly struct SettingsPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.Settings;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

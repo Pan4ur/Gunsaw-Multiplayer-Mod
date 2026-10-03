@@ -5,6 +5,8 @@ internal readonly struct AcceptedPacket : INetworkPacket
     internal AcceptedPacket(string playerName) => PlayerName = playerName ?? "";
 
     public PacketType Type => PacketType.Accepted;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer) => writer.WriteUtf8(PlayerName);
 

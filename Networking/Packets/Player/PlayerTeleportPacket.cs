@@ -10,6 +10,7 @@ internal readonly struct PlayerTeleportPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.PlayerTeleport;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer) { writer.WriteSingle(PositionX); writer.WriteSingle(PositionY); }
 

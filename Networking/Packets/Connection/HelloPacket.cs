@@ -5,6 +5,8 @@ internal readonly struct HelloPacket : INetworkPacket
     internal HelloPacket(string playerName) => PlayerName = playerName ?? "";
 
     public PacketType Type => PacketType.Hello;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer) => writer.WriteUtf8(PlayerName);
 

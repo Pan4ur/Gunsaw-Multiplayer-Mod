@@ -45,6 +45,8 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.WorldInteraction;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

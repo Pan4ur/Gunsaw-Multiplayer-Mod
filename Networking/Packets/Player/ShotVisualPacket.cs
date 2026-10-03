@@ -40,6 +40,8 @@ internal readonly struct ShotVisualPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.ShotVisual;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

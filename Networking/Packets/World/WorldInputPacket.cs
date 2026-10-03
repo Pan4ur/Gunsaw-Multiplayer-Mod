@@ -25,9 +25,11 @@ internal readonly struct WorldInputPacket : INetworkPacket
 {
     internal readonly WorldInputState[] States;
 
-    internal WorldInputPacket(WorldInputState[] states) => States = states ?? new WorldInputState[0];
+    internal WorldInputPacket(WorldInputState[] states) => States = states ?? [];
 
     public PacketType Type => PacketType.WorldInput;
+    
+    public DeliverySettings Settings => new (false, true, true);
 
     public void Write(ref PacketWriter writer)
     {

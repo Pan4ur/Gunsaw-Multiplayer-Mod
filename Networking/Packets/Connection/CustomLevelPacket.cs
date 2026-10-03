@@ -12,10 +12,12 @@ internal readonly struct CustomLevelPacket : INetworkPacket
         ChunkIndex = chunkIndex;
         ChunkCount = chunkCount;
         TotalLength = totalLength;
-        Data = data ?? new byte[0];
+        Data = data ?? [];
     }
 
     public PacketType Type => PacketType.CustomLevel;
+    
+    public DeliverySettings Settings => new(true, false, false);
 
     public void Write(ref PacketWriter writer)
     {
@@ -26,6 +28,5 @@ internal readonly struct CustomLevelPacket : INetworkPacket
         writer.WriteBytes(Data);
     }
 
-    internal static CustomLevelPacket Read(ref PacketReader reader) => new CustomLevelPacket(
-        reader.ReadInt32(), reader.ReadUInt16(), reader.ReadUInt16(), reader.ReadInt32(), reader.ReadRemainingBytes());
+    internal static CustomLevelPacket Read(ref PacketReader reader) => new (reader.ReadInt32(), reader.ReadUInt16(), reader.ReadUInt16(), reader.ReadInt32(), reader.ReadRemainingBytes());
 }

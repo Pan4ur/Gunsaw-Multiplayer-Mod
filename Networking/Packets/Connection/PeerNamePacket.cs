@@ -10,6 +10,8 @@
     }
 
     public PacketType Type => PacketType.PeerName;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

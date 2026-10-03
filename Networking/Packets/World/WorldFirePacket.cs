@@ -28,6 +28,8 @@ internal readonly struct WorldFirePacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.WorldFire;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

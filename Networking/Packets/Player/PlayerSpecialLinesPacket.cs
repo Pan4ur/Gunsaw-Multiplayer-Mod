@@ -9,6 +9,7 @@ internal readonly struct PlayerSpecialLinesPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.PlayerSpecialLines;
+    public DeliverySettings Settings => new (false, true, true);
 
     public void Write(ref PacketWriter writer)
     {

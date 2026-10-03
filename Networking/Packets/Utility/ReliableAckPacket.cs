@@ -5,6 +5,7 @@ internal readonly struct ReliableAckPacket : INetworkPacket
     internal ReliableAckPacket(int sequenceId) => SequenceId = sequenceId;
 
     public PacketType Type => PacketType.ReliableAck;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer) => writer.WriteInt32(SequenceId);
 

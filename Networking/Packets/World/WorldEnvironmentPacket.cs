@@ -69,15 +69,17 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         float fogIntensity, int enemyKills = -1, int enemyTotal = -1, EnvironmentLampPowerState[] lampPower = null)
     {
         SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
-        Buttons = buttons ?? new EnvironmentButtonState[0];
-        Audio = audio ?? new EnvironmentAudioState[0];
-        DestroyedDroneIds = destroyedDroneIds ?? new ulong[0];
+        Buttons = buttons ?? [];
+        Audio = audio ?? [];
+        DestroyedDroneIds = destroyedDroneIds ?? [];
         RainIntensity = rainIntensity; SnowIntensity = snowIntensity; FogIntensity = fogIntensity;
         EnemyKills = enemyKills; EnemyTotal = enemyTotal;
-        LampPower = lampPower ?? new EnvironmentLampPowerState[0];
+        LampPower = lampPower ?? [];
     }
 
     public PacketType Type => PacketType.WorldEnvironment;
+    
+    public DeliverySettings Settings => new (true, false, false);
 
     internal bool ContentEquals(WorldEnvironmentPacket other)
     {

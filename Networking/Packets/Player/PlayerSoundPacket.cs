@@ -16,6 +16,7 @@ internal readonly struct PlayerSoundPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.PlayerSound;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

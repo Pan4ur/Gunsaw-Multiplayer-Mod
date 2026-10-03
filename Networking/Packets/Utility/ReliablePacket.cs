@@ -10,6 +10,7 @@ internal readonly struct ReliablePacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.Reliable;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

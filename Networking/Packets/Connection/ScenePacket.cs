@@ -7,8 +7,10 @@ internal readonly struct ScenePacket : INetworkPacket
     internal ScenePacket(string scene) => Scene = scene ?? "";
 
     public PacketType Type => PacketType.Scene;
+    
+    public DeliverySettings Settings => new (true, false, false);
 
     public void Write(ref PacketWriter writer) => writer.WriteUtf8(Scene);
 
-    internal static ScenePacket Read(ref PacketReader reader) => new ScenePacket(reader.ReadRemainingUtf8());
+    internal static ScenePacket Read(ref PacketReader reader) => new (reader.ReadRemainingUtf8());
 }

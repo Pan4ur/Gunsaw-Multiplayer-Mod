@@ -19,6 +19,7 @@ internal readonly struct DisconnectPacket : INetworkPacket
     internal static DisconnectPacket PeerLeft(ushort peerId) => new DisconnectPacket(DisconnectReason.PeerLeft, peerId);
 
     public PacketType Type => PacketType.Disconnect;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

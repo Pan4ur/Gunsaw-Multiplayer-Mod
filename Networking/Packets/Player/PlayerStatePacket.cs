@@ -31,7 +31,7 @@ internal readonly struct PlayerStatePacket : INetworkPacket
         IsDecapitated = isDecapitated;
         WeaponSlot = weaponSlot;
         WeaponAmmo = weaponAmmo;
-        InventorySpriteIds = inventorySpriteIds ?? new ulong[0];
+        InventorySpriteIds = inventorySpriteIds ?? [];
         InventoryChanged = inventoryChanged;
         WeaponLaser = weaponLaser;
         Scarf = scarf;
@@ -48,11 +48,13 @@ internal readonly struct PlayerStatePacket : INetworkPacket
             LimbBurning[i] = limbs[i].Burning;
         }
 
-        TailBases = tailBases ?? new PlayerSnapshotTailState[0];
-        Tails = tails ?? new PlayerSnapshotTailState[0];
+        TailBases = tailBases ?? [];
+        Tails = tails ?? [];
     }
 
     public PacketType Type => PacketType.PlayerState;
+    
+    public DeliverySettings Settings => new(false, true, true);
 
     public void Write(ref PacketWriter writer)
     {
@@ -131,7 +133,7 @@ internal readonly struct PlayerStatePacket : INetworkPacket
         writer.WriteUInt16((ushort)tails.Length);
         foreach (var tail in tails)
         {
-            var colors = tail.Colors ?? new Color32[0];
+            var colors = tail.Colors ?? [];
             writer.WriteByte((byte)colors.Length);
             foreach (var color in colors)
             {

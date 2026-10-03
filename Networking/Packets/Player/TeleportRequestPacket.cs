@@ -8,9 +8,10 @@ internal readonly struct TeleportRequestPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.TeleportRequest;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer) => writer.WriteUInt16(TargetPeerId);
 
-    internal static TeleportRequestPacket Read(ref PacketReader reader)
-        => new TeleportRequestPacket(reader.ReadUInt16());
+    internal static TeleportRequestPacket Read(ref PacketReader reader) => new (reader.ReadUInt16());
 }

@@ -8,6 +8,7 @@ internal readonly struct HalfControlPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.HalfControl;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer) => writer.WriteSingle(Duration);
 

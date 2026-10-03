@@ -20,6 +20,7 @@ internal readonly struct GraffitiPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.Graffiti;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

@@ -1,5 +1,3 @@
-using System.Threading;
-
 internal static class PacketSequences
 {
     private static int playerSnapshot;

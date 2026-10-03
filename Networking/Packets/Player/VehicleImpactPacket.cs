@@ -14,6 +14,8 @@ internal readonly struct VehicleImpactPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.VehicleImpact;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {
@@ -23,7 +25,5 @@ internal readonly struct VehicleImpactPacket : INetworkPacket
         writer.WriteBoolean(Ragdoll);
     }
 
-    internal static VehicleImpactPacket Read(ref PacketReader reader)
-        => new VehicleImpactPacket(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(),
-            reader.ReadBoolean());
+    internal static VehicleImpactPacket Read(ref PacketReader reader) => new (reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadBoolean());
 }

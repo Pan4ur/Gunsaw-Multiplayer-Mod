@@ -43,6 +43,7 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
     }
 
     public PacketType Type => packetType;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

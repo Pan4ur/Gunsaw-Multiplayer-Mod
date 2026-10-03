@@ -5,6 +5,8 @@ internal readonly struct ReloadEffectPacket : INetworkPacket
     internal ReloadEffectPacket(bool val) => Mag = val;
 
     public PacketType Type => PacketType.ReloadEffect;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer) => writer.WriteBoolean(Mag);
 

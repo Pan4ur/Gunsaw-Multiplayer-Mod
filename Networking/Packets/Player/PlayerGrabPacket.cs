@@ -13,6 +13,7 @@ internal readonly struct PlayerGrabPacket : INetworkPacket
     { IsGrabbing = isGrabbing; PartKind = partKind; PartIndex = partIndex; PointX = pointX; PointY = pointY; LocalPointX = localPointX; LocalPointY = localPointY; }
 
     public PacketType Type => PacketType.PlayerGrab;
+    public DeliverySettings Settings => DeliverySettings.Default;
     public void Write(ref PacketWriter writer)
     {
         writer.WriteBoolean(IsGrabbing);

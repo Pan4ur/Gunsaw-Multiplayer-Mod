@@ -31,6 +31,7 @@ internal readonly struct ProjectileImpactPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.ProjectileImpact;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

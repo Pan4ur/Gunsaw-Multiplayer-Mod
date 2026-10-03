@@ -8,6 +8,8 @@ internal readonly struct HostFpsPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.HostFps;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer) => writer.WriteUInt16(FPS);
 

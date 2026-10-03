@@ -12,6 +12,8 @@ internal readonly struct HeadlampPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.Headlamp;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

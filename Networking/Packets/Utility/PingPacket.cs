@@ -5,6 +5,7 @@ internal readonly struct PingPacket : INetworkPacket
     internal PingPacket(long timestamp) => Timestamp = timestamp;
 
     public PacketType Type => PacketType.Ping;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer) => writer.WriteInt64(Timestamp);
 

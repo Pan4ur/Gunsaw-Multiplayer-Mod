@@ -10,6 +10,8 @@ internal readonly struct TeamPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.Team;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {
@@ -17,6 +19,5 @@ internal readonly struct TeamPacket : INetworkPacket
         writer.WriteBinaryString(Team);
     }
 
-    internal static TeamPacket Read(ref PacketReader reader) =>
-        new TeamPacket(reader.ReadUInt16(), reader.ReadBinaryString());
+    internal static TeamPacket Read(ref PacketReader reader) => new (reader.ReadUInt16(), reader.ReadBinaryString());
 }

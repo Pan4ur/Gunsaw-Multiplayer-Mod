@@ -5,6 +5,7 @@ internal readonly struct PongPacket : INetworkPacket
     internal PongPacket(long timestamp) => Timestamp = timestamp;
 
     public PacketType Type => PacketType.Pong;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer) => writer.WriteInt64(Timestamp);
 

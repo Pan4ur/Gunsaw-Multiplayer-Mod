@@ -11,6 +11,7 @@ internal readonly struct PlayerCarryPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.PlayerCarry;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

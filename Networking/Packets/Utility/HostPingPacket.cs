@@ -10,6 +10,7 @@ internal readonly struct HostPingPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.HostPing;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {
@@ -17,6 +18,5 @@ internal readonly struct HostPingPacket : INetworkPacket
         writer.WriteUInt16(PingMs);
     }
 
-    internal static HostPingPacket Read(ref PacketReader reader)
-        => new(reader.ReadUInt16(), reader.ReadUInt16());
+    internal static HostPingPacket Read(ref PacketReader reader) => new(reader.ReadUInt16(), reader.ReadUInt16());
 }

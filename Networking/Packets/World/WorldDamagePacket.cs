@@ -16,10 +16,12 @@ internal readonly struct WorldDamagePacket : INetworkPacket
 
     internal WorldDamagePacket(WorldDamageEntry[] entries)
     {
-        Entries = entries ?? new WorldDamageEntry[0];
+        Entries = entries ?? [];
     }
 
     public PacketType Type => PacketType.WorldDamage;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

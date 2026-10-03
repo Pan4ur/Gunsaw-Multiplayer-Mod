@@ -19,6 +19,8 @@ internal readonly struct NpcGrabPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.NpcGrab;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {
@@ -30,7 +32,5 @@ internal readonly struct NpcGrabPacket : INetworkPacket
         writer.WriteSingle(LocalPointY);
     }
 
-    internal static NpcGrabPacket Read(ref PacketReader reader) => new NpcGrabPacket(
-        reader.ReadUInt64(), reader.ReadUInt64(), reader.ReadSingle(), reader.ReadSingle(),
-        reader.ReadSingle(), reader.ReadSingle());
+    internal static NpcGrabPacket Read(ref PacketReader reader) => new (reader.ReadUInt64(), reader.ReadUInt64(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
 }

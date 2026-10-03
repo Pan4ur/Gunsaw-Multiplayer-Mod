@@ -10,6 +10,7 @@ internal readonly struct CustomLevelSuggestionPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.CustomLevelSuggestion;
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

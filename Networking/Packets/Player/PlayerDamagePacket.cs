@@ -91,6 +91,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         );
 
     public PacketType Type => PacketType.PlayerDamage;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

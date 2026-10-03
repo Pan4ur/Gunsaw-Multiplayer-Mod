@@ -6,6 +6,7 @@ internal readonly struct PvpDamagePacket : INetworkPacket
     internal PvpDamagePacket(float amount, bool critical) { Amount = amount; Critical = critical; }
 
     public PacketType Type => PacketType.PvpDamage;
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {

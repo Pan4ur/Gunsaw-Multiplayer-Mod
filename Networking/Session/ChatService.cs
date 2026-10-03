@@ -4,7 +4,7 @@ internal static class ChatService
 
     internal static bool TryCreate(string message, bool system, out ChatPacket packet)
     {
-        packet = default(ChatPacket);
+        packet = default;
         if (string.IsNullOrWhiteSpace(message)) return false;
         var text = message.Trim();
         if (text.Length > 256) text = text.Substring(0, 256);

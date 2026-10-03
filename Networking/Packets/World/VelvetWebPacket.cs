@@ -14,6 +14,8 @@ internal readonly struct VelvetWebPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.VelvetWeb;
+    
+    public DeliverySettings Settings => DeliverySettings.Default;
 
     public void Write(ref PacketWriter writer)
     {

@@ -20,6 +20,8 @@ internal readonly struct WorldExplosionPacket : INetworkPacket
     }
 
     public PacketType Type => PacketType.WorldExplosion;
+    
+    public DeliverySettings Settings => DeliverySettings.Lossless;
 
     public void Write(ref PacketWriter writer)
     {
@@ -32,7 +34,5 @@ internal readonly struct WorldExplosionPacket : INetworkPacket
         writer.WriteBoolean(PlaySound);
     }
 
-    internal static WorldExplosionPacket Read(ref PacketReader reader)
-        => new(reader.ReadUInt64(), reader.ReadSingle(), reader.ReadSingle(),
-            reader.ReadSingle(), reader.ReadSingle(), reader.ReadUInt16(), reader.ReadBoolean());
+    internal static WorldExplosionPacket Read(ref PacketReader reader) => new (reader.ReadUInt64(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadUInt16(), reader.ReadBoolean());
 }
