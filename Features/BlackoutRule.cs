@@ -35,12 +35,24 @@ internal static class BlackoutRule
     private static readonly Vector4[] headlampShaderData = new Vector4[16];
     private static readonly Vector4[] headlampShaderSettings = new Vector4[16];
     private static readonly Vector4[] headlampShaderFaces = new Vector4[16];
+    private static readonly Vector4[] headlampShaderAngles = new Vector4[16];
     private const int HeadlampBlockerLimit = 64;
     private const int HeadlampBlockerDataWidth = HeadlampBlockerLimit * 2;
     private static readonly Color[] headlampShaderBlockers = new Color[16 * HeadlampBlockerDataWidth];
     private static readonly float[] headlampShaderBlockerCounts = new float[16];
-    private static readonly float[] headlampShaderGroundBlockers = new float[16 * HeadlampBlockerLimit];
+    private static readonly Color32[] headlampShaderGroundBlockers = new Color32[16 * HeadlampBlockerLimit];
     private static Texture2D headlampShaderBlockerTexture;
+    private static Texture2D headlampShaderGroundBlockerTexture;
+    private const int HeadlampVisibilityResolution = 192;
+    private const int HeadlampVisibilityColumns = 4;
+    private static Material headlampVisibilityMaterial;
+    private static RenderTexture headlampVisibilityTarget;
+    private static RenderTexture headlampVisibilityAtlas;
+    private static Camera[] headlampCameras = new Camera[4];
+    private static readonly Vector3[] headlampFrustumCorners = new Vector3[4];
+    private static readonly List<Bounds> headlampCameraBounds = [];
+    private static bool headlampRenderingSubscribed;
+    private static int headlampRenderingFrame = -1;
     private static Material levitatorMaterial;
     private static bool applied;
     private static int appliedSceneHandle = int.MinValue;
@@ -320,6 +332,7 @@ internal static class BlackoutRule
         if (headlampMaterial == null)
             return;
 
+        UpdateHeadlampCameraBounds();
         var count = 0;
 
         foreach (var lamp in headlamps)
@@ -328,6 +341,19 @@ internal static class BlackoutRule
                     headlampShaderBlockers, headlampShaderBlockerCounts, headlampShaderGroundBlockers, count))
                 continue;
 
+            var coneVisible = HeadlampConeMayBeVisible(headlampShaderData[count], headlampShaderSettings[count]);
+            if (!coneVisible && !HeadlampFaceMayBeVisible(headlampShaderFaces[count]))
+                continue;
+                
+            if (!coneVisible)
+            {
+                headlampShaderSettings[count].x = 0f;
+                headlampShaderBlockerCounts[count] = 0f;
+            }
+            
+            var innerAngle = headlampShaderSettings[count].z * 0.5f * Mathf.Deg2Rad;
+            var outerAngle = headlampShaderSettings[count].w * 0.5f * Mathf.Deg2Rad;
+            headlampShaderAngles[count] = new Vector4(Mathf.Cos(innerAngle), Mathf.Cos(outerAngle), Mathf.Sin(outerAngle), 0f);
             count++;
             if (count == 16)
                 break;
@@ -337,6 +363,7 @@ internal static class BlackoutRule
         Shader.SetGlobalVectorArray("_HeadlampData", headlampShaderData);
         Shader.SetGlobalVectorArray("_HeadlampSettings", headlampShaderSettings);
         Shader.SetGlobalVectorArray("_HeadlampFaces", headlampShaderFaces);
+        Shader.SetGlobalVectorArray("_HeadlampAngles", headlampShaderAngles);
 
         if (headlampShaderBlockerTexture == null)
             headlampShaderBlockerTexture =
@@ -345,9 +372,199 @@ internal static class BlackoutRule
 
         headlampShaderBlockerTexture.SetPixels(headlampShaderBlockers);
         headlampShaderBlockerTexture.Apply(false, false);
+        if (headlampShaderGroundBlockerTexture == null)
+            headlampShaderGroundBlockerTexture = new Texture2D(HeadlampBlockerLimit, 16, TextureFormat.RGBA32, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+
+        headlampShaderGroundBlockerTexture.SetPixels32(headlampShaderGroundBlockers);
+        headlampShaderGroundBlockerTexture.Apply(false, false);
         Shader.SetGlobalFloatArray("_HeadlampBlockerCounts", headlampShaderBlockerCounts);
-        Shader.SetGlobalFloatArray("_HeadlampGroundBlockers", headlampShaderGroundBlockers);
+        Shader.SetGlobalTexture("_HeadlampGroundBlockers", headlampShaderGroundBlockerTexture);
         Shader.SetGlobalTexture("_HeadlampBlockers", headlampShaderBlockerTexture);
+        UpdateHeadlampVisibility(count);
+    }
+
+    private static void UpdateHeadlampCameraBounds()
+    {
+        headlampCameraBounds.Clear();
+        var cameraCount = Camera.allCamerasCount;
+        if (headlampCameras.Length < cameraCount)
+            Array.Resize(ref headlampCameras, cameraCount);
+            
+        cameraCount = Camera.GetAllCameras(headlampCameras);
+        for (var index = 0; index < cameraCount; index++)
+        {
+            var camera = headlampCameras[index];
+            if (camera == null || !camera.isActiveAndEnabled || camera.cullingMask == 0)
+                continue;
+                
+            var bounds = new Bounds(camera.transform.position, Vector3.zero);
+            for (var clip = 0; clip < 2; clip++)
+            {
+                camera.CalculateFrustumCorners(new Rect(0f, 0f, 1f, 1f), clip == 0 ? camera.nearClipPlane : camera.farClipPlane, Camera.MonoOrStereoscopicEye.Mono, headlampFrustumCorners);
+                for (var corner = 0; corner < headlampFrustumCorners.Length; corner++)
+                    bounds.Encapsulate(camera.transform.TransformPoint(headlampFrustumCorners[corner]));
+            }
+            headlampCameraBounds.Add(bounds);
+        }
+    }
+
+    private static bool HeadlampConeMayBeVisible(Vector4 data, Vector4 settings)
+    {
+        if (headlampCameraBounds.Count == 0)
+            return true;
+            
+        var direction = new Vector2(data.z, data.w).normalized;
+        var sideways = new Vector2(-direction.y, direction.x);
+        var forwardExtent = settings.y * 0.5f;
+        var sideExtent = settings.y * Mathf.Sin(settings.w * 0.5f * Mathf.Deg2Rad);
+        var center = new Vector2(data.x, data.y) + direction * forwardExtent;
+        var extentX = Mathf.Abs(direction.x) * forwardExtent + Mathf.Abs(sideways.x) * sideExtent;
+        var extentY = Mathf.Abs(direction.y) * forwardExtent + Mathf.Abs(sideways.y) * sideExtent;
+       
+        foreach (var bounds in headlampCameraBounds)
+        {
+            var delta = (Vector2)bounds.center - center;
+            var viewExtent = (Vector2)bounds.extents + Vector2.one * 0.05f;
+            
+            if (Mathf.Abs(delta.x) > viewExtent.x + extentX || Mathf.Abs(delta.y) > viewExtent.y + extentY)
+                continue;
+                
+            if (Mathf.Abs(Vector2.Dot(delta, direction)) > forwardExtent + viewExtent.x * Mathf.Abs(direction.x) + viewExtent.y * Mathf.Abs(direction.y))
+                continue;
+                
+            if (Mathf.Abs(Vector2.Dot(delta, sideways)) > sideExtent + viewExtent.x * Mathf.Abs(sideways.x) + viewExtent.y * Mathf.Abs(sideways.y))
+                continue;
+                
+            return true;
+        }
+        return false;
+    }
+
+    private static bool HeadlampFaceMayBeVisible(Vector4 face)
+    {
+        if (face.z <= 0f || face.w <= 0f)
+            return false;
+            
+        if (headlampCameraBounds.Count == 0)
+            return true;
+            
+        var position = new Vector2(face.x, face.y);
+        
+        foreach (var bounds in headlampCameraBounds)
+        {
+            var min = (Vector2)bounds.min - Vector2.one * 0.05f;
+            var max = (Vector2)bounds.max + Vector2.one * 0.05f;
+            var closest = new Vector2(Mathf.Clamp(position.x, min.x, max.x), Mathf.Clamp(position.y, min.y, max.y));
+           
+            if ((closest - position).sqrMagnitude <= face.w * face.w)
+                return true;
+        }
+        
+        return false;
+    }
+
+    private static void PrepareHeadlampRendering(Camera camera)
+    {
+        if (headlampRenderingFrame == Time.frameCount || !CanApplyBlackout() || headlampMaterial == null)
+            return;
+            
+        headlampRenderingFrame = Time.frameCount;
+        UpdateHeadlampShader();
+    }
+
+    private static void PrepareHeadlampSrpRendering(UnityEngine.Rendering.ScriptableRenderContext context, Camera camera)
+    {
+        PrepareHeadlampRendering(camera);
+    }
+
+    private static void UpdateHeadlampVisibility(int count)
+    {
+        Shader.SetGlobalFloat("_HeadlampVisibilityReady", 0f);
+        if (headlampMaterial.passCount < 2)
+            return;
+
+        var hasBlockers = false;
+        for (var lamp = 0; lamp < count; lamp++)
+            hasBlockers |= headlampShaderBlockerCounts[lamp] > 0f;
+            
+        if (!hasBlockers)
+            return;
+
+        if (headlampVisibilityMaterial == null)
+            headlampVisibilityMaterial = new Material(headlampMaterial);
+            
+        if (headlampVisibilityTarget == null)
+            headlampVisibilityTarget = new RenderTexture(HeadlampVisibilityResolution, HeadlampVisibilityResolution,0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                useMipMap = false,
+                autoGenerateMips = false
+            };
+            
+        if (headlampVisibilityAtlas == null)
+            headlampVisibilityAtlas = new RenderTexture(HeadlampVisibilityResolution * HeadlampVisibilityColumns, HeadlampVisibilityResolution * HeadlampVisibilityColumns, 0,RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                useMipMap = false,
+                autoGenerateMips = false
+            };
+            
+        if (!headlampVisibilityTarget.IsCreated())
+            headlampVisibilityTarget.Create();
+            
+        if (!headlampVisibilityAtlas.IsCreated())
+            headlampVisibilityAtlas.Create();
+
+        var previousTarget = RenderTexture.active;
+        try
+        {
+            for (var lamp = 0; lamp < count; lamp++)
+            {
+                if (headlampShaderBlockerCounts[lamp] <= 0f)
+                    continue;
+                    
+                headlampVisibilityMaterial.SetInt("_HeadlampMaskIndex", lamp);
+                Graphics.Blit(null, headlampVisibilityTarget, headlampVisibilityMaterial, 1);
+                Graphics.CopyTexture(headlampVisibilityTarget, 0, 0, 0, 0,
+                    HeadlampVisibilityResolution, HeadlampVisibilityResolution,
+                    headlampVisibilityAtlas, 0, 0,
+                    lamp % HeadlampVisibilityColumns * HeadlampVisibilityResolution,
+                    lamp / HeadlampVisibilityColumns * HeadlampVisibilityResolution);
+            }
+        }
+        finally
+        {
+            RenderTexture.active = previousTarget;
+        }
+
+        Shader.SetGlobalTexture("_HeadlampVisibilityAtlas", headlampVisibilityAtlas);
+        Shader.SetGlobalVector("_HeadlampVisibilityLayout", new Vector4(1f / HeadlampVisibilityColumns, 0.5f / HeadlampVisibilityResolution, HeadlampVisibilityColumns, 0f));
+        Shader.SetGlobalFloat("_HeadlampVisibilityReady", 1f);
+    }
+
+    private static void ReleaseHeadlampVisibility()
+    {
+        Shader.SetGlobalFloat("_HeadlampVisibilityReady", 0f);
+        Shader.SetGlobalTexture("_HeadlampVisibilityAtlas", null);
+        if (headlampVisibilityTarget != null)
+        {
+            headlampVisibilityTarget.Release();
+            UnityEngine.Object.Destroy(headlampVisibilityTarget);
+            headlampVisibilityTarget = null;
+        }
+        if (headlampVisibilityAtlas != null)
+        {
+            headlampVisibilityAtlas.Release();
+            UnityEngine.Object.Destroy(headlampVisibilityAtlas);
+            headlampVisibilityAtlas = null;
+        }
+        if (headlampVisibilityMaterial != null)
+        {
+            UnityEngine.Object.Destroy(headlampVisibilityMaterial);
+            headlampVisibilityMaterial = null;
+        }
     }
 
     internal static Material GetLitMaterial()
@@ -390,7 +607,7 @@ internal static class BlackoutRule
 
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
         {
-            if (renderer == null || renderer.GetComponent<GraffitiMaterialMarker>() != null ||
+            if (renderer == null || renderer.GetComponent<GraffitiMaterialMarker>() != null || renderer.name.StartsWith("HotPlate", StringComparison.OrdinalIgnoreCase) ||
                 originalMaterials.ContainsKey(renderer))
                 continue;
 
@@ -532,7 +749,8 @@ internal static class BlackoutRule
 
     internal static void ApplyToNewSpriteRenderer(SpriteRenderer renderer)
     {
-        if (!applied || renderer == null || litMaterial == null || originalMaterials.ContainsKey(renderer))
+        if (!applied || renderer == null || litMaterial == null ||
+            renderer.name.StartsWith("HotPlate", StringComparison.OrdinalIgnoreCase) || originalMaterials.ContainsKey(renderer))
             return;
 
         originalMaterials.Add(renderer, renderer.sharedMaterial);
@@ -544,10 +762,13 @@ internal static class BlackoutRule
     {
         if (!applied)
             return;
+            
         if (gameObject == null)
             return;
+            
         if (gameObject.GetComponent<AlwaysBrightVisualMarker>() == null)
             gameObject.AddComponent<AlwaysBrightVisualMarker>();
+            
         var material = GetUnlitMaterial();
         if (material == null)
             return;
@@ -797,7 +1018,12 @@ internal static class BlackoutRule
         foreach (var lamp in headlamps)
             lamp.Tick();
 
-        UpdateHeadlampShader();
+        if (!headlampRenderingSubscribed)
+        {
+            Camera.onPreCull += PrepareHeadlampRendering;
+            UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering += PrepareHeadlampSrpRendering;
+            headlampRenderingSubscribed = true;
+        }
         ApplyLevitatorMaterials();
     }
 
@@ -847,6 +1073,15 @@ internal static class BlackoutRule
         appliedSceneHandle = int.MinValue;
         headlampStates.Clear();
         headlamps.Clear();
+        if (headlampRenderingSubscribed)
+        {
+            Camera.onPreCull -= PrepareHeadlampRendering;
+            UnityEngine.Rendering.RenderPipelineManager.beginCameraRendering -= PrepareHeadlampSrpRendering;
+            headlampRenderingSubscribed = false;
+        }
+        headlampRenderingFrame = -1;
+        headlampCameraBounds.Clear();
+        ReleaseHeadlampVisibility();
         restrictLightApplied = false;
         localBodyWithHeadlamp = null;
 
@@ -1203,7 +1438,7 @@ internal sealed class Headlamp : MonoBehaviour
     }
 
     internal bool WriteShaderData(Vector4[] data, Vector4[] settings, Vector4[] faces, Color[] blockers,
-        float[] blockerCounts, float[] groundBlockers, int index)
+        float[] blockerCounts, Color32[] groundBlockers, int index)
     {
         if (!Enabled || mainLight == null || mainLight.intensity <= 0.01f)
             return false;
@@ -1224,7 +1459,7 @@ internal sealed class Headlamp : MonoBehaviour
             blockers[index * RestrictedBlockerDataWidth + blocker * 2 + 1] =
                 new Color(second.x, second.y, second.z, second.w);
             groundBlockers[index * RestrictedBlockerLimit + blocker] =
-                blocker < blockerCount && blockerGround[blocker] ? 1f : 0f;
+                new Color32(blocker < blockerCount && blockerGround[blocker] ? (byte)255 : (byte)0, 0, 0, 255);
         }
 
         return true;
@@ -1349,13 +1584,9 @@ internal static class BlackoutPropParticlePatch
     }
 }
 
-internal sealed class BlackoutShadowCaster : MonoBehaviour
-{
-}
+internal sealed class BlackoutShadowCaster : MonoBehaviour;
 
-internal sealed class AlwaysBrightVisualMarker : MonoBehaviour
-{
-}
+internal sealed class AlwaysBrightVisualMarker : MonoBehaviour;
 
 internal sealed class BlackoutBloodPropVisual : MonoBehaviour
 {
