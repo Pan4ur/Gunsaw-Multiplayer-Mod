@@ -196,8 +196,9 @@ internal sealed class HeadlessLobbyService : IDisposable
             {
                 MultiplayerSession.UpdatePing();
                 var players = MultiplayerSession.PlayerCount;
+                var map = MultiplayerSession.GetHostMapName();
                 GunsawMultiplayerPlugin.HttpAt(directoryUrl, "PUT", "/v1/lobbies/" + lobbyId,
-                    "{\"players\":" + players + ",\"map\":\"LevelLoader\"}", "Bearer " + relayKey);
+                    "{\"players\":" + players + ",\"map\":\"" + GunsawMultiplayerPlugin.EscapeJson(map) + "\"}", "Bearer " + relayKey);
             }
             catch (Exception exception) { GunsawMultiplayerPlugin.LogInfo("Headless keep-alive failed: " + exception.Message); }
             finally { Interlocked.Exchange(ref keepAliveInFlight, 0); }
@@ -392,8 +393,6 @@ internal sealed class HeadlessLobbyService : IDisposable
         if (ChatService.TryCreate(text, true, out packet)) MultiplayerSession.Send(packet, targetPeerId);
     }
 
-    private sealed class HeadlessLevelEntry { public string name; public string code; }
-
     private void ApplyCommandLineOptions()
     {
         var value = LobbySettingsSchema.CommandLineValue(commandLineArgs, "--master");
@@ -417,4 +416,6 @@ internal sealed class HeadlessLobbyService : IDisposable
         keepAliveTimer = null;
         if (ReferenceEquals(Instance, this)) Instance = null;
     }
+
+    private sealed class HeadlessLevelEntry { public string name; public string code; }
 }

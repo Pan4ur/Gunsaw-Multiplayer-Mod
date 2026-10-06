@@ -874,14 +874,15 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var canJoin = plugin.CanJoinLobby;
         var hash = plugin.lobbies.Count + (canJoin ? 1 : 0) + (MultiplayerSession.IsActive ? 7 : 0);
         foreach (var lobby in plugin.lobbies)
-            hash = hash * 31 + (lobby.id ?? "").GetHashCode() + lobby.players;
+            hash = hash * 31 + (lobby.id ?? "").GetHashCode() + lobby.players + (lobby.map ?? "").GetHashCode();
         if (hash == renderedLobbyHash) return;
         renderedLobbyHash = hash;
         for (var i = lobbyRows.childCount - 1; i >= 0; i--) Destroy(lobbyRows.GetChild(i).gameObject);
         foreach (var lobby in plugin.lobbies)
         {
             var row = new GameObject("Lobby", typeof(RectTransform), typeof(LayoutElement)); row.transform.SetParent(lobbyRows, false); row.GetComponent<LayoutElement>().preferredHeight = 46f;
-            var info = CreateText(row.transform, lobby.name + "  |  " + lobby.hostName + "  |  " + lobby.map + "  |  " + (lobby.teams ? "TEAMS" : lobby.pvp ? "PVP" : "CO-OP") + "  |  " + lobby.players + "/" + lobby.maxPlayers, new Vector2(-135f, 0f), new Vector2(810f, 42f), 14); info.enableWordWrapping = false;
+            var map = lobby.map == "LevelLoader" ? lobby.map : LevelNames.Resolve(lobby.map ?? "");
+            var info = CreateText(row.transform, lobby.name + "  |  " + lobby.hostName + "  |  " + map + "  |  " + (lobby.teams ? "TEAMS" : lobby.pvp ? "PVP" : "CO-OP") + "  |  " + lobby.players + "/" + lobby.maxPlayers, new Vector2(-135f, 0f), new Vector2(810f, 42f), 14); info.enableWordWrapping = false;
             var id = lobby.id;
             var join = CreateButton(row.transform, "JOIN", new Vector2(450f, 0f), new Vector2(140f, 40f));
             join.interactable = canJoin;

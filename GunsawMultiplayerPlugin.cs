@@ -1100,7 +1100,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private void SendHeartbeat()
     {
-        var scene = SceneManager.GetActiveScene().name;
+        var scene = MultiplayerSession.GetHostMapName();
         var players = MultiplayerSession.PlayerCount;
         ThreadPool.QueueUserWorkItem(_ =>
         {
@@ -1168,7 +1168,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         try
         {
-            var body = JsonUtility.ToJson(BuildLobbyRequest(lobbySettings, default, lobbyName, playerName, SceneManager.GetActiveScene().name, MultiplayerSession.PlayerCount, true));
+            var body = JsonUtility.ToJson(BuildLobbyRequest(lobbySettings, default, lobbyName, playerName, MultiplayerSession.GetHostMapName(), MultiplayerSession.PlayerCount, true));
             Http("PUT", "/v1/lobbies/" + hostedLobbyId, body, "Bearer " + hostRelayKey);
         }
         catch (Exception e) { Logger.LogInfo("Could not update hosted lobby: " + e.Message); }
@@ -1205,7 +1205,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         DeleteHostedLobby(lobbyId, relayKey);
     }
 
-    private static string EscapeJson(string value)
+    internal static string EscapeJson(string value)
     {
         return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }

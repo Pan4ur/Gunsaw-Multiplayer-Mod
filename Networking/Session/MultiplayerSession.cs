@@ -294,6 +294,18 @@ internal static partial class MultiplayerSession
         Send(new ScenePacket(scene + "\n" + epoch), 0, false);
     }
 
+    internal static string GetHostMapName()
+    {
+        string scene;
+        string levelCode;
+        lock (statusLock)
+        {
+            scene = hostScene;
+            levelCode = hostCustomLevel;
+        }
+        return scene == "LevelLoader" ? LevelNames.ResolveCustom(levelCode, scene) : LevelNames.Resolve(scene);
+    }
+
     internal static void NotifyHostSceneReload(string scene, bool waitForCustomLevel = false)
     {
         if (!isHost || string.IsNullOrEmpty(scene)) return;

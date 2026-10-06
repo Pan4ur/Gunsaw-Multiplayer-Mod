@@ -1,8 +1,4 @@
 using System;
-using System.Security.Cryptography;
-using System.Text;
-using System.Net.Http;
-using System.IO;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine;
@@ -55,45 +51,7 @@ internal sealed class RPCManager : MonoBehaviour
     private bool _enable;
     private float timer = 5f;
 
-    private const string HASHES_URL =
-        "https://raw.githubusercontent.com/rushellxyz/gunsaw-level-hashes/refs/heads/main/hashes.txt";
-
-    private const string HASHES_PATH = "hashes-to-name.txt";
-
-    private static readonly Dictionary<string, string> levels = new Dictionary<string, string>
-    {
-        { "ViolenceWarning", "Just started" },
-        { "tutorial1", "Basic Training" },
-        { "actualLevel1", "Lock Break" },
-        { "actualLevel2", "Box Check" },
-        { "beautyLevel", "Belt Dropdown" },
-        { "campaign3", "Box Check" },
-        // Green skies is the only level with second word starting from small letter
-        // You will never unsee this
-        { "campaign4", "Green skies" },
-        { "campaign5", "Zigzag" },
-        { "campaign6", "Downdrops" },
-        { "campaign7", "Crush Forces" },
-        { "campaign8", "Mount Basins" },
-        { "campaign9", "Blue Sewers" },
-        { "campaign10", "Weird Technology" },
-        { "campaign11", "Foggy Whites" },
-        { "campaign12", "Rooftops" },
-        { "campaign13", "Vanished Forts" },
-        { "campaign14", "Acid Plants" },
-        { "SampleScene", "Trash Containment" },
-        { "LevelSelect", "Chooses level" },
-        { "LevelEditor", "Level editor" },
-        { "LevelLoader", "Custom level" },
-        // Two secret levels, yep theres secret levels
-        // try them with unity explorer
-        { "level1", "Secret level" },
-        { "level2", "Secret level" },
-    };
-
-    private Dictionary<string, string> hashesToName;
     private string customLevel;
-    private bool alreadyDownloading;
 
     public static void CheckInstance()
     {
@@ -205,11 +163,9 @@ internal sealed class RPCManager : MonoBehaviour
 
         string scene = SceneManager.GetActiveScene().name;
         if ("LevelLoader" == scene)
-            RichPresence.State = customLevel;
-        else if (levels.TryGetValue(scene, out string level))
-            RichPresence.State = level;
+            RichPresence.State = LevelNames.ResolveCustom(customLevel);
         else
-            RichPresence.State = scene;
+            RichPresence.State = LevelNames.Resolve(scene);
     }
 
     private void Initialize()
@@ -263,71 +219,8 @@ internal sealed class RPCManager : MonoBehaviour
 
     public void UpdateCustomLevel(string level)
     {
-        if (HeadlessLobbyService.IsHeadlessMode || !enable)
-            return;
-        string levelHash;
-        using (SHA256 sha256 = SHA256.Create())
-        {
-            byte[] hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(level));
-
-            StringBuilder sb = new StringBuilder();
-            foreach (byte b in hashBytes)
-            {
-                sb.Append(b.ToString("x2"));
-            }
-
-            levelHash = sb.ToString();
-        }
-
-        if (null != hashesToName)
-        {
-            if (hashesToName.TryGetValue(levelHash, out string name))
-                customLevel = name;
-            else customLevel = "Custom level";
-            return;
-        }
-
-        if (alreadyDownloading)
-            return;
-
-        alreadyDownloading = true;
-        customLevel = "Custom level";
-        ThreadPool.QueueUserWorkItem(_ =>
-        {
-            try
-            {
-                bool exists = File.Exists(HASHES_PATH);
-                bool onlyOlder = exists && File.GetLastWriteTimeUtc(HASHES_PATH) < DateTime.UtcNow.AddDays(-1.0);
-                if (!exists || onlyOlder)
-                {
-                    try
-                    {
-                        File.WriteAllBytes(HASHES_PATH, new HttpClient().GetByteArrayAsync(HASHES_URL).Result);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("Hashes to level name download failed: " + ex.Message);
-                        if (!onlyOlder)
-                            return;
-                    }
-                }
-
-                // It is not a json, since we dont have a json lib, i might as well make it not a json
-                string[] entries = File.ReadAllText(HASHES_PATH).Split(',');
-                hashesToName = new Dictionary<string, string>();
-                for (int i = 0; i < entries.Length; i += 2)
-                {
-                    hashesToName.Add(entries[i], entries[i + 1]);
-                }
-
-                if (hashesToName.TryGetValue(levelHash, out string name))
-                    customLevel = name;
-            }
-            finally
-            {
-                alreadyDownloading = false;
-            }
-        });
+        customLevel = level;
+        LevelNames.ResolveCustom(level);
     }
 
     private static string GetCharacterName()
