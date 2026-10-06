@@ -1670,6 +1670,8 @@ internal sealed class WorldReplication : MonoBehaviour
         internal Behaviour Light;
         internal Collider2D Collider;
         internal Vector2 Position;
+        internal ToggleableLampRuntime Runtime;
+        internal int RuntimeLookupEpoch = -1;
     }
 
     internal struct ClientBodyState

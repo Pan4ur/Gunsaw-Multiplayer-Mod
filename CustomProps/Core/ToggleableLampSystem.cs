@@ -5,6 +5,7 @@ internal static class ToggleableLampSystem
 {
     private const string LampPath = "Building/Lamp";
     private static readonly List<LampLevelData> pending = new List<LampLevelData>();
+    private static int runtimeLookupEpoch;
 
     internal static void PrepareRuntime(string json)
     {
@@ -116,20 +117,29 @@ internal static class ToggleableLampSystem
     internal static ToggleableLampRuntime RuntimeForLamp(WorldReplication.LampState lamp)
     {
         if (lamp == null || lamp.Object == null) return null;
+        if (lamp.RuntimeLookupEpoch == runtimeLookupEpoch)
+            return lamp.Runtime;
+
         var runtime = lamp.Object.GetComponent<ToggleableLampRuntime>();
-        if (runtime != null) return runtime;
-        runtime = lamp.Object.GetComponentInParent<ToggleableLampRuntime>();
-        if (runtime != null) return runtime;
-        return lamp.Object.GetComponentInChildren<ToggleableLampRuntime>(true);
+        runtime ??= lamp.Object.GetComponentInParent<ToggleableLampRuntime>();
+        runtime ??= lamp.Object.GetComponentInChildren<ToggleableLampRuntime>(true);
+
+        lamp.Runtime = runtime;
+        lamp.RuntimeLookupEpoch = runtimeLookupEpoch;
+        return runtime;
     }
 
-    internal static ToggleableLampRuntime RuntimeForId(int id)
+    internal static void InvalidateRuntimeLookups()
     {
+        unchecked { runtimeLookupEpoch++; }
+    }
+
+    internal static void RuntimesForId(int id, List<ToggleableLampRuntime> lamps)
+    {
+        lamps.Clear();
         foreach (var r in UnityEngine.Object.FindObjectsOfType<ToggleableLampRuntime>())
             if (r != null && r.ActivationId == id)
-                return r;
-        
-        return null;
+                lamps.Add(r);
     }
 
     private sealed class LampLevelData
@@ -160,6 +170,7 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
 
     internal void Configure(int id, float intensity, float angle, Color configuredColor, bool isColored)
     {
+        ToggleableLampSystem.InvalidateRuntimeLookups();
         activationId = id;
         var lights = GetComponentsInChildren<Light2D>(true);
         var light = lights.Length > 0 ? lights[0] : null;
@@ -170,6 +181,11 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
         powered = true;
         FindVisualRenderers();
         Apply();
+    }
+
+    private void OnDestroy()
+    {
+        ToggleableLampSystem.InvalidateRuntimeLookups();
     }
 
     internal void HandleActivation(int id)

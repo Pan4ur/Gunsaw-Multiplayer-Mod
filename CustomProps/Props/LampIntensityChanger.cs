@@ -16,7 +16,7 @@ internal sealed class LampIntensityChangerDefinition : CustomPropDefinition<Lamp
     public override string TypeId => "MP/LampIntensityChanger";
     public override string DisplayName => "Lamp Intensity Changer";
 
-    public override string Description => "Changes the intensity of the lamp with the specified ID when activated.";
+    public override string Description => "Changes the intensity of all lamps with the specified ID when activated.";
 
     public override CustomPropCategory EditorCategory => CustomPropCategory.Trigger;
     public override Sprite Icon => EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.lamp-intensity-changer.png", 28f, new Vector2(0.5f, 0.15f));
@@ -36,8 +36,8 @@ internal sealed class LampIntensityChangerDefinition : CustomPropDefinition<Lamp
 internal sealed class LampIntensityChangerRuntime : MonoBehaviour, IActivationIdReceiver
 {
     private LampIntensityChangerData data;
-    private ToggleableLampRuntime lamp;
-    private float start;
+    private readonly List<ToggleableLampRuntime> lamps = new();
+    private readonly List<float> starts = new();
     private float target;
     private float elapsed;
     private bool changing;
@@ -51,26 +51,35 @@ internal sealed class LampIntensityChangerRuntime : MonoBehaviour, IActivationId
         if (data == null || id != data.activationId || (MultiplayerSession.IsActive && !MultiplayerSession.IsHost))
             return;
         
-        lamp = ToggleableLampSystem.RuntimeForId(data.lampId);
-        if (lamp == null || (changing && Mathf.Approximately(target, data.intensity)))
+        if (changing && Mathf.Approximately(target, data.intensity))
             return;
         
-        start = lamp.Intensity;
+        ToggleableLampSystem.RuntimesForId(data.lampId, lamps);
+        starts.Clear();
         target = data.intensity;
         elapsed = 0f;
-        changing = data.delay > 0f && !Mathf.Approximately(start, target);
-         
-        if (!changing)
-            lamp.SetIntensity(target);
+        changing = false;
+        foreach (var lamp in lamps)
+        {
+            var start = lamp.Intensity;
+            starts.Add(start);
+            if (data.delay > 0f && !Mathf.Approximately(start, target))
+                changing = true;
+            else
+                lamp.SetIntensity(target);
+        }
     }
 
     private void Update()
     {
-        if (!changing || lamp == null)
+        if (!changing)
             return;
         
         elapsed += Time.deltaTime;
-        lamp.SetIntensity(Mathf.Lerp(start, target, Mathf.Clamp01(elapsed / data.delay)));
+        var progress = Mathf.Clamp01(elapsed / data.delay);
+        for (var index = 0; index < lamps.Count; index++)
+            if (lamps[index] != null)
+                lamps[index].SetIntensity(Mathf.Lerp(starts[index], target, progress));
         
         if (elapsed >= data.delay)
             changing = false;

@@ -15,7 +15,7 @@ internal sealed class LampColorChangerDefinition : CustomPropDefinition<LampColo
 
     public override string TypeId => "MP/LampColorChanger";
     public override string DisplayName => "Lamp Color Changer";
-    public override string Description => "Changes the color of the lamp with the specified ID when activated.";
+    public override string Description => "Changes the color of all lamps with the specified ID when activated.";
     public override CustomPropCategory EditorCategory => CustomPropCategory.Trigger;
     public override Sprite Icon => EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.lamp-color-changer.png", 28f, new Vector2(0.5f, 0.15f));
 
@@ -34,8 +34,8 @@ internal sealed class LampColorChangerDefinition : CustomPropDefinition<LampColo
 internal sealed class LampColorChangerRuntime : MonoBehaviour, IActivationIdReceiver
 {
     private LampColorChangerData data;
-    private ToggleableLampRuntime lamp;
-    private Color start;
+    private readonly List<ToggleableLampRuntime> lamps = new();
+    private readonly List<Color> starts = new();
     private Color target;
     private float elapsed;
     private bool changing;
@@ -49,28 +49,38 @@ internal sealed class LampColorChangerRuntime : MonoBehaviour, IActivationIdRece
         if (data == null || id != data.activationId || (MultiplayerSession.IsActive && !MultiplayerSession.IsHost))
             return;
         
-        if (!ColorUtility.TryParseHtmlString(data.color, out target))
+        if (!ColorUtility.TryParseHtmlString(data.color, out var nextTarget))
             return;
         
-        lamp = ToggleableLampSystem.RuntimeForId(data.lampId);
-        if (lamp == null || (changing && SameColor(target, this.target)))
+        if (changing && SameColor(nextTarget, target))
             return;
         
-        start = lamp.Color;
+        ToggleableLampSystem.RuntimesForId(data.lampId, lamps);
+        starts.Clear();
+        target = nextTarget;
         elapsed = 0f;
-        changing = data.delay > 0f && !SameColor(start, target);
-        
-        if (!changing)
-            lamp.SetColor(target);
+        changing = false;
+        foreach (var lamp in lamps)
+        {
+            var start = lamp.Color;
+            starts.Add(start);
+            if (data.delay > 0f && !SameColor(start, target))
+                changing = true;
+            else
+                lamp.SetColor(target);
+        }
     }
 
     private void Update()
     {
-        if (!changing || lamp == null)
+        if (!changing)
             return;
         
         elapsed += Time.deltaTime;
-        lamp.SetColor(Color.Lerp(start, target, Mathf.Clamp01(elapsed / data.delay)));
+        var progress = Mathf.Clamp01(elapsed / data.delay);
+        for (var index = 0; index < lamps.Count; index++)
+            if (lamps[index] != null)
+                lamps[index].SetColor(Color.Lerp(starts[index], target, progress));
         
         if (elapsed >= data.delay)
             changing = false;
