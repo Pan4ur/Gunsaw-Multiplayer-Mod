@@ -7,7 +7,8 @@ public class DroppedWeaponReplication
     internal void RegisterDroppedWeapon(DroppedWeapon dropped)
     {
         var current = WorldReplication.Instance;
-        if (current == null || !MultiplayerSession.IsHost || dropped == null) return;
+        if (current == null || !MultiplayerSession.IsHost || dropped == null)
+            return;
         foreach (var body in dropped.GetComponentsInChildren<Rigidbody2D>(true))
         {
             if (body == null) continue;
@@ -128,12 +129,14 @@ public class DroppedWeaponReplication
             dropped.ammoAmount = ammo;
             changed = true;
         }
-        if (!changed) return;
+        if (!changed) 
+            return;
         SynchronizeDroppedWeaponAmmoIndicator(dropped);
         if (ammo <= 0 && weapon.magExtractedSprite != null)
         {
             var renderer = dropped.GetComponent<SpriteRenderer>();
-            if (renderer != null) renderer.sprite = weapon.magExtractedSprite;
+            if (renderer != null)
+                renderer.sprite = weapon.magExtractedSprite;
         }
     }
 
@@ -148,8 +151,7 @@ public class DroppedWeaponReplication
         var rigidbody = dropped.GetComponent<Rigidbody2D>();
         if (rigidbody != null)
         {
-            rigidbody.AddForce(new Vector2(UnityEngine.Random.Range(-1.5f, 1.5f),
-                UnityEngine.Random.Range(-1.5f, 1.5f)), ForceMode2D.Impulse);
+            rigidbody.AddForce(new Vector2(UnityEngine.Random.Range(-1.5f, 1.5f), UnityEngine.Random.Range(-1.5f, 1.5f)), ForceMode2D.Impulse);
             rigidbody.AddTorque(UnityEngine.Random.Range(-1.5f, 1.5f), ForceMode2D.Impulse);
         }
     }
@@ -164,6 +166,7 @@ public class DroppedWeaponReplication
         dropped.pickupCool = 0.5f;
         dropped.ChangeWeapon(previousWeapon, previousAmmo);
         if (previousWeapon == null) return;
+        DroppedWeaponCleanupSystem.Register(dropped);
         dropped.ammoAmount = previousAmmo;
         var rigidbody = dropped.GetComponent<Rigidbody2D>();
         if (rigidbody == null) return;

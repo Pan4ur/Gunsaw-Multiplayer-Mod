@@ -741,7 +741,12 @@ internal static class HostDroppedWeaponRegistrationPatch
 {
     private static void Postfix(DroppedWeapon __instance)
     {
-        if (__instance != null) BlackoutRule.ApplyToObject(__instance.gameObject);
+        if (__instance != null) 
+            BlackoutRule.ApplyToObject(__instance.gameObject);
+        
+        if (DroppedWeaponCleanupSystem.DropDepth > 0)
+            DroppedWeaponCleanupSystem.Register(__instance);
+        
         if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
             WorldReplication.Instance.weapons.RegisterDroppedWeapon(__instance);
     }
@@ -763,16 +768,16 @@ internal static class MultiplayerWorldButtonPatch
     private static bool Prefix(ButtonScript __instance)
     {
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return true;
-        if (GunsawMultiplayerPlugin.World != null)
-            GunsawMultiplayerPlugin.World.QueueButtonActivation(__instance);
+        GunsawMultiplayerPlugin.World?.QueueButtonActivation(__instance);
         return false;
     }
 
     private static void Postfix(ButtonScript __instance)
     {
-        if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost && __instance != null && __instance.activateOnce) return;
-        if (GunsawMultiplayerPlugin.World != null)
-            GunsawMultiplayerPlugin.World.NotifyButtonActivated(__instance);
+        if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost && __instance != null && __instance.activateOnce) 
+            return;
+        
+        GunsawMultiplayerPlugin.World?.NotifyButtonActivated(__instance);
     }
 }
 
@@ -794,10 +799,15 @@ internal static class ClientNpcDamagePatch
     private static bool Prefix(BodyScript __instance, bool isCrit, out NetworkAvatarManager.TargetScreenEffectState __state)
     {
         __state = NetworkAvatarManager.BeginTargetScreenEffect(__instance);
-        if (KartPassengers.IsProtectedPassenger(__instance)) return false;
+        if (KartPassengers.IsProtectedPassenger(__instance))
+            return false;
+        
         NetworkAvatarManager.RecordDamageSource(__instance);
         NetworkAvatarManager.TryCreateLocalKillBloodSplat(__instance);
-        if (NetworkAvatarManager.HandleHostRemoteDamaged(__instance, isCrit)) return false;
+        
+        if (NetworkAvatarManager.HandleHostRemoteDamaged(__instance, isCrit))
+            return false;
+        
         return !NpcReplication.HandleClientDamaged(__instance, isCrit);
     }
 
@@ -827,9 +837,9 @@ internal static class ClientNpcDeathPatch
     private static void Postfix(BodyScript __instance)
     {
         var localPlayer = PlayerScript.player;
-        if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer &&
-            localPlayer != null && localPlayer.bodyScript == __instance)
+        if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer && localPlayer != null && localPlayer.bodyScript == __instance)
             __instance.DropAllWeapons();
+        
         GunGameRule.RecordDeath(__instance);
         NetworkAvatarManager.EndNpcKillScreenEffect(__instance);
         Announce(__instance);
@@ -841,8 +851,7 @@ internal static class ClientNpcDeathPatch
         return __exception;
     }
 
-    internal static void Announce(BodyScript __instance, bool allowRemoteReplica = false,
-        PlayerDeathCause deathCause = PlayerDeathCause.Unknown)
+    internal static void Announce(BodyScript __instance, bool allowRemoteReplica = false, PlayerDeathCause deathCause = PlayerDeathCause.Unknown)
     {
         if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || __instance == null ||
             NetworkAvatarManager.IsCreatingRemoteAvatar() ||
