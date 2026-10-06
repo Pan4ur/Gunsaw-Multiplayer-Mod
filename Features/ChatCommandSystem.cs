@@ -83,11 +83,11 @@ internal sealed class ChatCommandSystem
 
         if (MultiplayerSession.IsHost)
             NetworkAvatarManager.BroadcastSwapAnnouncement(MultiplayerSession.LocalPlayerName, characterName);
-        else
+        else if (MultiplayerSession.IsConnected && MultiplayerSession.HostPeerId != 0)
         {
             ChatPacket packet;
             if (ChatService.TryCreate("/swap " + characterName, false, out packet))
-                MultiplayerSession.Send(packet);
+                MultiplayerSession.Send(packet, MultiplayerSession.HostPeerId);
         }
 
         return true;
