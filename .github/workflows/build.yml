@@ -2,6 +2,8 @@ name: Build mod
 
 on:
   push:
+    branches:
+      - '**'
   pull_request:
   workflow_dispatch:
 
@@ -10,7 +12,7 @@ permissions:
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -69,3 +71,69 @@ jobs:
           path: bin/Release/netstandard2.0/GunsawMultiplayer.dll
           if-no-files-found: error
           retention-days: 30
+
+  nightly:
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download mod
+        uses: actions/download-artifact@v8
+        with:
+          name: GunsawMultiplayer-${{ github.sha }}
+          path: dist
+
+      - name: Publish nightly prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $api = "$env:GITHUB_API_URL/repos/$env:GH_REPO"
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+          }
+          function Get-OptionalResource([string]$Uri) {
+            try {
+              Invoke-RestMethod -Uri $Uri -Headers $headers
+            } catch {
+              if ($_.Exception.Response.StatusCode -ne 404) { throw }
+            }
+          }
+          $branch = Invoke-RestMethod -Uri "$api/git/ref/heads/main" -Headers $headers
+          if ($branch.object.sha -ne $env:GITHUB_SHA) {
+            Write-Output 'Skipping an older build: main has already advanced.'
+            exit 0
+          }
+          $release = Get-OptionalResource "$api/releases/tags/nightly"
+          if ($release -and (-not $release.prerelease -or $release.immutable)) {
+            throw 'The existing nightly release must be a mutable prerelease.'
+          }
+          $tag = Get-OptionalResource "$api/git/ref/tags/nightly"
+          if ($tag) {
+            $body = @{ sha = $env:GITHUB_SHA; force = $true } | ConvertTo-Json
+            Invoke-RestMethod -Method Patch -Uri "$api/git/refs/tags/nightly" -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+          } else {
+            $body = @{ ref = 'refs/tags/nightly'; sha = $env:GITHUB_SHA } | ConvertTo-Json
+            Invoke-RestMethod -Method Post -Uri "$api/git/refs" -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
+          }
+          $notesPath = Join-Path $env:RUNNER_TEMP 'nightly-notes.md'
+          @"
+          Automated nightly build
+
+          Commit: $env:GITHUB_SHA
+          Build: $env:GITHUB_SERVER_URL/$env:GH_REPO/actions/runs/$env:GITHUB_RUN_ID
+          "@ | Set-Content -LiteralPath $notesPath -Encoding utf8
+          if (-not $release) {
+            gh release create nightly --verify-tag --draft --prerelease --latest=false --title 'Nightly (test build)' --notes-file $notesPath
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the nightly prerelease.' }
+          }
+          gh release upload nightly dist/GunsawMultiplayer.dll --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Could not upload the nightly DLL.' }
+          gh release edit nightly --draft=false --prerelease --latest=false --title 'Nightly (test build)' --notes-file $notesPath
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the nightly prerelease.' }
