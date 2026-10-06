@@ -3,22 +3,22 @@ using UnityEngine;
 
 internal sealed class ChatCommandSystem
 {
-    private readonly GunsawMultiplayerPlugin plugin;
-
-    internal ChatCommandSystem(GunsawMultiplayerPlugin plugin)
-    {
-        this.plugin = plugin;
-    }
-
     internal bool TryHandle(string message)
     {
-        if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase)) return Kill();
-        if (IsCommand(message, "/spawn")) return Spawn(message);
-        if (IsCommand(message, "/swap")) return Swap(message);
-        if (IsCommand(message, "/tp")) return Teleport(message);
-        if (IsCommand(message, "/ban")) return Ban(message);
-        if (IsCommand(message, "/scale")) return Scale(message);
-        if (IsCommand(message, "/clearblood")) return LevelCleanupSystem.Clear();
+        if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase))
+            return Kill();
+        if (IsCommand(message, "/spawn"))
+            return Spawn(message);
+        if (IsCommand(message, "/swap"))
+            return Swap(message);
+        if (IsCommand(message, "/tp"))
+            return Teleport(message);
+        if (IsCommand(message, "/ban"))
+            return Ban(message);
+        if (IsCommand(message, "/scale"))
+            return Scale(message);
+        if (IsCommand(message, "/clearblood"))
+            return LevelCleanupSystem.Clear();
         return false;
     }
 
@@ -26,7 +26,7 @@ internal sealed class ChatCommandSystem
     {
         if (!LocalPlayerReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
             MultiplayerHud.AddSystemMessage("You are dead already.");
-        
+
         return true;
     }
 
@@ -37,12 +37,14 @@ internal sealed class ChatCommandSystem
             MultiplayerHud.AddSystemMessage("Usage: /spawn.");
             return true;
         }
+
         var body = PlayerScript.player?.bodyScript;
         if (body == null || !body.isAlive)
         {
             MultiplayerHud.AddSystemMessage("You cannot use /spawn while dead.");
             return true;
         }
+
         if (!CustomLevelSpawnSelection.TryGetRandomSpawnPosition(out var position) &&
             (LocalPlayerReplication.Instance == null ||
              !LocalPlayerReplication.Instance.TryGetLocalSpawnPosition(out position)))
@@ -50,6 +52,7 @@ internal sealed class ChatCommandSystem
             MultiplayerHud.AddSystemMessage("The map spawn point is not available yet.");
             return true;
         }
+
         body.transform.position = position;
         if (body.rb != null)
         {
@@ -57,6 +60,7 @@ internal sealed class ChatCommandSystem
             body.rb.velocity = Vector2.zero;
             body.rb.angularVelocity = 0f;
         }
+
         PlayTeleportEffect(position);
         MultiplayerHud.AddSystemMessage("Teleported to a map spawn point.");
         return true;
@@ -69,19 +73,23 @@ internal sealed class ChatCommandSystem
             MultiplayerHud.AddSystemMessage("/swap is disabled in this lobby.");
             return true;
         }
+
         var character = message.Length > 5 ? message.Substring(5).Trim() : "";
         if (!LocalPlayerReplication.TrySetPendingRespawnCharacter(character, out var characterName))
         {
             MultiplayerHud.AddSystemMessage("Usage: /swap <character name>");
             return true;
         }
+
         if (MultiplayerSession.IsHost)
             NetworkAvatarManager.BroadcastSwapAnnouncement(MultiplayerSession.LocalPlayerName, characterName);
         else
         {
             ChatPacket packet;
-            if (ChatService.TryCreate("/swap " + characterName, false, out packet)) MultiplayerSession.Send(packet);
+            if (ChatService.TryCreate("/swap " + characterName, false, out packet))
+                MultiplayerSession.Send(packet);
         }
+
         return true;
     }
 
@@ -89,82 +97,89 @@ internal sealed class ChatCommandSystem
     {
         if (!MultiplayerSession.IsConnected)
             return true;
-        
+
         if (MultiplayerSession.PvpEnabled)
         {
             MultiplayerHud.AddSystemMessage("/tp is disabled in PVP lobbies.");
             return true;
         }
+
         var playerName = message.Length > 3 ? message.Substring(3).Trim() : "";
         if (string.IsNullOrEmpty(playerName))
         {
             MultiplayerHud.AddSystemMessage("Usage: /tp <player name>");
             return true;
         }
+
         var targetPeerId = FindPeerId(playerName, true);
         if (targetPeerId == 0)
         {
             MultiplayerHud.AddSystemMessage("Player " + playerName + " is not in the lobby.");
             return true;
         }
+
         if (!MultiplayerSession.IsHost)
         {
             MultiplayerSession.Send(new TeleportRequestPacket(targetPeerId));
             MultiplayerHud.AddSystemMessage("Teleporting to " + playerName + "...");
             return true;
         }
+
         var target = targetPeerId == MultiplayerSession.LocalPeerId
             ? PlayerScript.player?.bodyScript
             : NetworkAvatarManager.RemoteBodyForPeer(targetPeerId);
+        
         var local = PlayerScript.player?.bodyScript;
         if (target == null || !target.isAlive || local == null)
         {
             MultiplayerHud.AddSystemMessage("Player " + playerName + " is unavailable.");
             return true;
         }
+
         local.transform.position = target.transform.position;
-        if (local.rb != null) { local.rb.velocity = Vector2.zero; local.rb.angularVelocity = 0f; }
+        ResetTeleportVelocity(local);
         PlayTeleportEffect(local.transform.position);
-        plugin.status = "Teleported to " + playerName + ".";
         MultiplayerHud.AddSystemMessage("Teleported to " + playerName + ".");
         return true;
     }
 
     private bool Ban(string message)
     {
-        if (!plugin.CanBanPlayers)
+        if (!GunsawMultiplayerPlugin.Instance.CanBanPlayers)
         {
             MultiplayerHud.AddSystemMessage("Only the lobby host can use /ban.");
             return true;
         }
+
         var playerName = message.Length > 4 ? message.Substring(4).Trim() : "";
         if (string.IsNullOrEmpty(playerName))
         {
             MultiplayerHud.AddSystemMessage("Usage: /ban <player name>");
             return true;
         }
+
         var peerId = FindPeerId(playerName, false);
         if (peerId == 0)
         {
             MultiplayerHud.AddSystemMessage("Player " + playerName + " is not in the lobby.");
             return true;
         }
-        
+
         MultiplayerHud.AddSystemMessage("Eliminating " + playerName + "...");
-        plugin.BanPlayerFromCommand(playerName, peerId);
+        GunsawMultiplayerPlugin.Instance.BanPlayerFromCommand(playerName, peerId);
         return true;
     }
 
-    private bool Scale(string message)
+    private static bool Scale(string message)
     {
         if (MultiplayerSession.IsActive && !MultiplayerSession.AllowScaleChanging)
         {
             MultiplayerHud.AddSystemMessage("/scale is disabled in this lobby.");
             return true;
         }
+
         var value = message.Length > 6 ? message.Substring(6).Trim() : "";
-        float scale;
-        if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out scale) || AvatarScaleHandler.Incorrect(scale))
+        if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var scale) || AvatarScaleHandler.Incorrect(scale))
         {
             MultiplayerHud.AddSystemMessage("Usage: /scale <0.25-3.0>");
             return true;
@@ -176,6 +191,7 @@ internal sealed class ChatCommandSystem
             MultiplayerHud.AddSystemMessage("You cannot use /scale while dead.");
             return true;
         }
+
         if (!AvatarScaleHandler.TrySet(body, scale))
         {
             MultiplayerHud.AddSystemMessage("Character scale is unavailable right now.");
@@ -186,26 +202,37 @@ internal sealed class ChatCommandSystem
         return true;
     }
 
-    private static bool IsCommand(string message, string command)
-    {
-        return message.StartsWith(command, StringComparison.OrdinalIgnoreCase) &&
-            (message.Length == command.Length || char.IsWhiteSpace(message[command.Length]));
-    }
+    private static bool IsCommand(string message, string command) =>
+         message.StartsWith(command, StringComparison.OrdinalIgnoreCase) && (message.Length == command.Length || char.IsWhiteSpace(message[command.Length]));
 
     private static ushort FindPeerId(string playerName, bool includeLocalPlayer)
     {
-        if (includeLocalPlayer && string.Equals(MultiplayerSession.LocalPlayerName, playerName,
-                StringComparison.OrdinalIgnoreCase)) return MultiplayerSession.LocalPeerId;
+        if (includeLocalPlayer && string.Equals(MultiplayerSession.LocalPlayerName, playerName, StringComparison.OrdinalIgnoreCase))
+            return MultiplayerSession.LocalPeerId;
+        
         foreach (var peerId in MultiplayerSession.PeerIds())
-            if (string.Equals(MultiplayerSession.PlayerName(peerId), playerName,
-                    StringComparison.OrdinalIgnoreCase)) return peerId;
+            if (string.Equals(MultiplayerSession.PlayerName(peerId), playerName, StringComparison.OrdinalIgnoreCase))
+                return peerId;
+        
         return 0;
+    }
+
+    internal static void ResetTeleportVelocity(BodyScript body)
+    {
+        body.lastMoveDir = Vector2.zero;
+        foreach (var rb in body.GetComponentsInChildren<Rigidbody2D>(true))
+        {
+            rb.velocity = Vector2.zero;
+            rb.angularVelocity = 0f;
+        }
     }
 
     private static void PlayTeleportEffect(Vector3 position)
     {
-        if (ScreenFXManager.main != null) ScreenFXManager.main.Teleported();
+        ScreenFXManager.main?.Teleported();
+        
         var sound = Resources.Load<AudioClip>("Sounds/Teleport");
-        if (sound != null) Sound.Play(sound, position, false, false);
+        if (sound != null)
+            Sound.Play(sound, position, false, false);
     }
 }

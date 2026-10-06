@@ -747,7 +747,7 @@ internal static class BlackoutRule
         return loader != null && loader.globalLight == light;
     }
 
-    internal static void ApplyToNewSpriteRenderer(SpriteRenderer renderer)
+    private static void ApplyToNewSpriteRenderer(SpriteRenderer renderer)
     {
         if (!applied || renderer == null || litMaterial == null ||
             renderer.name.StartsWith("HotPlate", StringComparison.OrdinalIgnoreCase) || originalMaterials.ContainsKey(renderer))
@@ -808,20 +808,21 @@ internal static class BlackoutRule
     {
         if (!applied)
             return;
+        
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
         {
-            if (renderer == null || !renderer.gameObject.name.StartsWith("Blood", StringComparison.Ordinal) ||
-                ((Vector2)renderer.transform.position - position).sqrMagnitude > 0.04f)
+            if (renderer == null || !renderer.gameObject.name.StartsWith("Blood", StringComparison.Ordinal) || ((Vector2)renderer.transform.position - position).sqrMagnitude > 0.04f)
                 continue;
+            
             ApplyToNewSpriteRenderer(renderer);
         }
     }
 
     internal static void RegisterBloodProp(GameObject gameObject)
     {
-        if (gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop") ||
-            gameObject.GetComponent<BlackoutBloodPropVisual>() != null)
+        if (gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop") || gameObject.GetComponent<BlackoutBloodPropVisual>() != null)
             return;
+        
         gameObject.AddComponent<BlackoutBloodPropVisual>();
     }
 
@@ -847,32 +848,36 @@ internal static class BlackoutRule
     {
         if (!applied)
             return;
+        
         var material = GetScarfLitMaterial();
         if (material == null)
             return;
+        
         var line = scarf == null ? null : scarf.pointRenderer;
         if (line == null)
             return;
+        
         if (!originalLineMaterials.ContainsKey(line))
             originalLineMaterials.Add(line, line.sharedMaterial);
+        
         line.sharedMaterial = material;
     }
 
 
     private static void ApplyToNewParticleRenderer(ParticleSystemRenderer renderer)
     {
-        if (!applied || renderer == null || renderer.GetComponentInParent<AlwaysBrightVisualMarker>() != null ||
-            renderer.GetComponentInParent<FireScript>() != null ||
-            renderer.GetComponentInParent<RocketProjectile>() != null ||
-            originalParticleMaterials.ContainsKey(renderer))
+        if (!applied || renderer == null || renderer.GetComponentInParent<AlwaysBrightVisualMarker>() != null || renderer.GetComponentInParent<FireScript>() != null ||
+            renderer.GetComponentInParent<RocketProjectile>() != null || originalParticleMaterials.ContainsKey(renderer))
             return;
 
         var template = GetLitMaterial();
         if (template == null)
             return;
+        
         originalParticleMaterials.Add(renderer, renderer.sharedMaterial);
         var texture = GetMaterialTexture(renderer.sharedMaterial);
         texture ??= Texture2D.whiteTexture;
+        
         if (!particleLitMaterials.TryGetValue(texture, out var material))
         {
             material = new Material(template) { mainTexture = texture };
@@ -882,12 +887,14 @@ internal static class BlackoutRule
         renderer.sharedMaterial = material;
     }
 
-    private static Texture GetMaterialTexture(Material material)
+    private static Texture? GetMaterialTexture(Material material)
     {
         if (material == null)
             return null;
+        
         if (material.mainTexture != null)
             return material.mainTexture;
+        
         foreach (var property in material.GetTexturePropertyNames())
         {
             var texture = material.GetTexture(property);
@@ -898,24 +905,29 @@ internal static class BlackoutRule
         return null;
     }
 
-    private static Material GetScarfLitMaterial()
+    private static Material? GetScarfLitMaterial()
     {
         if (scarfLitMaterial != null)
             return scarfLitMaterial;
+        
         var material = GetLitMaterial();
         if (material == null)
             return null;
+        
         scarfLitMaterial = new Material(material) { mainTexture = Texture2D.whiteTexture };
         return scarfLitMaterial;
     }
 
-    private static Material GetUnlitMaterial()
+    private static Material? GetUnlitMaterial()
     {
         if (unlitMaterial != null)
             return unlitMaterial;
+        
         var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/2D/Sprite-Unlit-Default");
+       
         if (shader != null)
             unlitMaterial = new Material(shader);
+       
         return unlitMaterial;
     }
 

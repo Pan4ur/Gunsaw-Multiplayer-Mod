@@ -33,6 +33,18 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     private static BodyScript initialScaleAppliedBody;
     private static float initialScaleBase = float.NaN;
     private static float appliedInitialScale = float.NaN;
+    private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
+    private static BodyScript currentSoundBody;
+    internal static readonly List<string> animatedSoundNames = new();
+    private static readonly Dictionary<string, ushort> animatedSoundIds = new(StringComparer.Ordinal);
+    private static bool animatedSoundCatalogBuilt;
+    private static int currentFootstepSurface = -1;
+    private static float nextTelekinesisSound;
+    private static RocketProjectile activeRocketProjectile;
+    private static BodyScript replicatedExplosionShooter;
+    internal static ushort replicatedExplosionImpulseExclusionPeerId;
+    private static int nextShotSpreadSeed;
+    private static readonly HashSet<WebScript> localVelvetWebs = [];
     
     internal static void UnregisterReplica(NetworkAvatarReplication replica)
     {
@@ -925,6 +937,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             return;
         
         body.transform.position = position;
+        if (packet.ResetVelocity)
+            ChatCommandSystem.ResetTeleportVelocity(body);
      
         if (CameraFollow.cam != null) 
             CameraFollow.cam.CenterToPlayer();
@@ -990,21 +1004,9 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         if (target == null || !target.isAlive) return;
         var position = target.transform.position;
         if (!NetworkAvatarUtilities.IsFinite(position.x) || !NetworkAvatarUtilities.IsFinite(position.y)) return;
-        MultiplayerSession.Send(new PlayerTeleportPacket(position.x, position.y), requesterId);
+        MultiplayerSession.Send(new PlayerTeleportPacket(position.x, position.y, true), requesterId);
     }
-
-    private const string PvpRemoteTeam = "gunsaw_mp_remote_player";
-    private static BodyScript currentSoundBody;
-    internal static readonly List<string> animatedSoundNames = new();
-    private static readonly Dictionary<string, ushort> animatedSoundIds = new(StringComparer.Ordinal);
-    private static bool animatedSoundCatalogBuilt;
-    private static int currentFootstepSurface = -1;
-    private static float nextTelekinesisSound;
-    private static RocketProjectile activeRocketProjectile;
-    private static BodyScript replicatedExplosionShooter;
-    internal static ushort replicatedExplosionImpulseExclusionPeerId;
-    private static int nextShotSpreadSeed;
-    private static readonly HashSet<WebScript> localVelvetWebs = [];
+    
     internal static void IgnoreRemotePlayerPropCollisions(Rigidbody2D prop, NetworkAvatarReplication? onlyReplica = null)
     {
         if (prop == null || !MultiplayerSession.IsHost) return;

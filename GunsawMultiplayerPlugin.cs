@@ -76,7 +76,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         KeepMultiplayerRunningInBackground();
         Instance = this;
-        _chatCommandSystem = new ChatCommandSystem(this);
+        _chatCommandSystem = new ChatCommandSystem();
         masterUrl = Config.Bind("Network", "MasterUrl", "https://expie.fun", "Lobby directory URL.");
         string normalizedServer;
         if (TryNormalizeServerAddress(masterUrl.Value, out normalizedServer)) masterUrl.Value = normalizedServer;
