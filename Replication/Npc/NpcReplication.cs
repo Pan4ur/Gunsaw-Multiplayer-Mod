@@ -13,12 +13,12 @@ internal sealed class NpcReplication : MonoBehaviour
     private const float RotationFromWire = 360f / ushort.MaxValue;
     private const float LimbOffsetScale = 1024f;
 
-    private const float SnapshotInterval = 1f / 50f;
+    private const float SnapshotInterval = 1f / 25f;
     private const float DiscoveryInterval = 60f;
     private const float NewBodyRegistrationDelay = 0.25f;
     private const float FullSnapshotInterval = 1f;
     private const float VisualStateInterval = 0.1f;
-    private static readonly Transform[] emptyTransforms = new Transform[0];
+    private static readonly Transform[] emptyTransforms = [];
     private readonly Dictionary<BodyScript, string> hostIds = new();
     private readonly HashSet<BodyScript> registeredBodies = new();
     private readonly Dictionary<BodyScript, float> pendingBodies = new();
