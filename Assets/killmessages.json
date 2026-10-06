@@ -191,6 +191,15 @@
       ]
     },
     {
+      "name": "eaten_by_dune",
+      "messages": [
+        "%player% was eaten by %killer%.",
+        "%player% became %killer%'s dinner.",
+        "%killer% devoured %player%.",
+        "%player% turned out to be very tasty for %killer%."
+      ]
+    },
+    {
       "name": "telekinesis",
       "messages": [
         "%killer% slammed %player% into a wall with telekinesis.",

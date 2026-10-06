@@ -15,7 +15,8 @@ internal enum PlayerDeathCause : byte
     HotPlate,
     Observer,
     Incinerator,
-    Telekinesis
+    Telekinesis,
+    EatenByDune
 }
 
 internal readonly struct PlayerSnapshotPacket : INetworkPacket

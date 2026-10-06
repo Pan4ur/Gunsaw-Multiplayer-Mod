@@ -989,6 +989,50 @@ internal static class IncineratorDeathCausePatch
     }
 }
 
+[HarmonyPatch]
+internal static class DuneEatDeathCausePatch
+{
+    private static System.Reflection.MethodBase TargetMethod()
+    {
+        return AccessTools.EnumeratorMoveNext(AccessTools.Method(typeof(AnglerScript), "Eat"));
+    }
+
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, System.Reflection.MethodBase __originalMethod)
+    {
+        var codes = new List<CodeInstruction>(instructions);
+
+        var currentDamageField = AccessTools.Field(typeof(DismemberManager), nameof(DismemberManager.currentDamage));
+        var recordMethod = AccessTools.Method(typeof(DuneEatDeathCausePatch), nameof(RecordDeathCause));
+        var eaterField = AccessTools.Field(__originalMethod.DeclaringType, "<>4__this");
+        var victimField = AccessTools.Field(__originalMethod.DeclaringType, "bod");
+
+        for (var i = 0; i < codes.Count; i++)
+        {
+            yield return codes[i];
+
+            if (codes[i].StoresField(currentDamageField) && i > 0 && codes[i - 1].opcode == OpCodes.Ldc_R4 && (float) codes[i - 1].operand == 1E+12f)
+            {
+                yield return new CodeInstruction(OpCodes.Ldarg_0);
+                yield return new CodeInstruction(OpCodes.Ldfld, eaterField);
+                yield return new CodeInstruction(OpCodes.Ldarg_0);
+                yield return new CodeInstruction(OpCodes.Ldfld, victimField);
+                yield return new CodeInstruction(OpCodes.Call, recordMethod);
+            }
+        }
+    }
+
+    private static void RecordDeathCause(AnglerScript eater, BodyScript victim)
+    {
+        if (!victim.isAlive) return;
+
+        NetworkAvatarManager.RecordEnvironmentalDeathCause(victim, PlayerDeathCause.EatenByDune);
+        NetworkAvatarManager.RecordDamageSource(victim, eater.body);
+
+        if (NetworkAvatarManager.RouteDuneEatDamage(victim, eater.body))
+            victim.GetComponentInChildren<DismemberManager>().currentDamage = 0f;
+    }
+}
+
 [HarmonyPatch(typeof(Incinerator), "OnTriggerEnter2D")]
 internal static class IncineratorPartCleanupPatch
 {

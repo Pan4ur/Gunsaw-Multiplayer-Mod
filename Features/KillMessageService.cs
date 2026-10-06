@@ -39,6 +39,7 @@ internal static class KillMessageService
         if (cause == PlayerDeathCause.SelfKill) return "self_kill";
         if (cause == PlayerDeathCause.Fall) return "fall";
         if (cause == PlayerDeathCause.Telekinesis) return "telekinesis";
+        if (cause == PlayerDeathCause.EatenByDune) return "eaten_by_dune";
         if (cause == PlayerDeathCause.Fire) return "fire";
         if (cause == PlayerDeathCause.Incinerator) return "incinerator";
         if (cause == PlayerDeathCause.HotPlate) return "hot_plate";

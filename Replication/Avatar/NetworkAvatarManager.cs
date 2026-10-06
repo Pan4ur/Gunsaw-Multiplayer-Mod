@@ -1167,6 +1167,22 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         return true;
     }
 
+    internal static bool RouteDuneEatDamage(BodyScript victim, BodyScript eater)
+    {
+        var replica = ReplicaForBody(victim);
+        if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
+        if (!replica.lastRemoteAlive || eater == null || KartPassengers.IsProtectedPassenger(victim)) return true;
+        if (eater.isPlayer && (!MultiplayerSession.PvpEnabled || TeamSystem.Same(DamageSourcePeerId(eater), replica.remotePeerId))) return true;
+        var amount = Mathf.Max(1f, replica.lastRemoteHealth + 1f);
+
+        if (MultiplayerSession.IsHost)
+            SendRemotePlayerDamage(replica.remotePeerId, amount, true, eater, PlayerDamageEffect.DuneEat);
+        else if (eater == PlayerScript.player?.bodyScript)
+            MultiplayerSession.Send(new PvpDamagePacket(amount, true, PlayerDamageEffect.DuneEat), replica.remotePeerId);
+
+        return true;
+    }
+
     private static void QueueBaseDamage(
         ShotState state,
         ushort targetPeerId,
@@ -1232,11 +1248,12 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static bool ShouldCancelExplosionDamage() =>
         !MultiplayerSession.IsHost && activeShotState?.IsExplosion == true && PlayerScript.player != null && currentShooter == PlayerScript.player.bodyScript;
 
-    private static void SendRemotePlayerDamage(ushort targetPeerId, float amount, bool critical, BodyScript source)
+    private static void SendRemotePlayerDamage(ushort targetPeerId, float amount, bool critical, BodyScript source,
+        PlayerDamageEffect effect = PlayerDamageEffect.Damage)
     {
         if (MultiplayerSession.IsHost)
             MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical, source != null && source.isPlayer,
-                DamageSourcePeerId(source), DamageSourceName(source), DamageWeapon(source)), targetPeerId);
+                DamageSourcePeerId(source), DamageSourceName(source), DamageWeapon(source), effect), targetPeerId);
     }
 
     private static ushort DamageSourcePeerId(BodyScript source)
@@ -1309,6 +1326,12 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
         if (amount > 0f && body.isAlive)
         {
+            if (effectType == PlayerDamageEffect.DuneEat)
+            {
+                var id = body.GetInstanceID();
+                environmentalDeathCauses[id] = PlayerDeathCause.EatenByDune;
+                environmentalDeathCauseTimes[id] = Time.unscaledTime;
+            }
             var appliedAmount = Mathf.Min(amount, Mathf.Max(0f, body.health));
             body.health -= amount;
             if (body == PlayerScript.player?.bodyScript)
