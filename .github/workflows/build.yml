@@ -1,0 +1,71 @@
+name: Build mod
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download build dependencies
+        env:
+          DEPENDENCIES_URL: ${{ secrets.GUNSAW_BUILD_DEPENDENCIES_URL }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dependencyUri = [Uri]$env:DEPENDENCIES_URL
+          $archivePath = Join-Path $env:RUNNER_TEMP 'gunsaw-build-dependencies.zip'
+          $gameDirectory = Join-Path $env:RUNNER_TEMP 'gunsaw-build-dependencies'
+          try {
+            Invoke-WebRequest -Uri $dependencyUri -OutFile $archivePath
+          } catch {
+            throw 'Could not download build dependencies'
+          }
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $gameDirectory
+          [xml]$project = Get-Content -LiteralPath 'GunsawMultiplayer.csproj' -Raw
+          foreach ($reference in $project.Project.ItemGroup.Reference) {
+            if ($reference.HintPath) {
+              $referencePath = $reference.HintPath.Replace('$(GameDirectory)', $gameDirectory)
+              if (-not (Test-Path -LiteralPath $referencePath -PathType Leaf)) {
+                throw "Build dependency is missing: $($reference.Include)"
+              }
+            }
+          }
+          "GAME_PATH=$gameDirectory" >> $env:GITHUB_ENV
+
+      - name: Restore
+        run: dotnet restore .\GunsawMultiplayer.csproj
+
+      - name: Build Release
+        run: dotnet build .\GunsawMultiplayer.csproj --configuration Release --no-restore
+
+      - name: Upload mod
+        uses: actions/upload-artifact@v7
+        with:
+          name: GunsawMultiplayer-${{ github.sha }}
+          path: bin/Release/netstandard2.0/GunsawMultiplayer.dll
+          if-no-files-found: error
+          retention-days: 30

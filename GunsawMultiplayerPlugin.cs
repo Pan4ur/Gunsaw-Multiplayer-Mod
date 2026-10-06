@@ -729,7 +729,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 var tag = JsonString(release, "tag_name").Trim();
                 if (string.IsNullOrEmpty(tag)) throw new InvalidDataException("Latest release has no tag.");
                 var comparison = CompareVersions(PluginVersion, tag);
-                result = comparison < 0 ? "UPDATE AVAILABLE: " + tag : comparison > 0 ? "INSTALLED BUILD IS NEWER THAN (HOW??)" + tag : "YOU ARE UP TO DATE";
+                result = comparison < 0 ? "UPDATE AVAILABLE: " + tag : comparison > 0 ? "INSTALLED BUILD IS NEWER THAN (HOW??) " + tag : "YOU ARE UP TO DATE";
             }
             catch (Exception exception)
             {
