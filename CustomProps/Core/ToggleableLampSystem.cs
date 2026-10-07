@@ -262,14 +262,21 @@ internal sealed class ToggleableLampRuntime : MonoBehaviour
 
     private void ApplyVisualState()
     {
+        var showCircularGlow = angle >= 360f;
         if (bulbRenderer != null)
+        {
+            bulbRenderer.enabled = showCircularGlow;
             bulbRenderer.color = powered
                 ? new Color(color.r, color.g, color.b, 1f)
                 : new Color(0.04f, 0.04f, 0.04f, 0.7f);
+        }
         if (housingRenderer != null)
+        {
+            housingRenderer.enabled = true;
             housingRenderer.color = powered
                 ? new Color(color.r, color.g, color.b, 0.45f)
                 : new Color(0.12f, 0.12f, 0.12f, 0.6f);
+        }
     }
 }
 
