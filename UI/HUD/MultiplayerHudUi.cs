@@ -176,6 +176,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
      //   hostText = Text(hostPanel.transform, "", Vector2.zero, new Vector2(450f, 48f), 21, TextAlignmentOptions.Center);
 
         playersPanel = Panel(root.transform, Vector2.zero, new Vector2(1080f, 320f));
+        playersPanel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.5f);
+        playersPanel.GetComponent<Image>().raycastTarget = false;
         ScreenAnchor(playersPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -20f));
         playersText = Text(playersPanel.transform, "", Vector2.zero, new Vector2(1040f, 290f), 18, TextAlignmentOptions.Top);
         playersText.enableWordWrapping = false;
