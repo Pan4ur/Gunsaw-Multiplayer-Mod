@@ -152,6 +152,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         }
         if (networkStatsVisible && MultiplayerSession.IsConnected) UpdateNetworkStatsWidget();
         else if (networkStatsObject != null) DestroyNetworkStatsWidget();
+        if (ArsenalMenu.IsOpen) return;
         bool chatOpenKeyDown = Input.GetKeyDown(Controls.keys[Controls.OPEN_CHAT]);
         if (!chatOpen && chatOpenKeyDown)
         {

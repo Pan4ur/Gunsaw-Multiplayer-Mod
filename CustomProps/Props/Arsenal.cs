@@ -54,9 +54,12 @@ internal sealed class ArsenalRuntime : MonoBehaviour
     internal List<WeaponPreset> Weapons()
     {
         var all = new List<WeaponPreset>();
-        var seen = new HashSet<int>();
-        foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
-            if (preset != null && preset.sprite != null && seen.Add(preset.GetInstanceID())) all.Add(preset);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        IEnumerable<WeaponPreset> presets = Resources.FindObjectsOfTypeAll<WeaponPreset>();
+        if (GameManager.main != null && GameManager.main.allWeapons != null)
+            presets = GameManager.main.allWeapons.Concat(presets);
+        foreach (var preset in presets)
+            if (preset != null && preset.sprite != null && seen.Add(preset.name)) all.Add(preset);
         all.Sort((left, right) => string.Compare(left.name, right.name, StringComparison.OrdinalIgnoreCase));
         var filter = data == null ? "All" : (data.weapons ?? "All").Trim();
         if (string.IsNullOrEmpty(filter) ||
@@ -87,7 +90,7 @@ internal sealed class ArsenalRuntime : MonoBehaviour
         if (body == null || !body.isAlive) return;
         if (((Vector2)(body.transform.position - transform.position)).sqrMagnitude > Radius * Radius) return;
         ArsenalMenu.NotifyNearby(this);
-        if (Input.GetKeyDown(KeyCode.B) && !MultiplayerHud.IsTyping) ArsenalMenu.Open(this);
+        if (Input.GetKeyDown(KeyCode.B) && !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen) ArsenalMenu.Open(this);
     }
 }
 
@@ -96,6 +99,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
     private static ArsenalMenu instance;
     private GameObject menu, content;
     private ScrollRect weaponScroll;
+    private TMP_InputField searchInput;
     private RectTransform characterPreview;
     private Image weaponPreview;
     private TMP_Text weaponName, weaponInfo;
@@ -133,6 +137,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
         if (current.weapons.Count == 0) return;
         current.selected = current.weapons[0];
         current.previewScale = 0f;
+        current.searchInput.SetTextWithoutNotify("");
         current.RebuildTiles();
         current.menu.SetActive(true);
         current.UpdatePreview();
@@ -208,6 +213,8 @@ internal sealed class ArsenalMenu : MonoBehaviour
         weaponName.fontStyle = FontStyles.Bold;
         weaponInfo = Text(preview.transform, "", new Vector2(0f, -230f), new Vector2(530f, 30f), 17f,
             TextAlignmentOptions.Center);
+        searchInput = CreateSearchInput(menu.transform);
+        searchInput.onValueChanged.AddListener(value => RebuildTiles());
         var exit = Button(menu.transform, "CLOSE", new Vector2(465f, -325f), new Vector2(220f, 54f));
         exit.onClick.AddListener(CloseAndEquip);
         menu.SetActive(false);
@@ -230,10 +237,15 @@ internal sealed class ArsenalMenu : MonoBehaviour
     private void RebuildTiles()
     {
         foreach (Transform item in content.transform)
+        {
+            item.gameObject.SetActive(false);
             Destroy(item.gameObject);
+        }
         tiles.Clear();
         var y = 8f;
-        foreach (var group in weapons.GroupBy(weapon => weapon.slot).OrderBy(group => group.Key))
+        var query = searchInput.text.Trim();
+        var matchingWeapons = weapons.Where(weapon => weapon.name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
+        foreach (var group in matchingWeapons.GroupBy(weapon => weapon.slot).OrderBy(group => group.Key))
         {
             var header = Panel(content.transform, Vector2.zero, new Vector2(520f, 30f),
                 new Color(0.12f, 0.16f, 0.19f, 1f));
@@ -271,6 +283,13 @@ internal sealed class ArsenalMenu : MonoBehaviour
                 tiles.Add(tile);
             }
             y += ((groupedWeapons.Count + 2) / 3) * 112f + 10f;
+        }
+
+        if (tiles.Count == 0)
+        {
+            var empty = Text(content.transform, "NO WEAPONS FOUND", Vector2.zero, new Vector2(520f, 40f), 17f, TextAlignmentOptions.Center);
+            empty.raycastTarget = false;
+            TopRect(empty.rectTransform, new Vector2(0f, -16f));
         }
 
         var height = Mathf.Max(526f, y);
@@ -495,6 +514,34 @@ internal sealed class ArsenalMenu : MonoBehaviour
         Rect(go.GetComponent<RectTransform>(), position, size);
         go.GetComponent<Image>().color = color;
         return go;
+    }
+
+    private static TMP_InputField CreateSearchInput(Transform parent)
+    {
+        var go = Panel(parent, new Vector2(-320f, -325f), new Vector2(590f, 54f),
+            new Color(0.14f, 0.18f, 0.2f, 1f));
+        go.name = "Weapon Search";
+        var field = go.AddComponent<TMP_InputField>();
+        field.targetGraphic = go.GetComponent<Image>();
+        field.lineType = TMP_InputField.LineType.SingleLine;
+        field.characterLimit = 128;
+        var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+        viewport.transform.SetParent(go.transform, false);
+        var viewportRect = viewport.GetComponent<RectTransform>();
+        Stretch(viewportRect, new Vector2(14f, 6f), new Vector2(-14f, -6f));
+        var text = Text(viewport.transform, "", Vector2.zero, Vector2.zero, 18f, TextAlignmentOptions.Left);
+        Stretch(text.rectTransform, Vector2.zero, Vector2.zero);
+        text.enableWordWrapping = false;
+        text.raycastTarget = false;
+        var placeholder = Text(viewport.transform, "SEARCH", Vector2.zero, Vector2.zero, 18f,
+            TextAlignmentOptions.Left);
+        Stretch(placeholder.rectTransform, Vector2.zero, Vector2.zero);
+        placeholder.color = new Color(1f, 1f, 1f, 0.45f);
+        placeholder.raycastTarget = false;
+        field.textViewport = viewportRect;
+        field.textComponent = text;
+        field.placeholder = placeholder;
+        return field;
     }
 
     private static Image Image(Transform parent, Vector2 position, Vector2 size)
