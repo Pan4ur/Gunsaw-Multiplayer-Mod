@@ -32,6 +32,12 @@ internal sealed class ChatCommandSystem
 
     private bool Spawn(string message)
     {
+        if (MultiplayerSession.PvpEnabled)
+        {
+            MultiplayerHud.AddSystemMessage("/spawn is disabled in PVP lobbies.");
+            return true;
+        }
+
         if (!string.IsNullOrWhiteSpace(message.Substring(6)))
         {
             MultiplayerHud.AddSystemMessage("Usage: /spawn.");
