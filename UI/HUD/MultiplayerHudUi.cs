@@ -672,7 +672,12 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 if (renderer != null && renderer.sprite != null) { main = renderer; break; }
         }
         if (main == null || main.sprite == null) return;
-        var pixelsPerUnit = width / Mathf.Max(0.01f, main.sprite.bounds.size.x);
+      
+        var headWidth = main.sprite.bounds.size.x;
+        if (main.sprite.rect.width == 18f && main.sprite.pixelsPerUnit == 28f)
+            headWidth = Mathf.Max(1f, headWidth);
+       
+        var pixelsPerUnit = width / Mathf.Max(0.01f, headWidth);
         var count = 0;
         foreach (var renderer in renderers)
         {

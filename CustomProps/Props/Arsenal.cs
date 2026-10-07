@@ -344,7 +344,8 @@ internal sealed class ArsenalMenu : MonoBehaviour
     {
         if (selected == null) return;
         weaponName.text = selected.name;
-        weaponInfo.text = "MAG " + selected.magSize + "   •   SLOT " + (selected.slot + 1);
+        var rate = selected.fireDelay > 0f ? (60f / selected.fireDelay).ToString("0.#") + " RPM" : "—";
+        weaponInfo.text = "MAG " + selected.magSize + "   •   SLOT " + (selected.slot + 1) + "   •   DMG " + selected.damage.ToString("0.##") + "   •   RATE " + rate;
         UpdateCharacterPreview();
     }
 
