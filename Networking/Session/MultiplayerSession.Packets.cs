@@ -37,7 +37,7 @@ internal static partial class MultiplayerSession
                 Send(CreateSettingsPacket(), senderId);
                 SendPeerNames(senderId);
                 Send(new PeerNamePacket(senderId, connectedName));
-                TeamSystem.SendAll(senderId);
+                GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => TeamSystem.SendAll(senderId));
                 ObserverSystem.SendCurrentState(senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
                 if (joined) BroadcastSystemChat(connectedName + " joined the game.");
@@ -318,7 +318,7 @@ internal static partial class MultiplayerSession
                 BlackoutEnabled = settings.BlackoutEnabled;
                 RestrictLightEnabled = settings.RestrictLightEnabled;
                 LobbySettingsReceived = true;
-                TeamSystem.Configure(TeamsEnabled, TeamsCfg);
+                GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => TeamSystem.Configure(settings.Teams, settings.TeamsCfg));
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(64, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings updated.");
@@ -328,7 +328,8 @@ internal static partial class MultiplayerSession
                 try
                 {
                     var reader = new PacketReader(decodedPacket.Payload);
-                    TeamSystem.Receive(senderId, TeamPacket.Read(ref reader));
+                    var team = TeamPacket.Read(ref reader);
+                    GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => TeamSystem.Receive(senderId, team));
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
@@ -709,7 +710,7 @@ internal static partial class MultiplayerSession
     private static void BroadcastSystemChat(string message)
     {
         var text = "<color=#D4AF37>" + EscapeRichText(message) + "</color>";
-        MultiplayerHud.AddSystemMessage(text);
+        GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => MultiplayerHud.AddSystemMessage(text));
         ChatPacket packet;
         if (ChatService.TryCreate(text, true, out packet)) Send(packet);
     }
