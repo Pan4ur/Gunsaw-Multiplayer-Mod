@@ -198,9 +198,18 @@ internal sealed class NpcSpawnerRuntime : MonoBehaviour, IActivationIdReceiver
             body.weapons[index] = null;
             body.weaponAmmos[index] = 0;
         }
-        body.weapons[selected.slot] = selected;
-        body.weaponAmmos[selected.slot] = selected.magSize;
-        body.ChangeWeapon(selected.slot);
+        
+        if (GameManager.main != null && selected == GameManager.main.unarmedWep)
+        {
+            EnsureWeapon(body);
+            body.ChangeToUnarmed();
+        }
+        else
+        {
+            body.weapons[selected.slot] = selected;
+            body.weaponAmmos[selected.slot] = selected.magSize;
+            body.ChangeWeapon(selected.slot);
+        }
     }
 
     private static void EnsureWeapon(BodyScript body)
