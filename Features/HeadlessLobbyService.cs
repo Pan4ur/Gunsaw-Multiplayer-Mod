@@ -47,6 +47,8 @@ internal sealed class HeadlessLobbyService : IDisposable
     internal void Initialize()
     {
         if (!IsEnabled) return;
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = 50;
         HeadlessPresentation.Enable();
         ApplyCommandLineOptions();
         var mapPath = LobbySettingsSchema.CommandLineValue(commandLineArgs, "-headlessMap");
@@ -82,6 +84,8 @@ internal sealed class HeadlessLobbyService : IDisposable
     internal bool KeepRunning()
     {
         if (!IsEnabled) return false;
+        if (QualitySettings.vSyncCount != 0) QualitySettings.vSyncCount = 0;
+        if (Application.targetFrameRate != 50) Application.targetFrameRate = 50;
         var manager = GameManager.main;
         if (manager != null) manager.paused = false;
         Time.timeScale = 1f;
