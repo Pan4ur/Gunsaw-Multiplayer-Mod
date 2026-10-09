@@ -115,10 +115,20 @@ The relay/lobby service lives in [LobbyServer](https://github.com/Pan4ur/Gunsaw-
 
 This mode launches Gunsaw without graphics in minimized mode. As a result, GPU usage drops to zero and RAM usage decreases slightly. This is necessary for hosting a lobby 24/7, for example, on a VPS. Players can also manage the lobby through voting
 
+### Windows
 Open a terminal in the game directory and run Gunsaw.exe with the required arguments:
 
 ```powershell
 .\Gunsaw.exe -batchmode -nographics -headlessLobby -headlessMap ".\default_map.txt" -logFile - --master "https://pl.expie.fun" --name "HEADLESS LOBBY" --host "HOST" --max-players 16 --pvp --can-grab --allow-respawn --respawn-seconds 5 --respawn-at-start 2>&1 | Tee-Object -FilePath ".\headless.log"
+```
+
+### Linux
+1. [Download the ready-to-run archive](https://e621.su/gunsaw-linux-headless.zip) (replace the multiplayer mod with the latest version)
+2. Open a terminal in the game directory and run Gunsaw with the required arguments:
+
+```bash
+chmod +x Gunsaw run_bepinex.sh
+./run_bepinex.sh Gunsaw -batchmode -nographics -headlessLobby -headlessMap "./default_map.txt" -logFile - --master "https://pl.expie.fun" --name "HEADLESS LOBBY" --host "HOST" --max-players 16 --pvp --can-grab --allow-respawn --respawn-seconds 5 --respawn-at-start 2>&1 | tee ./headless.log
 ```
 
 CTRL + C to stop
