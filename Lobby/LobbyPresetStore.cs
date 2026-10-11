@@ -1,18 +1,14 @@
 using BepInEx;
+using DiscordIPC.Internal;
+using System.Globalization;
+using System.Reflection;
 using System.Text;
-using UnityEngine;
 
 [Serializable]
 internal sealed class LobbyPreset
 {
     public string name = "";
     public LobbySettings settings = new();
-}
-
-[Serializable]
-internal sealed class LobbyPresetFile
-{
-    public List<LobbyPreset> presets = new();
 }
 
 internal static class LobbyPresetStore
@@ -25,13 +21,11 @@ internal static class LobbyPresetStore
         if (File.Exists(JsonPath))
         {
             var json = File.ReadAllText(JsonPath);
-            if (json.Contains("\"presets\""))
+            try { return Deserialize(json); }
+            catch (Exception exception) when (File.Exists(LegacyPath))
             {
-                var data = JsonUtility.FromJson<LobbyPresetFile>(json);
-                if (data?.presets != null)
-                    return data.presets.FindAll(preset => preset != null && !string.IsNullOrWhiteSpace(preset.name) && preset.settings != null);
+                GunsawMultiplayerPlugin.LogInfo("Invalid lobby preset JSON, loading legacy presets: " + exception.Message);
             }
-            if (!File.Exists(LegacyPath)) throw new InvalidDataException("Invalid lobby preset JSON.");
         }
         if (!File.Exists(LegacyPath)) return new List<LobbyPreset>();
         var presets = new List<LobbyPreset>();
@@ -85,18 +79,58 @@ internal static class LobbyPresetStore
     internal static void Save(IReadOnlyList<LobbyPreset> presets)
     {
         Directory.CreateDirectory(Paths.ConfigPath);
-        var data = new LobbyPresetFile { presets = new List<LobbyPreset>(presets) };
-        var json = JsonUtility.ToJson(data, true);
-        if (!json.Contains("\"presets\"") || (presets.Count > 0 && !json.Contains("\"settings\"")))
-            throw new InvalidDataException("Could not serialize lobby presets.");
-        var roundTrip = JsonUtility.FromJson<LobbyPresetFile>(json);
-        if (roundTrip?.presets == null || roundTrip.presets.Count != presets.Count ||
-            roundTrip.presets.Any(preset => preset == null || string.IsNullOrWhiteSpace(preset.name) || preset.settings == null))
+        var entries = new List<object>(presets.Count);
+        foreach (var preset in presets)
+        {
+            if (preset == null || string.IsNullOrWhiteSpace(preset.name) || preset.settings == null)
+                throw new InvalidDataException("Invalid lobby preset.");
+            var settings = new Dictionary<string, object>();
+            foreach (var field in SettingFields)
+            {
+                var value = field.GetValue(preset.settings);
+                settings[field.Name] = field.FieldType.IsEnum ? Convert.ToInt32(value, CultureInfo.InvariantCulture) : value!;
+            }
+            entries.Add(new Dictionary<string, object> { ["name"] = preset.name, ["settings"] = settings });
+        }
+        var json = MiniJson.Serialize(new Dictionary<string, object> { ["presets"] = entries });
+        var roundTrip = Deserialize(json);
+        if (roundTrip.Count != presets.Count || roundTrip.Where((preset, index) =>
+                preset.name != presets[index].name || SettingFields.Any(field =>
+                    !Equals(field.GetValue(preset.settings), field.GetValue(presets[index].settings)))).Any())
             throw new InvalidDataException("Could not serialize lobby presets.");
         var temporaryPath = JsonPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
         File.WriteAllText(temporaryPath, json);
         if (File.Exists(JsonPath)) File.Replace(temporaryPath, JsonPath, JsonPath + ".bak");
         else File.Move(temporaryPath, JsonPath);
+    }
+
+    private static readonly FieldInfo[] SettingFields = typeof(LobbySettings).GetFields(BindingFlags.Instance | BindingFlags.Public);
+
+    private static List<LobbyPreset> Deserialize(string json)
+    {
+        if (!(MiniJson.Deserialize(json) is Dictionary<string, object> data) ||
+            !data.TryGetValue("presets", out var value) || !(value is List<object> entries))
+            throw new InvalidDataException("Invalid lobby preset JSON.");
+        var presets = new List<LobbyPreset>();
+        foreach (var entry in entries)
+        {
+            if (!(entry is Dictionary<string, object> preset) ||
+                !preset.TryGetValue("name", out var name) || !(name is string text) || string.IsNullOrWhiteSpace(text) ||
+                !preset.TryGetValue("settings", out var settingsValue) || !(settingsValue is Dictionary<string, object> values))
+                continue;
+            var settings = new LobbySettings();
+            foreach (var field in SettingFields)
+            {
+                if (!values.TryGetValue(field.Name, out var fieldValue)) continue;
+                if (field.FieldType.IsEnum && fieldValue is long number)
+                    field.SetValue(settings, Enum.ToObject(field.FieldType, number));
+                else if ((fieldValue == null && field.FieldType == typeof(string)) || field.FieldType.IsInstanceOfType(fieldValue))
+                    field.SetValue(settings, fieldValue);
+                else throw new InvalidDataException("Invalid lobby preset setting: " + field.Name);
+            }
+            presets.Add(new LobbyPreset { name = text, settings = settings });
+        }
+        return presets;
     }
 
     private static string DecodeLegacyField(string value) => Encoding.UTF8.GetString(Convert.FromBase64String(value));
