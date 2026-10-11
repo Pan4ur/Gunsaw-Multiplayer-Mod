@@ -171,7 +171,8 @@ internal sealed class LogicTickService : MonoBehaviour
                     routeAsMessage = true;
                     continue;
                 }
-                if (!(component is Transform) && !(component is LogicRuntimeBase))
+
+                if (component is MonoBehaviour && !(component is LogicRuntimeBase) && !(component is ButtonScript) && !(component is Snowifier))
                 {
                     knownOnly = false;
                     break;
