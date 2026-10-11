@@ -514,6 +514,24 @@ internal static class MultiplayerNpcOnScreenPatch
 [HarmonyPatch(typeof(LimbScript), "OnWillRenderObject")]
 internal static class MultiplayerLimbAnimationPatch
 {
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var original = AccessTools.PropertyGetter(typeof(Application), nameof(Application.isFocused));
+        var replacement = AccessTools.Method(typeof(MultiplayerLimbAnimationPatch), nameof(AllowAnimation));
+        
+        foreach (var i in instructions)
+        {
+            if (i.Calls(original))
+            {
+                i.opcode = OpCodes.Call;
+                i.operand = replacement;
+            }
+            yield return i;
+        }
+    }
+
+    private static bool AllowAnimation() => NpcReplication.IsEvaluatingAuthoritativePose || Application.isFocused;
+
     private static bool Prefix(LimbScript __instance)
     {
         var body = __instance == null ? null : __instance.body;
