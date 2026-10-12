@@ -116,9 +116,27 @@ internal static class TeamSystem
 
     private static void Set(ushort id, string name)
     {
+        var firstSelection = !playerTeams.ContainsKey(id);
         playerTeams[id] = name;
-        if (id == MultiplayerSession.LocalPeerId) ClosePanel();
+        if (id == MultiplayerSession.LocalPeerId)
+        {
+            ClosePanel();
+            if (firstSelection && MultiplayerSession.RespawnAtStart)
+                TeleportToTeamSpawn();
+        }
         if (MultiplayerSession.IsHost) MultiplayerSession.Send(new TeamPacket(id, name));
+    }
+
+    private static void TeleportToTeamSpawn()
+    {
+        var body = PlayerScript.player?.bodyScript;
+        if (body == null || !body.isAlive || !CustomLevelSpawnSelection.TryGetRandomSpawnPosition(out var pos)) 
+            return;
+        
+        body.transform.position = pos;
+        CameraFollow.cam?.CenterToPlayer();
+        foreach (var u in UnityEngine.Object.FindObjectsOfType<ObjectUnloader>()) 
+            u?.CheckDistance();
     }
 
     private static int Count(string name)
@@ -283,6 +301,6 @@ internal static class TeamSystem
     private sealed class Team
     {
         internal string Name;
-        internal UnityEngine.Color Color;
+        internal Color Color;
     }
 }
