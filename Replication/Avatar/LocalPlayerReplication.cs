@@ -735,6 +735,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             return;
         }
 
+        LobbyHealthRule.Apply(newBody, MultiplayerSession.HealthFactor, pendingRespawnLoadoutSource.health * 2f);
         ReviveRespawnBody(newBody);
         newBody.isPlayer = true;
         newBody.team = "goodguys";
@@ -960,12 +961,11 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     internal static void ReviveRespawnBody(BodyScript body)
     {
         if (body == null) return;
-        LobbyHealthRule.RestoreFull(body);
         body.CurrentState = 0;
         body.controlState = BodyScript.RagdollState.FullControl;
         body.isAlive = true;
         body.WakeUp();
-        body.health = body.maxHealth;
+        LobbyHealthRule.RestoreFull(body);
         body.isAlive = true;
 
         foreach (var limb in body.limbs)

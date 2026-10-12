@@ -197,6 +197,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
         InitializeSeasonalHats(avatar);
         RemoveReplicaScarfArtifacts(avatar);
         remoteBody.WakeUp();
+        var prefabBody = prefab.GetComponentInChildren<BodyScript>(true);
+        LobbyHealthRule.Apply(remoteBody, MultiplayerSession.HealthFactor, prefabBody.health * 2f);
         remoteBody.isPlayer = true;
         BlackoutRule.RegisterBody(remoteBody);
         remoteBody.dropWeapon = false;
@@ -414,6 +416,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         
         var remoteHealth = packet.Health;
         var wasRemoteAlive = lastRemoteAlive;
+        LobbyHealthRule.Apply(remoteBody, MultiplayerSession.HealthFactor);
         remoteBody.health = remoteHealth;
         remoteBody.isAlive = packet.IsAlive;
         remoteBody.stamina = packet.Stamina;

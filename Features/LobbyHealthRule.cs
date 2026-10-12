@@ -9,13 +9,21 @@ internal static class LobbyHealthRule
         return float.IsNaN(factor) || float.IsInfinity(factor) ? DefaultFactor : Mathf.Clamp(factor, 0.01f, 10f);
     }
 
-    internal static void Apply(BodyScript body, float factor)
+    internal static float ClampDamage(BodyScript body, float amount)
+    {
+        if (float.IsNaN(amount) || float.IsInfinity(amount)) return 0f;
+        var limit = body == null ? 1000f : Mathf.Max(1000f, Mathf.Max(body.maxHealth, body.health) + 1f);
+        return Mathf.Clamp(amount, 0f, limit);
+    }
+
+    internal static void Apply(BodyScript body, float factor, float baseMaxHealth = 0f)
     {
         if (body == null) return;
         factor = Clamp(factor);
         var state = body.gameObject.GetComponent<LobbyHealthFactorState>();
         if (state == null) state = body.gameObject.AddComponent<LobbyHealthFactorState>();
-        if (state.BaseMaxHealth <= 0f) state.BaseMaxHealth = 100f;
+        if (state.BaseMaxHealth <= 0f)
+            state.BaseMaxHealth = baseMaxHealth > 0f ? baseMaxHealth : body.maxHealth > 0f ? body.maxHealth : body.health;
         if (state.BaseDyingStateThreshold == 0f) state.BaseDyingStateThreshold = body.dyingStateTreshold;
         body.maxHealth = state.BaseMaxHealth * factor;
         body.dyingStateTreshold = state.BaseDyingStateThreshold * factor;

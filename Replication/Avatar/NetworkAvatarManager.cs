@@ -1129,7 +1129,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     {
         var replica = NetworkAvatarManager.ReplicaForBody(body);
         if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
-        var amount = Mathf.Clamp(replica.lastRemoteHealth - body.health, 0f, 1000f);
+        var amount = LobbyHealthRule.ClampDamage(body, replica.lastRemoteHealth - body.health);
         if (amount > 0.001f &&
             activeShotState != null &&
             activeShotState.Weapon != null &&
@@ -1147,7 +1147,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                     baseDamage = amount / divisor;
             }
 
-            baseDamage = Mathf.Clamp(baseDamage, 0f, 1000f);
+            baseDamage = LobbyHealthRule.ClampDamage(body, baseDamage);
             QueueBaseDamage(activeShotState, replica.remotePeerId, baseDamage);
         }
 
@@ -1307,7 +1307,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             return;
         }
 
-        var amount = Mathf.Clamp(playerDamage.Amount, 0f, 1000f);
+        var amount = LobbyHealthRule.ClampDamage(body, playerDamage.Amount);
         var critical = playerDamage.Critical;
         var effectType = playerDamage.Effect;
 
@@ -1371,7 +1371,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         var hasSplash = packet.HasSplash;
         var createScreenCrack = packet.CreateScreenCrack;
         var limbs = body.limbs ?? [];
-        float baseDamage = Mathf.Clamp(packet.BaseDamage, 0f, 1000f);
+        float baseDamage = LobbyHealthRule.ClampDamage(body, packet.BaseDamage);
 
         if (limbIndex >= 0 && limbIndex < limbs.Count)
         {
