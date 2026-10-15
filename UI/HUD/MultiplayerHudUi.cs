@@ -180,6 +180,13 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         playersPanel.GetComponent<Image>().raycastTarget = false;
         ScreenAnchor(playersPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -20f));
         playersText = Text(playersPanel.transform, "", Vector2.zero, new Vector2(1040f, 290f), 18, TextAlignmentOptions.Top);
+        playersText.autoSizeTextContainer = false;
+        playersText.enableAutoSizing = false;
+        playersText.margin = Vector4.zero;
+        playersText.rectTransform.anchorMin = Vector2.zero;
+        playersText.rectTransform.anchorMax = Vector2.one;
+        playersText.rectTransform.offsetMin = new Vector2(20f, 15f);
+        playersText.rectTransform.offsetMax = new Vector2(-20f, -15f);
         playersText.enableWordWrapping = false;
         playersText.overflowMode = TextOverflowModes.Overflow;
 
@@ -302,7 +309,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var text = header + "\n\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
                 MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
             foreach (var remote in NetworkAvatarManager.RemotePlayers()) text += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
-            playersText.text = text;
+            SetPlayersText(text);
             return;
         }
         var grouped = header;
@@ -315,7 +322,13 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             foreach (var remote in NetworkAvatarManager.RemotePlayers())
                 if (TeamSystem.Name(remote.PeerId) == team) grouped += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
         }
-        playersText.text = grouped;
+        SetPlayersText(grouped);
+    }
+
+    private void SetPlayersText(string text)
+    {
+        playersText.text = text;
+        playersPanel.GetComponent<RectTransform>().SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, playersText.preferredHeight + 30f);
     }
 
     private static int TeamKills(string team)
