@@ -19,7 +19,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text lobbyActionText;
     private TMP_Text lobbyGroupTitle;
     private Button lobbyActionButton, p2pButton, relayButton, autoButton;
-    private Button presetsButton;
+    private Button presetsButton, resetButton;
+    private GameObject resetSettingsDialog;
     private TMP_Text customLevelActionText;
     private Button closeLobbyButton;
     private bool showingLeaveLobbyButton;
@@ -70,6 +71,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (panel.activeSelf != plugin.visible) panel.SetActive(plugin.visible);
         if (!plugin.visible)
         {
+            if (resetSettingsDialog != null) resetSettingsDialog.SetActive(false);
             customLevelBrowser?.SetOpen(false);
             SetServerBrowserOpen(false);
             return;
@@ -125,6 +127,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetLobbyActionButtons(viewingLobbySettings);
         if (lobbyActionButton != null) lobbyActionButton.interactable = !viewingLobbySettings;
         if (presetsButton != null) presetsButton.interactable = !viewingLobbySettings;
+        if (resetButton != null) resetButton.interactable = !viewingLobbySettings;
+        if (viewingLobbySettings && resetSettingsDialog != null) resetSettingsDialog.SetActive(false);
         if (viewingLobbySettings && presetsPanel != null) presetsPanel.SetActive(false);
         if (p2pButton != null) p2pButton.interactable = !viewingLobbySettings;
         if (relayButton != null) relayButton.interactable = !viewingLobbySettings;
@@ -257,7 +261,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
         var settings = CreateSettingsScroll(lobbyGroup.transform, new Vector2(0f, 0f), new Vector2(580f, 195f));
         var presetsRow = CreateSettingsRow(settings);
-        presetsButton = CreateButton(presetsRow, "PRESETS", Vector2.zero, new Vector2(360f, 36f));
+        resetButton = CreateButton(presetsRow, "RESET", new Vector2(162.5f, 0f), new Vector2(105f, 36f));
+        resetButton.onClick.AddListener(OpenResetSettingsDialog);
+        presetsButton = CreateButton(presetsRow, "PRESETS", new Vector2(-80f, 0f), new Vector2(360f, 36f));
         presetsButton.onClick.AddListener(OpenPresets);
         pvpToggle = CreateToggle(CreateSettingsRow(settings), "PVP", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.Pvp = value);
         AddTooltip(pvpToggle.gameObject, "PVP: Enables damage between players. Some functions, such as teammate position markers or the /tp command, will not work in this mode.");
@@ -427,6 +433,46 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         tooltipText.raycastTarget = false;
         tooltipPanel.SetActive(false);
         CreatePresetManager();
+        CreateResetSettingsDialog();
+    }
+
+    private void CreateResetSettingsDialog()
+    {
+        resetSettingsDialog = CreatePanel(root.transform, Vector2.zero, Vector2.zero);
+        resetSettingsDialog.name = "Reset Lobby Settings";
+        var overlayRect = resetSettingsDialog.GetComponent<RectTransform>();
+        overlayRect.anchorMin = Vector2.zero;
+        overlayRect.anchorMax = Vector2.one;
+        overlayRect.offsetMin = Vector2.zero;
+        overlayRect.offsetMax = Vector2.zero;
+        resetSettingsDialog.GetComponent<Image>().color = Color.clear;
+        var dialog = CreatePanel(resetSettingsDialog.transform, Vector2.zero, new Vector2(580f, 240f));
+        CreateText(dialog.transform, "RESET LOBBY SETTINGS?", new Vector2(0f, 72f), new Vector2(540f, 40f), 24, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        var message = CreateText(dialog.transform, "All settings will be set to their default values", new Vector2(0f, 10f), new Vector2(520f, 60f), 18, TextAlignmentOptions.Center);
+        message.enableWordWrapping = true;
+        var confirm = CreateButton(dialog.transform, "RESET", new Vector2(-125f, -72f), new Vector2(210f, 44f));
+        confirm.onClick.AddListener(() =>
+        {
+            if (MultiplayerSession.IsActive && !MultiplayerSession.IsHost)
+                return;
+                
+            plugin.lobbySettings = new LobbySettings();
+            plugin.SaveLobbyPreferences();
+            resetSettingsDialog.SetActive(false);
+        });
+        var cancel = CreateButton(dialog.transform, "CANCEL", new Vector2(125f, -72f), new Vector2(210f, 44f));
+        cancel.onClick.AddListener(() => resetSettingsDialog.SetActive(false));
+        resetSettingsDialog.SetActive(false);
+    }
+
+    private void OpenResetSettingsDialog()
+    {
+        if (resetSettingsDialog == null || MultiplayerSession.IsActive && !MultiplayerSession.IsHost) 
+            return;
+            
+        presetsPanel.SetActive(false);
+        resetSettingsDialog.transform.SetAsLastSibling();
+        resetSettingsDialog.SetActive(true);
     }
 
     private void CreatePresetManager()
