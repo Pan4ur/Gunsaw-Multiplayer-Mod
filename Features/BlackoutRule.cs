@@ -261,52 +261,51 @@ internal static class BlackoutRule
         headlamp.transform.SetParent(body.headTransform, false);
         headlamp.transform.localPosition = new Vector3(0f, 0.15f, 0f);
         var headlampController = headlamp.AddComponent<Headlamp>();
+     
         var lightObject = new GameObject("Light");
         lightObject.transform.SetParent(headlamp.transform, false);
         lightObject.transform.localRotation = Quaternion.Euler(0f, 0f, -90f);
         var light = lightObject.AddComponent<Light2D>();
+       
         light.enabled = false;
         light.lightType = Light2D.LightType.Point;
         light.pointLightInnerRadius = 0.4f;
         light.pointLightInnerAngle = 38f;
         light.pointLightOuterAngle = 64f;
         light.pointLightOuterRadius = 12f;
-
-        var sortingLayerField = typeof(Light2D).GetField("m_ApplyToSortingLayers",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (sortingLayerField != null)
-            sortingLayerField.SetValue(light, System.Array.ConvertAll(SortingLayer.layers, layer => layer.id));
-
+        light.m_ApplyToSortingLayers = Array.ConvertAll(SortingLayer.layers, layer => layer.id);
         light.intensity = 2f;
         light.color = Color.white;
         light.enabled = true;
+       
         var faceLightObject = new GameObject("MP Face Light");
         faceLightObject.transform.SetParent(headlamp.transform, false);
+        
         var faceLight = faceLightObject.AddComponent<Light2D>();
         faceLight.enabled = false;
         faceLight.lightType = Light2D.LightType.Point;
         faceLight.pointLightInnerRadius = 0.1f;
         faceLight.pointLightOuterRadius = 0.8f;
-
-        if (sortingLayerField != null)
-            sortingLayerField.SetValue(faceLight, Array.ConvertAll(SortingLayer.layers, layer => layer.id));
-
+        faceLight.m_ApplyToSortingLayers = Array.ConvertAll(SortingLayer.layers, layer => layer.id);
         faceLight.intensity = 0.25f;
         faceLight.color = Color.white;
         faceLight.enabled = true;
+     
         headlampController.Configure(light, faceLight);
         headlamps.Add(headlampController);
     }
 
-    private static Material GetHeadlampMaterial()
+    private static Material? GetHeadlampMaterial()
     {
         if (triedHeadlampMaterial)
             return headlampMaterial;
 
         triedHeadlampMaterial = true;
-
-        var stream = typeof(BlackoutRule).Assembly.GetManifestResourceStream("GunsawMultiplayer.Assets.headlamp-light");
-        if (stream == null)
+        
+        var stream = typeof(BlackoutRule).Assembly.GetManifestResourceStream(
+            $"GunsawMultiplayer.Assets.headlamp-light{(Application.platform == RuntimePlatform.OSXPlayer ? "-metal" : "")}");
+        
+        if (stream == null) 
             return null;
 
         using (stream)
@@ -321,8 +320,21 @@ internal static class BlackoutRule
 
         var materials = headlampBundle.LoadAllAssets<Material>();
 
-        if (materials.Length > 0)
-            headlampMaterial = materials[0];
+        foreach (var material in materials)
+        {
+            if (material.shader == null || material.shader.name != "Gunsaw/HeadlampSprite" || !material.shader.isSupported || material.passCount < 2)
+                continue;
+
+            headlampMaterial = material;
+            break;
+        }
+
+        if (headlampMaterial == null)
+        {
+            GunsawMultiplayerPlugin.LogInfo($"Headlamp shader is unsupported on {SystemInfo.graphicsDeviceType}; using Light2D fallback.");
+            headlampBundle.Unload(true);
+            headlampBundle = null;
+        }
 
         return headlampMaterial;
     }

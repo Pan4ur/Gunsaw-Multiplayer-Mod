@@ -30,6 +30,7 @@ internal static partial class MultiplayerSession
     private const long P2PProbeRetryTicks = TimeSpan.TicksPerMillisecond * 500;
     private static int transportMessageSequence;
     private static readonly FragmentReassembler fragmentReassembler = new();
+    private static readonly FragmentReassembler editorFragmentReassembler = new(30);
     private static readonly ReliableChannel reliableChannel = new();
 
     private static void SendDisconnectImmediately()
@@ -195,7 +196,10 @@ internal static partial class MultiplayerSession
             else continue;
             Interlocked.Add(ref receivedBytes, datagram.Length);
             Interlocked.Increment(ref receivedPackets);
-            if (fragmentReassembler.TryAccept(datagram, metadata, senderId, Stopwatch.GetTimestamp(), out var packet))
+            if (datagram.Length < metadata + UdpDatagram.FragmentHeaderSize) continue;
+            var reassembler = UdpDatagram.IsEditorMessage(BitConverter.ToInt32(datagram, metadata))
+                ? editorFragmentReassembler : fragmentReassembler;
+            if (reassembler.TryAccept(datagram, metadata, senderId, Stopwatch.GetTimestamp(), out var packet))
             {
                 return packet;
             }
@@ -455,7 +459,8 @@ internal static partial class MultiplayerSession
                     if (connectionMode == ConnectionMode.P2P) relayFallback = true;
                 }
                 var fragmentCount = UdpDatagram.FragmentCount(packet.WireLength);
-                var messageId = Interlocked.Increment(ref transportMessageSequence);
+                var sequence = packet.Reliable ? packet.SequenceId : Interlocked.Increment(ref transportMessageSequence);
+                var messageId = UdpDatagram.MessageId(sequence, packet.Reliable, IsEditorPacket(packet.Type));
                 for (var index = 0; index < fragmentCount; index++)
                 {
                     cancellation.Token.ThrowIfCancellationRequested();
@@ -524,6 +529,7 @@ internal static partial class MultiplayerSession
         ClearSessionTransfers();
         reliableChannel.Reset();
         fragmentReassembler.Reset();
+        editorFragmentReassembler.Reset();
         current?.Dispose();
         cancellation?.Dispose();
     }

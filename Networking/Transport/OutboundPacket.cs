@@ -1,6 +1,6 @@
 internal readonly struct OutboundPacket
 {
-    internal const int ReliableHeaderSize = PacketHeader.Size + sizeof(int);
+    internal const int ReliableHeaderSize = ReliablePacket.HeaderSize;
     internal readonly PacketType Type;
     internal readonly DeliverySettings Policy;
     internal readonly ushort TargetId;

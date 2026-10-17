@@ -2,6 +2,7 @@
   <PropertyGroup>
     <GameDirectory Condition="'$(GameDirectory)' == '' and '$(GAME_PATH)' != ''">$(GAME_PATH)</GameDirectory>
     <GameDirectory Condition="'$(GameDirectory)' == '' and Exists('C:\Games\Gunsaw\Gunsaw_Data\Managed\Assembly-CSharp.dll')">C:\Games\Gunsaw</GameDirectory>
+    <GameDirectory Condition="'$(GameDirectory)' == '' and Exists('$(MSBuildProjectDirectory)/.dependencies/Gunsaw/Gunsaw_Data/Managed/Assembly-CSharp.dll')">$(MSBuildProjectDirectory)/.dependencies/Gunsaw</GameDirectory>
     <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
@@ -23,6 +24,8 @@
     <EmbeddedResource Include="Assets\edit.png" />
     <EmbeddedResource Include="Assets\configure.png" />
     <EmbeddedResource Include="Assets\emoji.png" />
+    <EmbeddedResource Include="Assets\editor-lock.png" />
+    <EmbeddedResource Include="Assets\editor-unlock.png" />
     <EmbeddedResource Include="Assets\Sounds\respawn.ogg"
                       LogicalName="GunsawMultiplayer.Assets.Sounds.respawn.ogg" />
     <EmbeddedResource Include="Assets\Sounds\sprayer.ogg"

@@ -863,6 +863,22 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var text = go.GetComponent<TextMeshProUGUI>(); text.font = template.font; text.fontSharedMaterial = template.fontSharedMaterial; text.color = template.color; text.fontSize = fontSize; text.alignment = alignment; text.text = value; return text;
     }
 
+    internal TMP_Text? CreateEditorCursorName()
+    {
+        if (root == null) return null;
+        var text = Text(root.transform, "", Vector2.zero, new Vector2(1000f, 100f), 18f, TextAlignmentOptions.Top);
+        ApplyChatFont(text);
+        text.fontStyle = FontStyles.Bold;
+        text.richText = false;
+        text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Overflow;
+        text.raycastTarget = false;
+        text.outlineColor = Color.black;
+        text.outlineWidth = 0.22f;
+        text.rectTransform.pivot = new Vector2(0.5f, 1f);
+        return text;
+    }
+
     private static TMP_FontAsset CreateUnicodeChatFont()
     {
         Font source = null;

@@ -282,6 +282,7 @@ internal static class MultiplayerClientMainMenuPatch
 {
     private static void Prefix()
     {
+        var localEditor = LevelEditorReplication.IsLocalEditor;
         if (MultiplayerSession.IsHosting)
             MultiplayerSession.EndHostCustomLevel("LevelSelect");
 
@@ -291,6 +292,12 @@ internal static class MultiplayerClientMainMenuPatch
             SceneLoader.main.hadEditorWarning = false;
         }
 
+        if (localEditor)
+        {
+            GunsawMultiplayerPlugin.Instance?.EndLocalLevelEditing();
+            return;
+        }
+        
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHosting) return;
         GunsawMultiplayerPlugin.Instance?.LeaveLobby();
     }
@@ -301,6 +308,7 @@ internal static class MultiplayerBackToEditorRedirectPatch
 {
     private static bool Prefix()
     {
+        if (LevelEditorReplication.IsLocalEditor) return true;
         if (!MultiplayerSession.IsConnected) return true;
 
         if (MultiplayerSession.IsHosting)

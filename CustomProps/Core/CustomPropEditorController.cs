@@ -277,6 +277,79 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         }
     }
 
+    internal void SynchronizeForReplication()
+    {
+        SyncInstances();
+    }
+
+    internal static bool CanReplicate(LevelPart part)
+    {
+        try
+        {
+            var payload = JsonUtility.FromJson<CustomPropPayload>(part.team);
+            if (payload == null || string.IsNullOrEmpty(payload.uid))
+                return false;
+                
+            var instance = ReadInstance(part);
+            return instance != null && CustomPropRegistry.TryGet(instance.TypeId, out _);
+        }
+        catch { 
+            return false; 
+        }
+    }
+
+    internal LevelPartGame ApplyReplicatedPart(LevelPartGame? existing, LevelPart part)
+    {
+        var instance = ReadInstance(part);
+        if (instance == null)
+            throw new InvalidOperationException("Invalid custom prop payload.");
+            
+        var marker = existing == null ? null : existing.GetComponent<CustomPropMarker>();
+     
+        if (marker == null)
+            marker = CreateMarker(instance);
+        else
+        {
+            marker.Instance = instance;
+            CustomPropRegistry.TryGet(instance.TypeId, out marker.Definition);
+        }
+       
+        marker.transform.position = instance.Position;
+        marker.transform.rotation = Quaternion.Euler(0f, 0f, instance.Rotation);
+        var component = marker.GetComponent<LevelPartGame>();
+        component.part = part;
+        return component;
+    }
+
+    internal void RefreshReplicatedInspector(LevelPartGame component)
+    {
+        var marker = component.GetComponent<CustomPropMarker>();
+        if (marker != null)
+        {
+            if (marker.Definition == null) return;
+            shownMarker = marker;
+            ShowGenericFields(marker, false);
+            return;
+        }
+        if (!editor.teamField.isFocused) EnableTeamFieldForPlayerSpawn();
+        if (!editor.idField.isFocused) EnableIdFieldForColoredLamp();
+        if (!editor.sizeXField.isFocused) EnableSizeFieldForLampAngle();
+        if (!editor.forceXField.isFocused) EnableRespawnTimeForWeapon();
+    }
+
+    internal void ForgetReplicatedPart(LevelPartGame component)
+    {
+        var marker = component.GetComponent<CustomPropMarker>();
+        if (marker == null) 
+            return;
+            
+        markers.Remove(marker);
+        instances.Remove(marker.Instance);
+        
+        if (shownMarker == marker) 
+            shownMarker = null;
+    }
+
     internal void DuplicateSelected()
     {
         if (editor == null || selectedField == null) return;
@@ -302,7 +375,9 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         var marker = selected == null ? null : selected.GetComponent<CustomPropMarker>();
         if (marker == null || marker.Instance == null) return;
 
-        if (shownMarker == marker) CommitFields();
+        if (shownMarker == marker)
+            foreach (var input in GetInputs())
+                if (input != null && input.isFocused) CommitField(input);
         marker.GetComponent<LevelPartGame>().part = ToPart(marker.Instance);
     }
 
@@ -406,29 +481,29 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
         if (editor.idField != null)
         {
-            editor.idField.onEndEdit.AddListener(value => CommitFields());
+            editor.idField.onEndEdit.AddListener(value => CommitField(editor.idField));
             editor.idField.onSelect.AddListener(value => BeginColoredLampIdEdit());
             editor.idField.onEndEdit.AddListener(value => CommitColoredLampId(editingLamp, value));
         }
-        if (editor.tarIdField != null) editor.tarIdField.onEndEdit.AddListener(value => CommitFields());
+        if (editor.tarIdField != null) editor.tarIdField.onEndEdit.AddListener(value => CommitField(editor.tarIdField));
         if (editor.teamField != null)
         {
-            editor.teamField.onEndEdit.AddListener(value => CommitFields());
+            editor.teamField.onEndEdit.AddListener(value => CommitField(editor.teamField));
             editor.teamField.onEndEdit.AddListener(value => CommitPlayerSpawnTeam());
         }
         if (editor.forceXField != null)
         {
-            editor.forceXField.onEndEdit.AddListener(value => CommitFields());
+            editor.forceXField.onEndEdit.AddListener(value => CommitField(editor.forceXField));
             editor.forceXField.onEndEdit.AddListener(value => CommitWeaponRespawnTime());
         }
-        if (editor.forceYField != null) editor.forceYField.onEndEdit.AddListener(value => CommitFields());
+        if (editor.forceYField != null) editor.forceYField.onEndEdit.AddListener(value => CommitField(editor.forceYField));
         if (editor.sizeXField != null)
         {
-            editor.sizeXField.onEndEdit.AddListener(value => CommitFields());
+            editor.sizeXField.onEndEdit.AddListener(value => CommitField(editor.sizeXField));
             editor.sizeXField.onSelect.AddListener(value => BeginLampAngleEdit());
             editor.sizeXField.onEndEdit.AddListener(value => CommitLampAngle(editingLampAngle, value));
         }
-        if (editor.sizeYField != null) editor.sizeYField.onEndEdit.AddListener(value => CommitFields());
+        if (editor.sizeYField != null) editor.sizeYField.onEndEdit.AddListener(value => CommitField(editor.sizeYField));
     }
 
     private static void SetEditable(TMP_InputField field)
@@ -453,6 +528,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     internal void CommitPlayerSpawnTeam()
     {
+        if (!LevelEditorReplication.CanEdit) return;
         if (editor == null || editor.teamField == null) return;
         var selected = selectedField == null ? null : selectedField.GetValue(editor) as GameObject;
         var levelPart = selected == null ? null : selected.GetComponent<LevelPartGame>();
@@ -488,6 +564,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private void CommitColoredLampId(LevelPartGame levelPart, string value)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         if (!IsColoredLamp(levelPart)) return;
         int id;
         if (!int.TryParse(value, out id)) return;
@@ -517,6 +594,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private void CommitLampAngle(LevelPartGame levelPart, string value)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         if (!IsColoredLamp(levelPart)) return;
         float angle;
         if (!float.TryParse(value, out angle)) return;
@@ -547,6 +625,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     internal void CommitWeaponRespawnTime()
     {
+        if (!LevelEditorReplication.CanEdit) return;
         if (editor == null || editor.forceXField == null)
             return;
             
@@ -571,6 +650,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private void Update()
     {
         UpdateInspector();
+        if (!LevelEditorReplication.CanEdit)
+        {
+            EndPlacement();
+            return;
+        }
         if (placingDefinition == null || editor == null || Camera.main == null) return;
         var position = editor.alignToGrid(Camera.main.ScreenToWorldPoint(Input.mousePosition));
         if (ghost != null) ghost.transform.position = position;
@@ -633,7 +717,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         var selectionChanged = marker != shownMarker;
         shownMarker = marker;
         if (selectionChanged || !HasGenericInspectorLayout(marker))
-            ShowGenericFields(marker, selectionChanged || !AnyInputFocused());
+            ShowGenericFields(marker, selectionChanged);
     }
 
     private void CaptureNativeInspector()
@@ -685,14 +769,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         return true;
     }
 
-    private bool AnyInputFocused()
-    {
-        foreach (var input in GetInputs())
-            if (input != null && input.isFocused) return true;
-        return false;
-    }
-
-    private void ShowGenericFields(CustomPropMarker marker, bool refreshValues)
+    private void ShowGenericFields(CustomPropMarker marker, bool selectionChanged)
     {
         var inputs = GetInputs();
         var labels = GetLabels();
@@ -714,15 +791,16 @@ internal sealed class CustomPropEditorController : MonoBehaviour
                 labels[index].text = field.Label;
             }
             SetPlaceholder(inputs[index], secondary ? field.SecondaryPlaceholder : field.Placeholder);
-            if (refreshValues) inputs[index].text = secondary
+            if (selectionChanged || !inputs[index].isFocused) inputs[index].SetTextWithoutNotify(secondary
                 ? field.ReadSecondary(marker.Instance.Data)
-                : field.Read(marker.Instance.Data);
+                : field.Read(marker.Instance.Data));
             AdvanceField(fields, ref fieldIndex, ref secondary);
         }
     }
 
-    private void CommitFields()
+    private void CommitField(TMP_InputField input)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         if (shownMarker == null || shownMarker.Definition == null) return;
 
         var fields = shownMarker.Definition.Fields ?? new CustomPropField[0];
@@ -731,10 +809,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         var secondary = false;
         for (var index = 0; index < inputs.Length && fieldIndex < fields.Length; index++)
         {
-            if (inputs[index] != null)
+            if (inputs[index] == input)
             {
-                if (secondary) fields[fieldIndex].WriteSecondary(shownMarker.Instance.Data, inputs[index].text);
-                else fields[fieldIndex].Write(shownMarker.Instance.Data, inputs[index].text);
+                if (secondary) fields[fieldIndex].WriteSecondary(shownMarker.Instance.Data, input.text);
+                else fields[fieldIndex].Write(shownMarker.Instance.Data, input.text);
+                return;
             }
             AdvanceField(fields, ref fieldIndex, ref secondary);
         }
@@ -838,6 +917,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private void BeginPlacement(ICustomPropDefinition definition)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         EndPlacement();
         editor.curSpawnPath = string.Empty;
         editor.miniHeldObj.sprite = null;

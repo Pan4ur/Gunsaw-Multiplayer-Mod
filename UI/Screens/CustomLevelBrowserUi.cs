@@ -97,6 +97,13 @@ internal sealed class CustomLevelBrowserUi
     internal static void OpenEditorSaveDialog(GunsawMultiplayerPlugin plugin, LevelEditor editor, Button buttonTemplate, TMP_Text textTemplate)
     {
         if (plugin == null || editor == null || buttonTemplate == null || textTemplate == null || textTemplate.canvas == null) return;
+       
+        if (!LevelEditorReplication.CanSave(editor))
+        {
+            editor.SetInfoText("Wait for the editor to sync before saving.");
+            return;
+        }
+       
         foreach (var existing in Resources.FindObjectsOfTypeAll<Transform>())
             if (existing != null && existing.name == "Editor Local Level Save" && existing.gameObject.scene == editor.gameObject.scene) return;
         var dialog = new CustomLevelBrowserUi(plugin, textTemplate.canvas.transform, textTemplate, buttonTemplate);

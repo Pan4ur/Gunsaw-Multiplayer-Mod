@@ -1,5 +1,6 @@
 internal readonly struct ReliablePacket : INetworkPacket
 {
+    internal const int HeaderSize = PacketHeader.Size + sizeof(int);
     internal readonly int SequenceId;
     internal readonly byte[] InnerPacket;
 

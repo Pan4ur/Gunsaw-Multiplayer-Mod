@@ -6,11 +6,13 @@ internal readonly struct DeliverySettings
     internal readonly bool Reliable;
     internal readonly bool Replaceable;
     internal readonly bool Priority;
+    internal readonly bool Compress;
     
-    internal DeliverySettings(bool reliable, bool replaceable, bool priority)
+    internal DeliverySettings(bool reliable, bool replaceable, bool priority, bool compress = false)
     {
         Reliable = reliable;
         Replaceable = replaceable;
         Priority = priority;
+        Compress = compress;
     }
 }

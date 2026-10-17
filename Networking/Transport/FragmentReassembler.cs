@@ -3,11 +3,16 @@ using System.Diagnostics;
 internal sealed class FragmentReassembler
 {
     private const int MaxTransfers = 128;
-    private const long MaxBufferedBytes = 16 * 1024 * 1024;
-    private static readonly long TransferLifetime = Stopwatch.Frequency * 5;
+    private const long MaxBufferedBytes = 64 * 1024 * 1024;
+    private readonly long transferLifetime;
     private readonly object sync = new();
     private readonly Dictionary<long, Transfer> transfers = new();
     private long bufferedBytes;
+
+    internal FragmentReassembler(int lifetimeSeconds = 5)
+    {
+        transferLifetime = Stopwatch.Frequency * lifetimeSeconds;
+    }
 
     internal bool TryAccept(byte[] datagram, int metadataOffset, ushort senderId, long now, out ArraySegment<byte> packet)
     {
@@ -52,6 +57,7 @@ internal sealed class FragmentReassembler
                 Buffer.BlockCopy(datagram, payloadOffset, transfer.Data, index * UdpDatagram.FragmentPayload, length);
                 transfer.Received[index] = true;
                 transfer.Count++;
+                transfer.Updated = now;
             }
             
             if (transfer.Count != count) return
@@ -76,7 +82,7 @@ internal sealed class FragmentReassembler
     {
         List<long> expired = null;
         foreach (var pair in transfers)
-            if (now - pair.Value.Created >= TransferLifetime)
+            if (now - pair.Value.Updated >= transferLifetime)
             {
                 if (expired == null) expired = new List<long>();
                 expired.Add(pair.Key);
@@ -96,14 +102,14 @@ internal sealed class FragmentReassembler
     {
         internal readonly byte[] Data;
         internal readonly bool[] Received;
-        internal readonly long Created;
+        internal long Updated;
         internal int Count;
 
         internal Transfer(int length, int count, long now)
         {
             Data = new byte[length];
             Received = new bool[count];
-            Created = now;
+            Updated = now;
         }
     }
 }

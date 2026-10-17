@@ -53,5 +53,13 @@ internal enum PacketType : byte
     WorldExplosion = 0x35,
     PlayerSound = 0x36,
     Headlamp = 0x37,
-    HalfControl = 0x38
+    HalfControl = 0x38,
+    EditorCursor = 0x3A,
+    EditorSnapshotRequest = 0x3B,
+    EditorSnapshot = 0x3C,
+    EditorEdit = 0x3D,
+    EditorCommit = 0x3E,
+    EditorChecksum = 0x3F,
+    EditorClose = 0x40,
+    EditorCloseReady = 0x41
 }

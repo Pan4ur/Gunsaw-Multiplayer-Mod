@@ -374,6 +374,18 @@ internal static partial class MultiplayerSession
         }
     }
 
+    internal static void DeferScene(string scene, bool reload, bool epochAdvanced, int customLevelTransferId)
+    {
+        lock (statusLock)
+        {
+            if (!string.IsNullOrEmpty(pendingScene)) return;
+            pendingScene = scene;
+            pendingSceneReload = reload;
+            pendingSceneAdvanced = epochAdvanced;
+            pendingSceneCustomLevelTransferId = customLevelTransferId;
+        }
+    }
+
     // Is connected and more then 1 players
     internal static bool IsConnected { get { lock (statusLock) return socket != null &&
         relayConnected && peers.Count > 0; } }

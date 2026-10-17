@@ -5,6 +5,8 @@ internal static partial class MultiplayerSession
         return SendPacket(packet, targetPeerId, priority);
     }
 
+    internal static bool HasPendingReliablePacket(ushort peer, PacketType type) => reliableChannel.HasPending(peer, type);
+
     internal static void UpdatePing()
     {
         if (!IsActive) return;

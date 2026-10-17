@@ -14,11 +14,13 @@ internal static class CustomPropEditorLoadPatch
 {
     private static void Prefix(LevelEditor __instance)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         CustomPropEditorController.ReadLevel(__instance);
     }
 
     private static void Postfix(LevelEditor __instance)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         CustomPropEditorController.FinishLevelLoad(__instance);
     }
 }
@@ -47,6 +49,7 @@ internal static class CustomPropEditorDuplicatePatch
 {
     private static void Prefix(LevelEditor __instance)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         var controller = CustomPropEditorController.Ensure(__instance);
         if (controller != null)
             controller.PrepareDuplicate();
@@ -54,6 +57,7 @@ internal static class CustomPropEditorDuplicatePatch
 
     private static void Postfix(LevelEditor __instance)
     {
+        if (!LevelEditorReplication.CanEdit) return;
         var controller = CustomPropEditorController.Ensure(__instance);
         if (controller != null)
             controller.DuplicateSelected();

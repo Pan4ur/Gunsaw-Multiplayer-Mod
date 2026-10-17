@@ -1,11 +1,15 @@
 internal static class UdpDatagram
 {
     internal const int FragmentPayload = 1000;
-    internal const int MaxPacketLength = 4 * 1024 * 1024;
+    internal const int MaxPacketLength = PacketCodec.MaxPayloadLength + PacketHeader.Size + ReliablePacket.HeaderSize;
     internal const int RelayMetadataOffset = 7;
     internal const int DirectMetadataOffset = 23;
     internal const int FragmentHeaderSize = 12;
     internal const int MaxDatagramLength = DirectMetadataOffset + FragmentHeaderSize + FragmentPayload;
+
+    internal static int MessageId(int sequence, bool reliable, bool editor = false) => (sequence << 2) | (editor ? 2 : 0) | (reliable ? 0 : 1);
+
+    internal static bool IsEditorMessage(int messageId) => (messageId & 2) != 0;
 
     internal static int FragmentCount(int length)
     {

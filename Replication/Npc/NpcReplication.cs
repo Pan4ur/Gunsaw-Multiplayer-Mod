@@ -133,6 +133,7 @@ internal sealed class NpcReplication : MonoBehaviour
         {
             SampleActivity();
             var scene = SceneManager.GetActiveScene();
+            if (scene.name == "LevelEditor") return;
             var isHost = MultiplayerSession.IsHost;
             var sceneChanged = activeSceneHandle != scene.handle;
             var roleChanged = wasConnected && wasHost != isHost;
@@ -263,6 +264,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (SceneManager.GetActiveScene().name == "LevelEditor") return;
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
         foreach (var proxy in clientProxies)
         {
@@ -284,6 +286,7 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (SceneManager.GetActiveScene().name == "LevelEditor") return;
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
         ApplyClientNpcBodies();
     }

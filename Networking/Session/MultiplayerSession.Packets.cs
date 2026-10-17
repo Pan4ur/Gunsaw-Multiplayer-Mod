@@ -17,7 +17,9 @@ internal static partial class MultiplayerSession
             if (!ProcessReliablePacket(ref packet, senderId)) continue;
             PayloadPacket decodedPacket;
             if (!PacketCodec.TryDecode(packet, out decodedPacket)) continue;
-            if ((decodedPacket.Type == PacketType.Hello) && isHost)
+            if (IsEditorPacket(decodedPacket.Type))
+                ReceiveEditorPacket(senderId, decodedPacket);
+            else if ((decodedPacket.Type == PacketType.Hello) && isHost)
             {
                 string connectedName;
                 bool joined;
@@ -601,6 +603,56 @@ internal static partial class MultiplayerSession
         }
     }
 
+    private static bool IsEditorPacket(PacketType type) => type is PacketType.EditorCursor or PacketType.EditorSnapshotRequest or
+        PacketType.EditorSnapshot or PacketType.EditorEdit or PacketType.EditorCommit or PacketType.EditorChecksum or
+        PacketType.EditorClose or PacketType.EditorCloseReady;
+
+    private static bool CanReceiveEditorPacket(ushort peer, PacketType type)
+    {
+        lock (statusLock)
+        {
+            if (peer == localPeerId || !peers.Contains(peer))
+                return false;
+
+            if (isHost)
+                return type is PacketType.EditorCursor or PacketType.EditorSnapshotRequest or PacketType.EditorEdit or PacketType.EditorCloseReady;
+
+            return peer == hostPeerId && (type is PacketType.EditorCursor or PacketType.EditorSnapshot or PacketType.EditorCommit or PacketType.EditorChecksum or PacketType.EditorClose);
+        }
+    }
+
+    private static void ReceiveEditorPacket(ushort peer, PayloadPacket payload)
+    {
+        if (!CanReceiveEditorPacket(peer, payload.Type))
+            return;
+
+        try
+        {
+            var reader = new PacketReader(payload.Payload);
+            INetworkPacket packet = payload.Type switch
+            {
+                PacketType.EditorCursor => EditorCursorPacket.Read(ref reader),
+                PacketType.EditorSnapshotRequest => EditorSnapshotRequestPacket.Read(ref reader),
+                PacketType.EditorSnapshot => EditorSnapshotPacket.Read(ref reader),
+                PacketType.EditorEdit => EditorEditPacket.Read(ref reader),
+                PacketType.EditorCommit => EditorCommitPacket.Read(ref reader),
+                PacketType.EditorChecksum => EditorChecksumPacket.Read(ref reader),
+                PacketType.EditorClose => EditorClosePacket.Read(ref reader),
+                PacketType.EditorCloseReady => EditorCloseReadyPacket.Read(ref reader),
+                _ => throw new InvalidDataException("Unexpected editor packet.")
+            };
+
+            if (reader.Remaining != 0)
+                throw new InvalidDataException("Trailing editor packet data.");
+
+            LevelEditorReplication.Enqueue(peer, packet, payload.Payload.Count);
+        }
+        catch (Exception exception)
+        {
+            GunsawMultiplayerPlugin.LogInfo("Rejected editor packet: " + exception.Message);
+        }
+    }
+
     private static void SetStatus(string value)
     {
         lock (statusLock) status = value;
@@ -1057,7 +1109,11 @@ internal static partial class MultiplayerSession
             
             foreach (var chunk in customLevelTransfer.Chunks)
             {
-                if (destination + chunk.Length > data.Length) { customLevelTransfer = null; return; }
+                if (destination + chunk.Length > data.Length)
+                { 
+                    customLevelTransfer = null;
+                    return;
+                }
                 Buffer.BlockCopy(chunk, 0, data, destination, chunk.Length);
                 destination += chunk.Length;
             }

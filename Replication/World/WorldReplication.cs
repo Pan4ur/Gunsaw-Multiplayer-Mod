@@ -234,6 +234,7 @@ internal sealed class WorldReplication : MonoBehaviour
         {
             SampleActivity();
             var scene = SceneManager.GetActiveScene();
+            if (scene.name == "LevelEditor") return;
             var isHost = MultiplayerSession.IsHost;
             var sceneChanged = activeSceneHandle != scene.handle;
             var roleChanged = wasConnected && wasHost != isHost;
@@ -369,6 +370,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (SceneManager.GetActiveScene().name == "LevelEditor") return;
         var time = MultiplayerPerformance.Start();
         try
         {

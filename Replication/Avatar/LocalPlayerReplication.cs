@@ -1188,7 +1188,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
         var slot = body.currentWeapon;
         if (slot < 0) return false;
-        if (body.weaponAmmos == null) body.weaponAmmos = new List<int>();
+        body.weaponAmmos ??= [];
         while (body.weaponAmmos.Count <= slot) body.weaponAmmos.Add(0);
 
         if (!weapon.stats.hasSpecialReload) return true;

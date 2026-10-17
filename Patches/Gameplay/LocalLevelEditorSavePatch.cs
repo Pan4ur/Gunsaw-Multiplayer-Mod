@@ -8,6 +8,13 @@ internal static class MultiplayerLevelEditorPlaytestPatch
 {
     private static bool Prefix(LevelEditor __instance)
     {
+        if (LevelEditorReplication.IsLocalEditor) return true;
+        if (!LevelEditorReplication.CanLeave) return false;
+        if (MultiplayerSession.IsActive && !MultiplayerSession.IsHosting)
+        {
+            __instance.SetInfoText("Only the host can start the playtest.");
+            return false;
+        }
         if (!MultiplayerSession.IsHosting) return true;
         try
         {
@@ -94,8 +101,9 @@ internal static class LocalLevelEditorSavePatch
 [HarmonyPatch(typeof(LevelEditor), "BackToMenu")]
 internal static class LocalLevelEditorClosePatch
 {
-    private static void Postfix()
+    private static void Postfix(bool __runOriginal)
     {
+        if (!__runOriginal) return;
         GunsawMultiplayerPlugin.Instance?.EndLocalLevelEditing();
     }
 }

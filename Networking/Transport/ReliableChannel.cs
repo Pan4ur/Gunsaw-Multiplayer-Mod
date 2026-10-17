@@ -10,17 +10,21 @@ internal sealed class ReliableChannel
     private const int MaxReceivedIds = 512;
     private const int MaxPendingPacketsPerTarget = 1024;
     private const int MaxWaitingPacketsPerTarget = 1024;
+    private const long MaxPendingBytes = 64 * 1024 * 1024;
+    private const long MaxPendingBytesPerTarget = 32 * 1024 * 1024;
 
     private readonly object sync = new();
     private readonly Dictionary<int, PendingPacket> pending = new();
     private readonly Dictionary<ushort, int> pendingByTarget = new();
     private readonly Dictionary<ushort, int> activeByTarget = new();
+    private readonly Dictionary<ushort, long> pendingBytesByTarget = new();
     private readonly Dictionary<ushort, Queue<int>> waitingByTarget = new();
     private readonly Dictionary<ushort, RttEstimator> RTTByTarget = new();
     private readonly HashSet<long> received = new();
     private readonly Queue<long> receivedOrder = new();
     private readonly List<int> expired = new();
     private int sequence;
+    private long pendingBytes;
 
     internal int PendingCount { get { lock (sync) return pending.Count; } }
 
@@ -31,6 +35,11 @@ internal sealed class ReliableChannel
 
     internal int NextSequenceId() => Interlocked.Increment(ref sequence);
 
+    internal bool HasPending(ushort targetId, PacketType type)
+    {
+        lock (sync) return pending.Values.Any(packet => packet.Packet.TargetId == targetId && packet.Packet.Type == type);
+    }
+
     internal bool Track(OutboundPacket packet) => Track(packet, out _);
 
     internal bool Track(OutboundPacket packet, out bool waiting)
@@ -39,11 +48,15 @@ internal sealed class ReliableChannel
         lock (sync)
         {
             var count = pendingByTarget.TryGetValue(packet.TargetId, out var pendingCount) ? pendingCount : 0;
-            if (count >= MaxPendingPacketsPerTarget + MaxWaitingPacketsPerTarget || pending.ContainsKey(packet.SequenceId)) return false;
+            var targetBytes = pendingBytesByTarget.TryGetValue(packet.TargetId, out var bytes) ? bytes : 0;
+            if (count >= MaxPendingPacketsPerTarget + MaxWaitingPacketsPerTarget || pending.ContainsKey(packet.SequenceId) ||
+                pendingBytes + packet.WireLength > MaxPendingBytes || targetBytes + packet.WireLength > MaxPendingBytesPerTarget) return false;
             var active = activeByTarget.TryGetValue(packet.TargetId, out var activeCount) ? activeCount : 0;
             waiting = active >= MaxPendingPacketsPerTarget;
             pending[packet.SequenceId] = new PendingPacket(packet) { WaitingForWindow = waiting };
             pendingByTarget[packet.TargetId] = count + 1;
+            pendingBytesByTarget[packet.TargetId] = targetBytes + packet.WireLength;
+            pendingBytes += packet.WireLength;
             if (waiting)
             {
                 if (!waitingByTarget.TryGetValue(packet.TargetId, out var queue))
@@ -209,11 +222,13 @@ internal sealed class ReliableChannel
             pending.Clear();
             pendingByTarget.Clear();
             activeByTarget.Clear();
+            pendingBytesByTarget.Clear();
             waitingByTarget.Clear();
             RTTByTarget.Clear();
             received.Clear();
             receivedOrder.Clear();
             sequence = 0;
+            pendingBytes = 0;
         }
     }
 
@@ -245,6 +260,14 @@ internal sealed class ReliableChannel
         if (!pending.TryGetValue(sequenceId, out var packet)) return;
         pending.Remove(sequenceId);
         var targetId = packet.Packet.TargetId;
+        pendingBytes -= packet.Packet.WireLength;
+        
+        var targetBytes = pendingBytesByTarget[targetId] - packet.Packet.WireLength;
+        if (targetBytes == 0)
+            pendingBytesByTarget.Remove(targetId);
+        else 
+            pendingBytesByTarget[targetId] = targetBytes;
+        
         var count = pendingByTarget[targetId] - 1;
         if (count == 0) pendingByTarget.Remove(targetId);
         else pendingByTarget[targetId] = count;

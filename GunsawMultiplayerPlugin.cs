@@ -14,7 +14,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.5.0";
+    public const string PluginVersion = "0.5.1";
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     internal const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
@@ -47,6 +47,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private bool waitingForCustomLevel;
     private int waitingForCustomLevelTransferId;
     private string requestedHostScene = "";
+    private bool pendingHostDisconnect;
     private float customLevelPhysicsRefreshUntil;
     private float nextCustomLevelPhysicsRefresh;
     private LocalPlayerReplication avatarReplication;
@@ -94,6 +95,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         avatarReplication = gameObject.AddComponent<LocalPlayerReplication>();
         gameObject.AddComponent<NetworkAvatarManager>();
         worldReplication = gameObject.AddComponent<WorldReplication>();
+        gameObject.AddComponent<LevelEditorReplication>();
         npcReplication = gameObject.AddComponent<NpcReplication>();
         multiplayerHud = gameObject.AddComponent<MultiplayerHud>();
         replicationDebugMode = gameObject.AddComponent<MultiplayerReplicationDebugMode>();
@@ -193,8 +195,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (MultiplayerSession.TryTakeStatus(out connectionMessage))
             status = connectionMessage;
 
-        if (MultiplayerSession.TryTakeHostDisconnected())
+        if (MultiplayerSession.TryTakeHostDisconnected()) pendingHostDisconnect = true;
+        if (pendingHostDisconnect)
         {
+            if (!LevelEditorReplication.PrepareSceneChange()) return;
+            EndLocalLevelEditing();
+            pendingHostDisconnect = false;
             joinedLobbyId = "";
             status = "Host closed the lobby.";
             Time.timeScale = 1f;
@@ -239,6 +245,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 status = "Already in host scene " + sceneToLoad + ".";
                 return;
             }
+            if (!LevelEditorReplication.PrepareSceneChange())
+            {
+                MultiplayerSession.DeferScene(sceneToLoad, sceneReload, sceneEpochAdvanced, sceneCustomLevelTransferId);
+                return;
+            }
             requestedHostScene = sceneToLoad;
             LocalPlayerReplication.ResetExhaustedLives();
             ObserverSystem.ResetForLevelChange(mustReload);
@@ -265,6 +276,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             receivedCustomLevelJson = "";
             receivedCustomLevelTransferId = 0;
             status = mustReload ? "Host restarted the level. Reloading..." : "Loading host scene " + sceneToLoad + "...";
+            EndLocalLevelEditing();
             SceneManager.LoadScene(sceneToLoad);
         }
 
@@ -584,6 +596,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var loader = SceneLoader.main;
             if (loader == null)
                 throw new InvalidOperationException("Scene loader is not ready.");
+            if (loader.isLoading)
+                throw new InvalidOperationException("A scene change is already in progress.");
+            if (!LevelEditorReplication.PrepareSceneChange())
+            {
+                status = "Could not preserve the current editor changes before opening another level.";
+                return;
+            }
             loader.levelEditString = levelJson;
             editedLocalLevelCode = code;
             editedLocalLevelName = levelName ?? "Untitled";
@@ -601,6 +620,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal void SaveEditedLocalLevel(LevelEditor editor)
     {
         if (editor == null || !HasLocalLevelEditorTarget) return;
+        if (!LevelEditorReplication.CanSave(editor))
+        {
+            editor.SetInfoText("Wait for the editor to synchronize before saving.");
+            return;
+        }
         try
         {
             var replacementCode = Compression.Compress(editor.GetLevelCode());
@@ -626,6 +650,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (string.IsNullOrWhiteSpace(levelJson)) return;
         var loader = SceneLoader.main;
         if (loader == null) throw new InvalidOperationException("Scene loader is not ready.");
+        if (!LevelEditorReplication.PrepareSceneChange())
+            throw new InvalidOperationException("Could not preserve the current editor changes before loading the level.");
+        EndLocalLevelEditing();
         loader.levelEditString = levelJson;
         customLevelPhysicsRefreshUntil = Time.unscaledTime + 5f;
         nextCustomLevelPhysicsRefresh = 0f;
