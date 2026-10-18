@@ -54,6 +54,10 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     private bool localWasAlive = true;
     private int remainingLives;
     private int livesRule = -1;
+    private BodyScript dropWeaponBody;
+    private bool originalDropWeapon;
+    private GameManager swapManager;
+    private int originalSwapAmount;
     public float respawnAt = -1f;
     internal bool localRespawnPending;
     private int localRespawnGeneration;
@@ -309,7 +313,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
     internal static bool BlockLocalRespawnDeath(BodyScript body)
     {
-        if (body == null || Time.unscaledTime >= localRespawnProtectionUntil) return false;
+        if (!MultiplayerSession.IsInLobby || body == null || Time.unscaledTime >= localRespawnProtectionUntil) return false;
         var player = PlayerScript.player;
         if (player == null || player.bodyScript != body) return false;
 
@@ -320,7 +324,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     internal static void ConsumeLocalDeathWeapon(BodyScript body, bool allWeapons)
     {
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || player == null || body == null || body.isAlive ||
+        if (!MultiplayerSession.IsInLobby || player == null || body == null || body.isAlive ||
             body != player.bodyScript) return;
         ClearDroppedWeapon(body, allWeapons);
     }
@@ -353,7 +357,15 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             body.limbs[0] == null || body.limbs[11] == null || body.limbs[14] == null ||
             GameManager.main == null || ResourceManager.main == null || ScreenFXManager.main == null)
             return false;
-        if (MultiplayerSession.IsConnected) body.dropWeapon = false;
+        if (MultiplayerSession.IsInLobby)
+        {
+            if (Instance != null && Instance.dropWeaponBody != body)
+            {
+                Instance.dropWeaponBody = body;
+                Instance.originalDropWeapon = body.dropWeapon;
+            }
+            body.dropWeapon = false;
+        }
 
         var buttons = player.buttons;
         if (buttons != null)
@@ -577,7 +589,14 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
                 RespawnLocalPlayer(player, body);
         }
         else
+        {
+            if (swapManager != GameManager.main)
+            {
+                swapManager = GameManager.main;
+                originalSwapAmount = swapManager.swapAmount;
+            }
             GameManager.main.swapAmount = 0;
+        }
     }
 
     private void TeleportRespawnBodyToNpc(BodyScript body)
@@ -668,7 +687,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
     internal static void SuppressSpectatorDeathEffects(PlayerScript player)
     {
-        if (Instance == null || !Instance.spectating || Instance.CanRespawn ||
+        if (!MultiplayerSession.IsInLobby || Instance == null || !Instance.spectating || Instance.CanRespawn ||
             player == null || player.bodyScript == null || player.bodyScript.isAlive) return;
         if (player.deathNoise != null) player.deathNoise.color = Color.clear;
         if (player.deathText != null) player.deathText.SetActive(false);
@@ -826,9 +845,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             localPlayerInstance.curStaminaShow = newBody.stamina;
             RebindLimbDamageIndicators(localPlayerInstance, newBody, oldBody);
             localPlayerInstance.UnDie();
-            pendingRespawnLoadoutBody = newBody;
+            pendingRespawnLoadoutBody = MultiplayerSession.IsInLobby ? newBody : null;
             if (CameraFollow.cam != null) CameraFollow.cam.target = newBody.transform;
-            localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
+            localRespawnProtectionUntil = MultiplayerSession.IsInLobby ? Time.unscaledTime + RespawnProtectionSeconds : -1f;
             if (localPlayerInstance.bloodBars != null)
                 localPlayerInstance.bloodBars.body = newBody;
         }
@@ -1242,7 +1261,35 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         localName = string.IsNullOrEmpty(name) ? "Player" : name;
     }
 
-    protected override void Update() { }
+    protected override void Update()
+    {
+        if (MultiplayerSession.IsActive) return;
+        if (dropWeaponBody != null) dropWeaponBody.dropWeapon = originalDropWeapon;
+        dropWeaponBody = null;
+        if (swapManager != null) swapManager.swapAmount = originalSwapAmount;
+        swapManager = null;
+        if (spectating)
+        {
+            var player = PlayerScript.player;
+            RestoreSpectatorVisuals(player);
+            if (player != null && player.bodyScript != null)
+            {
+                if (CameraFollow.cam != null) CameraFollow.cam.target = player.bodyScript.transform;
+                if (!player.bodyScript.isAlive && player.deathText != null) player.deathText.SetActive(true);
+            }
+        }
+        spectating = false;
+        spectatorPeerId = 0;
+        respawnAt = -1f;
+        localRespawnProtectionUntil = -1f;
+        pendingRespawnCharacterPrefab = "";
+        startingLoadoutAppliedBody = null;
+        startingAmmoAppliedBody = null;
+        pendingRespawnLoadoutBody = null;
+        pendingRespawnLoadoutSource = null;
+        localSpawnScene = int.MinValue;
+        livesRule = -1;
+    }
 
     protected override void LateUpdate() => UpdateLocalVehicleLock();
 

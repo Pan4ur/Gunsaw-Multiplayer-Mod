@@ -38,6 +38,14 @@ internal sealed class PacketSendQueue
                 }
                 if (group.Slots.TryGetValue(packet.StateSlot, out var previous))
                 {
+                    if (packet.Type == PacketType.WorldSnapshot)
+                    {
+                        if (!PacketCodec.TryDecode(new ArraySegment<byte>(previous.Value.Data), out var pending) || !PacketCodec.TryDecode(new ArraySegment<byte>(packet.Data), out var incoming))
+                            throw new InvalidDataException("Invalid pending world snapshot.");
+                            
+                        var merged = WorldSnapshotPacket.Merge(pending.Payload, incoming.Payload);
+                        packet = new OutboundPacket(packet.Type, packet.Policy, packet.TargetId, PacketCodec.Encode(merged), packet.Priority, packet.Reliable, packet.SequenceId, packet.StateGeneration, packet.StateSlot);
+                    }
                     var destination = packet.Priority ? priority : normal;
                     if (previous.List != destination)
                     {

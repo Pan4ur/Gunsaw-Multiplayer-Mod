@@ -68,7 +68,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         localName = SanitizeName(playerName);
         if (spriteAsset == null)
             CreateSpriteAsset();
-        if (savedChatWasOpen && MultiplayerSession.IsConnected && (!chatOpen || input != savedChatDraft))
+        if (savedChatWasOpen && MultiplayerSession.IsInLobby && (!chatOpen || input != savedChatDraft))
         {
             chatOpen = true;
             IsTyping = true;
@@ -119,6 +119,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
 
     internal void ToggleNetworkStats()
     {
+        if (!MultiplayerSession.IsInLobby) return;
         networkStatsVisible = !networkStatsVisible;
         if (networkStatsVisible) MultiplayerPerformance.Reset();
         if (!networkStatsVisible) DestroyNetworkStatsWidget();
@@ -146,11 +147,13 @@ internal sealed class MultiplayerHud : MonoBehaviour
             AddMessage(sender, message, false, senderId);
         }
 
-        if (!MultiplayerSession.IsConnected)
+        if (!MultiplayerSession.IsInLobby)
         {
             DestroyNetworkStatsWidget();
+            if (chatOpen) CloseChat();
+            return;
         }
-        if (networkStatsVisible && MultiplayerSession.IsConnected) UpdateNetworkStatsWidget();
+        if (networkStatsVisible && MultiplayerSession.IsInLobby) UpdateNetworkStatsWidget();
         else if (networkStatsObject != null) DestroyNetworkStatsWidget();
         if (ArsenalMenu.IsOpen) return;
         bool chatOpenKeyDown = Input.GetKeyDown(Controls.keys[Controls.OPEN_CHAT]);

@@ -29,4 +29,11 @@ internal sealed class LobbyRegenFactorState : MonoBehaviour
 {
     internal float BaseHealthRegen;
     internal float AppliedFactor = LobbyRegenRule.DefaultFactor;
+
+    private void Update()
+    {
+        if (MultiplayerSession.IsActive) return;
+        LobbyRegenRule.Apply(GetComponent<BodyScript>(), LobbyRegenRule.DefaultFactor);
+        Destroy(this);
+    }
 }

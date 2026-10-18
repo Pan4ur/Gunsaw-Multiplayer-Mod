@@ -1535,11 +1535,19 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     {
         if (!MultiplayerSession.IsActive)
         {
+            if (initialScaleAppliedBody != null && initialScaleAppliedBody.characterScale > 0f && initialScaleBase > 0f)
+            {
+                var factor = initialScaleBase / initialScaleAppliedBody.characterScale;
+                initialScaleAppliedBody.UpdateScale(factor);
+                foreach (var tail in initialScaleAppliedBody.tails ?? Array.Empty<Transform>())
+                    if (tail != null && !tail.IsChildOf(initialScaleAppliedBody.transform)) tail.localScale *= factor;
+            }
             initialScaleAppliedBody = null;
             initialScaleBase = float.NaN;
             appliedInitialScale = float.NaN;
             return;
         }
+        if (body == null) return;
         var target = MultiplayerSession.InitialScale;
         if (body == initialScaleAppliedBody && Mathf.Abs(appliedInitialScale - target) < 0.001f) return;
         if (body != initialScaleAppliedBody) initialScaleBase = body.characterScale;
@@ -2038,23 +2046,13 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected)
             {
                 NetworkAvatarManager.DestroyAllReplicas();
+                ApplyInitialLobbyScale(null);
                 return;
             }
 
             NetworkAvatarManager.CleanupDisconnectedReplicas();
             var local = LocalPlayerReplication.Instance;
             if (local == null) return;
-            if (!MultiplayerSession.IsConnected)
-            {
-                if (MultiplayerSession.IsHosting && PlayerScript.player != null)
-                {
-                    LobbyHealthRule.Apply(PlayerScript.player.bodyScript, MultiplayerSession.HealthFactor);
-                    LobbyRegenRule.Apply(PlayerScript.player.bodyScript, MultiplayerSession.RegenFactor);
-                }
-
-                return;
-            }
-
             LocalPlayerReplication.EnsureLocalPlayerSingleton();
             MultiplayerSession.UpdatePing();
             var player = PlayerScript.player;
@@ -2167,6 +2165,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             if (player.bodyScript == null)
                 return;
             local.UpdateSpectator(player);
+            if (!MultiplayerSession.IsConnected) return;
 
             var serverOnlyHost = HeadlessLobbyService.IsHeadlessServer;
             var prefab = local.ResolveLocalCharacterPrefab(player.bodyScript);

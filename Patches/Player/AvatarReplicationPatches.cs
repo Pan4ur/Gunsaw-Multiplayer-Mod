@@ -47,7 +47,7 @@ internal static class WeaponBackShowSlotGuardPatch
 {
     private static void Prefix(BodyScript ___body)
     {
-        if (MultiplayerSession.IsConnected && ___body != null && ___body.isPlayer)
+        if (MultiplayerSession.IsInLobby && ___body != null && ___body.isPlayer)
             LocalPlayerReplication.EnsureRespawnWeaponSlots(___body);
     }
 }
@@ -57,7 +57,7 @@ internal static class PlayerAmmoDisplaySlotGuardPatch
 {
     private static void Prefix(PlayerScript __instance)
     {
-        if (MultiplayerSession.IsConnected) LocalPlayerReplication.EnsurePlayerAmmoDisplaySlots(__instance);
+        if (MultiplayerSession.IsInLobby) LocalPlayerReplication.EnsurePlayerAmmoDisplaySlots(__instance);
     }
 }
 
@@ -66,7 +66,7 @@ internal static class WeaponReloadStateGuardPatch
 {
     private static bool Prefix(WeaponScript __instance)
     {
-        return !MultiplayerSession.IsConnected || LocalPlayerReplication.PrepareWeaponReload(__instance);
+        return !MultiplayerSession.IsInLobby || LocalPlayerReplication.PrepareWeaponReload(__instance);
     }
 }
 

@@ -15,7 +15,7 @@ internal static class ObserverActivationPatch
 
     private static void Postfix(bool __state)
     {
-        if (!__state) return;
+        if (!__state || !MultiplayerSession.IsInLobby) return;
         ObserverSystem.EndOriginalActivation();
         ObserverSystem.MarkActive();
         Application.targetFrameRate = -1;
@@ -33,7 +33,7 @@ internal static class ObserverTargetPatch
 {
     private static void Prefix(PlayerScript __instance, out bool __state)
     {
-        __state = __instance.observed;
+        __state = MultiplayerSession.IsInLobby && __instance.observed;
         if (!__state) return;
         __instance.sequence2Index = 0;
         __instance.observed = false;
@@ -55,6 +55,8 @@ internal static class ObserverTargetPatch
 [HarmonyPatch(typeof(GameManager), nameof(GameManager.Pause))]
 internal static class ObserverPausePatch
 {
+    private static bool IsObserved(bool observed) => !MultiplayerSession.IsInLobby && observed;
+
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var observed = AccessTools.Field(typeof(PlayerScript), nameof(PlayerScript.observed));
@@ -63,8 +65,8 @@ internal static class ObserverPausePatch
         {
             if (i.LoadsField(observed))
             {
-                yield return new CodeInstruction(OpCodes.Pop);
-                yield return new CodeInstruction(OpCodes.Ldc_I4_0);
+                yield return i;
+                yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(ObserverPausePatch), nameof(IsObserved)));
             }
             else yield return i;
         }

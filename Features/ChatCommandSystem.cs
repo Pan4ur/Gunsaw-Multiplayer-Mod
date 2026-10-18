@@ -5,6 +5,9 @@ internal sealed class ChatCommandSystem
 {
     internal bool TryHandle(string message)
     {
+        if (!MultiplayerSession.IsInLobby) 
+            return false;
+        
         if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase))
             return Kill();
         if (IsCommand(message, "/spawn"))

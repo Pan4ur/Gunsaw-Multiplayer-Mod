@@ -6,7 +6,7 @@ using HarmonyLib;
 [HarmonyPatch(typeof(GameManager), "Update")]
 internal static class PreventAbomination
 {
-    private static KeyCode AbominationKey() => MultiplayerSession.IsConnected ? KeyCode.None : KeyCode.R;
+    private static KeyCode AbominationKey() => MultiplayerSession.IsInLobby ? KeyCode.None : KeyCode.R;
 
     // Replace all KeyCode.R with KeyCode.None
     [HarmonyTranspiler]
@@ -34,7 +34,7 @@ internal static class PreventAbomination
 
     private static void Postfix(GameManager __instance)
     {
-        if (!MultiplayerSession.IsConnected || PlayerScript.player == null || PlayerScript.player.reformText == null) return;
+        if (!MultiplayerSession.IsInLobby || PlayerScript.player == null || PlayerScript.player.reformText == null) return;
         PlayerScript.player.reformText.SetActive(false);
     }
 }

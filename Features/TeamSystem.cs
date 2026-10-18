@@ -37,7 +37,12 @@ internal static class TeamSystem
 
     internal static void Tick()
     {
-        if (!Enabled || !MultiplayerSession.IsConnected || SceneManager.GetActiveScene().name == "LevelSelect") return;
+        if (!MultiplayerSession.IsActive)
+        {
+            if (Enabled) Configure(false, "");
+            return;
+        }
+        if (!Enabled || !MultiplayerSession.IsInLobby || SceneManager.GetActiveScene().name == "LevelSelect") return;
         if (playerTeams.ContainsKey(MultiplayerSession.LocalPeerId)) return;
         if (panel == null) CreatePanel();
         else
@@ -49,7 +54,7 @@ internal static class TeamSystem
 
     internal static void Choose(string name)
     {
-        if (!Enabled || !HasTeam(name)) return;
+        if (!MultiplayerSession.IsInLobby || !Enabled || !HasTeam(name)) return;
         if (MultiplayerSession.IsHost) Set(MultiplayerSession.LocalPeerId, name);
         else MultiplayerSession.Send(new TeamPacket(MultiplayerSession.LocalPeerId, name));
     }

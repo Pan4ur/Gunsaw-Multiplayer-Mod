@@ -237,10 +237,10 @@ internal sealed class WorldReplication : MonoBehaviour
             if (scene.name == "LevelEditor") return;
             var isHost = MultiplayerSession.IsHost;
             var sceneChanged = activeSceneHandle != scene.handle;
-            var roleChanged = wasConnected && wasHost != isHost;
+            var roleChanged = (wasConnected || wasHost) && wasHost != isHost;
             if (sceneChanged || roleChanged)
             {
-                if (wasConnected) RestoreClientWorld();
+                if (wasConnected || wasHost) RestoreClientWorld();
                 activeSceneHandle = scene.handle;
                 nextSnapshot = 0f;
                 discoveredScene = false;
@@ -248,7 +248,7 @@ internal sealed class WorldReplication : MonoBehaviour
 
             if (!MultiplayerSession.IsConnected)
             {
-                if (wasConnected) RestoreClientWorld();
+                if (wasConnected && !isHost) RestoreClientWorld();
                 if (isHost && !discoveredScene) DiscoverScene();
                 wasConnected = false;
                 wasHost = isHost;
@@ -258,6 +258,7 @@ internal sealed class WorldReplication : MonoBehaviour
             if (!wasConnected)
             {
                 nextSnapshot = 0f;
+                nextFullWorldSnapshot = 0f;
                 discoveredScene = false;
             }
 
@@ -294,30 +295,19 @@ internal sealed class WorldReplication : MonoBehaviour
             while (MultiplayerSession.TryTakeWorldInteraction(out _, out remoteInteraction)) ApplyRemoteLampBreak(remoteInteraction);
 
             byte[] snapshot;
-            byte[] latestSnapshot = null;
-            var latestSnapshotSequence = lastReceivedWorldSnapshotSequence;
-            var queueStarted = MultiplayerPerformance.StartPhase();
-            while (MultiplayerSession.TryTakeWorldSnapshot(out snapshot))
-            {
-                if (!WorldSnapshotPacket.TryReadSequence(snapshot, out var sequence)) continue;
-                if (latestSnapshot == null || IsNewerWorldSnapshotSequence(sequence, latestSnapshotSequence))
-                {
-                    latestSnapshot = snapshot;
-                    latestSnapshotSequence = sequence;
-                }
-            }
-
-            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
-            if (latestSnapshot != null)
+            var snapshotQueueStarted = MultiplayerPerformance.StartPhase();
+            var hasSnapshot = MultiplayerSession.TryTakeWorldSnapshot(out snapshot);
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, snapshotQueueStarted);
+            if (hasSnapshot)
             {
                 var readStarted = MultiplayerPerformance.StartPhase();
-                ReadSnapshot(latestSnapshot);
+                ReadSnapshot(snapshot);
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotRead, readStarted);
             }
 
             WorldEnvironmentPacket environment;
             WorldEnvironmentPacket? latestEnvironment = null;
-            queueStarted = MultiplayerPerformance.StartPhase();
+            var queueStarted = MultiplayerPerformance.StartPhase();
             while (MultiplayerSession.TryTakeWorldEnvironment(out environment)) latestEnvironment = environment;
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSnapshotQueue, queueStarted);
             if (latestEnvironment.HasValue)

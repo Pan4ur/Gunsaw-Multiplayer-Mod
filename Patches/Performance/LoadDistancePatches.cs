@@ -51,7 +51,7 @@ internal static class MultiplayerDroppedWeaponAmmoIconPatch
 {
     private static void Postfix(DroppedWeapon __instance)
     {
-        if (__instance == null) return;
+        if (!MultiplayerSession.IsInLobby || __instance == null) return;
         var icon = __instance.transform.Find("myAmmo");
         if (icon == null) return;
         icon.localPosition = Vector3.up * 0.6f;
@@ -73,6 +73,7 @@ internal static class MultiplayerCrateSpawnerTickCullPatch
 {
     private static bool Prefix(MiniCrateSpawner __instance, ref float ___curSpawnCool)
     {
+        if (!MultiplayerSession.IsInLobby) return true;
         if (!LoadDistanceSystem.ShouldTickWorld(__instance)) return false;
 
         ___curSpawnCool -= Time.deltaTime;

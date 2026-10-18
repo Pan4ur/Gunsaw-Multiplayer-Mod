@@ -150,8 +150,8 @@ internal static partial class MultiplayerSession
             p2pHelloSent = true;
             p2pConnectStartedTicks = DateTime.UtcNow.Ticks;
         }
-        isHost = true;
         socket = ConnectRelay(relayAddress, lobbyId, relayKey);
+        isHost = true;
         MultiplayerSession.lobbyId = lobbyId ?? "";
         if (connectionMode != ConnectionMode.Relay) EnableP2P();
         ApplyHostSettings(settings, parsed, false);
@@ -386,13 +386,15 @@ internal static partial class MultiplayerSession
         }
     }
 
-    // Is connected and more then 1 players
+    internal static bool IsInLobby { get { lock (statusLock) return socket != null &&
+        relayConnected && (isHost || peers.Count > 0); } }
+
     internal static bool IsConnected { get { lock (statusLock) return socket != null &&
         relayConnected && peers.Count > 0; } }
 
     internal static bool IsActive { get { return socket != null; } }
     internal static bool IsHosting { get { return socket != null && relayConnected && isHost; } }
-    internal static bool IsHost { get { return isHost; } }
+    internal static bool IsHost => IsHosting;
     internal static bool PvpEnabled { get; private set; }
     internal static bool BlackoutEnabled { get; private set; }
     internal static bool RestrictLightEnabled { get; private set; }
@@ -605,12 +607,13 @@ internal static partial class MultiplayerSession
 
     private static void UpdateP2PConnection(long now)
     {
-        if (socket == null || !relayConnected || connectionMode == ConnectionMode.Relay) return;
+        if (socket == null || !relayConnected) return;
         if (now >= nextP2PKeepAliveTicks)
         {
             nextP2PKeepAliveTicks = now + P2PKeepAliveTicks;
             SendControlToRelay(UdpKeepAlive);
         }
+        if (connectionMode == ConnectionMode.Relay) return;
         RetryP2PProbes(now);
         if (isHost || p2pHelloSent) return;
         if (IsP2PConnected(hostPeerId))
@@ -690,6 +693,11 @@ internal static partial class MultiplayerSession
         GGOnDeath = GunGameDeathMode.Reset;
         BrutalModeEnabled = false;
         AllowObserver = true;
+        BlackoutEnabled = false;
+        RestrictLightEnabled = false;
+        TeamsEnabled = false;
+        TeamsCfg = "";
+        LobbySettingsReceived = false;
         lock (statusLock)
         {
             peers.Clear();

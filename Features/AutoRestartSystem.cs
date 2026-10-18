@@ -4,14 +4,26 @@ using UnityEngine.SceneManagement;
 internal static class AutoRestartSystem
 {
     private static float restartAt = -1f;
+    private static int sceneHandle = int.MinValue;
+    private static bool teamMatchStarted;
 
     internal static void Tick(bool enabled)
     {
         if (!enabled || !MultiplayerSession.IsHosting || GameManager.main == null || SceneManager.GetActiveScene().name == "LevelSelect")
         {
             restartAt = -1f;
+            sceneHandle = int.MinValue;
+            teamMatchStarted = false;
             return;
         }
+        var currentScene = SceneManager.GetActiveScene().handle;
+        if (sceneHandle != currentScene)
+        {
+            sceneHandle = currentScene;
+            restartAt = -1f;
+            teamMatchStarted = false;
+        }
+        if (!TeamSystem.Enabled) teamMatchStarted = false;
 
         var alivePlayers = 0;
         var aliveTeams = new HashSet<string>();
@@ -21,7 +33,8 @@ internal static class AutoRestartSystem
             if (localBody.isAlive)
             {
                 alivePlayers++;
-                if (TeamSystem.Enabled) aliveTeams.Add(TeamSystem.Name(MultiplayerSession.LocalPeerId));
+                if (TeamSystem.Enabled && !string.IsNullOrEmpty(TeamSystem.Name(MultiplayerSession.LocalPeerId)))
+                    aliveTeams.Add(TeamSystem.Name(MultiplayerSession.LocalPeerId));
             }
         }
         foreach (var remote in NetworkAvatarManager.RemotePlayers())
@@ -30,11 +43,13 @@ internal static class AutoRestartSystem
             if (remote.Body.isAlive)
             {
                 alivePlayers++;
-                if (TeamSystem.Enabled) aliveTeams.Add(TeamSystem.Name(remote.PeerId));
+                if (TeamSystem.Enabled && !string.IsNullOrEmpty(TeamSystem.Name(remote.PeerId)))
+                    aliveTeams.Add(TeamSystem.Name(remote.PeerId));
             }
         }
 
-        var restart = (alivePlayers == 0 || (TeamSystem.Enabled && aliveTeams.Count <= 1));
+        if (aliveTeams.Count > 1) teamMatchStarted = true;
+        var restart = alivePlayers == 0 || (TeamSystem.Enabled && teamMatchStarted && aliveTeams.Count <= 1);
         
         if (!restart)
         {

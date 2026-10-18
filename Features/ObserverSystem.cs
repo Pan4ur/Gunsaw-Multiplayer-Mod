@@ -57,7 +57,7 @@ internal static class ObserverSystem
                 latestState.Rotation, observerActive), peerId);
     }
 
-    internal static void BeginOriginalActivation() => suppressObserverError = true;
+    internal static void BeginOriginalActivation() => suppressObserverError = MultiplayerSession.IsInLobby;
     internal static void EndOriginalActivation() => suppressObserverError = false;
     internal static bool SuppressError(object message) => suppressObserverError && message is string text && text == "why did you do that";
 

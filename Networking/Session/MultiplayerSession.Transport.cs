@@ -511,6 +511,7 @@ internal static partial class MultiplayerSession
             cancellation = socketCancellation;
             worker = sendThread;
             relayConnected = false;
+            isHost = false;
             socket = null;
             socketCancellation = null;
             sendThread = null;

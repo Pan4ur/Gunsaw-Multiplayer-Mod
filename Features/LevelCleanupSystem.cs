@@ -2,16 +2,14 @@ using UnityEngine;
 
 internal static class LevelCleanupSystem
 {
-    private const float Lifetime = 120f;
     private static readonly HashSet<GameObject> bloodProps = [];
 
     internal static void Register(GameObject gameObject)
     {
-        if (gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop" &&
+        if (!MultiplayerSession.IsInLobby || gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop" &&
             gameObject.name != "BulletHole" && gameObject.name != "MP BulletHole")) return;
         if (!bloodProps.Add(gameObject)) return;
         gameObject.AddComponent<LevelPropLifetime>();
-        UnityEngine.Object.Destroy(gameObject, Lifetime);
     }
 
     internal static void Unregister(GameObject gameObject)
@@ -33,6 +31,14 @@ internal static class LevelCleanupSystem
 
 internal sealed class LevelPropLifetime : MonoBehaviour
 {
+    private void Awake() => Invoke(nameof(Expire), 120f);
+
+    private void Expire()
+    {
+        if (MultiplayerSession.IsInLobby) Destroy(gameObject);
+        else Destroy(this);
+    }
+
     private void OnDestroy()
     {
         LevelCleanupSystem.Unregister(gameObject);

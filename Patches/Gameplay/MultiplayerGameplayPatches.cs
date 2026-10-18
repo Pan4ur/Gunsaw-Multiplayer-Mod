@@ -69,6 +69,7 @@ internal static class ClientLevitatorPropPatch
 
     internal static bool ShouldReleaseGrab(LevitatorScript levitator)
     {
+        if (!MultiplayerSession.IsInLobby) return false;
         var body = levitator.refBody;
         return body != null && (!body.isAlive ||
             (GameManager.main != null && GameManager.main.hardMode && !body.IsConsc()));
@@ -179,7 +180,7 @@ internal static class MultiplayerPlayerSlowmoPatch
             LobbyHealthRule.Apply(__instance.bodyScript, MultiplayerSession.HealthFactor);
         if (MultiplayerSession.IsActive && __instance != null)
             LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
-        if (MultiplayerSession.IsConnected)
+        if (MultiplayerSession.IsInLobby)
         {
             LocalPlayerReplication.EnsureLocalPlayerSingleton();
             if (!LocalPlayerReplication.PrepareLocalPlayerUpdate(__instance))
@@ -499,7 +500,7 @@ internal static class MultiplayerVanillaBodySwitchPatch
 {
     private static bool Prefix(LimbScript limb)
     {
-        if (!MultiplayerSession.IsConnected) return true;
+        if (!MultiplayerSession.IsInLobby) return true;
         var player = PlayerScript.player;
         if (player != null && player.bodyScript != null && !player.bodyScript.isAlive) return false;
         return true;
@@ -631,7 +632,7 @@ internal static class MultiplayerTimeControl
     internal static SlowmoKeyState BeginPlayerUpdate(PlayerScript player)
     {
         var state = new SlowmoKeyState();
-        if (!MultiplayerSession.IsConnected || player == null) return state;
+        if (!MultiplayerSession.IsInLobby || player == null) return state;
         state.Keys = player.keys;
         if (state.Keys != null && state.Keys.TryGetValue("Slowmo", out state.Key))
         {
@@ -650,14 +651,14 @@ internal static class MultiplayerTimeControl
             state.Keys["Slowmo"] = state.Key;
             state.Restore = false;
         }
-        if (!MultiplayerSession.IsConnected) return;
+        if (!MultiplayerSession.IsInLobby) return;
         if (DisablePlayerSlowmo(player)) ResetSlowmoContrast(ScreenFXManager.main);
         ForceNormalTime();
     }
 
     internal static void SuppressTimeSlowdown(ScreenFXManager screen)
     {
-        if (!MultiplayerSession.IsConnected) return;
+        if (!MultiplayerSession.IsInLobby) return;
         if (screen != null)
         {
             screen.slowmoTime = 0f;
@@ -670,7 +671,7 @@ internal static class MultiplayerTimeControl
 
     internal static void KeepMultiplayerActive()
     {
-        if (!MultiplayerSession.IsConnected || Application.isFocused) return;
+        if (!MultiplayerSession.IsInLobby || Application.isFocused) return;
         var manager = GameManager.main;
         if (manager != null) manager.paused = false;
         Time.timeScale = 1f;
@@ -715,7 +716,7 @@ internal static class ClientCrateDamagePatch
     private static bool Prefix(CrateScript __instance, float dmg, out CrateDebrisCapture __state)
     {
         __state = null;
-        if (!MultiplayerSession.IsConnected) return true;
+        if (!MultiplayerSession.IsInLobby) return true;
         
         if (GunsawMultiplayerPlugin.World != null &&
             GunsawMultiplayerPlugin.World.TryProtectNetworkCrateDebrisDamage(__instance, dmg)) return false;
@@ -742,7 +743,7 @@ internal static class ClientCrateDamagePatch
 
     private static void Postfix(CrateScript __instance, CrateDebrisCapture __state)
     {
-        if (MultiplayerSession.IsConnected && MultiplayerSession.IsHost)
+        if (MultiplayerSession.IsHosting)
         {
             if (__state == null || GunsawMultiplayerPlugin.World == null) return;
             var created = new List<Rigidbody2D>();
@@ -783,7 +784,7 @@ internal static class ClientPalletDebrisAutoBreakPatch
 {
     private static bool Prefix(CrateScript __instance)
     {
-        if (!MultiplayerSession.IsConnected || GunsawMultiplayerPlugin.World == null) return true;
+        if (!MultiplayerSession.IsInLobby || GunsawMultiplayerPlugin.World == null) return true;
         return !GunsawMultiplayerPlugin.World.IsNetworkCrateDebris(__instance);
     }
 }
@@ -850,7 +851,7 @@ internal static class ClientNpcDeathPatch
     private static bool Prefix(BodyScript __instance)
     {
         NetworkAvatarManager.CaptureDeathCause(__instance);
-        if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer)
+        if (MultiplayerSession.IsInLobby && __instance != null && __instance.isPlayer)
             __instance.dropWeapon = false;
         if (LocalPlayerReplication.BlockLocalRespawnDeath(__instance)) return false;
         if (NetworkAvatarManager.HandleHostRemoteDeath(__instance)) return false;
@@ -863,7 +864,7 @@ internal static class ClientNpcDeathPatch
     private static void Postfix(BodyScript __instance)
     {
         var localPlayer = PlayerScript.player;
-        if (MultiplayerSession.IsConnected && __instance != null && __instance.isPlayer && localPlayer != null && localPlayer.bodyScript == __instance)
+        if (MultiplayerSession.IsInLobby && __instance != null && __instance.isPlayer && localPlayer != null && localPlayer.bodyScript == __instance)
             __instance.DropAllWeapons();
         
         GunGameRule.RecordDeath(__instance);
@@ -1517,7 +1518,7 @@ internal static class MultiplayerExplosionPatch
     private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force, ref float damage, ref int fireAmount, out NetworkAvatarManager.ShotState __state)
     {
         var projectile = NetworkAvatarManager.ResolveExplosionProjectile(explosionObj);
-        if (projectile != null && (projectile.GetComponentInChildren<RocketProjectile>(true) != null || projectile.GetComponentInChildren<GrenadeScript>(true) != null))
+        if (MultiplayerSession.IsInLobby && projectile != null && (projectile.GetComponentInChildren<RocketProjectile>(true) != null || projectile.GetComponentInChildren<GrenadeScript>(true) != null))
              damage *= 2f; // Not vanilla but fun
         if (NetworkAvatarManager.ShouldSuppressClientProjectileFires(projectile)) fireAmount = 0;
         __state = NetworkAvatarManager.BeginProjectileExplosion(projectile);
@@ -1536,8 +1537,13 @@ internal static class MultiplayerExplosionPatch
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class ExplosionCrackLifetimePatch
 {
+    private static void DestroyCrack(UnityEngine.Object crack, float lifetime)
+    {
+        if (MultiplayerSession.IsInLobby) UnityEngine.Object.Destroy(crack, lifetime);
+    }
+
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
-        var destroy = AccessTools.Method(typeof(UnityEngine.Object), nameof(UnityEngine.Object.Destroy), new[] { typeof(UnityEngine.Object), typeof(float) });
+        var destroy = AccessTools.Method(typeof(ExplosionCrackLifetimePatch), nameof(DestroyCrack));
         var foundPrefab = false;
 
         foreach (var instruction in instructions)

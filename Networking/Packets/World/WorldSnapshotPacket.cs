@@ -235,6 +235,39 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
         return ReadBodies(ref reader, sceneEpoch, sequence);
     }
 
+    internal static WorldSnapshotPacket Merge(ArraySegment<byte> pendingData, ArraySegment<byte> incomingData)
+    {
+        var pendingReader = new PacketReader(pendingData);
+        var pending = Read(ref pendingReader);
+        var incomingReader = new PacketReader(incomingData);
+        var incoming = Read(ref incomingReader);
+        
+        if (pending.SceneEpoch != incoming.SceneEpoch)
+            return incoming;
+            
+        var older = pending;
+        var newer = incoming;
+        
+        if (unchecked((uint)(incoming.Sequence - pending.Sequence)) >= 0x80000000u)
+        {
+            older = incoming;
+            newer = pending;
+        }
+        
+        var states = new Dictionary<ulong, WorldBodySnapshot>();
+        
+        foreach (var body in older.Bodies)
+            states[body.Id] = body;
+         
+        foreach (var body in newer.Bodies)
+            states[body.Id] = body;
+            
+        if (states.Count > ushort.MaxValue)
+            throw new InvalidDataException("Too many pending world bodies.");
+        
+        return new WorldSnapshotPacket(newer.SceneEpoch, newer.Sequence, states.Values.ToArray());
+    }
+
     internal static void ReadHeader(ref PacketReader reader, out int sceneEpoch, out int sequence)
     {
         sceneEpoch = reader.ReadInt32();

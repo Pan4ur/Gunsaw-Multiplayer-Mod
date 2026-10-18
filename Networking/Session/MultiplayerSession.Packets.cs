@@ -194,9 +194,16 @@ internal static partial class MultiplayerSession
             }
             else if (!isHost && decodedPacket.Type == PacketType.WorldSnapshot && senderId == hostPeerId)
             {
-                var payloadReader = new PacketReader(decodedPacket.Payload);
-                var data = payloadReader.ReadRemainingBytes();
-                EnqueueLatestPayload(worldSnapshots, senderId, data);
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    var snapshot = WorldSnapshotPacket.Read(ref reader);
+                    if (!IsSnapshotEpochCurrent(snapshot.SceneEpoch)) continue;
+                    if (reader.Remaining != 0) throw new InvalidDataException("Trailing world snapshot data.");
+                    EnqueueLatestPayload(worldSnapshots, senderId, decodedPacket.Payload.ToArray());
+                }
+                catch (Exception exception) when (exception is IOException || exception is InvalidDataException)
+                { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
             else if (!isHost && decodedPacket.Type == PacketType.WorldEnvironment && senderId == hostPeerId)
             {
@@ -978,6 +985,25 @@ internal static partial class MultiplayerSession
     {
         lock (statusLock)
         {
+            if (ReferenceEquals(queue, worldSnapshots))
+            {
+                try
+                {
+                    foreach (var pending in queue)
+                    {
+                        if (pending.PeerId != peerId) continue;
+                        var merged = WorldSnapshotPacket.Merge(new ArraySegment<byte>(pending.Data), new ArraySegment<byte>(data));
+                        var writer = new PacketWriter(128);
+                        merged.Write(ref writer);
+                        data = writer.ToArray();
+                    }
+                }
+                catch (Exception exception) when (exception is IOException || exception is InvalidDataException)
+                {
+                    LogPacketDrop(PacketType.WorldSnapshot, peerId, data.Length, exception);
+                    return;
+                }
+            }
             TouchPeerLocked(peerId, null);
             if (queue.Count > 0)
             {

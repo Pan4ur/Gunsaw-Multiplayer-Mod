@@ -48,4 +48,11 @@ internal sealed class LobbyHealthFactorState : MonoBehaviour
 {
     internal float BaseMaxHealth;
     internal float BaseDyingStateThreshold;
+
+    private void Update()
+    {
+        if (MultiplayerSession.IsActive) return;
+        LobbyHealthRule.Apply(GetComponent<BodyScript>(), LobbyHealthRule.DefaultFactor);
+        Destroy(this);
+    }
 }

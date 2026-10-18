@@ -8,7 +8,7 @@ internal static class DroppedWeaponCleanupSystem
 
     internal static void Register(DroppedWeapon dropped)
     {
-        if (dropped == null || dropped.stats == null || (MultiplayerSession.IsConnected && !MultiplayerSession.IsHost)) 
+        if (!MultiplayerSession.IsHosting || dropped == null || dropped.stats == null)
             return;
         
         var lifetime = dropped.GetComponent<DroppedWeaponLifetime>();
@@ -23,8 +23,11 @@ internal sealed class DroppedWeaponLifetime : MonoBehaviour
 
     private void Update()
     {
-        if (MultiplayerSession.IsConnected && !MultiplayerSession.IsHost)
+        if (!MultiplayerSession.IsHosting)
+        {
+            Destroy(this);
             return;
+        }
         
         if (Time.unscaledTime >= ExpiresAt) 
             Destroy(gameObject);

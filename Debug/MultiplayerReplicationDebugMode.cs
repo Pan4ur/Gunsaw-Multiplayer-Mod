@@ -18,6 +18,7 @@ internal sealed class MultiplayerReplicationDebugMode : MonoBehaviour
 
     internal void Toggle()
     {
+        if (!MultiplayerSession.IsInLobby && !enabledMode) return;
         enabledMode = !enabledMode;
         if (enabledMode) EnableMode();
         else DisableMode();
@@ -31,7 +32,7 @@ internal sealed class MultiplayerReplicationDebugMode : MonoBehaviour
     private void Update()
     {
         if (!enabledMode) return;
-        if (!MultiplayerSession.IsConnected)
+        if (!MultiplayerSession.IsInLobby)
         {
             DisableMode();
             return;
@@ -80,7 +81,7 @@ internal sealed class MultiplayerReplicationDebugMode : MonoBehaviour
         freeCameraTarget = null;
         previousCameraTarget = null;
         HideCircles();
-        if (MultiplayerSession.IsHost && MultiplayerHud.Instance != null)
+        if (MultiplayerHud.Instance != null)
             MultiplayerHud.Instance.SetReplicationDebugOverlay(false);
         MultiplayerHud.AddSystemMessage("LOD debug OFF");
     }

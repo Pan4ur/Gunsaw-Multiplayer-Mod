@@ -33,8 +33,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     internal void Configure(MultiplayerHud hud)
     {
-        var playerExists = PlayerScript.player != null;
-        if (!playerExists && !MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected)
+        if (!MultiplayerSession.IsInLobby && string.IsNullOrEmpty(ArsenalMenu.Prompt))
         {
             if (root != null) root.SetActive(false);
             return;
@@ -47,6 +46,20 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         
         if (!root.activeSelf) root.SetActive(true);
+        if (!MultiplayerSession.IsInLobby)
+        {
+            SetActive(hostPanel, false);
+            SetActive(playersPanel, false);
+            SetActive(chatPanel, false);
+            SetActive(finalLeaderboardPanel, false);
+            spectatorText.gameObject.SetActive(false);
+            spectatorHint.gameObject.SetActive(false);
+            respawnText.gameObject.SetActive(false);
+            statsText.gameObject.SetActive(false);
+            activationText.text = ArsenalMenu.Prompt;
+            activationText.gameObject.SetActive(true);
+            return;
+        }
         SetActive(hostPanel, MultiplayerSession.IsHosting);
         SetActive(playersPanel, Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
         SetActive(chatPanel, true);
