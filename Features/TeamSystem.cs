@@ -88,6 +88,10 @@ internal static class TeamSystem
     {
         if (!Enabled || string.IsNullOrWhiteSpace(value) || !playerTeams.TryGetValue(id, out var playerTeam))
             return false;
+            
+        if (int.TryParse(value, out var teamId))
+            return teamId >= 0 && teamId < teams.Count && teams[teamId].Name == playerTeam;
+            
         foreach (var team in teams)
         {
             if (!string.Equals(team.Name, playerTeam, StringComparison.OrdinalIgnoreCase)) continue;

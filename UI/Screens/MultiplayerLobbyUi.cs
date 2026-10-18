@@ -315,6 +315,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var teamsCfgRow = CreateSettingsRow(settings);
         CreateText(teamsCfgRow, "TEAMS CFG", new Vector2(-185f, 0f), new Vector2(140f, 32f), 14);
         teamsCfgInput = CreateInput(teamsCfgRow, new Vector2(80f, 0f), new Vector2(330f, 36f), 512, value => plugin.lobbySettings.TeamsCfg = value);
+        AddTooltip(teamsCfgRow.gameObject, "Team spawn IDs follow this order: 0 = first team, 1 = second team, etc.");
         var initialScaleRow = CreateSettingsRow(settings);
         CreateText(initialScaleRow, "INITIAL SCALE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         initialScaleInput = CreateInput(initialScaleRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.lobbySettings.InitialScale = value);
