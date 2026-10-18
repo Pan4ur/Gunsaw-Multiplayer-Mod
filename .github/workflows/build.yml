@@ -124,10 +124,12 @@ jobs:
           }
           $notesPath = Join-Path $env:RUNNER_TEMP 'nightly-notes.md'
           @"
-          Automated nightly build
+          Nightly build
 
           Commit: $env:GITHUB_SHA
           Build: $env:GITHUB_SERVER_URL/$env:GH_REPO/actions/runs/$env:GITHUB_RUN_ID
+
+          !! For testing and debuging only !! If you need a stable version use https://github.com/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest
           "@ | Set-Content -LiteralPath $notesPath -Encoding utf8
           if (-not $release) {
             gh release create nightly --verify-tag --draft --prerelease --latest=false --title 'Nightly (test build)' --notes-file $notesPath
