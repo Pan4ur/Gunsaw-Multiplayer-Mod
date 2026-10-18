@@ -3,6 +3,7 @@
 public class WorldEnvironmentReplication
 {
     private readonly HashSet<string> seenSnapshotAudio = [];
+    private readonly HashSet<ActivateZoneScript> vehicleZones = [];
     
     internal void RefreshButtons()
     {
@@ -236,12 +237,41 @@ public class WorldEnvironmentReplication
         WorldReplication.Destroy(button);
     }
     
-    // hacky fix but i hope it doesnt fuckup the level logic
+    private void UpdateZonesInVehicle(BodyScript body)
+    {
+        if (body == null || !body.isAlive || !body.inVehicle || body.curVehicle == null)
+        {
+            vehicleZones.Clear();
+            return;
+        }
+        
+        foreach (var pair in WorldReplication.Instance.activationZones)
+        {
+            var zone = pair.Value;
+            var collider = zone == null ? null : zone.GetComponent<Collider2D>();
+            
+            if (zone == null || !zone.isActiveAndEnabled || collider == null || !collider.enabled || !collider.OverlapPoint(body.transform.position))
+            {
+                vehicleZones.Remove(zone);
+                continue;
+            }
+            
+            if (!vehicleZones.Add(zone))
+                continue;
+                
+            if (MultiplayerSession.IsHost) 
+                WorldReplication.Instance.ActivateLocalZone(zone, false);
+            else 
+                WorldReplication.Instance.QueueZoneActivation(zone);
+        }
+    }
+
     internal void UpdateZonePrompt()
     {
         WorldReplication.Instance.promptZone = null;
         var player = PlayerScript.player;
         var body = player == null ? null : player.bodyScript;
+        UpdateZonesInVehicle(body);
         if (body == null || !body.isAlive) return;
         foreach (var pair in WorldReplication.Instance.activationZones)
         {
