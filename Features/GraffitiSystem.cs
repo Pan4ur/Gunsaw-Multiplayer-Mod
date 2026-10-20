@@ -108,7 +108,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
             return;
         }
 
-        if (MultiplayerHud.IsTyping)
+        if (MultiplayerHud.IsTyping || Controls.IsTextInputSelected)
         {
             Cancel();
             return;

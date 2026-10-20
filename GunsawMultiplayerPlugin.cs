@@ -280,7 +280,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             SceneManager.LoadScene(sceneToLoad);
         }
 
-        if (MultiplayerHud.IsTyping || (multiplayerHud != null && multiplayerHud.ChatOpen)) return;
+        if (MultiplayerHud.IsTyping || Controls.IsTextInputSelected || (multiplayerHud != null && multiplayerHud.ChatOpen)) return;
         if (Input.GetKeyDown(Controls.keys[Controls.PAIN_SOUND]) && !ArsenalMenu.ConsumesWhineKey(Controls.keys[Controls.PAIN_SOUND]))
         {
             var body = PlayerScript.player?.bodyScript;

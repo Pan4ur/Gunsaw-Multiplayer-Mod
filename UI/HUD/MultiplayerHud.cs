@@ -157,7 +157,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         else if (networkStatsObject != null) DestroyNetworkStatsWidget();
         if (ArsenalMenu.IsOpen) return;
         bool chatOpenKeyDown = Input.GetKeyDown(Controls.keys[Controls.OPEN_CHAT]);
-        if (!chatOpen && chatOpenKeyDown)
+        if (!chatOpen && chatOpenKeyDown && CanOpenChat(Controls.keys[Controls.OPEN_CHAT]))
         {
             chatOpen = true;
             IsTyping = true;
@@ -183,6 +183,14 @@ internal sealed class MultiplayerHud : MonoBehaviour
         }
         if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
             Submit();
+    }
+
+    private static bool CanOpenChat(KeyCode key)
+    {
+        if (MissionManager.main != null && MissionManager.main.finished && (key == KeyCode.Return || key == KeyCode.KeypadEnter))
+            return false;
+
+        return !Controls.IsTextInputSelected;
     }
 
     private static bool GetChatKeyDown(KeyCode key)
@@ -234,9 +242,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         }
         else
         {
-            ushort senderId;
-            HostFpsPacket packet;
-            while (MultiplayerSession.TryTakeHostFps(out senderId, out packet)) hostFps = packet.FPS;
+            while (MultiplayerSession.TryTakeHostFps(out _, out var packet)) hostFps = packet.FPS;
         }
         if (MultiplayerSession.IsHost)
         {

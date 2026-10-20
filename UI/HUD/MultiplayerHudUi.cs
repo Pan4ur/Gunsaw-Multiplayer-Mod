@@ -61,7 +61,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             return;
         }
         SetActive(hostPanel, MultiplayerSession.IsHosting);
-        SetActive(playersPanel, Input.GetKey(Controls.keys[Controls.SEE_PLAYER]) && !hud.ChatOpen);
+        SetActive(playersPanel, !hud.ChatOpen && !Controls.IsTextInputSelected && Input.GetKey(Controls.keys[Controls.SEE_PLAYER]));
         SetActive(chatPanel, true);
         chatOpenBackground.raycastTarget = hud.ChatOpen;
        // hostText.text = "HOSTING  " + MultiplayerSession.PlayerCount + "/" + MultiplayerSession.MaxPlayers + " PLAYERS";
@@ -562,7 +562,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         var active = new HashSet<BodyScript>();
         var camera = Camera.main;
 
-        if (Input.GetKeyDown(Controls.keys[Controls.TOGGLE_PLAYER_MARKERS]))
+        if (!MultiplayerHud.IsTyping && !Controls.IsTextInputSelected && Input.GetKeyDown(Controls.keys[Controls.TOGGLE_PLAYER_MARKERS]))
             coopMarkersVisible = !coopMarkersVisible;
 
         if (camera == null || MultiplayerSession.PvpEnabled || !coopMarkersVisible)

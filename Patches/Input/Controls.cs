@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using HarmonyLib;
 using TMPro;
+using UnityEngine.EventSystems;
 
 // Stores constants to use across all patches and precaches them
 public static class Controls
@@ -18,6 +19,15 @@ public static class Controls
     public const int PAIN_SOUND = 4;
     public const int GRAFFITI = 5;
     public const int TOGGLE_HEADLAMP = 6;
+
+    internal static bool IsTextInputSelected
+    {
+        get
+        {
+            var сur = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
+            return cur != null && (cur.GetComponentInParent<TMP_InputField>() != null || cur.GetComponentInParent<UnityEngine.UI.InputField>() != null);
+        }
+    }
 }
 
 // Adding GameObject of controls and their value in ControlBinder.texts, also sets default values of PlayerPrefs if it missing

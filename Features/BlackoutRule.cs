@@ -978,7 +978,7 @@ internal static class BlackoutRule
 
     private static void HandleInput()
     {
-        if (!CanApplyBlackout() || !Input.GetKeyDown(Controls.keys[Controls.TOGGLE_HEADLAMP]))
+        if (MultiplayerHud.IsTyping || Controls.IsTextInputSelected || !CanApplyBlackout() || !Input.GetKeyDown(Controls.keys[Controls.TOGGLE_HEADLAMP]))
             return;
 
         var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
