@@ -29,6 +29,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool serverListLoading;
     internal string serverListError = "";
     internal ConfigEntry<string> masterUrl;
+    internal bool firstBoot;
     private ConfigEntry<string> savedPlayerName;
     private ConfigEntry<string> savedLobbyName;
     private readonly List<Func<bool>> lobbySettingSavers = [];
@@ -78,6 +79,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         KeepMultiplayerRunningInBackground();
         Instance = this;
         _chatCommandSystem = new ChatCommandSystem();
+        firstBoot = !File.Exists(Config.ConfigFilePath);
         masterUrl = Config.Bind("Network", "MasterUrl", "https://expie.fun", "Lobby directory URL.");
         string normalizedServer;
         if (TryNormalizeServerAddress(masterUrl.Value, out normalizedServer)) masterUrl.Value = normalizedServer;

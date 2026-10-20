@@ -105,7 +105,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         if (!hud.ChatOpen) chatWasOpen = false;
         input.gameObject.SetActive(hud.ChatOpen);
-        chatHint.gameObject.SetActive(!hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player || PlayerScript.player.canvasVisible));
+        chatHint.gameObject.SetActive(GunsawMultiplayerPlugin.Instance.firstBoot && !hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player || PlayerScript.player.canvasVisible));
         commandHints.gameObject.SetActive(hud.ChatOpen);
       
         if (!hud.ChatOpen) 
