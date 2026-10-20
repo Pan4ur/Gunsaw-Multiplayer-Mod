@@ -89,18 +89,25 @@ internal sealed class EditorDocument
             Objects.TryGetValue(change.Id, out var original);
             var exists = target.Objects.TryGetValue(change.Id, out var current);
             var baseline = original.Part;
+            var baselineScale = original.Scale;
             
             if (pendingChanges != null && pendingChanges.TryGetValue(change.Id, out var sent))
             {
+                baselineScale = AcknowledgedValue(original.Scale, sent.Scale, current.Scale);
                 if (Same(sent.Part, current.Part)) baseline = sent.Part;
                 else if (baseline != null && sent.Part != null && current.Part != null)
                     baseline = PendingBaseline(baseline, sent.Part, current.Part);
             }
           
-            var merged = MergePart(baseline, change.Part, current.Part, out var conflict);
+            var merged = MergePart(baseline, change.Part, current.Part, baselineScale, change.Scale, current.Scale, out var conflict);
+            var scale = UnityEngine.Vector3.one;
+            if (merged != null)
+                scale = baseline == null || change.Part == null || current.Part == null
+                    ? ReferenceEquals(merged, change.Part) ? change.Scale : current.Scale
+                    : MergeValue(baselineScale, change.Scale, current.Scale, ref conflict);
             conflicts |= conflict;
-            if (!Same(merged, current.Part))
-                changes.Add(new EditorObjectChange(change.Id, exists ? current.Version : 0, merged));
+            if (!Same(merged, current.Part) || merged != null && !scale.Equals(current.Scale))
+                changes.Add(new EditorObjectChange(change.Id, exists ? current.Version : 0, merged, scale));
         }
       
         Level? environment = null;
@@ -131,7 +138,8 @@ internal sealed class EditorDocument
     }
 
     internal bool Contains(EditorEditPacket edit) => edit.Changes.All(change =>
-        Same(Objects.TryGetValue(change.Id, out var current) ? current.Part : null, change.Part)) &&
+        Same(Objects.TryGetValue(change.Id, out var current) ? current.Part : null, change.Part) &&
+        (change.Part == null || current.Scale.Equals(change.Scale))) &&
         (edit.Environment == null || SameEnvironment(edit.Environment, Environment));
 
     private static LevelPart PendingBaseline(LevelPart original, LevelPart sent, LevelPart current)
@@ -148,16 +156,17 @@ internal sealed class EditorDocument
 
     private static T AcknowledgedValue<T>(T original, T sent, T current) => EqualityComparer<T>.Default.Equals(sent, current) ? sent : original;
 
-    private static LevelPart? MergePart(LevelPart? baseline, LevelPart? local, LevelPart? current, out bool conflict)
+    private static LevelPart? MergePart(LevelPart? baseline, LevelPart? local, LevelPart? current,
+        UnityEngine.Vector3 baselineScale, UnityEngine.Vector3 localScale, UnityEngine.Vector3 currentScale, out bool conflict)
     {
         conflict = false;
-        if (Same(local, current))
+        if (Same(local, current) && (local == null || localScale.Equals(currentScale)))
             return current;
         
-        if (Same(current, baseline))
+        if (Same(current, baseline) && (current == null || currentScale.Equals(baselineScale)))
             return local;
         
-        if (Same(local, baseline))
+        if (Same(local, baseline) && (local == null || localScale.Equals(baselineScale)))
             return current;
         
         if (baseline == null || local == null || current == null)
@@ -211,6 +220,6 @@ internal sealed class EditorDocument
         return new EditorObjectChange(change.Id, change.Version, part == null ? null : new LevelPart(part.pos, part.rot, part.path)
         {
             id = part.id, activId = part.activId, team = part.team, size = part.size, force = part.force
-        });
+        }, change.Scale);
     }
 }

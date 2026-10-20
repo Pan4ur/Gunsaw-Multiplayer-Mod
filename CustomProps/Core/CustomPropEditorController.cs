@@ -216,7 +216,12 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private void RebuildMarkers()
     {
         foreach (var marker in markers)
-            if (marker != null) Destroy(marker.gameObject);
+            if (marker != null)
+            {
+                marker.gameObject.SetActive(false);
+                marker.transform.SetParent(null);
+                Destroy(marker.gameObject);
+            }
         markers.Clear();
         foreach (var instance in instances) CreateMarker(instance);
     }
@@ -260,6 +265,17 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private void SyncInstances()
     {
+        var known = new HashSet<CustomPropMarker>(markers);
+        foreach (Transform child in editor.transform)
+        {
+            var marker = child.GetComponent<CustomPropMarker>();
+            if (marker == null || known.Contains(marker)) continue;
+            var source = ReadInstance(marker.GetComponent<LevelPartGame>().part) ?? marker.Instance;
+            if (source == null) throw new InvalidOperationException("Invalid duplicated custom prop.");
+            if (marker.Definition == null) CustomPropRegistry.TryGet(source.TypeId, out marker.Definition);
+            marker.Instance = CloneInstance(source, marker.Definition);
+            markers.Add(marker);
+        }
         instances.Clear();
         for (var index = markers.Count - 1; index >= 0; index--)
         {
@@ -352,20 +368,36 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     internal void DuplicateSelected()
     {
-        if (editor == null || selectedField == null) return;
-        var selected = selectedField.GetValue(editor) as GameObject;
-        var marker = selected == null ? null : selected.GetComponent<CustomPropMarker>();
-        var levelPart = marker == null ? null : marker.GetComponent<LevelPartGame>();
-        var source = marker == null ? null : marker.Instance ?? ReadInstance(levelPart == null ? null : levelPart.part);
-        if (source == null) return;
-
-        if (marker.Definition == null) CustomPropRegistry.TryGet(source.TypeId, out marker.Definition);
-        marker.Instance = CloneInstance(source, marker.Definition);
-        marker.Instance.Position = marker.transform.position;
-        marker.Instance.Rotation = marker.transform.eulerAngles.z;
-        levelPart.part = ToPart(marker.Instance);
-        markers.Add(marker);
+        SyncInstances();
         RefreshInspectorImmediate();
+    }
+
+    internal GameObject[] PasteCustomParts(IEnumerable<LevelPart> parts, Vector3 center)
+    {
+        var sources = parts.Select(part => ReadInstance(part) ?? throw new InvalidOperationException("Invalid pasted custom prop.")).ToArray();
+        var created = new List<GameObject>();
+        try
+        {
+            foreach (var source in sources)
+            {
+                CustomPropRegistry.TryGet(source.TypeId, out var definition);
+                var instance = CloneInstance(source, definition);
+                instance.Position = (Vector2)center + source.Position;
+                created.Add(CreateMarker(instance).gameObject);
+            }
+            return created.ToArray();
+        }
+        catch
+        {
+            foreach (var value in created)
+            {
+                ForgetReplicatedPart(value.GetComponent<LevelPartGame>());
+                value.SetActive(false);
+                value.transform.SetParent(null);
+                Destroy(value);
+            }
+            throw;
+        }
     }
 
     internal void PrepareDuplicate()

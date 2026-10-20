@@ -23,6 +23,9 @@ internal static class EditorPacketData
             writer.WriteSingle(part.size.y);
             writer.WriteSingle(part.force.x);
             writer.WriteSingle(part.force.y);
+            writer.WriteSingle(change.Scale.x);
+            writer.WriteSingle(change.Scale.y);
+            writer.WriteSingle(change.Scale.z);
         }
     }
 
@@ -42,6 +45,7 @@ internal static class EditorPacketData
                 throw new InvalidDataException("Duplicate editor object identity.");
             
             LevelPart? part = null;
+            var scale = Vector3.one;
             if (reader.ReadBoolean())
             {
                 part = new LevelPart(new Vector2(ReadFinite(ref reader), ReadFinite(ref reader)),ReadFinite(ref reader), reader.ReadBinaryString())
@@ -55,8 +59,9 @@ internal static class EditorPacketData
                 
                 if (string.IsNullOrEmpty(part.path) || part.path.Length > 512 || part.team.Length > 1024 * 1024)
                     throw new InvalidDataException("Invalid editor object data.");
+                scale = new Vector3(ReadFinite(ref reader), ReadFinite(ref reader), ReadFinite(ref reader));
             }
-            changes[index] = new EditorObjectChange(id, version, part);
+            changes[index] = new EditorObjectChange(id, version, part, scale);
         }
         return changes;
     }

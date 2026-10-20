@@ -360,8 +360,9 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         foreach (var pair in local)
         {
             var exists = document.Objects.TryGetValue(pair.Key, out var old);
-            if (pendingIds.Contains(pair.Key) || !EditorDocument.Same(exists ? old.Part : null, pair.Value))
-                changes.Add(new EditorObjectChange(pair.Key, exists ? old.Version : 0, pair.Value));
+            var scale = objects[pair.Key].transform.localScale;
+            if (pendingIds.Contains(pair.Key) || !EditorDocument.Same(exists ? old.Part : null, pair.Value) || !old.Scale.Equals(scale))
+                changes.Add(new EditorObjectChange(pair.Key, exists ? old.Version : 0, pair.Value, scale));
         }
        
         foreach (var old in document.Objects.Values)
@@ -424,7 +425,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
     private void Commit(EditorEditPacket edit, ushort author)
     {
         var revision = checked(document.Revision + 1);
-        var changes = edit.Changes.Select(change => new EditorObjectChange(change.Id, revision, change.Part)).ToArray();
+        var changes = edit.Changes.Select(change => new EditorObjectChange(change.Id, revision, change.Part, change.Scale)).ToArray();
         var commit = new EditorCommitPacket(epoch, document.Session, revision, edit.Request, author, document.Locked, "", edit.Environment, changes);
         document.Apply(commit);
         MultiplayerSession.Send(new EditorCommitPacket(epoch, document.Session, revision, edit.Request, author, document.Locked, document.Checksum(), edit.Environment, changes));
@@ -739,6 +740,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
                         renderer.color = color;
                     }
                 }
+                component.transform.localScale = change.Scale;
                 objects[change.Id] = component;
             }
         
@@ -760,6 +762,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
             }
             else if (selectionChanged) 
                 RefreshInspector();
+            LevelEditorPlusCompatibility.RefreshSelection(editor);
         }
         finally { applying = false; }
     }
@@ -800,12 +803,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         
         CustomPropEditorController.Ensure(editor!).ForgetReplicatedPart(component);
        
-        if (editor!.currentlySelected == component.gameObject)
-        {
-            editor.currentlySelected = null;
-            editor.hasGrabPos = false;
-            editor.selectedCols?.Clear();
-        }
+        LevelEditorPlusCompatibility.ForgetSelection(editor!, component.gameObject);
        
         component.gameObject.SetActive(false);
         component.transform.SetParent(null);

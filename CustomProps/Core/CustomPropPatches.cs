@@ -1,4 +1,6 @@
 using HarmonyLib;
+using System.Reflection;
+using UnityEngine;
 
 [HarmonyPatch(typeof(LevelEditor), "Start")]
 internal static class CustomPropEditorStartPatch
@@ -12,15 +14,15 @@ internal static class CustomPropEditorStartPatch
 [HarmonyPatch(typeof(LevelEditor), "LoadLevel")]
 internal static class CustomPropEditorLoadPatch
 {
-    private static void Prefix(LevelEditor __instance)
+    private static void Prefix(LevelEditor __instance, bool __runOriginal)
     {
-        if (!LevelEditorReplication.CanEdit) return;
+        if (!__runOriginal || !LevelEditorReplication.CanEdit) return;
         CustomPropEditorController.ReadLevel(__instance);
     }
 
-    private static void Postfix(LevelEditor __instance)
+    private static void Postfix(LevelEditor __instance, bool __runOriginal)
     {
-        if (!LevelEditorReplication.CanEdit) return;
+        if (!__runOriginal || !LevelEditorReplication.CanEdit) return;
         CustomPropEditorController.FinishLevelLoad(__instance);
     }
 }
@@ -61,6 +63,55 @@ internal static class CustomPropEditorDuplicatePatch
         var controller = CustomPropEditorController.Ensure(__instance);
         if (controller != null)
             controller.DuplicateSelected();
+    }
+}
+
+[HarmonyPatch]
+internal static class CustomPropEditorPastePatch
+{
+    private static readonly FieldInfo? clipboard = typeof(LevelEditor).GetField("objectClipboard", AccessTools.all);
+    private static readonly MethodInfo? saveState = typeof(LevelEditor).GetMethod("SaveState", AccessTools.all);
+
+    private sealed class PasteState
+    {
+        internal List<LevelPart> Clipboard = null!;
+        internal GameObject[] Created = [];
+        internal bool OnlyCustom;
+    }
+
+    private static bool Prepare() => clipboard != null;
+
+    private static IEnumerable<MethodBase> TargetMethods() =>
+        typeof(LevelEditor).GetMethods(AccessTools.all).Where(method => method.Name == "PasteFromClipboard");
+
+    private static bool Prefix(LevelEditor __instance, object[] __args, out PasteState? __state)
+    {
+        __state = null;
+        if (!LevelEditorReplication.CanEdit) return false;
+        if (clipboard!.GetValue(__instance) is not List<LevelPart> parts) return true;
+        var custom = parts.Where(part => part.path == "MP/CustomProp").ToArray();
+        if (custom.Length == 0) return true;
+        var center = __args.Length > 0 && __args[0] is Vector3 position
+            ? position
+            : (Vector3)__instance.alignToGrid(Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, Camera.main.nearClipPlane + 10f)));
+        __state = new PasteState { Clipboard = parts, OnlyCustom = custom.Length == parts.Count };
+        __state.Created = CustomPropEditorController.Ensure(__instance).PasteCustomParts(custom, center);
+        clipboard.SetValue(__instance, parts.Where(part => part.path != "MP/CustomProp").ToList());
+        return true;
+    }
+
+    private static void Postfix(LevelEditor __instance, PasteState? __state, bool __runOriginal)
+    {
+        if (__state == null || !__runOriginal) return;
+        LevelEditorPlusCompatibility.SelectPasted(__instance, __state.Created, __state.OnlyCustom);
+        __instance.SetInfoText(__state.Clipboard.Count + " object(s) pasted.");
+        if (__state.OnlyCustom) saveState?.Invoke(__instance, null);
+    }
+
+    private static Exception? Finalizer(LevelEditor __instance, PasteState? __state, Exception? __exception)
+    {
+        if (__state != null) clipboard!.SetValue(__instance, __state.Clipboard);
+        return __exception;
     }
 }
 

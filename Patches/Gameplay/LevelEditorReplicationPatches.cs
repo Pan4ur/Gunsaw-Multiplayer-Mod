@@ -1,14 +1,17 @@
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.UI;
 
 [HarmonyPatch]
 internal static class LevelEditorMutationPatch
 {
     private static IEnumerable<MethodBase> TargetMethods()
     {
-        foreach (var name in new[] { "Update", "UpdatePart", "DuplicateObject", "DeleteObject", "ClearAll", "LoadLevel", "LoadFromClipboard", "SliderUpdated", "SelectObj", "TestSpawnTile", "TestSpawnLamp" })
+        foreach (var name in new[] { "Update", "UpdatePart", "DuplicateObject", "DeleteObject", "ClearAll", "LoadLevel", "LoadFromClipboard", "SliderUpdated", "SelectObj", "TestSpawnTile" })
             yield return AccessTools.Method(typeof(LevelEditor), name);
+        var spawnLamp = typeof(LevelEditor).GetMethod("TestSpawnLamp", AccessTools.all);
+        if (spawnLamp != null) yield return spawnLamp;
     }
 
     [HarmonyPriority(Priority.First)]
@@ -16,7 +19,7 @@ internal static class LevelEditorMutationPatch
     {
         __state = [];
         if ((__originalMethod.Name == "LoadLevel" || __originalMethod.Name == "LoadFromClipboard") &&
-            MultiplayerSession.IsActive && !MultiplayerSession.IsHosting && !LevelEditorReplication.IsLocalEditor)
+            LevelEditorLoadButtonPatch.IsPressing && MultiplayerSession.IsActive && !MultiplayerSession.IsHosting && !LevelEditorReplication.IsLocalEditor)
         {
             __instance.SetInfoText("Only the host can load a level.");
             return false;
@@ -24,8 +27,8 @@ internal static class LevelEditorMutationPatch
         if (!LevelEditorReplication.CanEdit) return false;
         if (__originalMethod.Name == "ClearAll")
             __state = __instance.transform.Cast<Transform>().Select(child => child.gameObject).ToArray();
-        else if (__originalMethod.Name == "DeleteObject" && __instance.currentlySelected != null)
-            __state = [__instance.currentlySelected];
+        else if (__originalMethod.Name == "DeleteObject")
+            __state = LevelEditorPlusCompatibility.Selected(__instance);
         return true;
     }
 
@@ -41,6 +44,25 @@ internal static class LevelEditorMutationPatch
             removed.SetActive(false);
             removed.transform.SetParent(null);
         }
+    }
+}
+
+[HarmonyPatch(typeof(Button), "Press")]
+internal static class LevelEditorLoadButtonPatch
+{
+    internal static bool IsPressing { get; private set; }
+
+    [HarmonyPriority(Priority.First)]
+    private static void Prefix(out bool __state)
+    {
+        __state = IsPressing;
+        IsPressing = true;
+    }
+
+    private static Exception? Finalizer(bool __state, Exception? __exception)
+    {
+        IsPressing = __state;
+        return __exception;
     }
 }
 
