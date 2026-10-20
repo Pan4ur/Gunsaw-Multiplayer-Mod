@@ -24,7 +24,7 @@ public static class Controls
     {
         get
         {
-            var сur = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
+            var cur = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
             return cur != null && (cur.GetComponentInParent<TMP_InputField>() != null || cur.GetComponentInParent<UnityEngine.UI.InputField>() != null);
         }
     }
