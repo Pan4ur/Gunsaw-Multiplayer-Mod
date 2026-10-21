@@ -1243,6 +1243,8 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             return;
         }
 
+        if (SceneManager.GetActiveScene().name == "LevelEditor") return;
+
         foreach (var candidate in FindObjectsOfType<PlayerScript>())
         {
             if (candidate == null || candidate.bodyScript == null ||
