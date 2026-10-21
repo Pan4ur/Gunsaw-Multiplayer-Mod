@@ -1250,6 +1250,7 @@ internal static class MultiplayerNpcChatterPatch
 [HarmonyPatch(typeof(WeaponScript), "Shoot")]
 internal static class MultiplayerWeaponShotPatch
 {
+    [HarmonyPriority(Priority.First)]
     private static bool Prefix(WeaponScript __instance, out NetworkAvatarManager.ShotState __state)
     {
         __state = NetworkAvatarManager.BeginWeaponShot(__instance);
@@ -1257,7 +1258,7 @@ internal static class MultiplayerWeaponShotPatch
                || (__instance.GetComponentInParent<NpcNetworkReplica>() == null && !NpcReplication.IsClientProxy(__instance.body));
     }
 
-    private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
+    private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state)
     {
         NetworkAvatarManager.CompleteWeaponShot(__state, __exception == null);
         return __exception;
@@ -1360,7 +1361,7 @@ internal static class MultiplayerWeaponEffectPatch
         var body = __instance.GetComponentInParent<BodyScript>();
         var player = PlayerScript.player;
         if (body == null || player == null || body != player.bodyScript || body.weapon == null) return;
-        if (mag && !body.weapon.isReloading) return;
+        if (mag && (!body.weapon.isReloading || CustomWeaponsCompatibility.SuppressMagazine(body.weapon.stats))) return;
         MultiplayerSession.Send(new ReloadEffectPacket(mag));
     }
 }
@@ -1692,7 +1693,10 @@ internal static class MultiplayerStepSoundPatch
 [HarmonyPatch(typeof(AnimatedBodyScript), "DoSound")]
 internal static class MultiplayerAnimatedSoundPatch
 {
-    private static void Postfix(AnimatedBodyScript __instance, string name) => NetworkAvatarManager.ReplicateAnimatedSound(__instance, name);
+    private static void Postfix(AnimatedBodyScript __instance, string name, bool __runOriginal)
+    {
+        if (__runOriginal) NetworkAvatarManager.ReplicateAnimatedSound(__instance, name);
+    }
 }
 
 [HarmonyPatch(typeof(DroppedWeapon), "PickupWeapon")]

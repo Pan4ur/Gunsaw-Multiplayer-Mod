@@ -10,6 +10,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
+[BepInDependency(CWF, BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
@@ -19,6 +20,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
     private const string DefaultRelayServer = "udp://expie.fun:27015";
+    private const string CWF = "com.Jimmyking.CustomWeaponFramework";
 
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
 
@@ -94,6 +96,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         GraffitiSystem.Initialize(headlessLobbyService.IsEnabled);
         headlessLobbyService.Initialize();
         new Harmony(PluginGuid).PatchAll();
+        CustomWeaponsCompatibility.Initialize();
         avatarReplication = gameObject.AddComponent<LocalPlayerReplication>();
         gameObject.AddComponent<NetworkAvatarManager>();
         worldReplication = gameObject.AddComponent<WorldReplication>();

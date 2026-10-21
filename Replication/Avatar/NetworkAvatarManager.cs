@@ -322,6 +322,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         internal WeaponScript Weapon;
         internal bool IsExplosion;
         internal int AmmoBefore;
+        internal float CooldownBefore;
         internal int SpreadSeed;
         internal int SpreadIndex;
         internal readonly List<Vector2> ShotDirections = new();
@@ -403,8 +404,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             var hostNpcShot = MultiplayerSession.IsHost && shooter != null && !shooter.isPlayer &&
                 shooter.GetComponentInParent<NetworkReplica>() == null;
             if (!completed || state == null || state.Weapon == null || shooter == null ||
-                (!localPlayerShot && !hostNpcShot) || (state.Weapon.ammo >= state.AmmoBefore &&
-                !CustomWeaponsCompatibility.IsFiredCustomMelee(state.Weapon)) ||
+                (!localPlayerShot && !hostNpcShot) ||
+                !CustomWeaponsCompatibility.DidFireWeapon(state.Weapon, state.AmmoBefore, state.CooldownBefore) ||
                 !MultiplayerSession.IsConnected) return;
             var targetPeers = new List<ushort>();
             foreach (var wound in state.Wounds)
@@ -513,6 +514,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             PreviousShotState = activeShotState,
             Weapon = weapon,
             AmmoBefore = weapon == null ? 0 : weapon.ammo,
+            CooldownBefore = weapon == null ? 0f : weapon.cooldown,
             SpreadSeed = Interlocked.Increment(ref nextShotSpreadSeed)
         };
         activeShotState = state;

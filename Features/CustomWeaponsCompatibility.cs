@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Globalization;
 using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -31,6 +32,7 @@ internal static class CustomWeaponsCompatibility
     private static Type addVfxType;
     private static Type meleeVisualType;
     private static Type meleeComboType;
+    private static MethodInfo getReloadSound;
     private static readonly HashSet<object> remoteMeleeControllers = new();
     private static bool meleeRaycastPatched;
     private static bool lookupComplete;
@@ -59,12 +61,91 @@ internal static class CustomWeaponsCompatibility
         return true;
     }
 
-    internal static bool IsFiredCustomMelee(WeaponScript weapon)
+    internal static bool DidFireWeapon(WeaponScript weapon, int ammoBefore, float cooldownBefore)
     {
-        if (weapon == null || weapon.stats == null || weapon.stats.range != 0f || weapon.cooldown <= 0f || !EnsureLookup())
-            return false;
+        if (weapon == null) return false;
+        var data = weapon.stats != null && EnsureLookup() ? getWeaponData.Invoke(null, new object[] { weapon.stats.name }) : null;
+        if (ReadInt(data, "BurstShotCount") > 1) return false;
+        return weapon.ammo < ammoBefore || (data != null && cooldownBefore <= 0f && weapon.cooldown > 0f);
+    }
+
+    internal static bool SuppressMagazine(WeaponPreset weapon)
+    {
+        if (weapon == null || !EnsureLookup()) return false;
+        var data = getWeaponData.Invoke(null, new object[] { weapon.name });
+        return ReadProperty(data, "NoMagazineDropping") is true;
+    }
+
+    internal static void Initialize()
+    {
+        var assembly = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetType("CustomWeapons.HelperScripts.WeaponRegistry") != null);
+        if (assembly == null) 
+            return;
         
-        return getWeaponData.Invoke(null, new object[] { weapon.stats.name }) != null;
+        getReloadSound = assembly.GetType("CustomWeapons.HelperScripts.ReloadSoundManager")?
+                                 .GetMethod("GetReloadSound", BindingFlags.Public | BindingFlags.Static);
+       
+        var prefix = assembly.GetType("CustomWeapons.HelperScripts.ReloadSoundPatch")?
+                                        .GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static);
+       
+        var coroutine = assembly.GetType("CustomWeapons.HelperScripts.SpecialReloadManager")?
+                                            .GetMethod("CustomReloadCoroutine", BindingFlags.NonPublic | BindingFlags.Static);
+        
+        var harmony = new Harmony("gunsaw.multiplayer.customweapons.reload");
+        var transpiler = new HarmonyMethod(typeof(CustomWeaponsCompatibility), nameof(ReplicateReloadSound));
+     
+        if (prefix != null) 
+            harmony.Patch(prefix, transpiler: transpiler);
+      
+        if (coroutine != null) 
+            harmony.Patch(AccessTools.EnumeratorMoveNext(coroutine), transpiler: transpiler);
+    }
+
+    private static IEnumerable<CodeInstruction> ReplicateReloadSound(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+    {
+        var original = AccessTools.Method(typeof(Sound), nameof(Sound.Play));
+        var replacement = AccessTools.Method(typeof(CustomWeaponsCompatibility), nameof(PlayReloadSound));
+        var weaponField = __originalMethod.IsStatic ? null : AccessTools.GetDeclaredFields(__originalMethod.DeclaringType).Single(f => f.FieldType == typeof(WeaponScript));
+      
+        foreach (var i in instructions)
+        {
+            if (i.Calls(original))
+            {
+                var loadWeapon = new CodeInstruction(OpCodes.Ldarg_0);
+                loadWeapon.MoveLabelsFrom(i);
+                loadWeapon.MoveBlocksFrom(i);
+                
+                yield return loadWeapon;
+               
+                if (weaponField != null) 
+                    yield return new CodeInstruction(OpCodes.Ldfld, weaponField);
+                else if (__originalMethod.GetParameters()[0].ParameterType != typeof(WeaponScript))
+                    yield return new CodeInstruction(OpCodes.Castclass, typeof(WeaponScript));
+               
+                i.opcode = OpCodes.Call;
+                i.operand = replacement;
+            }
+            yield return i;
+        }
+    }
+
+    private static float PlayReloadSound(AudioClip clip, Vector2 position, bool twoDimensional, bool pitchShift, Transform parent, float volume, float pitch, WeaponScript weapon)
+    {
+        var result = Sound.Play(clip, position, twoDimensional, pitchShift, parent, volume, pitch);
+        var player = PlayerScript.player;
+        if (clip != null && weapon != null && player != null && weapon.body == player.bodyScript && MultiplayerSession.IsConnected)
+            MultiplayerSession.Send(new PlayerSoundPacket(0x60000000u | NetworkAvatarManager.PlayerActionSoundId(clip.name), position.x, position.y, (byte)Mathf.Clamp(Mathf.RoundToInt(volume * 64f), 0, 255), (byte)Mathf.Clamp(Mathf.RoundToInt(pitch * 64f), 0, 255)));
+      
+        return result;
+    }
+
+    internal static AudioClip FindReloadSound(WeaponPreset weapon, uint soundId)
+    {
+        var clip = weapon == null ? null : getReloadSound?.Invoke(null, [weapon.name]) as AudioClip;
+        if (clip != null && (0x60000000u | NetworkAvatarManager.PlayerActionSoundId(clip.name)) == soundId)
+            return clip;
+        
+        return Resources.FindObjectsOfTypeAll<AudioClip>().FirstOrDefault(c => c != null && (0x60000000u | NetworkAvatarManager.PlayerActionSoundId(c.name)) == soundId);
     }
 
     internal static bool TryPlayRemoteMelee(WeaponPreset weapon, WeaponScript remoteWeapon, BodyScript wielder)

@@ -1051,6 +1051,14 @@ internal class NetworkAvatarReplication : MonoBehaviour
             return;
         }
 
+        if ((packet.SoundId & 0xf0000000u) == 0x60000000u)
+        {
+            CustomWeaponsCompatibility.FindReloadSound(remoteBody == null || remoteBody.weapon == null ? null : remoteBody.weapon.stats, packet.SoundId).Let(
+                    clip => Sound.Play(clip, new Vector2(packet.PositionX, packet.PositionY), false, false, null, packet.Volume / 64f, packet.Pitch / 64f)
+            );
+            return;
+        }
+
         if ((packet.SoundId & 0xffff0000u) == 0x20000000u)
         {
             BuildAnimatedSoundCatalog();
@@ -1124,10 +1132,9 @@ internal class NetworkAvatarReplication : MonoBehaviour
        
         if (preset == null)
             return;
-
-        if (preset.fireSound != null)
-            Sound.Play(preset.fireSound, origin, false, false);
-
+        
+        preset.fireSound.Let(s => Sound.Play(s, origin, false, false));
+        
         if (preset.muzzleFlash != null)
         {
             var flash = Instantiate(preset.muzzleFlash, origin, Quaternion.identity);
@@ -1192,7 +1199,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         var weapon = body == null ? null : body.weapon;
         var stats = weapon == null ? null : weapon.stats;
         var sprite = stats == null ? null : stats.magSprite;
-        if (weapon == null || sprite == null) return;
+        if (weapon == null || sprite == null || CustomWeaponsCompatibility.SuppressMagazine(stats)) return;
 
         var prefab = Resources.Load<GameObject>("Spawnables/DropMag");
         if (prefab == null) return;

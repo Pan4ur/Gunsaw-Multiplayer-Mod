@@ -14,7 +14,7 @@ internal sealed class MedicalStationPropDefinition : CustomPropDefinition<Medica
 
     public override string TypeId => "MP/MedicalStation";
     public override string DisplayName => "Medical Station";
-    public override string Description => "Fully heals and extinguishes a player. One time use is per player; cooldown is shared.";
+    public override string Description => "Fully heals and extinguishes a player. One time use 1 - on, 0 - off; cooldown in seconds";
     public override CustomPropCategory EditorCategory => CustomPropCategory.Misc;
     public override Sprite Icon => EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.medical-station.png", 28f, new Vector2(0.5f, 0.5f));
   
