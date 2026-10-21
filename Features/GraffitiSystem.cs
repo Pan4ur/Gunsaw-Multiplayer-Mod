@@ -59,7 +59,6 @@ internal sealed class GraffitiSystem : MonoBehaviour
     private CursorLockMode previousCursorLockMode;
     private readonly Dictionary<string, Image> pickerItems = new(StringComparer.OrdinalIgnoreCase);
     private int sceneHandle = int.MinValue;
-    private int nextSortingOrder = 100;
 
     internal static void Initialize(bool headless)
     {
@@ -264,7 +263,8 @@ internal sealed class GraffitiSystem : MonoBehaviour
         {
             preview = new GameObject("MP Graffiti Preview");
             previewRenderer = preview.AddComponent<SpriteRenderer>();
-            previewRenderer.sortingOrder = 32000;
+            previewRenderer.sortingLayerName = "Background";
+            previewRenderer.sortingOrder = MaxPlacedGraffiti + 2;
             previewRenderer.color = new Color(1f, 1f, 1f, 0.65f);
         }
 
@@ -360,7 +360,10 @@ internal sealed class GraffitiSystem : MonoBehaviour
         gameObject.AddComponent<GraffitiMaterialMarker>();
         var renderer = gameObject.AddComponent<SpriteRenderer>();
         renderer.sprite = sprite;
-        renderer.sortingOrder = ++nextSortingOrder;
+        renderer.sortingLayerName = "Background";
+        renderer.sortingOrder = MaxPlacedGraffiti + 1;
+        foreach (var existing in placed.Values)
+            existing.MoveBack();
         gameObject.transform.position = new Vector3(packet.X, packet.Y, 0f);
         gameObject.transform.rotation = Quaternion.Euler(0f, 0f, packet.Rotation);
         gameObject.transform.localScale = Vector3.one * packet.Scale;
@@ -646,7 +649,6 @@ internal sealed class GraffitiSystem : MonoBehaviour
         
         placed.Clear();
         placedOrder.Clear();
-        nextSortingOrder = 100;
     }
 
     private void LateUpdate()
@@ -963,6 +965,8 @@ internal sealed class GraffitiSystem : MonoBehaviour
         {
             if (gameObject != null) gameObject.SetActive(value);
         }
+
+        internal void MoveBack() => renderer.sortingOrder--;
 
         internal void Destroy()
         {
