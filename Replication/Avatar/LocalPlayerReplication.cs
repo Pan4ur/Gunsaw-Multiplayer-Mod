@@ -44,6 +44,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     private VehicleBase localVehicle;
     private bool localVehicleLocked;
     private bool localVehicleWasSimulated;
+    private RigidbodyInterpolation2D localVehicleInterpolation;
     private BodyScript startingLoadoutAppliedBody;
     private BodyScript startingAmmoAppliedBody;
     private BodyScript pendingRespawnLoadoutBody;
@@ -96,7 +97,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             var isReflected = body.transform.localScale.x < 0f;
             var isActive = body.transform.root.gameObject.activeInHierarchy;
             var headReferenceRotation = vehicleId != 0UL && body.curVehicle.mainPart != null &&
-                body.curVehicle.mainPart.rb != null ? body.curVehicle.mainPart.rb.rotation : body.rb.rotation;
+                body.curVehicle.mainPart.rb != null ? body.curVehicle.mainPart.transform.eulerAngles.z : body.transform.eulerAngles.z;
             var headRotation = body.headTransform == null ? 0f :
                 Mathf.DeltaAngle(headReferenceRotation, body.headTransform.eulerAngles.z);
             var limbs = body.limbs ?? [];
@@ -105,7 +106,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             foreach (LimbScript limb in limbs)
             {
                 var limbBody = limb.rb == null ? new PlayerSnapshotPose(0f, 0f, 0f) :
-                    new PlayerSnapshotPose(limb.rb.position.x, limb.rb.position.y, limb.rb.rotation);
+                    new PlayerSnapshotPose(limb.transform.position.x, limb.transform.position.y, limb.transform.eulerAngles.z);
                 var dismembered = limb.dismembered;
                 var burning = IsBurning(limb);
                 limbStates[limbIndex++] = new PlayerSnapshotLimbState(limbBody, dismembered, burning);
@@ -116,8 +117,8 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             foreach (Rigidbody2D tailBase in tailBases)
             {
                 var tailBaseTransform = tailBase == null ? null : tailBase.transform;
-                var tailBaseRotation = tailBase != null ? tailBase.rotation : 0f;
-                tailBaseStates[tailBaseIndex++] = CreateTailBaseState(body.rb, tailBaseTransform, tailBaseRotation);
+                var tailBaseRotation = tailBaseTransform != null ? tailBaseTransform.eulerAngles.z : 0f;
+                tailBaseStates[tailBaseIndex++] = CreateTailBaseState(body.transform, tailBaseTransform, tailBaseRotation);
             }
             var tails = body.tails;
             var tailStates = new PlayerSnapshotTailState[tails.Length];
@@ -125,7 +126,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             {
                 var tail = tails[tailIndex];
                 var tailRotation = tail == null ? 0f : tail.eulerAngles.z;
-                tailStates[tailIndex] = CreateTailBaseState(body.rb, tail, tailRotation);
+                tailStates[tailIndex] = CreateTailBaseState(body.transform, tail, tailRotation);
             }
 
             var arms = body.Arms;
@@ -166,7 +167,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             var crystalTongueState = CreateWeaponLaserState(crystalTongue == null ? null : crystalTongue.line);
             var scarfState = CreateScarfState(body);
             var coreBody = body.rb == null ? new PlayerSnapshotPose(0f, 0f, 0f) :
-                new PlayerSnapshotPose(body.rb.position.x, body.rb.position.y, body.rb.rotation);
+                new PlayerSnapshotPose(body.transform.position.x, body.transform.position.y, body.transform.eulerAngles.z);
             var packetVisualState = includeVisualState ? CreatePacketVisualState(visualState) :
                 (PlayerSnapshotVisualState?)null;
             if (includeState)
@@ -465,15 +466,17 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             localVehicleBody = body;
             localVehicle = vehicle;
             localVehicleWasSimulated = body.rb.simulated;
+            localVehicleInterpolation = body.rb.interpolation;
             localVehicleLocked = true;
 
             body.rb.velocity = Vector2.zero;
             body.rb.angularVelocity = 0f;
             body.rb.simulated = false;
+            body.rb.interpolation = RigidbodyInterpolation2D.None;
         }
 
         var seat = KartPassengers.SeatPosition(vehicle, body);
-        var angle = vehicle.mainPart.rb.rotation;
+        var angle = vehicle.mainPart.transform.eulerAngles.z;
 
         var position = body.transform.position;
         position.x = seat.x;
@@ -513,6 +516,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             }
 
             rb.simulated = localVehicleWasSimulated;
+            rb.interpolation = localVehicleInterpolation;
         }
 
         localVehicleBody = null;
@@ -1261,7 +1265,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         localName = string.IsNullOrEmpty(name) ? "Player" : name;
     }
 
-    protected override void Update()
+    private void Update()
     {
         if (MultiplayerSession.IsActive) return;
         if (dropWeaponBody != null) dropWeaponBody.dropWeapon = originalDropWeapon;
@@ -1291,7 +1295,19 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         livesRule = -1;
     }
 
-    protected override void LateUpdate() => UpdateLocalVehicleLock();
+    protected override void LateUpdate()
+    {
+        UpdateLocalVehicleLock();
+        if (!MultiplayerSession.IsConnected || HeadlessLobbyService.IsHeadlessServer || Time.unscaledTime < nextSnapshot) return;
+        var player = PlayerScript.player;
+        if (player == null || player.bodyScript == null) return;
+        nextSnapshot = Time.unscaledTime + SnapshotInterval;
+        MultiplayerSession.Send(Serialize(PacketSequences.NextPlayerSnapshot(), player.bodyScript));
+        if (pendingStatePacket.HasValue)
+            MultiplayerSession.Send(pendingStatePacket.Value);
+        if (pendingSpecialLinesPacket.HasValue)
+            MultiplayerSession.Send(pendingSpecialLinesPacket.Value);
+    }
 
     private void FixedUpdate() => ApplyIncomingGrab();
 

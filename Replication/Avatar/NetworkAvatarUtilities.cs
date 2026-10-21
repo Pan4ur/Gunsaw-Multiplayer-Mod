@@ -313,13 +313,12 @@ internal static class NetworkAvatarUtilities
         }
     }
 
-    internal static PlayerSnapshotTailState CreateTailBaseState(Rigidbody2D reference, Transform transform,
-        float rotation)
+    internal static PlayerSnapshotTailState CreateTailBaseState(Transform reference, Transform transform, float rotation)
     {
         if (reference == null || transform == null)
             return new PlayerSnapshotTailState(0f, 0f, 0f, false, null);
 
-        var delta = (Vector2)transform.position - reference.position;
+        var delta = (Vector2)(transform.position - reference.position);
         var renderers = transform.GetComponentsInChildren<SpriteRenderer>(true);
         var colors = new Color32[renderers.Length];
         for (var index = 0; index < renderers.Length; index++)
@@ -328,8 +327,7 @@ internal static class NetworkAvatarUtilities
             colors[index] = color;
         }
         var sprite = renderers.Length == 0 ? null : renderers[0];
-        return new PlayerSnapshotTailState(delta.x, delta.y, Mathf.DeltaAngle(reference.rotation, rotation),
-            sprite != null && sprite.transform.localScale.y < 0f, colors);
+        return new PlayerSnapshotTailState(delta.x, delta.y, Mathf.DeltaAngle(reference.eulerAngles.z, rotation), sprite != null && sprite.transform.localScale.y < 0f, colors);
     }
 
     private static List<Component> FindCharacterLights(Transform root)

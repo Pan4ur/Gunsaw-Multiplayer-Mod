@@ -2190,16 +2190,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                     replica.CreateRemote(identity, player.bodyScript);
             }
 
-            if (!serverOnlyHost && Time.unscaledTime >= local.nextSnapshot)
-            {
-                local.nextSnapshot = Time.unscaledTime + SnapshotInterval;
-                MultiplayerSession.Send(local.Serialize(PacketSequences.NextPlayerSnapshot(), player.bodyScript));
-                if (local.pendingStatePacket.HasValue)
-                    MultiplayerSession.Send(local.pendingStatePacket.Value);
-                if (local.pendingSpecialLinesPacket.HasValue)
-                    MultiplayerSession.Send(local.pendingSpecialLinesPacket.Value);
-            }
-
             PlayerSnapshotPacket snapshot;
             while (MultiplayerSession.TryTakeSnapshot(out senderId, out snapshot))
             {
