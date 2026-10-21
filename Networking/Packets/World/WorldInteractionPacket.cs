@@ -9,7 +9,9 @@ internal enum InteractionType : byte
     DroneDamage = 8,
     WeaponDrop = 9,
     LampBreak = 10,
-    LampHistoryRequest = 11
+    WorldHistoryRequest = 11,
+    MedicalStationUse = 12,
+    MedicalStationUsed = 13
 }
 
 internal readonly struct WorldInteractionPacket : INetworkPacket
@@ -54,8 +56,15 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
         writer.WriteUInt64(TargetId);
         switch (InteractionType)
         {
+            case InteractionType.MedicalStationUse:
             case InteractionType.ButtonActivate:
             case InteractionType.DoorActivate:
+                return;
+            case InteractionType.MedicalStationUsed:
+                writer.WriteUInt16((ushort)WeaponSlot);
+                writer.WriteBoolean(Manual);
+                writer.WriteInt32(PreviousAmmo);
+                writer.WriteSingle(Damage);
                 return;
             case InteractionType.ZoneActivate:
                 writer.WriteBoolean(Manual);
@@ -71,7 +80,7 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
                 writer.WriteSingle(PositionX); 
                 writer.WriteSingle(PositionY);
                 return;
-            case InteractionType.LampHistoryRequest:
+            case InteractionType.WorldHistoryRequest:
                 return;
             default:
                 writer.WriteInt32(WeaponSlot);
@@ -90,13 +99,15 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
         var targetId = reader.ReadUInt64();
         switch (operation)
         {
+            case InteractionType.MedicalStationUse: return new WorldInteractionPacket(operation, targetId);
+            case InteractionType.MedicalStationUsed: return new WorldInteractionPacket(operation, targetId, weaponSlot: reader.ReadUInt16(), manual: reader.ReadBoolean(), previousAmmo: reader.ReadInt32(), damage: reader.ReadSingle());
             case InteractionType.ButtonActivate: return new WorldInteractionPacket(InteractionType.ButtonActivate, targetId);
             case InteractionType.DoorActivate: return new WorldInteractionPacket(InteractionType.DoorActivate, targetId);
             case InteractionType.ZoneActivate: return new WorldInteractionPacket(InteractionType.ZoneActivate,targetId, manual: reader.ReadBoolean());
             case InteractionType.VehicleDamage: return new WorldInteractionPacket(InteractionType.VehicleDamage, targetId, damage: reader.ReadSingle(), collision: reader.ReadBoolean());
             case InteractionType.DroneDamage: return new WorldInteractionPacket(InteractionType.DroneDamage, targetId, damage: reader.ReadSingle());
             case InteractionType.LampBreak: return new WorldInteractionPacket(InteractionType.LampBreak, targetId, positionX: reader.ReadSingle(), positionY: reader.ReadSingle());
-            case InteractionType.LampHistoryRequest: return new WorldInteractionPacket(InteractionType.LampHistoryRequest, 0UL);
+            case InteractionType.WorldHistoryRequest: return new WorldInteractionPacket(InteractionType.WorldHistoryRequest, 0UL);
             case InteractionType.WeaponPickup: return new WorldInteractionPacket(InteractionType.WeaponPickup, targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
             case InteractionType.WeaponAmmoGet: return new WorldInteractionPacket(InteractionType.WeaponAmmoGet, targetId, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
             case InteractionType.WeaponDrop: return new WorldInteractionPacket(InteractionType.WeaponDrop, 0UL, reader.ReadInt32(), reader.ReadUInt64(), reader.ReadInt32(), reader.ReadBoolean() ? false : false, reader.ReadSingle(), reader.ReadSingle());

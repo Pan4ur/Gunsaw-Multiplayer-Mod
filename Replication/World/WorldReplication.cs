@@ -50,7 +50,7 @@ internal sealed class WorldReplication : MonoBehaviour
     internal readonly Dictionary<string, LampState> lamps = [];
     internal readonly Dictionary<Collider2D, string> lampIds = new();
     internal readonly HashSet<string> destroyedLamps = [];
-    private bool lampHistoryRequested;
+    private bool worldHistoryRequested;
     internal readonly Dictionary<string, DroneScript> drones = new();
     internal readonly Dictionary<DroneScript, string> droneIds = new();
     internal readonly HashSet<string> destroyedDrones = [];
@@ -286,13 +286,13 @@ internal sealed class WorldReplication : MonoBehaviour
             enviroment.UpdateZonePrompt();
             enviroment.UpdateButtonReactivationPrompt();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldZonePrompt, clientZonePromptStarted);
-            if (!lampHistoryRequested)
+            if (!worldHistoryRequested)
             {
-                lampHistoryRequested = true;
-                RequestLampHistory();
+                worldHistoryRequested = true;
+                RequestWorldHistory();
             }
             WorldInteractionPacket remoteInteraction;
-            while (MultiplayerSession.TryTakeWorldInteraction(out _, out remoteInteraction)) ApplyRemoteLampBreak(remoteInteraction);
+            while (MultiplayerSession.TryTakeWorldInteraction(out _, out remoteInteraction)) ApplyRemoteWorldInteraction(remoteInteraction);
 
             byte[] snapshot;
             var snapshotQueueStarted = MultiplayerPerformance.StartPhase();
@@ -345,7 +345,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         var discoveryStarted = MultiplayerPerformance.StartPhase();
         discoveredScene = true;
-        lampHistoryRequested = false;
+        worldHistoryRequested = false;
         bodies.RefreshWorldBodies();
         enviroment.RefreshButtons();
         enviroment.RefreshProximityDoors();
@@ -1210,8 +1210,13 @@ internal sealed class WorldReplication : MonoBehaviour
 
         switch (type)
         {
-            case InteractionType.LampHistoryRequest:
+            case InteractionType.MedicalStationUse:
+                MedicalStationRuntime.TryUse(packet.TargetId, peerId);
+                return;
+
+            case InteractionType.WorldHistoryRequest:
                 SendLampHistory(peerId);
+                MedicalStationRuntime.SendHistory(peerId);
                 return;
 
             case InteractionType.ButtonActivate:
@@ -1342,17 +1347,22 @@ internal sealed class WorldReplication : MonoBehaviour
             Destroy(dropped.gameObject);
     }
 
-    private void ApplyRemoteLampBreak(WorldInteractionPacket packet)
+    private void ApplyRemoteWorldInteraction(WorldInteractionPacket packet)
     {
+        if (packet.InteractionType == InteractionType.MedicalStationUsed)
+        {
+            MedicalStationRuntime.ApplyUsed(packet);
+            return;
+        }
         if (packet.InteractionType != InteractionType.LampBreak) return;
         var id = ResolveWireId(packet.TargetId);
         enviroment.ApplyRemoteLampBreak(id, new Vector2(packet.PositionX, packet.PositionY));
     }
 
-    private void RequestLampHistory()
+    private void RequestWorldHistory()
     {
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
-        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.LampHistoryRequest, 0UL), 1);
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.WorldHistoryRequest, 0UL), 1);
     }
 
     private void SendLampHistory(ushort peerId)
@@ -1403,7 +1413,7 @@ internal sealed class WorldReplication : MonoBehaviour
     {
         if (!MultiplayerSession.IsConnected) return;
         enviroment.RefreshLamps();
-        lampHistoryRequested = false;
+        worldHistoryRequested = false;
         nextSnapshot = 0f;
     }
 

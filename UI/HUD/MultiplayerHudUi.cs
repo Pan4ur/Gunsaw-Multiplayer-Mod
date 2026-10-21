@@ -24,6 +24,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private int chatBottomPendingFrame;
     private bool chatWasOpen;
     private readonly List<TMP_Text> debugMarkers = new();
+    private readonly Dictionary<MedicalStationRuntime, TMP_Text> medicalStationTimers = new();
     private readonly Dictionary<BodyScript, TMP_Text> nameTags = new();
     private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new();
     private readonly Dictionary<BodyScript, CoopMarker> coopMarkers = new();
@@ -33,7 +34,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     internal void Configure(MultiplayerHud hud)
     {
-        if (!MultiplayerSession.IsInLobby && string.IsNullOrEmpty(ArsenalMenu.Prompt))
+        if (!MultiplayerSession.IsInLobby && string.IsNullOrEmpty(ArsenalMenu.Prompt) && !MedicalStationRuntime.HasCooldowns)
         {
             if (root != null) root.SetActive(false);
             return;
@@ -42,22 +43,26 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         if (root == null)
         {
             Create();
-            return;
+            if (root == null) return;
         }
         
         if (!root.activeSelf) root.SetActive(true);
+        UpdateMedicalStationTimers();
         if (!MultiplayerSession.IsInLobby)
         {
             SetActive(hostPanel, false);
             SetActive(playersPanel, false);
             SetActive(chatPanel, false);
+            input.gameObject.SetActive(false);
+            chatHint.gameObject.SetActive(false);
+            commandHints.gameObject.SetActive(false);
             SetActive(finalLeaderboardPanel, false);
             spectatorText.gameObject.SetActive(false);
             spectatorHint.gameObject.SetActive(false);
             respawnText.gameObject.SetActive(false);
             statsText.gameObject.SetActive(false);
             activationText.text = ArsenalMenu.Prompt;
-            activationText.gameObject.SetActive(true);
+            activationText.gameObject.SetActive(!string.IsNullOrEmpty(ArsenalMenu.Prompt));
             return;
         }
         SetActive(hostPanel, MultiplayerSession.IsHosting);
@@ -490,6 +495,41 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         foreach (var pair in nameTags)
             if (!active.Contains(pair.Key)) { if (pair.Value != null) pair.Value.gameObject.SetActive(false); stale.Add(pair.Key); }
         foreach (var body in stale) nameTags.Remove(body);
+    }
+
+    private void UpdateMedicalStationTimers()
+    {
+        var stale = new List<MedicalStationRuntime>();
+        foreach (var pair in medicalStationTimers)
+        {
+            if (pair.Key == null)
+            {
+                if (pair.Value != null) Destroy(pair.Value.gameObject);
+                stale.Add(pair.Key);
+            }
+            else if (pair.Value != null) pair.Value.gameObject.SetActive(false);
+        }
+        foreach (var station in stale) medicalStationTimers.Remove(station);
+        var camera = Camera.main;
+        if (camera == null) return;
+        foreach (var station in MedicalStationRuntime.All)
+        {
+            if (station == null || !station.isActiveAndEnabled || station.CooldownRemaining <= 0f) continue;
+            var screen = camera.WorldToScreenPoint(station.transform.position + Vector3.up * 1.2f);
+            if (screen.z <= 0f) continue;
+            if (!medicalStationTimers.TryGetValue(station, out var text) || text == null)
+            {
+                text = Text(root.transform, "", Vector2.zero, new Vector2(120f, 30f), 18f, TextAlignmentOptions.Center);
+                text.fontStyle = FontStyles.Bold;
+                text.raycastTarget = false;
+                text.outlineColor = Color.black;
+                text.outlineWidth = 0.22f;
+                medicalStationTimers[station] = text;
+            }
+            text.text = station.CooldownText;
+            text.rectTransform.anchoredPosition = CanvasPosition(screen);
+            text.gameObject.SetActive(true);
+        }
     }
 
     private void UpdateChatBubbles(MultiplayerHud hud)
