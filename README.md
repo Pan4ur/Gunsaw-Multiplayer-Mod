@@ -44,7 +44,7 @@ Props:
 - NPC spawner
 - Arsenal
 - Logic gates (nand, and, or, xor, t-trigger, d-trigger, clock, rnd...). Guides: [RU](https://github.com/Pan4ur/Gunsaw-Multiplayer-Mod/wiki/Logic-Props-Guide-RU) | [ENG](https://github.com/Pan4ur/Gunsaw-Multiplayer-Mod/wiki/Logic-Props-Guide-EN)
-- Lamps now have an id to toggle
+- Lamps now have an id to toggle and [angle](img/lamp_angle.png)
 - Player spawn points now have a Team ID field: 0 = first team in TEAMS CFG, 1 = second, etc. Leave it empty for a shared spawn
 - Weapons (props) now have a respawn time
 
