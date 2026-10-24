@@ -396,6 +396,8 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     {
         if (!TryResolveCharacterPrefab(character, out var prefabPath, out characterName)) return false;
         pendingRespawnCharacterPrefab = prefabPath;
+        selectedCharacterPrefab = prefabPath;
+        PlayerPrefs.SetString("charPrefab", prefabPath);
         return true;
     }
 

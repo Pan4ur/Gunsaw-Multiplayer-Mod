@@ -1,7 +1,29 @@
 using HarmonyLib;
 using UnityEngine;
 
-internal sealed class NetworkReplica : MonoBehaviour { }
+internal sealed class NetworkReplica : MonoBehaviour;
+
+// ts wouldn't exist if it weren't for G4A and Albino
+[HarmonyPatch(typeof(MainMenuManager), "Start")]
+internal static class CharacterSelectionMenuRestorePatch
+{
+    private static void Prefix(MainMenuManager __instance, out string __state)
+    {
+        var s = LocalPlayerReplication.selectedCharacterPrefab;
+        var i = __instance.characters.FindIndex(c => c != null && c.prefabPath == s);
+        if (i >= 0) 
+            PlayerPrefs.SetInt("charIndex", i);
+        
+        __state = i < 0 ? s : "";
+    }
+
+    private static void Postfix(string __state)
+    {
+        if (string.IsNullOrEmpty(__state)) return;
+        LocalPlayerReplication.selectedCharacterPrefab = __state;
+        NetworkAvatarManager.RestoreCharacterSelection();
+    }
+}
 
 [HarmonyPatch(typeof(MainMenuManager), "UpdateCharacter")]
 internal static class CharacterSelectionReplicationPatch
