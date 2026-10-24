@@ -143,6 +143,8 @@ CTRL + C to stop
 - --master <url> - Address of the master server
 - --name <name> - Lobby name
 - --host <name> - "Host" name
+- --brutal - Starts the lobby in brutal mode
+- --operator <name> - Player who can execute voting commands immediately
 - --max-players <count> - Max lobby size
 - --respawn-seconds <seconds> - Respawn delay
 - --pvp - Enables pvp

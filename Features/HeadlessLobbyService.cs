@@ -14,6 +14,7 @@ internal sealed class HeadlessLobbyService : IDisposable
 
     private readonly GunsawMultiplayerPlugin plugin;
     private readonly string[] commandLineArgs;
+    private readonly string operatorName; // maybe temporary save their secret key on host?
     internal bool IsEnabled { get; }
     private bool startPending;
     private bool warningSkipped;
@@ -41,6 +42,8 @@ internal sealed class HeadlessLobbyService : IDisposable
         this.plugin = plugin;
         commandLineArgs = Environment.GetCommandLineArgs();
         IsEnabled = LobbySettingsSchema.HasCommandLineFlag(commandLineArgs, "-headlessLobby");
+        operatorName = LobbySettingsSchema.CommandLineValue(commandLineArgs, "--operator").Trim();
+        if (operatorName.StartsWith("-", StringComparison.Ordinal)) operatorName = "";
         Instance = this;
     }
 
@@ -263,18 +266,22 @@ internal sealed class HeadlessLobbyService : IDisposable
 
     private bool RegisterVote(ushort senderId, string target, string description)
     {
-        foreach (var vote in votes.Values) vote.Remove(senderId);
-        if (!votes.TryGetValue(target, out var voters))
+        var isOperator = !string.IsNullOrEmpty(operatorName) && MultiplayerSession.HasPeer(senderId) && string.Equals(MultiplayerSession.PlayerName(senderId), operatorName, StringComparison.OrdinalIgnoreCase);
+        if (!isOperator)
         {
-            voters = new HashSet<ushort>();
-            votes[target] = voters;
+            foreach (var vote in votes.Values) vote.Remove(senderId);
+            if (!votes.TryGetValue(target, out var voters))
+            {
+                voters = new HashSet<ushort>();
+                votes[target] = voters;
+            }
+            voters.Add(senderId);
+            var needed = MultiplayerSession.PeerIds().Length / 2 + 1;
+            SendChat("Vote " + description + ": " + voters.Count + "/" + needed + ".");
+            if (voters.Count < needed) return true;
         }
-        voters.Add(senderId);
-        var needed = MultiplayerSession.PeerIds().Length / 2 + 1;
-        SendChat("Vote " + description + ": " + voters.Count + "/" + needed + ".");
-        if (voters.Count < needed) return true;
         votes.Clear();
-        SendChat("Vote passed: " + description + ".");
+        SendChat((isOperator ? "Operator: " : "Vote passed: ") + description + ".");
         if (target == "restart") RestartCurrentLevel();
         else if (target == "default") StartCustomLevel(defaultMapJson);
         else StartMapChange(target.Substring("change:".Length));
@@ -399,6 +406,7 @@ internal sealed class HeadlessLobbyService : IDisposable
 
     private void ApplyCommandLineOptions()
     {
+        PlayerPrefs.SetInt("difficulty", LobbySettingsSchema.HasCommandLineFlag(commandLineArgs, "--brutal") ? 1 : 0);
         var value = LobbySettingsSchema.CommandLineValue(commandLineArgs, "--master");
         if (!string.IsNullOrWhiteSpace(value) && GunsawMultiplayerPlugin.TryNormalizeServerAddress(value, out var normalized))
         {
