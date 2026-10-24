@@ -21,7 +21,7 @@ internal static class CharacterSelectionMenuRestorePatch
     {
         if (string.IsNullOrEmpty(__state)) return;
         LocalPlayerReplication.selectedCharacterPrefab = __state;
-        NetworkAvatarManager.RestoreCharacterSelection();
+        LocalPlayerReplication.RestoreCharacterSelection();
     }
 }
 
@@ -50,7 +50,7 @@ internal static class LocalCharacterCreationPatch
     private static void Prefix()
     {
         if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
-        NetworkAvatarManager.RestoreCharacterSelection();
+        LocalPlayerReplication.RestoreCharacterSelection();
     }
 
     private static void Postfix(PlayerScript __instance)

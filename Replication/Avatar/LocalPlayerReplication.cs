@@ -1314,6 +1314,12 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     }
 
     private void FixedUpdate() => ApplyIncomingGrab();
+    
+    internal static void RestoreCharacterSelection()
+    {
+        if (!string.IsNullOrEmpty(selectedCharacterPrefab))
+            PlayerPrefs.SetString("charPrefab", selectedCharacterPrefab);
+    }
 
     protected override void OnDestroy()
     {

@@ -2034,12 +2034,6 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         }
     }
 
-    internal static void RestoreCharacterSelection()
-    {
-        if (!string.IsNullOrEmpty(selectedCharacterPrefab))
-            PlayerPrefs.SetString("charPrefab", selectedCharacterPrefab);
-    }
-
     private void Update()
     {
         var performanceStarted = MultiplayerPerformance.Start();

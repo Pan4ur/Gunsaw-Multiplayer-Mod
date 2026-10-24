@@ -2,7 +2,7 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-internal sealed class WorldReplication : MonoBehaviour
+public class WorldReplication : MonoBehaviour
 {
     internal static WorldReplication Instance;
     

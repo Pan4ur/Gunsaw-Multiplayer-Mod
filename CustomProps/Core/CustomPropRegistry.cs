@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-internal static class CustomPropRegistry
+public static class CustomPropRegistry
 {
     private static readonly Dictionary<string, ICustomPropDefinition> definitions =
         new Dictionary<string, ICustomPropDefinition>(StringComparer.OrdinalIgnoreCase);
@@ -11,7 +11,7 @@ internal static class CustomPropRegistry
         get { return definitions.Values; }
     }
 
-    internal static void Register(ICustomPropDefinition definition)
+    public static void Register(ICustomPropDefinition definition)
     {
         if (definition == null) throw new ArgumentNullException("definition");
         if (string.IsNullOrEmpty(definition.TypeId)) throw new ArgumentException("Custom prop TypeId is empty.");

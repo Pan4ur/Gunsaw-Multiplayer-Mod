@@ -75,6 +75,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private readonly object joinLock = new ();
     private readonly Queue<Action> mainThreadActions = new ();
     private readonly object mainThreadActionsLock = new ();
+    public static WorldReplication World;
 
     private void Awake()
     {
@@ -119,7 +120,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         headlessLobbyService.Start();
     }
 
-    internal static void LogInfo(string m)
+    public static void LogInfo(string m)
     {
         Instance?.Logger.LogInfo(m);
     }
@@ -141,9 +142,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         
         MultiplayerTimeControl.KeepMultiplayerActive();
     }
-
-    internal static WorldReplication World;
-
+    
     private void Update()
     {
         KeepMultiplayerRunningInBackground();

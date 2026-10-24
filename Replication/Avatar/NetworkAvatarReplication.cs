@@ -37,7 +37,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
     private readonly HashSet<int> displayedDismembermentEffects = new();
     private bool dismembermentVisualsInitialized;
     private readonly List<Transform> staleTargets = [];
-    private readonly List<KeyValuePair<Transform, TargetState>> orderedTargets = [];
+    private readonly NetworkAvatarTransformOrder targetOrder = new();
     private Rigidbody2D[] remoteRigidbodies = new Rigidbody2D[0];
     private readonly List<Rigidbody2D> remoteTailBases = [];
     private Transform[] remoteTails = new Transform[0];
@@ -88,16 +88,13 @@ internal class NetworkAvatarReplication : MonoBehaviour
         var progress = PoseProgress;
 
         staleTargets.Clear();
-        orderedTargets.Clear();
-        foreach (var pair in targets) orderedTargets.Add(pair);
-        orderedTargets.Sort((left, right) => TransformDepth(left.Key).CompareTo(TransformDepth(right.Key)));
-        foreach (var pair in orderedTargets)
+        foreach (var transform in targetOrder.Update(targets))
         {
-            var transform = pair.Key;
             if (transform == null) { staleTargets.Add(transform); continue; }
-            var position = Vector3.Lerp(pair.Value.fromPosition, pair.Value.position, progress);
-            var rotation = Quaternion.Slerp(pair.Value.fromRotation, pair.Value.rotation, progress);
-            if (pair.Value.local)
+            var target = targets[transform];
+            var position = Vector3.Lerp(target.fromPosition, target.position, progress);
+            var rotation = Quaternion.Slerp(target.fromRotation, target.rotation, progress);
+            if (target.local)
             {
                 transform.localPosition = position;
                 transform.localRotation = rotation;
@@ -250,6 +247,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         displayedDismembermentEffects.Clear();
         dismembermentVisualsInitialized = false;
         targets.Clear();
+        targetOrder.Clear();
         receivedFirstSnapshot = false;
         appliedWeapon = -1;
         appliedWeaponSprite = 0UL;

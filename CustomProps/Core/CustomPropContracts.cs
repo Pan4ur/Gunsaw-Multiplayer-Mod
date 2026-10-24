@@ -1,13 +1,13 @@
 using UnityEngine;
 
-internal enum CustomPropFieldType
+public enum CustomPropFieldType
 {
     Text,
     Integer,
     Float
 }
 
-internal enum CustomPropCategory
+public enum CustomPropCategory
 {
     Basic,
     Obstacle,
@@ -17,19 +17,19 @@ internal enum CustomPropCategory
     Trigger
 }
 
-internal sealed class CustomPropField
+public sealed class CustomPropField
 {
-    internal string Label;
-    internal string Placeholder;
-    internal CustomPropFieldType Type;
-    internal Func<object, string> Read;
-    internal Action<object, string> Write;
-    internal string SecondaryPlaceholder;
-    internal CustomPropFieldType SecondaryType;
-    internal Func<object, string> ReadSecondary;
-    internal Action<object, string> WriteSecondary;
+    public string Label;
+    public string Placeholder;
+    public CustomPropFieldType Type;
+    public Func<object, string> Read;
+    public Action<object, string> Write;
+    public string SecondaryPlaceholder;
+    public CustomPropFieldType SecondaryType;
+    public Func<object, string> ReadSecondary;
+    public Action<object, string> WriteSecondary;
 
-    internal CustomPropField(
+    public CustomPropField(
         string label,
         string placeholder,
         CustomPropFieldType type,
@@ -43,7 +43,7 @@ internal sealed class CustomPropField
         Write = write;
     }
 
-    internal CustomPropField(
+    public CustomPropField(
         string label,
         string placeholder,
         CustomPropFieldType type,
@@ -62,7 +62,7 @@ internal sealed class CustomPropField
     }
 }
 
-internal interface ICustomPropDefinition
+public interface ICustomPropDefinition
 {
     string TypeId { get; }
     string DisplayName { get; }
@@ -76,7 +76,7 @@ internal interface ICustomPropDefinition
     void CreateRuntime(GameObject gameObject, object data);
 }
 
-internal abstract class CustomPropDefinition<TData> : ICustomPropDefinition
+public abstract class CustomPropDefinition<TData> : ICustomPropDefinition
     where TData : new()
 {
     public abstract string TypeId { get; }

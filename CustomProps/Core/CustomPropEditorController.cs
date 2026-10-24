@@ -556,11 +556,9 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         levelPart.showTeam = true;
         editor.teamField.text = levelPart.part.team ?? "";
         SetEditable(editor.teamField);
-        editor.teamField.contentType = TMP_InputField.ContentType.IntegerNumber;
-        editor.teamField.characterValidation = TMP_InputField.CharacterValidation.Digit;
         var label = FindNativeFieldLabel(editor.teamField, "Team");
-        if (label != null) label.text = "Team ID";
-        SetPlaceholder(editor.teamField, "0, 1, ... (empty = any)");
+        if (label != null) label.text = "Team";
+        SetPlaceholder(editor.teamField, "ID, name or color (empty = any)");
     }
 
     internal void CommitPlayerSpawnTeam()
