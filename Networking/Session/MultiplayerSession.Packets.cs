@@ -520,6 +520,15 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
+            else if (isHost && decodedPacket.Type == PacketType.NpcImpulse)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueEvent(npcImpulses, senderId, NpcImpulsePacket.Read(ref reader));
+                }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
+            }
             else if (isHost && decodedPacket.Type == PacketType.NpcGrab)
             {
                 try
@@ -844,6 +853,7 @@ internal static partial class MultiplayerSession
         teleportRequests.Clear();
         playerGrabs.Clear();
         npcGrabs.Clear();
+        npcImpulses.Clear();
         missionFinished.Clear();
         playerPerformance.Clear();
         playerKills.Clear();

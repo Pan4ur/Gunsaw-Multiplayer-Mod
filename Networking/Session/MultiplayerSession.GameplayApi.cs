@@ -212,6 +212,9 @@ internal static partial class MultiplayerSession
     internal static bool TryTakePlayerGrab(out ushort peerId, out PlayerGrabPacket packet)
         => TryTakePacket(playerGrabs, out peerId, out packet);
 
+    internal static bool TryTakeNpcImpulse(out ushort peerId, out NpcImpulsePacket packet)
+        => TryTakePacket(npcImpulses, out peerId, out packet);
+
     internal static bool TryTakeNpcGrab(out ushort peerId, out NpcGrabPacket packet)
         => TryTakePacket(npcGrabs, out peerId, out packet);
 

@@ -278,12 +278,14 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static void AddForceAtPositionWithPropAuthority(Rigidbody2D rb, Vector2 force, Vector2 position, ForceMode2D mode)
     {
         rb.AddForceAtPosition(force, position, mode);
+        NpcReplication.QueueClientCorpseImpulse(rb, force, position, mode);
         TryTakePropAuthority(rb);
     }
 
     internal static void AddForceWithPropAuthority(Rigidbody2D rb, Vector2 force, ForceMode2D mode)
     {
         rb.AddForce(force, mode);
+        NpcReplication.QueueClientCorpseImpulse(rb, force, rb.worldCenterOfMass, mode);
         TryTakePropAuthority(rb);
     }
 

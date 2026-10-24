@@ -71,6 +71,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<TeleportRequestPacket>> teleportRequests = new Queue<PeerPacket<TeleportRequestPacket>>();
     private static readonly Queue<PeerPacket<PlayerGrabPacket>> playerGrabs = new Queue<PeerPacket<PlayerGrabPacket>>();
     private static readonly Queue<PeerPacket<NpcGrabPacket>> npcGrabs = new Queue<PeerPacket<NpcGrabPacket>>();
+    private static readonly Queue<PeerPacket<NpcImpulsePacket>> npcImpulses = new Queue<PeerPacket<NpcImpulsePacket>>();
     private static readonly Queue<PeerPacket<MissionFinishedPacket>> missionFinished = new Queue<PeerPacket<MissionFinishedPacket>>();
     private static readonly Queue<PeerPacket<PlayerPerformancePacket>> playerPerformance = new Queue<PeerPacket<PlayerPerformancePacket>>();
     private static readonly Queue<PeerPacket<PlayerKillPacket>> playerKills = new Queue<PeerPacket<PlayerKillPacket>>();
