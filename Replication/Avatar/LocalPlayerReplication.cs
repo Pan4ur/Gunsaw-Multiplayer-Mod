@@ -7,7 +7,6 @@ using static NetworkAvatarUtilities;
 internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 {
     internal static string selectedCharacterPrefab = "";
-    internal static string pendingRespawnCharacterPrefab = "";
     internal static float localRespawnProtectionUntil = -1f;
     private const float RespawnProtectionSeconds = 1.5f;
     internal static PlayerScript localPlayerInstance;
@@ -392,10 +391,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         exhaustedLivesLobbies.Remove(MultiplayerSession.LobbyId);
     }
 
-    internal static bool TrySetPendingRespawnCharacter(string character, out string characterName)
+    internal static bool TrySetRespawnCharacter(string character, out string characterName)
     {
         if (!TryResolveCharacterPrefab(character, out var prefabPath, out characterName)) return false;
-        pendingRespawnCharacterPrefab = prefabPath;
         selectedCharacterPrefab = prefabPath;
         PlayerPrefs.SetString("charPrefab", prefabPath);
         return true;
@@ -728,20 +726,13 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         var generation = ++localRespawnGeneration;
         respawnAt = -1f;
         localRespawnProtectionUntil = Time.unscaledTime + RespawnProtectionSeconds;
-        var prefabPath = string.IsNullOrEmpty(pendingRespawnCharacterPrefab)
-            ? ResolveCharacterPrefab(oldBody) : pendingRespawnCharacterPrefab;
+        var prefabPath = string.IsNullOrEmpty(selectedCharacterPrefab) ? PlayerPrefs.GetString("charPrefab") : selectedCharacterPrefab;
         var prefab = string.IsNullOrEmpty(prefabPath) ? null : Resources.Load<GameObject>(prefabPath);
         if (prefab == null)
         {
             localRespawnPending = false;
             GunsawMultiplayerPlugin.LogInfo("Could not respawn player: character prefab is missing.");
             return;
-        }
-        if (!string.IsNullOrEmpty(pendingRespawnCharacterPrefab))
-        {
-            selectedCharacterPrefab = pendingRespawnCharacterPrefab;
-            PlayerPrefs.SetString("charPrefab", selectedCharacterPrefab);
-            pendingRespawnCharacterPrefab = "";
         }
         EnsureRespawnWeaponSlots(oldBody);
 
@@ -1290,7 +1281,6 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         spectatorPeerId = 0;
         respawnAt = -1f;
         localRespawnProtectionUntil = -1f;
-        pendingRespawnCharacterPrefab = "";
         startingLoadoutAppliedBody = null;
         startingAmmoAppliedBody = null;
         pendingRespawnLoadoutBody = null;

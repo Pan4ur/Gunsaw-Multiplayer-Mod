@@ -84,7 +84,7 @@ internal sealed class ChatCommandSystem
         }
 
         var character = message.Length > 5 ? message.Substring(5).Trim() : "";
-        if (!LocalPlayerReplication.TrySetPendingRespawnCharacter(character, out var characterName))
+        if (!LocalPlayerReplication.TrySetRespawnCharacter(character, out var characterName))
         {
             MultiplayerHud.AddSystemMessage("Usage: /swap <character name>");
             return true;
