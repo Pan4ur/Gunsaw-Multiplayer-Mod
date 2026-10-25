@@ -41,6 +41,8 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private AudioSource chatMessageSound;
     private GUIStyle hostFpsWarningStyle;
     private TMP_SpriteAsset spriteAsset;
+    private PlayerScript slowmoHudPlayer;
+    private readonly Dictionary<GameObject, bool> slowmoHudObjects = [];
 
     internal static MultiplayerHud Instance { get; private set; }
 
@@ -87,6 +89,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void OnDisable()
     {
         Camera.onPreCull -= ApplyCarryPoseBeforeRender;
+        RestoreSlowmoHud();
     }
 
     private static void ApplyCarryPoseBeforeRender(Camera camera)
@@ -209,6 +212,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void LateUpdate()
     {
         if (HeadlessLobbyService.IsHeadlessMode) return;
+        UpdateSlowmoHud();
         if (nativeUi == null) nativeUi = gameObject.GetComponent<MultiplayerHudUi>() ?? gameObject.AddComponent<MultiplayerHudUi>();
         if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
         {
@@ -217,6 +221,46 @@ internal sealed class MultiplayerHud : MonoBehaviour
             if (NpcReplication.Instance != null) NpcReplication.Instance.DrawReplicationDebugOverlay();
         }
         nativeUi.Configure(this);
+    }
+
+    private void UpdateSlowmoHud()
+    {
+        var player = PlayerScript.player;
+        if (!MultiplayerSession.IsInLobby || player != slowmoHudPlayer)
+            RestoreSlowmoHud();
+            
+        if (!MultiplayerSession.IsInLobby || player == null)
+            return;
+            
+        slowmoHudPlayer = player;
+        
+        if (player.slowmoBarImage != null && player.slowmoBarImage.transform.parent != null)
+            HideSlowmoHudObject(player.slowmoBarImage.transform.parent.gameObject);
+            
+        if (player.powerImage != null)
+            HideSlowmoHudObject(player.powerImage.gameObject);
+            
+        if (player.powerBackImage != null)
+            HideSlowmoHudObject(player.powerBackImage.gameObject);
+    }
+
+    private void HideSlowmoHudObject(GameObject target)
+    {
+        if (!slowmoHudObjects.ContainsKey(target))
+            slowmoHudObjects.Add(target, target.activeSelf);
+            
+        if (target.activeSelf) 
+            target.SetActive(false);
+    }
+
+    private void RestoreSlowmoHud()
+    {
+        foreach (var entry in slowmoHudObjects)
+            if (entry.Key != null) 
+                entry.Key.SetActive(entry.Value);
+                
+        slowmoHudObjects.Clear();
+        slowmoHudPlayer = null;
     }
 
     private void UpdateHostFpsWarning()
