@@ -13,7 +13,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private const float RotationFromWire = 360f / ushort.MaxValue;
     private const float LimbOffsetScale = 1024f;
 
-    private const float SnapshotInterval = 1f / 25f;
+    private const float SnapshotInterval = 0.035f; // ~25hz (- 0.005 for compensate 50fps jittering on headless) 
     private const float DiscoveryInterval = 60f;
     private const float NewBodyRegistrationDelay = 0.25f;
     private const float FullSnapshotInterval = 1f;
@@ -191,14 +191,16 @@ internal sealed class NpcReplication : MonoBehaviour
         }
 
         ProcessPendingBodies(player.bodyScript);
-        NpcDamagePacket damagePacket;
-        ushort damagePeer;
-        while (MultiplayerSession.TryTakeNpcDamage(out damagePeer, out damagePacket))
+        
+        while (MultiplayerSession.TryTakeNpcDamage(out var damagePeer, out var damagePacket))
             ApplyClientDamage(damagePeer, damagePacket);
-        NpcGrabPacket grabPacket;
-        ushort grabPeer;
-        while (MultiplayerSession.TryTakeNpcGrab(out grabPeer, out grabPacket))
+        
+        while (MultiplayerSession.TryTakeNpcGrab(out var grabPeer, out var grabPacket))
             ApplyClientGrab(grabPeer, grabPacket);
+        
+        while (MultiplayerSession.TryTakeNpcImpulse(out var impulsePeer, out var impulsePacket))
+            ApplyClientImpulse(impulsePeer, impulsePacket);
+        
         if (Time.unscaledTime >= nextSnapshot)
         {
             nextSnapshot = Time.unscaledTime + SnapshotInterval;
@@ -272,6 +274,7 @@ internal sealed class NpcReplication : MonoBehaviour
             {
                 if (proxy.NetworkVisible)
                 {
+                    InterpolateClientNpc(proxy);
                     if (proxy.PendingSpeech.HasValue && ApplyNpcSpeech(proxy, proxy.PendingSpeech.Value))
                         proxy.PendingSpeech = null;
                 }
@@ -282,13 +285,6 @@ internal sealed class NpcReplication : MonoBehaviour
                 }
             }
         }
-    }
-
-    private void FixedUpdate()
-    {
-        if (SceneManager.GetActiveScene().name == "LevelEditor") return;
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
-        ApplyClientNpcBodies();
     }
 
     internal void ApplyDistanceCulling()
@@ -484,13 +480,12 @@ internal sealed class NpcReplication : MonoBehaviour
         if (currentInstance != null && currentInstance.npcRoots.TryGetValue(body, out cachedRoot) && cachedRoot != null)
             return cachedRoot;
         var current = body.transform;
-        while (current.parent != null)
-        {
-            var parent = current.parent;
-            var bodies = parent.GetComponentsInChildren<BodyScript>(true);
-            if (bodies.Length != 1 || bodies[0] != body) break;
-            current = parent;
-        }
+
+        body.GetComponentInParent<AIScript>().Let(it => current = it.transform);
+        
+        foreach (var tail in body.tails ?? emptyTransforms)
+            while (tail != null && tail != current && !tail.IsChildOf(current) && current.parent != null)
+                current = current.parent;
         var root = current.gameObject;
         if (currentInstance != null) currentInstance.npcRoots[body] = root;
         return root;
@@ -685,13 +680,22 @@ internal sealed class NpcReplication : MonoBehaviour
         breakdown.Core += (int)(writer.BaseStream.Position - sectionStarted);
 
         sectionStarted = writer.BaseStream.Position;
+        var tailFrame = new Pose();
+        if (body.isAlive && body.rb != null)
+        {
+            tailFrame.Rotation = Mathf.DeltaAngle(body.rb.rotation, body.transform.eulerAngles.z);
+            tailFrame.Position = (Vector2)body.transform.position -
+                (Vector2)(Quaternion.Euler(0f, 0f, tailFrame.Rotation) * body.rb.position);
+        }
         var rigBodies = layout.RigBodies;
         writer.Write((ushort)rigBodies.Length);
         for (var rigIndex = 0; rigIndex < rigBodies.Length; rigIndex++)
         {
             var rigBody = rigBodies[rigIndex];
             writer.Write(layout.RigIds[rigIndex]);
-            WritePose(writer, rigBody);
+            if (layout.RigTailBodies[rigIndex])
+                WriteTailPose(writer, rigBody, tailFrame);
+            else WritePose(writer, rigBody);
         }
 
         breakdown.Rig += (int)(writer.BaseStream.Position - sectionStarted);
@@ -720,8 +724,8 @@ internal sealed class NpcReplication : MonoBehaviour
         writer.Write((ushort)(sendTailPose ? tailBases.Length : 0));
         if (sendTailPose)
             foreach (Rigidbody2D tailBase in tailBases)
-                WritePose(writer, tailBase);
-        WriteTransforms(writer, sendTailPose ? layout.Tails : emptyTransforms);
+                WriteTailPose(writer, tailBase, tailFrame);
+        WriteTransforms(writer, sendTailPose ? layout.Tails : emptyTransforms, tailFrame);
         breakdown.Tails += (int)(writer.BaseStream.Position - sectionStarted);
 
         sectionStarted = writer.BaseStream.Position;
@@ -937,6 +941,7 @@ internal sealed class NpcReplication : MonoBehaviour
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcProxyLookup, proxyStarted);
             if (proxy == null) continue;
             claimed.Add(proxy);
+            proxy.NetworkBound = true;
             proxy.NetworkVisible = state.Active;
             if (proxy.Root.activeSelf != state.Active) proxy.Root.SetActive(state.Active);
             if (!state.Active)
@@ -944,6 +949,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 clientSkippedPoseWindow++;
                 continue;
             }
+            if (InitializeTailJoints(proxy)) FreezeProxy(proxy);
             if (!LoadDistanceSystem.IsNpcNearLocalPlayer(state.Body.Position))
             {
                 clientPoseCulledWindow++;
@@ -955,6 +961,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 clientFullPoseWindow++;
                 var poseStarted = MultiplayerPerformance.StartPhase();
                 ApplyState(proxy, state);
+                proxy.PoseCulled = false;
                 MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStatePose, poseStarted);
             }
             catch (Exception e)
@@ -993,7 +1000,7 @@ internal sealed class NpcReplication : MonoBehaviour
         var bestScore = float.MinValue;
         foreach (var proxy in clientProxies)
         {
-            if (proxy == null || proxy.Body == null || proxy.Root == null || claimed.Contains(proxy)) continue;
+            if (proxy == null || proxy.NetworkBound || proxy.Body == null || proxy.Root == null || claimed.Contains(proxy)) continue;
             var typeScore = DescriptorScore(proxy, state);
             if (typeScore < 0f) continue;
             var distance = proxy.Body.rb == null ? 1000f : Vector2.Distance(proxy.Body.rb.position, state.Body.Position);
@@ -1109,6 +1116,10 @@ internal sealed class NpcReplication : MonoBehaviour
         CacheRigBodies(proxy);
         proxy.WeaponBackShows = body == null ? Array.Empty<WeaponBackShow>() : body.GetComponentsInChildren<WeaponBackShow>(true);
         proxy.AiControllers = root == null ? Array.Empty<AIScript>() : root.GetComponentsInChildren<AIScript>(true);
+        proxy.TailJoints = root.GetComponentsInChildren<CustJoint>(true);
+        foreach (var joint in proxy.TailJoints)
+            foreach (var transform in joint.GetComponentsInChildren<Transform>(true))
+                proxy.TailJointsByTransform[transform] = joint;
         proxy.DismemberedLimbs = new bool[body == null || body.limbs == null ? 0 : body.limbs.Count];
         proxy.SpriteRenderers = GetSpriteRenderers(root);
         proxy.ReplicatedSpriteRenderers = new bool[proxy.SpriteRenderers.Length];
@@ -1117,26 +1128,15 @@ internal sealed class NpcReplication : MonoBehaviour
         proxy.Particles = GetParticles(root);
         proxy.Lights = GetLights(root);
         proxy.FacialExpressions = root == null ? Array.Empty<FacialExpression>() : root.GetComponentsInChildren<FacialExpression>(true);
+        InitializeTailJoints(proxy);
         FreezeProxy(proxy);
-        ConfigureRenderCallbacks(proxy);
         return proxy;
-    }
-
-    private void ConfigureRenderCallbacks(NpcProxy proxy)
-    {
-        if (proxy.Root == null || proxy.Marker == null) return;
-        proxy.Marker.OnWillRender = () => InterpolateClientNpc(proxy);
-        foreach (var renderer in proxy.Root.GetComponentsInChildren<SpriteRenderer>(true))
-        {
-            var callback = renderer.GetComponent<NpcRenderReplica>();
-            if (callback == null) callback = renderer.gameObject.AddComponent<NpcRenderReplica>();
-            callback.Marker = proxy.Marker;
-        }
     }
 
     private static void FreezeProxy(NpcProxy proxy)
     {
         if (proxy.Root == null) return;
+        proxy.PhysicsInterpolated = false;
         if (proxy.Marker == null)
         {
             proxy.Marker = proxy.Root.GetComponent<NpcNetworkReplica>();
@@ -1144,7 +1144,7 @@ internal sealed class NpcReplication : MonoBehaviour
         }
         foreach (var behaviour in proxy.Root.GetComponentsInChildren<MonoBehaviour>(true))
         {
-            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is NpcRenderReplica || behaviour is ScarfPhysics ||
+            if (behaviour == null || behaviour is NpcNetworkReplica || behaviour is ScarfPhysics || behaviour is CustJoint ||
                 behaviour is SusnessShow || behaviour is Chatter) continue;
             if (!proxy.Behaviours.ContainsKey(behaviour)) proxy.Behaviours.Add(behaviour, behaviour.enabled);
             behaviour.enabled = false;
@@ -1158,7 +1158,6 @@ internal sealed class NpcReplication : MonoBehaviour
                 proxy.OtherBehaviours.Add(behaviour, behaviour.enabled);
             behaviour.enabled = false;
         }
-        var keepLocalPhysics = proxy.LocalPhysics && Time.unscaledTime <= proxy.LocalPhysicsUntil;
         foreach (var body in proxy.Root.GetComponentsInChildren<Rigidbody2D>(true))
         {
             if (!proxy.RigidbodySettings.ContainsKey(body))
@@ -1168,8 +1167,8 @@ internal sealed class NpcReplication : MonoBehaviour
                     Simulated = body.simulated,
                     Interpolation = body.interpolation
                 });
-            if (body.simulated && !keepLocalPhysics) body.bodyType = RigidbodyType2D.Kinematic;
-            if (!keepLocalPhysics) body.interpolation = RigidbodyInterpolation2D.Interpolate;
+            if (body.simulated) body.bodyType = RigidbodyType2D.Kinematic;
+            body.interpolation = RigidbodyInterpolation2D.None;
             body.velocity = Vector2.zero;
             body.angularVelocity = 0f;
         }
@@ -1177,13 +1176,19 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private void ApplyState(NpcProxy proxy, NpcState state)
     {
+        proxy.PoseDirty = true;
         var coreStarted = MultiplayerPerformance.StartPhase();
         var body = proxy.Body;
         var hostReportedDeath = proxy.ReceivedFirstState && proxy.LastHostAlive && !state.IsAlive;
         body.characterName = state.CharacterName;
         body.speciesName = state.SpeciesName;
+        var lifeChanged = body.isAlive != state.IsAlive;
         ApplyLifeTransition(body, state.IsAlive);
+        if (lifeChanged) FreezeProxy(proxy);
         if (body.isRight != state.IsRight) body.SwitchDir(true);
+        foreach (var joint in proxy.TailJoints)
+            if (joint != null && joint.scaleObj != null && joint.transform.childCount > 0)
+                TailScalePatch.SetTailScale(joint.transform.GetChild(0), new Vector3(1f, joint.scaleObj.localScale.x, 1f));
         body.CurrentState = (BodyScript.EntityState)state.CurrentState;
         body.controlState = (BodyScript.RagdollState)state.ControlState;
         body.health = state.Health;
@@ -1215,7 +1220,6 @@ internal sealed class NpcReplication : MonoBehaviour
             if (proxy.RigBodies.TryGetValue(rigState.Id, out rigBody) && rigBody != null)
             {
                 SetTarget(proxy, rigBody, rigState.Pose);
-                SetTransformTarget(proxy, rigBody.transform, rigState.Pose);
             }
         }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateRig, rigStarted);
@@ -1227,8 +1231,7 @@ internal sealed class NpcReplication : MonoBehaviour
             if (index >= limbs.Count) continue;
             var limb = limbs[index];
             if (limb == null) continue;
-            SetTarget(proxy, limb.rb, state.Limbs[index].Pose);
-            SetTransformTarget(proxy, limb.transform, state.Limbs[index].Visual);
+            SetTransformTarget(proxy, limb.transform, state.IsAlive ? state.Limbs[index].Visual : state.Limbs[index].Pose);
             var dismembered = state.Limbs[index].Dismembered;
             if (limb.dismembered != dismembered) limb.dismembered = dismembered;
             if (index >= proxy.DismemberedLimbs.Length || proxy.DismemberedLimbs[index] != dismembered)
@@ -1248,7 +1251,6 @@ internal sealed class NpcReplication : MonoBehaviour
             if (tailBase != null)
             {
                 SetTarget(proxy, tailBase, state.TailBases[index]);
-                SetTransformTarget(proxy, tailBase.transform, state.TailBases[index]);
             }
         }
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcStateTails, tailsStarted);
@@ -1313,6 +1315,28 @@ internal sealed class NpcReplication : MonoBehaviour
             body != null && Instance.clientBodies.ContainsKey(body);
     }
 
+    internal static void OnTailInitialized(CustJoint joint)
+    {
+        var body = joint.transConnect == null ? null : joint.transConnect.GetComponentInParent<BodyScript>();
+        if (body == null || body.isPlayer || !IsClientProxy(body)) return;
+        var proxy = Instance.clientBodies[body];
+        CacheRigBodies(proxy);
+        FreezeProxy(proxy);
+    }
+
+    private static bool InitializeTailJoints(NpcProxy proxy)
+    {
+        var initialized = false;
+        foreach (var joint in proxy.TailJoints)
+        {
+            if (joint == null || !joint.enabled || !joint.gameObject.activeInHierarchy || joint.rb != null) continue;
+            joint.Start();
+            initialized = true;
+        }
+        if (initialized) CacheRigBodies(proxy);
+        return initialized;
+    }
+
     internal static void PrepareAuthoritativeNpcDeath(BodyScript body)
     {
         if (!MultiplayerSession.IsHosting || body == null || body.isPlayer || !body.isAlive ||
@@ -1340,7 +1364,6 @@ internal sealed class NpcReplication : MonoBehaviour
             {
                 var rigidbody = hit.rigidbody == null ? collider.attachedRigidbody : hit.rigidbody;
                 if (rigidbody == null) return;
-                EnableLocalCorpsePhysics(proxy);
                 levitator.currentlyLevitating = rigidbody;
                 levitator.point = hit.point;
                 levitator.localGrabPoint = rigidbody.transform.InverseTransformPoint(hit.point);
@@ -1367,23 +1390,44 @@ internal sealed class NpcReplication : MonoBehaviour
 
         if (!found) rigId = RigId(NpcRoot(proxy.Body).transform, rigidbody);
 
-        EnableLocalCorpsePhysics(proxy);
-        proxy.LocalPhysicsUntil = Time.unscaledTime + 0.15f;
         MultiplayerSession.Send(new NpcGrabPacket(
             Instance.WireId(proxy.NetworkId), rigId,
             levitator.point.x, levitator.point.y,
             levitator.localGrabPoint.x, levitator.localGrabPoint.y), 1);
     }
 
-    private static void EnableLocalCorpsePhysics(NpcProxy proxy)
+    internal static void QueueClientCorpseImpulse(Rigidbody2D rigidbody, Vector2 force, Vector2 point, ForceMode2D mode)
     {
-        proxy.LocalPhysics = true;
-        proxy.LocalPhysicsUntil = Time.unscaledTime + 0.15f;
-        foreach (var body in proxy.Root.GetComponentsInChildren<Rigidbody2D>(true))
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || Instance == null || rigidbody == null ||
+            PlayerScript.player == null || NetworkAvatarManager.currentShooter != PlayerScript.player.bodyScript) return;
+        var body = rigidbody.GetComponentInParent<BodyScript>();
+        if (body == null || !Instance.clientBodies.TryGetValue(body, out var proxy) || proxy == null ||
+            !proxy.ReceivedFirstState || proxy.LastHostAlive) return;
+        var localPoint = rigidbody.transform.InverseTransformPoint(point);
+        var impulse = mode == ForceMode2D.Impulse ? force : force * Time.fixedDeltaTime;
+        MultiplayerSession.Send(new NpcImpulsePacket(Instance.WireId(proxy.NetworkId),
+            RigId(NpcRoot(body).transform, rigidbody), impulse.x, impulse.y, localPoint.x, localPoint.y), 1);
+    }
+
+    private void ApplyClientImpulse(ushort peerId, NpcImpulsePacket packet)
+    {
+        var force = new Vector2(packet.ForceX, packet.ForceY);
+        var localPoint = new Vector2(packet.LocalPointX, packet.LocalPointY);
+        if (float.IsNaN(force.x) || float.IsNaN(force.y) || float.IsInfinity(force.x) || float.IsInfinity(force.y) ||
+            float.IsNaN(localPoint.x) || float.IsNaN(localPoint.y) || float.IsInfinity(localPoint.x) ||
+            float.IsInfinity(localPoint.y)) return;
+        var remotePlayer = NetworkAvatarManager.RemoteBodyForPeer(peerId);
+        if (remotePlayer == null || !remotePlayer.isAlive ||
+            !hostNpcs.TryGetValue(ResolveWireId(packet.NpcId), out var body) || body == null || body.isAlive) return;
+        var root = NpcRoot(body);
+        foreach (var target in root.GetComponentsInChildren<Rigidbody2D>(true))
         {
-            body.simulated = true;
-            body.bodyType = RigidbodyType2D.Dynamic;
-            body.WakeUp();
+            if (RigId(root.transform, target) != packet.RigidBodyId) continue;
+            target.simulated = true;
+            target.bodyType = RigidbodyType2D.Dynamic;
+            target.AddForceAtPosition(Vector2.ClampMagnitude(force, 1000f),
+                target.transform.TransformPoint(localPoint), ForceMode2D.Impulse);
+            return;
         }
     }
 
@@ -1460,10 +1504,10 @@ internal sealed class NpcReplication : MonoBehaviour
         if (float.IsNaN(point.x) || float.IsNaN(point.y) || float.IsInfinity(point.x) ||
             float.IsInfinity(point.y) || float.IsNaN(localPoint.x) || float.IsNaN(localPoint.y) ||
             float.IsInfinity(localPoint.x) || float.IsInfinity(localPoint.y)) return;
-        BodyScript body;
+       
         var remotePlayer = NetworkAvatarManager.RemoteBodyForPeer(peerId);
-        if (!hostNpcs.TryGetValue(id, out body) || body == null || body.isAlive ||
-            remotePlayer == null || !remotePlayer.isAlive)
+       
+        if (!hostNpcs.TryGetValue(id, out var body) || body == null || body.isAlive || remotePlayer == null || !remotePlayer.isAlive)
             return;
         
         Rigidbody2D target = null;
@@ -1601,26 +1645,36 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static void SetTarget(NpcProxy proxy, Rigidbody2D body, Pose pose)
     {
-        if (body == null) return;
-        Pose previous;
-        if (proxy.BodyTargets.TryGetValue(body, out previous) && SamePose(previous, pose)) return;
-        if (!proxy.ReceivedFirstState)
-        {
-            body.position = pose.Position;
-            body.rotation = pose.Rotation;
-        }
-
-        proxy.BodyTargets[body] = pose;
+        if (body != null) SetTransformTarget(proxy, body.transform, pose);
     }
 
     private static void ApplyDistantState(NpcProxy proxy, NpcState state)
     {
         var body = proxy.Body;
         if (body == null || body.rb == null) return;
-        body.rb.position = state.Body.Position;
-        body.rb.rotation = state.Body.Rotation;
+        proxy.BodyTargets.Clear();
+        var origin = body.rb.position;
+        var angle = Mathf.DeltaAngle(body.rb.rotation, state.Body.Rotation);
+        var rotation = Quaternion.Euler(0f, 0f, angle);
+        foreach (var rigidbody in proxy.RigidbodySettings.Keys)
+        {
+            if (rigidbody == null) continue;
+            proxy.BodyTargets[rigidbody] = new Pose
+            {
+                Position = state.Body.Position + (Vector2)(rotation * (rigidbody.position - origin)),
+                Rotation = rigidbody.rotation + angle
+            };
+        }
+        foreach (var pair in proxy.BodyTargets)
+        {
+            pair.Key.interpolation = RigidbodyInterpolation2D.None;
+            pair.Key.position = pair.Value.Position;
+            pair.Key.rotation = pair.Value.Rotation;
+        }
         proxy.BodyTargets.Clear();
         proxy.TransformTargets.Clear();
+        proxy.PoseCulled = true;
+        proxy.PhysicsInterpolated = false;
     }
 
     private static void SetTransformTargets(NpcProxy proxy, Transform[] transforms, Pose[] states)
@@ -1634,20 +1688,35 @@ internal sealed class NpcReplication : MonoBehaviour
         if (transform == null) return;
         TrackTransformOrder(proxy, transform);
         TransformTarget previous;
-        if (proxy.TransformTargets.TryGetValue(transform, out previous) && SamePose(previous.Target, state)) return;
+        var hasPrevious = proxy.TransformTargets.TryGetValue(transform, out previous);
+        if (hasPrevious && SamePose(previous.Target, state)) return;
+        var rigidbody = hasPrevious ? previous.Body : transform.GetComponent<Rigidbody2D>();
         var from = new Pose
         {
             Position = transform.position,
             Rotation = transform.eulerAngles.z
         };
-        if (!proxy.ReceivedFirstState)
+        if (hasPrevious)
         {
+            var amount = proxy.RenderVisible ? Mathf.Clamp01((Time.unscaledTime - previous.StartedAt) / SnapshotInterval) : 1f;
+            from.Position = Vector2.Lerp(previous.From.Position, previous.Target.Position, amount);
+            from.Rotation = Mathf.LerpAngle(previous.From.Rotation, previous.Target.Rotation, amount);
+        }
+        if (!proxy.ReceivedFirstState || proxy.PoseCulled)
+        {
+            if (rigidbody != null)
+            {
+                rigidbody.position = state.Position;
+                rigidbody.rotation = state.Rotation;
+            }
             transform.position = state.Position;
             transform.rotation = Quaternion.Euler(0f, 0f, state.Rotation);
             from = state;
         }
         proxy.TransformTargets[transform] = new TransformTarget
         {
+            Body = rigidbody,
+            Hinge = hasPrevious ? previous.Hinge : transform.GetComponent<HingeJoint2D>(),
             Target = state,
             From = from,
             StartedAt = Time.unscaledTime
@@ -1667,7 +1736,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 proxy.TransformOrderByTransform[tracked] = new TransformOrder
                 {
                     Parent = tracked.parent,
-                    Depth = NetworkAvatarUtilities.TransformDepth(tracked)
+                    Depth = TransformTargetDepth(proxy, tracked)
                 };
             }
             proxy.OrderedTransformTargets.Sort((left, right) =>
@@ -1675,12 +1744,20 @@ internal sealed class NpcReplication : MonoBehaviour
             return;
         }
 
-        var depth = NetworkAvatarUtilities.TransformDepth(transform);
+        var depth = TransformTargetDepth(proxy, transform);
         var index = proxy.OrderedTransformTargets.Count;
         while (index > 0 && proxy.TransformOrderByTransform[proxy.OrderedTransformTargets[index - 1]].Depth > depth)
             index--;
         proxy.OrderedTransformTargets.Insert(index, transform);
         proxy.TransformOrderByTransform[transform] = new TransformOrder { Parent = parent, Depth = depth };
+    }
+
+    private static int TransformTargetDepth(NpcProxy proxy, Transform transform)
+    {
+        var depth = NetworkAvatarUtilities.TransformDepth(transform);
+        if (proxy.TailJointsByTransform.TryGetValue(transform, out var joint) && joint != null && joint.transConnect != null)
+            depth += NetworkAvatarUtilities.TransformDepth(joint.transConnect);
+        return depth;
     }
 
     private static bool SamePose(Pose left, Pose right)
@@ -1701,16 +1778,34 @@ internal sealed class NpcReplication : MonoBehaviour
         if (!LoadDistanceSystem.IsNpcNearLocalPlayer(proxy.Body.transform.position))
             return;
 
-        var now = Time.unscaledTime;
-        if (proxy.LocalPhysics)
+        var visible = proxy.RenderVisible;
+        if (proxy.PoseDirty)
         {
-            if (now <= proxy.LocalPhysicsUntil) return;
-            proxy.LocalPhysics = false;
-            FreezeProxy(proxy);
+            visible = false;
+            foreach (var renderer in proxy.SpriteRenderers)
+                if (renderer != null && renderer.isVisible) { visible = true; break; }
+            proxy.RenderVisible = visible;
         }
+        if (!visible && !proxy.PoseDirty) return;
+        proxy.PoseDirty = false;
+        var interpolationChanged = visible != proxy.PhysicsInterpolated;
 
-        if (IsDead(proxy)) return;
+        var now = Time.unscaledTime;
         var transformsStarted = MultiplayerPerformance.StartPhase();
+        if (!visible)
+        {
+            foreach (var pair in proxy.TransformTargets)
+            {
+                var body = pair.Value.Body;
+                if (body == null) continue;
+                if (interpolationChanged) body.interpolation = RigidbodyInterpolation2D.None;
+                body.MovePosition(pair.Value.Target.Position);
+                body.MoveRotation(pair.Value.Target.Rotation);
+            }
+            proxy.PhysicsInterpolated = false;
+            MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateBodies, transformsStarted);
+            return;
+        }
 
         for (var index = 0; index < proxy.OrderedTransformTargets.Count; index++)
         {
@@ -1725,53 +1820,42 @@ internal sealed class NpcReplication : MonoBehaviour
             TransformTarget target;
             if (!proxy.TransformTargets.TryGetValue(transform, out target)) continue;
             var amount = Mathf.Clamp01((now - target.StartedAt) / SnapshotInterval);
-            transform.SetPositionAndRotation(Vector3.Lerp(target.From.Position, target.Target.Position, amount),
-                Quaternion.Lerp(Quaternion.Euler(0f, 0f, target.From.Rotation), Quaternion.Euler(0f, 0f, target.Target.Rotation), amount));
-
-            if (amount >= 1f)
-                proxy.TransformTargets.Remove(transform);
-        }
-        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
-    }
-
-    private void ApplyClientNpcBodies()
-    {
-        foreach (var proxy in clientProxies)
-        {
-            if (proxy == null || proxy.Root == null || !proxy.Root.activeInHierarchy || proxy.Body == null) continue;
-            if (!LoadDistanceSystem.IsNpcNearLocalPlayer(proxy.Body.transform.position) || proxy.LocalPhysics || IsDead(proxy)) continue;
-            foreach (var pair in proxy.BodyTargets)
+            var position = Vector2.Lerp(target.From.Position, target.Target.Position, amount);
+            var rotation = Mathf.LerpAngle(target.From.Rotation, target.Target.Rotation, amount);
+            var isTail = proxy.TailJointsByTransform.TryGetValue(transform, out var tailJoint);
+            if (target.Body != null && target.Body.simulated && target.Body.gameObject.activeInHierarchy && !isTail)
             {
-                var body = pair.Key;
-                if (body == null) continue;
-                body.MovePosition(pair.Value.Position);
-                body.MoveRotation(pair.Value.Rotation);
-                proxy.CompletedBodyTargets.Add(body);
+                if (interpolationChanged)
+                    target.Body.interpolation = RigidbodyInterpolation2D.Interpolate;
+                target.Body.MovePosition(position);
+                target.Body.MoveRotation(rotation);
             }
-            foreach (var body in proxy.CompletedBodyTargets)
-                proxy.BodyTargets.Remove(body);
-            proxy.CompletedBodyTargets.Clear();
+            else
+            {
+                if (isTail && target.Body != null && target.Body.interpolation != RigidbodyInterpolation2D.None)
+                    target.Body.interpolation = RigidbodyInterpolation2D.None;
+                
+                var parent = isTail && tailJoint != null ? tailJoint.transConnect : transform.parent;
+                if (parent != null && proxy.TransformTargets.TryGetValue(parent, out var parentTarget))
+                {
+                    var parentAmount = Mathf.Clamp01((now - parentTarget.StartedAt) / SnapshotInterval);
+                    var parentPosition = Vector2.Lerp(parentTarget.From.Position, parentTarget.Target.Position, parentAmount);
+                    var parentRotation = Mathf.LerpAngle(parentTarget.From.Rotation, parentTarget.Target.Rotation, parentAmount);
+                    var offset = Mathf.DeltaAngle(parentRotation, parent.eulerAngles.z);
+                    position = (Vector2) parent.position + (Vector2)(Quaternion.Euler(0f, 0f, offset) * (position - parentPosition));
+                    if (!isTail) 
+                        rotation += offset;
+                }
+                
+                transform.SetPositionAndRotation(position, Quaternion.Euler(0f, 0f, rotation));
+                var hinge = target.Hinge;
+                
+                if (isTail && hinge != null && hinge.enabled && hinge.connectedBody != null)
+                    transform.position = hinge.connectedBody.transform.TransformPoint(hinge.connectedAnchor) - transform.TransformVector(hinge.anchor);
+            }
         }
-    }
-
-    private static bool IsDead(NpcProxy proxy)
-    {
-        if (true)
-            return false;
-
-        /*
-         * It was a pretty cool optimization technique, but because of it,
-         * the limbs could get stuck in one position since only the root is checked,
-         * and iterating through all the limbs would, on the other hand, kill performance
-         */
-        if (proxy.LastHostAlive || proxy.Body == null || proxy.Body.rb == null)
-            return false;
-
-        Pose target;
-        if (!proxy.BodyTargets.TryGetValue(proxy.Body.rb, out target))
-            return true;
-
-        return (target.Position - proxy.Body.rb.position).sqrMagnitude <= 0.04f;
+        proxy.PhysicsInterpolated = true;
+        MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.NpcInterpolateTransforms, transformsStarted);
     }
 
     private static void CacheFireVisuals(NpcProxy proxy)
@@ -1957,6 +2041,15 @@ internal sealed class NpcReplication : MonoBehaviour
         WriteRotation(writer, body.rotation);
     }
 
+    private static void WriteTailPose(BinaryWriter writer, Rigidbody2D body, Pose frame)
+    {
+        if (body == null) { WritePose(writer, body); return; }
+        var position = frame.Position + (Vector2)(Quaternion.Euler(0f, 0f, frame.Rotation) * body.position);
+        BinaryWriterRaw.WriteSingle(writer, position.x);
+        BinaryWriterRaw.WriteSingle(writer, position.y);
+        WriteRotation(writer, body.rotation + frame.Rotation);
+    }
+
     private static void WriteLimbPose(BinaryWriter writer, Vector2 position, float rotation, Vector2 root)
     {
         var x = Math.Round((position.x - root.x) * LimbOffsetScale);
@@ -2009,8 +2102,12 @@ internal sealed class NpcReplication : MonoBehaviour
         var root = NpcRoot(body);
         var rigBodies = GetRigBodies(body);
         var rigIds = new ulong[rigBodies.Length];
+        var rigTailBodies = new bool[rigBodies.Length];
         for (var index = 0; index < rigBodies.Length; index++)
+        {
             rigIds[index] = RigId(root == null ? null : root.transform, rigBodies[index]);
+            rigTailBodies[index] = rigBodies[index].GetComponentInParent<CustJoint>() != null;
+        }
         var limbSource = body.limbs;
         var limbs = limbSource == null ? Array.Empty<LimbScript>() : new LimbScript[limbSource.Count];
         var tailBaseSource = body.tailBases;
@@ -2036,6 +2133,7 @@ internal sealed class NpcReplication : MonoBehaviour
             DestroyOnDeath = body.destroyOnDeath ?? new List<GameObject>(),
             RigBodies = rigBodies,
             RigIds = rigIds,
+            RigTailBodies = rigTailBodies,
             Limbs = limbs,
             LimbFires = limbFires,
             TailBases = tailBases,
@@ -2151,10 +2249,15 @@ internal sealed class NpcReplication : MonoBehaviour
         return new Pose { Position = position, Rotation = ReadRotation(reader) };
     }
 
-    private static void WriteTransforms(BinaryWriter writer, Transform[] transforms)
+    private static void WriteTransforms(BinaryWriter writer, Transform[] transforms, Pose frame)
     {
         writer.Write((ushort)transforms.Length);
-        foreach (var transform in transforms) WriteTransform(writer, transform);
+        foreach (var transform in transforms)
+        {
+            var body = transform == null ? null : transform.GetComponent<Rigidbody2D>();
+            if (body != null) WriteTailPose(writer, body, frame);
+            else WriteTransform(writer, transform);
+        }
     }
 
     private static void ReadTransforms(BinaryReader reader, ref Pose[] states)
@@ -2637,6 +2740,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public IList DestroyOnDeath = new ArrayList();
         public Rigidbody2D[] RigBodies = [];
         public ulong[] RigIds = [];
+        public bool[] RigTailBodies = [];
         public LimbScript[] Limbs = [];
         public FireScript[] LimbFires = [];
         public Rigidbody2D[] TailBases = [];
@@ -2712,11 +2816,14 @@ internal sealed class NpcReplication : MonoBehaviour
         public bool NetworkCreated;
         public bool OriginalRootActive;
         public bool NetworkVisible;
+        public bool NetworkBound;
+        public bool PoseCulled;
+        public bool PoseDirty;
+        public bool RenderVisible;
+        public bool PhysicsInterpolated;
         public bool ReceivedFirstState;
         public float LastHostHealth;
         public bool LastHostAlive = true;
-        public bool LocalPhysics;
-        public float LocalPhysicsUntil;
         public int LastVisualInterpolationFrame = -1;
         public int AppliedWeapon = -2;
         public ulong[] AppliedWeapons = [];
@@ -2725,7 +2832,6 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly Dictionary<Behaviour, bool> OtherBehaviours = new ();
         public readonly Dictionary<Rigidbody2D, RigidbodySettings> RigidbodySettings = new ();
         public readonly Dictionary<Rigidbody2D, Pose> BodyTargets = new ();
-        public readonly List<Rigidbody2D> CompletedBodyTargets = [];
         public readonly Dictionary<ulong, Rigidbody2D> RigBodies = new ();
         public readonly Dictionary<Transform, TransformTarget> TransformTargets = new ();
         public readonly Dictionary<Transform, TransformOrder> TransformOrderByTransform = new ();
@@ -2737,6 +2843,8 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly Dictionary<Joint2D, bool> OriginalJointStates = new ();
         public DismemberManager[] DismemberManagers = [];
         public AIScript[] AiControllers = [];
+        public CustJoint[] TailJoints = [];
+        public readonly Dictionary<Transform, CustJoint> TailJointsByTransform = new ();
         public WeaponBackShow[] WeaponBackShows = [];
         public bool[] DismemberedLimbs = [];
         public bool DismembermentDirty = true;
@@ -2846,6 +2954,8 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private struct TransformTarget
     {
+        public Rigidbody2D Body;
+        public HingeJoint2D Hinge;
         public Pose Target;
         public Pose From;
         public float StartedAt;
@@ -2876,17 +2986,4 @@ internal sealed class NpcReplication : MonoBehaviour
     }
 }
 
-internal sealed class NpcNetworkReplica : MonoBehaviour
-{
-    public Action OnWillRender;
-}
-
-internal sealed class NpcRenderReplica : MonoBehaviour
-{
-    public NpcNetworkReplica Marker;
-
-    private void OnWillRenderObject()
-    {
-        Marker?.OnWillRender?.Invoke();
-    }
-}
+internal sealed class NpcNetworkReplica : MonoBehaviour;

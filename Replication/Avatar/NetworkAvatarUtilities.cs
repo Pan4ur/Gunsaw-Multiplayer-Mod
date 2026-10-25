@@ -238,21 +238,21 @@ internal static class NetworkAvatarUtilities
         return sprite == expression.specialSprite ? (byte)8 : (byte)0;
     }
 
-    internal static Sprite FacialExpressionSprite(FacialExpression expression, byte state)
+    internal static Sprite? FacialExpressionSprite(FacialExpression expression, byte state)
     {
         if (expression == null) return null;
-        switch (state)
+        return state switch
         {
-            case 1: return expression.normalFace;
-            case 2: return expression.worriedFace;
-            case 3: return expression.deadFace;
-            case 4: return expression.halfClosedFace;
-            case 5: return expression.sadFace;
-            case 6: return expression.alertFace;
-            case 7: return expression.fightFace;
-            case 8: return expression.specialSprite;
-            default: return null;
-        }
+            1 => expression.normalFace,
+            2 => expression.worriedFace,
+            3 => expression.deadFace,
+            4 => expression.halfClosedFace,
+            5 => expression.sadFace,
+            6 => expression.alertFace,
+            7 => expression.fightFace,
+            8 => expression.specialSprite,
+            _ => null
+        };
     }
 
     internal static PlayerSnapshotLineState CreateWeaponLaserState(LineRenderer line)
@@ -265,9 +265,7 @@ internal static class NetworkAvatarUtilities
         var points = new Vector3[count];
         for (var index = 0; index < count; index++)
             points[index] = line.GetPosition(index);
-        return new PlayerSnapshotLineState(true, line.useWorldSpace,
-            (Color32)line.startColor, (Color32)line.endColor, line.startWidth,
-            line.endWidth, points);
+        return new PlayerSnapshotLineState(true, line.useWorldSpace, line.startColor, line.endColor, line.startWidth, line.endWidth, points);
     }
 
     internal static void ApplyLineState(LineRenderer line, GameObject container, PlayerSnapshotLineState state)

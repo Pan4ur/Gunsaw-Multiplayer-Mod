@@ -694,7 +694,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         hostedLobbyDisplayName = lobbyName;
         status = "Lobby settings updated.";
         if (!string.IsNullOrEmpty(hostedLobbyId) && !string.IsNullOrEmpty(hostRelayKey))
-            ThreadPool.QueueUserWorkItem(_ => UpdateHostedLobbyInDirectory());
+        {
+            try
+            {
+                var body = JsonUtility.ToJson(BuildLobbyRequest(lobbySettings, default, lobbyName, playerName, MultiplayerSession.GetHostMapName(), MultiplayerSession.PlayerCount, true));
+                var server = masterUrl.Value.TrimEnd('/');
+                var lobbyId = hostedLobbyId;
+                var relayKey = hostRelayKey;
+                status = "Updating on lobby server...";
+                ThreadPool.QueueUserWorkItem(_ => UpdateHostedLobbyInDirectory(server, lobbyId, relayKey, body));
+            }
+            catch (Exception e)
+            {
+                LogInfo("Could not update hosted lobby: " + e.Message);
+                status = "Could not update lobby server: " + e.Message;
+            }
+        }
     }
 
     internal void CloseHostedLobby()
@@ -962,8 +977,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     
     internal static string HttpAt(string server, string method, string path, string body, string authorization)
     {
-        Uri uri;
-        if (!Uri.TryCreate(server.TrimEnd('/') + path, UriKind.Absolute, out uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        if (!Uri.TryCreate(server.TrimEnd('/') + path, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             throw new InvalidOperationException("Lobby server must use an HTTP or HTTPS URL.");
         return DirectoryRequest(uri, method, body, authorization);
     }
@@ -987,9 +1001,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
         try
         {
-            using (var response = (HttpWebResponse)request.GetResponse())
-            using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
-                return reader.ReadToEnd();
+            using var response = (HttpWebResponse)request.GetResponse();
+            using var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8);
+            return reader.ReadToEnd();
         }
         catch (WebException e)
         {
@@ -1007,8 +1021,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     private static string ReleaseRequest(string address)
     {
-        Uri uri;
-        if (!Uri.TryCreate(address, UriKind.Absolute, out uri) || uri.Scheme != Uri.UriSchemeHttps)
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException("Invalid GitHub releases URL.");
         return DirectoryRequest(uri, "GET", null, null);
     }
@@ -1040,11 +1053,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         var numeric = value.Substring(0, end).Split('.');
         var parts = new List<int>();
         foreach (var item in numeric)
-        {
-            int part;
-            if (int.TryParse(item, out part)) parts.Add(part);
-        }
-        return parts.ToArray();
+            if (int.TryParse(item, out var part)) 
+                parts.Add(part);
+        
+        return [.. parts];
     }
 
     private static string JsonString(string json, string name)
@@ -1052,11 +1064,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return JsonString(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
     }
 
-    private static ConnectionMode ParseConnectionMode(string value)
-    {
-        ConnectionMode mode;
-        return Enum.TryParse(value, true, out mode) ? mode : ConnectionMode.Relay;
-    }
+    private static ConnectionMode ParseConnectionMode(string value) =>
+        Enum.TryParse(value, true, out ConnectionMode mode) ? mode : ConnectionMode.Relay;
 
     private static List<LobbyInfo> ParseAndSortLobbies(string json)
     {
@@ -1075,25 +1084,27 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             var item = entry as Dictionary<string, object>;
             if (item == null) continue;
-            var lobby = new LobbyInfo();
-            lobby.id = JsonString(item, "id");
-            lobby.name = JsonString(item, "name");
-            lobby.hostName = JsonString(item, "hostName");
-            lobby.map = JsonString(item, "map");
-            lobby.players = JsonInt(item, "players");
-            lobby.maxPlayers = JsonInt(item, "maxPlayers");
-            lobby.pvp = JsonBool(item, "pvp");
-            lobby.canGrab = JsonBool(item, "canGrab");
-            lobby.grabOnlyUnconscious = JsonBool(item, "grabOnlyUnconscious");
-            lobby.allowRespawn = JsonBool(item, "allowRespawn");
-            lobby.respawnTime = JsonInt(item, "respawnTime");
-            lobby.numberOfLives = JsonInt(item, "numberOfLives");
-            lobby.respawnAtStart = JsonBool(item, "respawnAtStart");
-            lobby.playerCollisions = JsonBool(item, "playerCollisions");
-            lobby.cheats = JsonBool(item, "cheats");
-            lobby.allowSwap = JsonBool(item, "allowSwap", true);
-            lobby.hostP2P = JsonBool(item, "HostP2P") || JsonBool(item, "hostP2P");
-            lobby.connectionMode = ParseConnectionMode(JsonString(item, "connectionMode"));
+            var lobby = new LobbyInfo
+            {
+                id = JsonString(item, "id"),
+                name = JsonString(item, "name"),
+                hostName = JsonString(item, "hostName"),
+                map = JsonString(item, "map"),
+                players = JsonInt(item, "players"),
+                maxPlayers = JsonInt(item, "maxPlayers"),
+                pvp = JsonBool(item, "pvp"),
+                canGrab = JsonBool(item, "canGrab"),
+                grabOnlyUnconscious = JsonBool(item, "grabOnlyUnconscious"),
+                allowRespawn = JsonBool(item, "allowRespawn"),
+                respawnTime = JsonInt(item, "respawnTime"),
+                numberOfLives = JsonInt(item, "numberOfLives"),
+                respawnAtStart = JsonBool(item, "respawnAtStart"),
+                playerCollisions = JsonBool(item, "playerCollisions"),
+                cheats = JsonBool(item, "cheats"),
+                allowSwap = JsonBool(item, "allowSwap", true),
+                hostP2P = JsonBool(item, "HostP2P") || JsonBool(item, "hostP2P"),
+                connectionMode = ParseConnectionMode(JsonString(item, "connectionMode"))
+            };
             if (!string.IsNullOrEmpty(lobby.id)) result.Add(lobby);
         }
         result.Sort((x, y) => x.name.CompareTo(y.name));
@@ -1103,11 +1114,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private static int JsonInt(string json, string name)
     {
         return JsonInt(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
-    }
-
-    private static bool JsonBool(string json, string name)
-    {
-        return JsonBool(MiniJson.Deserialize(json) as Dictionary<string, object>, name);
     }
 
     private static string JsonString(Dictionary<string, object> values, string name)
@@ -1195,14 +1201,26 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         };
     }
 
-    private void UpdateHostedLobbyInDirectory()
+    private void UpdateHostedLobbyInDirectory(string server, string lobbyId, string relayKey, string body)
     {
         try
         {
-            var body = JsonUtility.ToJson(BuildLobbyRequest(lobbySettings, default, lobbyName, playerName, MultiplayerSession.GetHostMapName(), MultiplayerSession.PlayerCount, true));
-            Http("PUT", "/v1/lobbies/" + hostedLobbyId, body, "Bearer " + hostRelayKey);
+            HttpAt(server, "PUT", "/v1/lobbies/" + lobbyId, body, "Bearer " + relayKey);
+            RunOnMainThread(() =>
+            {
+                if (hostedLobbyId == lobbyId && hostRelayKey == relayKey)
+                    status = "Lobby settings updated.";
+            });
         }
-        catch (Exception e) { Logger.LogInfo("Could not update hosted lobby: " + e.Message); }
+        catch (Exception e)
+        {
+            Logger.LogInfo("Could not update hosted lobby: " + e.Message);
+            RunOnMainThread(() =>
+            {
+                if (hostedLobbyId == lobbyId && hostRelayKey == relayKey)
+                    status = "Could not update lobby server: " + e.Message;
+            });
+        }
     }
 
     private void DeleteHostedLobby(string lobbyId, string relayKey)
@@ -1247,8 +1265,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         if (string.IsNullOrWhiteSpace(value)) return false;
         var candidate = value.Trim();
         if (!candidate.Contains("://")) candidate = "https://" + candidate;
-        Uri uri;
-        if (!Uri.TryCreate(candidate, UriKind.Absolute, out uri) ||
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
             string.IsNullOrEmpty(uri.Host)) return false;
         if (uri.Scheme == Uri.UriSchemeHttp)
@@ -1257,8 +1274,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             if (uri.IsDefaultPort) builder.Port = -1;
             uri = builder.Uri;
         }
-        if (uri.Host.IndexOf("e621.su", StringComparison.OrdinalIgnoreCase) >= 0)
-            uri = new UriBuilder(uri) { Host = "expie.fun" }.Uri;
+
         normalized = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         return true;
     }
