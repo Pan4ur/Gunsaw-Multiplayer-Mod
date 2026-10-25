@@ -931,7 +931,16 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var canJoin = plugin.CanJoinLobby;
         var hash = plugin.lobbies.Count + (canJoin ? 1 : 0) + (MultiplayerSession.IsActive ? 7 : 0);
         foreach (var lobby in plugin.lobbies)
-            hash = hash * 31 + (lobby.id ?? "").GetHashCode() + lobby.players + (lobby.map ?? "").GetHashCode();
+        {
+            hash = hash * 31 + (lobby.id ?? "").GetHashCode();
+            hash = hash * 31 + (lobby.name ?? "").GetHashCode();
+            hash = hash * 31 + (lobby.hostName ?? "").GetHashCode();
+            hash = hash * 31 + (lobby.map ?? "").GetHashCode();
+            hash = hash * 31 + lobby.players;
+            hash = hash * 31 + lobby.maxPlayers;
+            hash = hash * 31 + (lobby.teams ? 1 : 0);
+            hash = hash * 31 + (lobby.pvp ? 1 : 0);
+        }
         if (hash == renderedLobbyHash) return;
         renderedLobbyHash = hash;
         for (var i = lobbyRows.childCount - 1; i >= 0; i--) Destroy(lobbyRows.GetChild(i).gameObject);
