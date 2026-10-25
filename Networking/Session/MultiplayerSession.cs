@@ -416,6 +416,8 @@ internal static partial class MultiplayerSession
     internal static int NumberOfLives { get; private set; }
     internal static string LobbyId => lobbyId;
     internal static bool AutoRestart { get; private set; }
+    internal static bool UniformHP { get; private set; }
+    internal static float UHPValue { get; private set; } = LobbyHealthRule.DefaultUniformHPValue;
     internal static float HealthFactor { get; private set; } = LobbyHealthRule.DefaultFactor;
     internal static float RegenFactor { get; private set; } = LobbyRegenRule.DefaultFactor;
     internal static bool RespawnAtStart { get; private set; }
@@ -679,6 +681,8 @@ internal static partial class MultiplayerSession
         AllowRespawn = false;
         RespawnTimeSeconds = 0;
         NumberOfLives = 0;
+        UniformHP = false;
+        UHPValue = LobbyHealthRule.DefaultUniformHPValue;
         HealthFactor = LobbyHealthRule.DefaultFactor;
         RegenFactor = LobbyRegenRule.DefaultFactor;
         RespawnAtStart = false;
@@ -732,7 +736,7 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
@@ -760,6 +764,8 @@ internal static partial class MultiplayerSession
         GGOnDeath = settings.GGOnDeath;
         StartingAmmo = settings.StartingAmmo ?? LobbyAmmoRules.StartingDefault;
         RespawnAmmo = settings.RespawnAmmo ?? LobbyAmmoRules.RespawnDefault;
+        UniformHP = settings.UniformHP;
+        UHPValue = LobbyHealthRule.ClampUniformHPValue(parsed.UHPValue);
         HealthFactor = LobbyHealthRule.Clamp(parsed.HealthFactor);
         RegenFactor = LobbyRegenRule.Clamp(parsed.RegenFactor);
         BlackoutEnabled = settings.Blackout;

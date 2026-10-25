@@ -3,11 +3,13 @@ using UnityEngine;
 internal static class LobbyHealthRule
 {
     internal const float DefaultFactor = 1f;
+    internal const float DefaultUniformHPValue = 100f;
 
-    internal static float Clamp(float factor)
-    {
-        return float.IsNaN(factor) || float.IsInfinity(factor) ? DefaultFactor : Mathf.Clamp(factor, 0.01f, 10f);
-    }
+    internal static float ClampUniformHPValue(float value) =>
+        float.IsNaN(value) || float.IsInfinity(value) ? DefaultUniformHPValue : Mathf.Clamp(value, 1f, 10000f);
+
+    internal static float Clamp(float factor) =>
+        float.IsNaN(factor) || float.IsInfinity(factor) ? DefaultFactor : Mathf.Clamp(factor, 0.01f, 10f);
 
     internal static float ClampDamage(BodyScript body, float amount)
     {
@@ -25,8 +27,10 @@ internal static class LobbyHealthRule
         if (state.BaseMaxHealth <= 0f)
             state.BaseMaxHealth = baseMaxHealth > 0f ? baseMaxHealth : body.maxHealth > 0f ? body.maxHealth : body.health;
         if (state.BaseDyingStateThreshold == 0f) state.BaseDyingStateThreshold = body.dyingStateTreshold;
-        body.maxHealth = state.BaseMaxHealth * factor;
-        body.dyingStateTreshold = state.BaseDyingStateThreshold * factor;
+        var uniformHP = MultiplayerSession.IsActive && MultiplayerSession.UniformHP;
+        body.maxHealth = uniformHP ? ClampUniformHPValue(MultiplayerSession.UHPValue) : state.BaseMaxHealth * factor;
+        var thresholdFactor = uniformHP && state.BaseMaxHealth > 0f ? body.maxHealth / state.BaseMaxHealth : factor;
+        body.dyingStateTreshold = state.BaseDyingStateThreshold * thresholdFactor;
         body.health = Mathf.Min(body.health, body.maxHealth);
     }
 

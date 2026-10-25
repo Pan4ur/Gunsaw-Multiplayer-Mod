@@ -51,6 +51,10 @@ internal sealed class LobbySettings
     public string RespawnTime = "5";
     [LobbySetting("NumberOfLives", "Lives available to each player per level. Zero means unlimited lives.", "--lives")]
     public string NumberOfLives = "0";
+    [LobbySetting("UniformHP", "Give every character species the same maximum health, overriding HealthFactor.", "--uniform-hp")]
+    public bool UniformHP;
+    [LobbySetting("UHPValue", "Maximum health when Uniform HP is enabled. Allowed range: 1 to 10000.", "--uhp-value")]
+    public string UHPValue = "100";
     [LobbySetting("HealthFactor", "Multiplier for each player's maximum health. Allowed range: 0.01 to 10.", "--health-factor")]
     public string HealthFactor = "1.0";
     [LobbySetting("RegenFactor", "Multiplier for each player's health regeneration speed. Allowed range: 0 to 10.", "--regen-factor")]
@@ -97,7 +101,11 @@ internal sealed class LobbySettings
             regenFactor = LobbyRegenRule.DefaultFactor;
         regenFactor = LobbyRegenRule.Clamp(regenFactor);
         RegenFactor = regenFactor.ToString("0.##", CultureInfo.InvariantCulture);
-        return new ParsedLobbySettings(respawnTime, numberOfLives, maxPlayers, initialScale, healthFactor, regenFactor);
+        if (!float.TryParse((UHPValue ?? "").Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var uhpValue))
+            uhpValue = LobbyHealthRule.DefaultUniformHPValue;
+        uhpValue = LobbyHealthRule.ClampUniformHPValue(uhpValue);
+        UHPValue = uhpValue.ToString("0.##", CultureInfo.InvariantCulture);
+        return new ParsedLobbySettings(respawnTime, numberOfLives, maxPlayers, initialScale, healthFactor, regenFactor, uhpValue);
     }
 }
 
@@ -109,8 +117,9 @@ internal readonly struct ParsedLobbySettings
     internal readonly float InitialScale;
     internal readonly float HealthFactor;
     internal readonly float RegenFactor;
+    internal readonly float UHPValue;
 
-    internal ParsedLobbySettings(int respawnTime, int numberOfLives, int maxPlayers, float initialScale, float healthFactor, float regenFactor)
+    internal ParsedLobbySettings(int respawnTime, int numberOfLives, int maxPlayers, float initialScale, float healthFactor, float regenFactor, float uhpValue)
     {
         RespawnTime = respawnTime;
         NumberOfLives = numberOfLives;
@@ -118,5 +127,6 @@ internal readonly struct ParsedLobbySettings
         InitialScale = initialScale;
         HealthFactor = healthFactor;
         RegenFactor = regenFactor;
+        UHPValue = uhpValue;
     }
 }

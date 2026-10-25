@@ -11,8 +11,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GameObject panel;
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, regenFactorInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput, ggSequenceInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle, restrictLightToggle, gunGameToggle;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, uhpValueInput, regenFactorInput, initialScaleInput, startingWeaponInput, respawnWeaponInput, startingAmmoInput, respawnAmmoInput, serverInput, teamsCfgInput, ggSequenceInput;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle, restrictLightToggle, gunGameToggle, uniformHPToggle;
     private Button ggResetButton, ggRollbackButton, ggNoneButton;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
@@ -88,6 +88,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetInput(maxPlayersInput, viewingLobbySettings ? MultiplayerSession.MaxPlayers.ToString() : plugin.lobbySettings.MaxPlayers);
         SetInput(respawnInput, viewingLobbySettings ? MultiplayerSession.RespawnTimeSeconds.ToString() : plugin.lobbySettings.RespawnTime);
         SetInput(numberOfLivesInput, viewingLobbySettings ? MultiplayerSession.NumberOfLives.ToString() : plugin.lobbySettings.NumberOfLives);
+        SetToggle(uniformHPToggle, viewingLobbySettings ? MultiplayerSession.UniformHP : plugin.lobbySettings.UniformHP);
+        SetInput(uhpValueInput, viewingLobbySettings ? MultiplayerSession.UHPValue.ToString("0.##") : plugin.lobbySettings.UHPValue);
         SetInput(healthFactorInput, viewingLobbySettings ? MultiplayerSession.HealthFactor.ToString("0.##") : plugin.lobbySettings.HealthFactor);
         SetInput(regenFactorInput, viewingLobbySettings ? MultiplayerSession.RegenFactor.ToString("0.##") : plugin.lobbySettings.RegenFactor);
         SetToggle(blackoutToggle, viewingLobbySettings ? MultiplayerSession.BlackoutEnabled : plugin.lobbySettings.Blackout);
@@ -145,7 +147,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         maxPlayersInput.interactable = interactable;
         respawnInput.interactable = interactable && allowRespawn;
         numberOfLivesInput.interactable = interactable && allowRespawn;
-        healthFactorInput.interactable = interactable;
+        uniformHPToggle.interactable = interactable;
+        uhpValueInput.interactable = interactable && plugin.lobbySettings.UniformHP;
+        healthFactorInput.interactable = interactable && !plugin.lobbySettings.UniformHP;
         regenFactorInput.interactable = interactable;
         blackoutToggle.interactable = interactable;
         restrictLightToggle.interactable = interactable && plugin.lobbySettings.Blackout;
@@ -287,6 +291,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         CreateText(livesRow, "NUMBER OF LIVES", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         numberOfLivesInput = CreateInput(livesRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 5, value => plugin.lobbySettings.NumberOfLives = value);
         AddTooltip(livesRow.gameObject, "NUMBER OF LIVES: 0 gives unlimited respawns. With 1 or more, each death uses a life; after the last life, the player spectates until the level reloads.");
+        uniformHPToggle = CreateToggle(CreateSettingsRow(settings), "UNIFORM HP", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.UniformHP = value);
+        AddTooltip(uniformHPToggle.gameObject, "UNIFORM HP: Gives every character species the max health set in UHP VALUE. Overrides HEALTH FACTOR.");
+        var uhpValueRow = CreateSettingsRow(settings);
+        CreateText(uhpValueRow, "UHP VALUE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        uhpValueInput = CreateInput(uhpValueRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 8, value => plugin.lobbySettings.UHPValue = value);
+        AddTooltip(uhpValueRow.gameObject, "UHP VALUE: Max health for every player when UNIFORM HP is enabled. Allowed range: 1 to 10000.");
         var healthFactorRow = CreateSettingsRow(settings);
         CreateText(healthFactorRow, "HEALTH FACTOR", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         healthFactorInput = CreateInput(healthFactorRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.lobbySettings.HealthFactor = value);

@@ -322,6 +322,8 @@ internal static partial class MultiplayerSession
                 GGOnDeath = settings.GGOnDeath;
                 StartingAmmo = settings.StartingAmmo;
                 RespawnAmmo = settings.RespawnAmmo;
+                UniformHP = settings.UniformHP;
+                UHPValue = settings.UHPValue;
                 HealthFactor = settings.HealthFactor;
                 RegenFactor = settings.RegenFactor;
                 BlackoutEnabled = settings.BlackoutEnabled;
