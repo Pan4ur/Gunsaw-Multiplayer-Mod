@@ -48,7 +48,7 @@ internal static class LoadDistanceSystem
             wasActive = true;
             hostSimulationActive = MultiplayerSession.IsHosting && MultiplayerSession.IsHost;
             activeDistanceSqr = DefaultTickDistanceSqr;
-            ResourceManager.maxDistance = float.PositiveInfinity;
+            ResourceManager.maxDistance = MultiplayerSession.IsConnected ? float.PositiveInfinity : PlayerPrefs.GetFloat("loadDistance", DefaultTickDistanceSqr);
             ObjectUnloader.dist = float.PositiveInfinity;
             ObjectUnloader.distTwo = float.PositiveInfinity;
             RefreshPlayerPositions();

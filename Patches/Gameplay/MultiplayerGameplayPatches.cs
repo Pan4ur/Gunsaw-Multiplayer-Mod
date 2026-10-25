@@ -267,7 +267,7 @@ internal static class MultiplayerGameManagerFocusPatch
     private static void SetAiActive(GameObject gameObject, bool requested)
     {
         if (gameObject == null) return;
-        if (!MultiplayerSession.IsActive)
+        if (!MultiplayerSession.IsConnected)
         {
             if (gameObject.activeSelf != requested) 
                 gameObject.SetActive(requested);
