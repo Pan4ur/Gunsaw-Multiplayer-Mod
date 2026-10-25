@@ -12,6 +12,7 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
     private readonly bool CreateScreenCrack;
     private readonly float BaseDamage;
     private readonly bool BodyColliderHit;
+    private readonly bool IsRozaShot;
     
     internal PlayerWoundPacket(
         PacketType packetType,
@@ -25,7 +26,8 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
         bool hasSplash,
         bool createScreenCrack,
         float baseDamage,
-        bool bodyColliderHit)
+        bool bodyColliderHit,
+        bool isRozaShot = false)
     {
         this.packetType = packetType;
 
@@ -40,6 +42,7 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
         CreateScreenCrack = createScreenCrack;
         BaseDamage = baseDamage;
         BodyColliderHit = bodyColliderHit;
+        IsRozaShot = isRozaShot;
     }
 
     public PacketType Type => packetType;
@@ -67,5 +70,6 @@ internal readonly struct PlayerWoundPacket : INetworkPacket
         writer.WriteBoolean(CreateScreenCrack);
         writer.WriteSingle(BaseDamage);
         writer.WriteBoolean(BodyColliderHit);
+        if (IsRozaShot) writer.WriteBoolean(IsRozaShot);
     }
 }

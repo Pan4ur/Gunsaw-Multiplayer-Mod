@@ -358,6 +358,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         internal bool Critical;
         internal float BaseDamage;
         internal bool BodyColliderHit;
+        internal bool IsRozaShot;
     }
 
     internal static void ReplicateExplosion(GameObject explosionObject, Vector2 position,
@@ -433,7 +434,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     {
         var replica = limb == null ? null : NetworkAvatarManager.ReplicaForBody(limb.body);
         if (!MultiplayerSession.IsConnected || activeShotState == null || replica == null ||
-            weapon != activeShotState.Weapon) return;
+weapon != activeShotState.Weapon) return;
         var limbs = replica.remoteBody.limbs ?? [];
         var limbIndex = limbs.IndexOf(limb);
         if (limbIndex < 0 || limbIndex > short.MaxValue) return;
@@ -449,7 +450,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             HasSplash = splash != null,
             Critical = limb.isCritical,
             BaseDamage = TakeBaseDamage(activeShotState, replica.remotePeerId),
-            BodyColliderHit = TakeBodyColliderHit(activeShotState, replica.remotePeerId, limb)
+            BodyColliderHit = TakeBodyColliderHit(activeShotState, replica.remotePeerId, limb),
+            IsRozaShot = weapon.isRoza
         });
     }
 
@@ -474,7 +476,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                 wound.HasSplash,
                 createScreenCrack,
                 wound.BaseDamage,
-                wound.BodyColliderHit
+                wound.BodyColliderHit,
+                wound.IsRozaShot
             ),
             wound.TargetPeerId
         );
@@ -1227,14 +1230,21 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     private static void RouteRemotePlayerDamage(NetworkAvatarReplication replica, float amount, bool critical)
     {
-        if (ShouldCancelExplosionDamage()) return;
-        if (replica != null && TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId)) return;
-        if (replica != null && KartPassengers.IsProtectedPassenger(replica.remoteBody))
-        {
+        if (ShouldCancelExplosionDamage())
             return;
+
+        if (replica != null)
+        {
+            if (TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId))
+                return;
+       
+            if (KartPassengers.IsProtectedPassenger(replica.remoteBody))
+                return;   
         }
+        
         if (MultiplayerSession.PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
             ScoreboardSystem.RecordLocalPvpHit(amount, critical);
+        
         if (MultiplayerSession.IsHost)
         {
             if (currentShooter == null || !currentShooter.isPlayer || MultiplayerSession.PvpEnabled)
@@ -1242,12 +1252,17 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             
             return;
         }
-        if (currentShooter == null) return;
+        
+        if (currentShooter == null)
+            return;
+        
         var localPlayer = PlayerScript.player;
 
         if (localPlayer == null || currentShooter != localPlayer.bodyScript) return;
         MultiplayerSession.Send(new PvpDamagePacket(amount, critical), replica.remotePeerId);
     }
+
+    internal static bool IsRozaShot => activeShotState?.Weapon != null && activeShotState.Weapon.isRoza;
 
     internal static bool ShouldCancelExplosionDamage() =>
         !MultiplayerSession.IsHost && activeShotState?.IsExplosion == true && PlayerScript.player != null && currentShooter == PlayerScript.player.bodyScript;
@@ -1454,6 +1469,9 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                     CameraFollow.cam.CreateScreenCrack();
             }
         }
+        
+        if (packet.IsRozaShot && body.temporarySlowdown < 0.5f)
+            body.temporarySlowdown = 0.5f;
     }
 
     internal static SpriteRenderer FindLatestWound(LimbScript limb, Vector2 hitPoint)

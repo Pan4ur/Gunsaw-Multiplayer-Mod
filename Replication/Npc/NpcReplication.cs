@@ -1475,7 +1475,7 @@ internal sealed class NpcReplication : MonoBehaviour
     private void SendClientDamage(string id, float amount, bool critical)
     {
         if (MultiplayerSession.IsHost) return;
-        MultiplayerSession.Send(new NpcDamagePacket(WireId(id), amount, critical), 1);
+        MultiplayerSession.Send(new NpcDamagePacket(WireId(id), amount, critical, NetworkAvatarManager.IsRozaShot), 1);
     }
 
     internal static bool BlockClientWeaponDrop(BodyScript body)
@@ -1493,6 +1493,8 @@ internal sealed class NpcReplication : MonoBehaviour
         var source = NetworkAvatarManager.RemoteBodyForPeer(peerId);
         if (source != null) NetworkAvatarManager.RecordDamageSource(body, source);
         body.Damaged(packet.Critical);
+        if (packet.IsRozaShot && body.temporarySlowdown < 0.5f)
+            body.temporarySlowdown = 0.5f;
     }
 
     private void ApplyClientGrab(ushort peerId, NpcGrabPacket packet)

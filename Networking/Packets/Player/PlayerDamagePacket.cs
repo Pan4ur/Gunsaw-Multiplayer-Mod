@@ -26,6 +26,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
     internal readonly bool CreateScreenCrack;
     internal readonly float BaseDamage;
     internal readonly bool BodyColliderHit;
+    internal readonly bool IsRozaShot;
     
     private PlayerDamagePacket(float amount, bool critical, PlayerDamageEffect effect, bool hasPlayerSource = false,
         ushort sourcePeerId = 0,
@@ -33,7 +34,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         float localPointX = 0f, float localPointY = 0f, float directionX = 0f, float directionY = 0f,
         string weaponSprite = "", string woundSprite = "", bool hasSplash = false,
         bool createScreenCrack = false, string sourceName = "", string sourceWeapon = "",
-        float baseDamage = 0f, bool bodyColliderHit = false)
+        float baseDamage = 0f, bool bodyColliderHit = false, bool isRozaShot = false)
     {
         Amount = amount;
         Critical = critical;
@@ -53,6 +54,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         CreateScreenCrack = createScreenCrack;
         BaseDamage = baseDamage;
         BodyColliderHit = bodyColliderHit;
+        IsRozaShot = isRozaShot;
     }
 
     internal static PlayerDamagePacket Damage(float amount, bool critical, bool hasPlayerSource = false,
@@ -72,7 +74,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         bool hasSplash,
         bool createScreenCrack,
         float baseDamage,
-        bool bodyColliderHit)
+        bool bodyColliderHit,
+        bool isRozaShot = false)
         => new(
             amount: 0f,
             critical: false,
@@ -88,7 +91,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
             hasSplash: hasSplash,
             createScreenCrack: createScreenCrack,
             baseDamage: baseDamage,
-            bodyColliderHit: bodyColliderHit
+            bodyColliderHit: bodyColliderHit,
+            isRozaShot: isRozaShot
         );
 
     public PacketType Type => PacketType.PlayerDamage;
@@ -117,6 +121,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                 writer.WriteBoolean(CreateScreenCrack);
                 writer.WriteSingle(BaseDamage);
                 writer.WriteBoolean(BodyColliderHit);
+                if (IsRozaShot) writer.WriteBoolean(IsRozaShot);
                 break;
         }
     }
@@ -148,6 +153,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                 var createScreenCrack = reader.ReadBoolean();
                 var baseDamage = reader.ReadSingle();
                 var bodyColliderHit = reader.ReadBoolean();
+                var isRozaShot = reader.Remaining > 0 && reader.ReadBoolean();
                 
                 return Wound(
                     limbIndex,
@@ -160,7 +166,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                     hasSplash,
                     createScreenCrack,
                     baseDamage,
-                    bodyColliderHit
+                    bodyColliderHit,
+                    isRozaShot
                 );
             }
             default: throw new System.IO.InvalidDataException("Unknown player damage effect.");
