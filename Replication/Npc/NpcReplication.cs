@@ -1910,6 +1910,9 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static void CacheDismembermentVisuals(NpcProxy proxy)
     {
+        foreach (var limb in proxy.Body.limbs)
+            if (limb != null && limb.limbType == 1)
+                proxy.OriginalLimbParents[limb.transform] = limb.transform.parent;
         proxy.DismemberManagers = proxy.Body.GetComponentsInChildren<DismemberManager>(true);
         foreach (var manager in proxy.DismemberManagers)
         {
@@ -1926,6 +1929,14 @@ internal sealed class NpcReplication : MonoBehaviour
 
     private static void ApplyDismembermentVisuals(NpcProxy proxy)
     {
+        foreach (var limb in proxy.Body.limbs)
+        {
+            if (limb == null || !proxy.OriginalLimbParents.TryGetValue(limb.transform, out var originalParent)) continue;
+            var parent = limb.dismembered ? proxy.Body.transform.parent : originalParent;
+            if (limb.transform.parent == parent) continue;
+            limb.transform.SetParent(parent, true);
+            TrackTransformOrder(proxy, limb.transform);
+        }
         foreach (var pair in proxy.OriginalDismemberSprites)
             if (pair.Key != null) pair.Key.sprite = pair.Value;
         foreach (var pair in proxy.OriginalJointStates)
@@ -2014,6 +2025,8 @@ internal sealed class NpcReplication : MonoBehaviour
             return;
         }
         proxy.Root.SetActive(true);
+        foreach (var pair in proxy.OriginalLimbParents)
+            if (pair.Key != null) pair.Key.SetParent(pair.Value, true);
         foreach (var pair in proxy.Behaviours)
             if (pair.Key != null) pair.Key.enabled = pair.Value;
         foreach (var pair in proxy.OtherBehaviours)
@@ -2842,6 +2855,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly Dictionary<GameObject, bool> OriginalFireActive = new ();
         public readonly HashSet<GameObject> OwnedFireVisuals = [];
         public readonly Dictionary<SpriteRenderer, Sprite> OriginalDismemberSprites = new ();
+        public readonly Dictionary<Transform, Transform> OriginalLimbParents = new ();
         public readonly Dictionary<Joint2D, bool> OriginalJointStates = new ();
         public DismemberManager[] DismemberManagers = [];
         public AIScript[] AiControllers = [];
