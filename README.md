@@ -39,6 +39,7 @@ MP Features:
 - P2P and Relay connection modes
 - Discord RPC
 - Blackout mode (lights are off, headlamp only)
+- Co-op level editing
 
 Props:
 - NPC spawner
@@ -47,6 +48,7 @@ Props:
 - Lamps now have an id to toggle and [angle](img/lamp_angle.png)
 - Player spawn points now have a Team ID field: 0 = first team in TEAMS CFG, 1 = second, etc. Leave it empty for a shared spawn
 - Weapons (props) now have a respawn time
+- Medical station
 
 ## Installation
 
