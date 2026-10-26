@@ -25,7 +25,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private bool chatWasOpen;
     private readonly List<TMP_Text> debugMarkers = new();
     private readonly Dictionary<MedicalStationRuntime, TMP_Text> medicalStationTimers = new();
-    private readonly Dictionary<BodyScript, TMP_Text> nameTags = new();
+    private readonly Dictionary<BodyScript, NametagVisual> nameTags = new();
+    private readonly HashSet<BodyScript> activeNameTags = new();
+    private readonly List<BodyScript> staleNameTags = new();
     private readonly Dictionary<BodyScript, TMP_Text> chatBubbles = new();
     private readonly Dictionary<BodyScript, CoopMarker> coopMarkers = new();
     private readonly Dictionary<ushort, FinalLeaderboardRow> finalLeaderboardRows = new();
@@ -453,7 +455,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     {
         var camera = Camera.main;
         if (camera == null) return;
-        var active = new HashSet<BodyScript>();
+        activeNameTags.Clear();
         foreach (var remote in NetworkAvatarManager.RemotePlayers())
         {
             var body = remote.Body;
@@ -462,39 +464,68 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             if (!BlackoutRule.IsVisibleInHeadlamp(body)) visibility = 0f;
             if (visibility <= 0.01f)
             {
-                active.Add(body);
-                TMP_Text hiddenTag;
-                if (nameTags.TryGetValue(body, out hiddenTag) && hiddenTag != null)
-                    hiddenTag.gameObject.SetActive(false);
+                activeNameTags.Add(body);
+                if (nameTags.TryGetValue(body, out var hiddenTag) && hiddenTag.Root != null)
+                    SetActive(hiddenTag.Root.gameObject, false);
                 continue;
             }
             var scale = Mathf.Clamp(Mathf.Abs(body.characterScale), 0.7f, 1.8f);
             Vector3 position = body.inVehicle ? body.transform.position : (Vector3)body.rb.position;
             var screen = camera.WorldToScreenPoint(position + Vector3.up * (1.35f * scale));
             if (screen.z <= 0f) continue;
-            active.Add(body);
-            TMP_Text tag;
-            if (!nameTags.TryGetValue(body, out tag) || tag == null || tag is TextMeshPro)
+            activeNameTags.Add(body);
+            if (!nameTags.TryGetValue(body, out var tag) || tag.Root == null)
             {
-                if (tag != null) Destroy(tag.gameObject);
-                tag = Text(root.transform, "", Vector2.zero, new Vector2(420f, 32f), 15, TextAlignmentOptions.Center);
-                ApplyChatFont(tag);
-                tag.fontStyle = FontStyles.Bold;
+                var background = new GameObject("Nametag", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                background.transform.SetParent(root.transform, false);
+                var text = Text(background.transform, "", Vector2.zero, new Vector2(420f, 32f), 15, TextAlignmentOptions.Center);
+                ApplyChatFont(text);
+                text.fontStyle = FontStyles.Bold;
+                text.enableWordWrapping = false;
+                text.overflowMode = TextOverflowModes.Overflow;
+                text.raycastTarget = false;
+                tag = new NametagVisual
+                {
+                    Root = background.GetComponent<RectTransform>(),
+                    Background = background.GetComponent<Image>(),
+                    Text = text
+                };
+                tag.Background.raycastTarget = false;
                 nameTags[body] = tag;
             }
-            var name = NetworkAvatarManager.RemoteNameTag(body);
-            tag.text = ScoreboardSystem.IsMvp(remote.PeerId) ? "[MVP] " + name : name;
+            var showStats = !MultiplayerSession.PvpEnabled || TeamSystem.Same(MultiplayerSession.LocalPeerId, remote.PeerId);
+            var percent = showStats && NametagSettings.Health && body.maxHealth > 0f
+                ? Mathf.Clamp(body.health / body.maxHealth * 100f, 0f, 100f) : -1f;
+            var health = percent < 0f ? -1 : Mathf.RoundToInt(percent);
+            var healthBand = percent < 25f ? 0 : percent < 50f ? 1 : percent < 75f ? 2 : 3;
+            var weapon = showStats && NametagSettings.Ammo && !body.unarmed ? body.weapon : null;
+            var capacity = weapon != null && weapon.stats != null ? weapon.stats.magSize : -1;
+            var ammo = capacity > 0 ? Mathf.Max(0, weapon.ammo) : -1;
+            var status = !body.isAlive ? 2 : !body.IsConsc() ? 1 : 0;
+            var score = NametagSettings.KillDeath ? ScoreboardSystem.ForPlayer(remote.PeerId) : default;
+            tag.UpdateText(remote.Name, NametagSettings.Ping ? remote.PingMs : int.MinValue,
+                health, healthBand, ammo, capacity, status, ScoreboardSystem.IsMvp(remote.PeerId),
+                NametagSettings.KillDeath ? score.Kills : -1, NametagSettings.KillDeath ? score.Deaths : -1);
             var color = TeamSystem.Enabled ? TeamSystem.Color(remote.PeerId) :
-                !body.isAlive ? new Color(1f, 0.28f, 0.28f) : !body.IsConsc() ? new Color(1f, 0.72f, 0.22f) : Color.white;
+                status == 2 ? new Color(1f, 0.28f, 0.28f) : status == 1 ? new Color(1f, 0.72f, 0.22f) : Color.white;
             color.a = visibility;
-            tag.color = color;
-            tag.rectTransform.anchoredPosition = CanvasPosition(screen + new Vector3(0f, 12f, 0f));
-            tag.gameObject.SetActive(true);
+            if (tag.Text.color != color) tag.Text.color = color;
+            tag.Background.enabled = NametagSettings.Background;
+            var backgroundColor = new Color(0f, 0f, 0f, 0.5f * visibility);
+            if (tag.Background.color != backgroundColor) tag.Background.color = backgroundColor;
+            var tagScale = Vector3.one * NametagSettings.Scale;
+            if (tag.Root.localScale != tagScale) tag.Root.localScale = tagScale;
+            tag.Root.anchoredPosition = CanvasPosition(screen + new Vector3(0f, 12f, 0f));
+            SetActive(tag.Root.gameObject, true);
         }
-        var stale = new List<BodyScript>();
+        staleNameTags.Clear();
         foreach (var pair in nameTags)
-            if (!active.Contains(pair.Key)) { if (pair.Value != null) pair.Value.gameObject.SetActive(false); stale.Add(pair.Key); }
-        foreach (var body in stale) nameTags.Remove(body);
+            if (!activeNameTags.Contains(pair.Key))
+            {
+                if (pair.Value.Root != null) Destroy(pair.Value.Root.gameObject);
+                staleNameTags.Add(pair.Key);
+            }
+        foreach (var body in staleNameTags) nameTags.Remove(body);
     }
 
     private void UpdateMedicalStationTimers()
@@ -1019,6 +1050,66 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         Vector2 local;
         RectTransformUtility.ScreenPointToLocalPointInRectangle((RectTransform)root.transform, screen, null, out local);
         return local;
+    }
+
+    internal sealed class NametagVisual
+    {
+        internal RectTransform Root;
+        internal TMP_Text Text;
+        internal Image Background;
+        private string name;
+        private int ping, health, healthBand, ammo, capacity, status, kills, deaths;
+        private bool mvp;
+
+        internal void UpdateText(string nextName, int nextPing, int nextHealth, int nextHealthBand,
+            int nextAmmo, int nextCapacity, int nextStatus, bool nextMvp, int nextKills = -1, int nextDeaths = -1)
+        {
+            if (name == nextName && ping == nextPing && health == nextHealth && healthBand == nextHealthBand &&
+                ammo == nextAmmo && capacity == nextCapacity && status == nextStatus && mvp == nextMvp &&
+                kills == nextKills && deaths == nextDeaths) return;
+            name = nextName;
+            ping = nextPing;
+            health = nextHealth;
+            healthBand = nextHealthBand;
+            ammo = nextAmmo;
+            capacity = nextCapacity;
+            status = nextStatus;
+            mvp = nextMvp;
+            kills = nextKills;
+            deaths = nextDeaths;
+            var label = new System.Text.StringBuilder();
+            if (mvp) label.Append("[MVP] ");
+            if (status == 2) label.Append("DEAD ");
+            else if (status == 1) label.Append("K.O. ");
+            label.Append(name);
+            var separator = " [";
+            if (ping != int.MinValue)
+            {
+                label.Append(separator).Append(ping < 0 ? "-" : ping.ToString());
+                separator = " | ";
+            }
+            if (health >= 0)
+            {
+                var color = healthBand == 0 ? "FF4747" : healthBand == 1 ? "FF991F" : healthBand == 2 ? "FFDD33" : "55EE66";
+                label.Append(separator).Append("<color=#").Append(color).Append('>').Append(health).Append("%</color>");
+                separator = " | ";
+            }
+            if (ammo >= 0)
+            {
+                label.Append(separator).Append(ammo).Append('/').Append(capacity);
+                separator = " | ";
+            }
+            if (kills >= 0 && deaths >= 0)
+            {
+                label.Append(separator).Append(kills).Append('/').Append(deaths);
+                separator = " | ";
+            }
+            if (separator != " [") label.Append(']');
+            Text.text = label.ToString();
+            var size = Text.GetPreferredValues(Text.text);
+            Root.sizeDelta = new Vector2(size.x + 12f, size.y + 6f);
+            Text.rectTransform.sizeDelta = size;
+        }
     }
 
     private sealed class CoopMarker

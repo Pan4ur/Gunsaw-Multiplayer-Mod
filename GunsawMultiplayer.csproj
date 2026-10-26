@@ -25,6 +25,7 @@
     <EmbeddedResource Include="Assets\edit.png" />
     <EmbeddedResource Include="Assets\configure.png" />
     <EmbeddedResource Include="Assets\emoji.png" />
+    <EmbeddedResource Include="Assets\orange-nametag-preview.png" LogicalName="GunsawMultiplayer.Assets.orange-nametag-preview.png" />
     <EmbeddedResource Include="Assets\editor-lock.png" />
     <EmbeddedResource Include="Assets\editor-unlock.png" />
     <EmbeddedResource Include="Assets\Sounds\respawn.ogg"
