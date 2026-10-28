@@ -233,6 +233,10 @@ internal sealed class ArsenalMenu : MonoBehaviour
             return;
         }
 
+        body.CurrentState = BodyScript.EntityState.Idle;
+        body.upVector = 0f;
+        body.isWalking = false;
+        body.isCrouching = false;
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
         RefreshCharacterPreview();
