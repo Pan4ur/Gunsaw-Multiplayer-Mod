@@ -680,6 +680,12 @@ weapon != activeShotState.Weapon) return;
         if (localBody == null) return;
         var current = ai.targetBody;
         
+        if (current != null && current.isPlayer && !NpcTeamsDiffer(current, ai.body))
+        {
+            ai.targetBody = null;
+            current = null;
+        }
+
         if (current != null && current != localBody && NetworkAvatarManager.ReplicaForBody(current) == null)
             return;
 
@@ -694,12 +700,13 @@ weapon != activeShotState.Weapon) return;
             remote.team = RemoteTeam(localBody);
             SelectNpcPlayerTarget(ai.body, remote, ref best, ref bestDistance);
         }
-        if (best != null) ai.targetBody = best;
+
+        best.Let(it => ai.targetBody = it);
     }
 
     private static void SelectNpcPlayerTarget(BodyScript npc, BodyScript candidate, ref BodyScript best, ref float bestDistance)
     {
-        if (candidate == null || !candidate.isAlive || !candidate.gameObject.activeInHierarchy || candidate.team == npc.team) 
+        if (candidate == null || !candidate.isAlive || !candidate.gameObject.activeInHierarchy || !NpcTeamsDiffer(candidate, npc))
             return;
         
         var distance = Vector2.Distance(npc.transform.position, candidate.transform.position);
@@ -709,6 +716,18 @@ weapon != activeShotState.Weapon) return;
         if (distance >= 3.5f && Physics2D.Linecast(from, to, LayerMask.GetMask("Ground"))) return;
         best = candidate;
         bestDistance = distance;
+    }
+
+    internal static bool NpcTeamsDiffer(BodyScript candidate, BodyScript npc)
+    {
+        if (candidate.team == npc.team) 
+            return false;
+            
+        if (!MultiplayerSession.IsConnected || !TeamSystem.Enabled) 
+            return true;
+            
+        var peerId = DamageSourcePeerId(candidate);
+        return peerId == 0 || TeamSystem.Name(peerId) != npc.team;
     }
 
     internal static string RemoteTeam(BodyScript localBody) => MultiplayerSession.PvpEnabled ? PvpRemoteTeam : localBody.team;

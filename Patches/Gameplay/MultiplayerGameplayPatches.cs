@@ -1442,6 +1442,27 @@ internal static class MultiplayerPlayerKickPatch
 [HarmonyPatch(typeof(AIScript), "FixedUpdate")]
 internal static class MultiplayerNpcTargetPatch
 {
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var original = AccessTools.Field(typeof(BodyScript), nameof(BodyScript.team));
+        var inequalityOp = AccessTools.Method(typeof(string), "op_Inequality");
+        var replacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.NpcTeamsDiffer));
+        
+        foreach (var i in instructions)
+        {
+            if (i.LoadsField(original))
+            {
+                i.opcode = OpCodes.Nop; // nop
+                i.operand = null;
+            }
+            else if (i.Calls(inequalityOp)) 
+                i.operand = replacement;
+            
+            yield return i;
+        }
+    }
+
     private static bool Prefix(AIScript __instance)
     {
         if (__instance == null || !LoadDistanceSystem.ShouldTickNpc(__instance.body)) return false;
