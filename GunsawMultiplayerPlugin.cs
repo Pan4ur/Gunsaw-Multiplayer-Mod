@@ -154,7 +154,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         ushort suggestingPeer;
         CustomLevelSuggestionPacket suggestion;
         while (MultiplayerSession.TryTakeCustomLevelSuggestion(out suggestingPeer, out suggestion))
-            multiplayerLobbyUi?.ShowCustomLevelSuggestion(MultiplayerSession.PlayerName(suggestingPeer), suggestion);
+        {
+            if (HeadlessLobbyService.IsHeadlessServer && headlessLobbyService.IsOperator(suggestingPeer))
+                AcceptCustomLevelSuggestion(suggestion);
+            else
+                multiplayerLobbyUi?.ShowCustomLevelSuggestion(MultiplayerSession.PlayerName(suggestingPeer), suggestion);
+        }
         TeamSystem.Tick();
         ScoreboardSystem.Tick();
         GunGameRule.Tick();

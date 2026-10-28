@@ -264,9 +264,11 @@ internal sealed class HeadlessLobbyService : IDisposable
         }
     }
 
+    internal bool IsOperator(ushort senderId) => !string.IsNullOrEmpty(operatorName) && MultiplayerSession.HasPeer(senderId) && string.Equals(MultiplayerSession.PlayerName(senderId), operatorName, StringComparison.OrdinalIgnoreCase);
+
     private bool RegisterVote(ushort senderId, string target, string description)
     {
-        var isOperator = !string.IsNullOrEmpty(operatorName) && MultiplayerSession.HasPeer(senderId) && string.Equals(MultiplayerSession.PlayerName(senderId), operatorName, StringComparison.OrdinalIgnoreCase);
+        var isOperator = IsOperator(senderId);
         if (!isOperator)
         {
             foreach (var vote in votes.Values) vote.Remove(senderId);
