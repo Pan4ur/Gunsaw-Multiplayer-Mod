@@ -222,9 +222,14 @@ internal sealed class ArsenalMenu : MonoBehaviour
 
     private void Update()
     {
-        if (menu == null) return;
-        if (!menu.activeSelf)
+
+        if (menu == null || !menu.activeSelf)
+            return;
+
+        var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
+        if (body == null || !body.isAlive)
         {
+            CloseAndEquip();
             return;
         }
 
@@ -462,7 +467,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
     {
         menu.SetActive(false);
         var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
-        if (body != null && (arsenal == null || arsenal.TryGrantAmmo()))
+        if (body != null && body.isAlive && (arsenal == null || arsenal.TryGrantAmmo()))
         {
             var amounts = arsenal == null ? new[] { 60, 60, 60, 60 } : arsenal.AmmoAmounts();
             for (var index = 0; index < amounts.Length; index++)
