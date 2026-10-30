@@ -15,6 +15,9 @@ internal static class TeamSystem
     private static CursorLockMode cursorLock;
     private static bool cursorWrite;
     private static int panelClosedFrame = -1;
+    private static Button changeTeamButton;
+    private static RectTransform[] pauseButtons;
+    private static Vector2 pauseButtonOffset;
     internal static bool Enabled { get; private set; }
     internal static bool BlocksPlayerInput => panel != null || Time.frameCount == panelClosedFrame;
 
@@ -39,6 +42,7 @@ internal static class TeamSystem
 
     internal static void Tick()
     {
+        UpdatePauseButton();
         if (!MultiplayerSession.IsActive)
         {
             if (Enabled) Configure(false, "");
@@ -61,12 +65,21 @@ internal static class TeamSystem
         else MultiplayerSession.Send(new TeamPacket(MultiplayerSession.LocalPeerId, name));
     }
 
+    internal static void ChangeTeam()
+    {
+        if (!MultiplayerSession.IsInLobby || !Enabled) return;
+        Set(MultiplayerSession.LocalPeerId, "");
+        if (!MultiplayerSession.IsHost)
+            MultiplayerSession.Send(new TeamPacket(MultiplayerSession.LocalPeerId, ""));
+        Tick();
+    }
+
     internal static void Receive(ushort sender, TeamPacket packet)
     {
         if (!Enabled) return;
         if (MultiplayerSession.IsHost)
         {
-            if (sender != packet.PlayerId || !HasTeam(packet.Team)) return;
+            if (sender != packet.PlayerId || (packet.Team != "" && !HasTeam(packet.Team))) return;
             Set(sender, packet.Team);
             return;
         }
@@ -130,14 +143,21 @@ internal static class TeamSystem
     private static void Set(ushort id, string name)
     {
         var firstSelection = !playerTeams.ContainsKey(id);
-        playerTeams[id] = name;
-        if (id == MultiplayerSession.LocalPeerId)
+       
+        if (name == "") 
+            playerTeams.Remove(id);
+        else 
+            playerTeams[id] = name;
+        
+        if (id == MultiplayerSession.LocalPeerId && name != "")
         {
             ClosePanel();
             if (firstSelection && MultiplayerSession.RespawnAtStart)
                 TeleportToTeamSpawn();
         }
-        if (MultiplayerSession.IsHost) MultiplayerSession.Send(new TeamPacket(id, name));
+        
+        if (MultiplayerSession.IsHost) 
+            MultiplayerSession.Send(new TeamPacket(id, name));
     }
 
     private static void TeleportToTeamSpawn()
@@ -162,6 +182,56 @@ internal static class TeamSystem
     }
 
     private static bool HasTeam(string name) => teams.Exists(item => item.Name == name);
+
+    private static void UpdatePauseButton()
+    {
+        var visible = Enabled && MultiplayerSession.IsInLobby;
+        var manager = GameManager.main;
+        if (changeTeamButton == null)
+        {
+            if (!visible || manager == null || !manager.paused || manager.pauseMenu == null)
+                return;
+                
+            var buttons = manager.pauseMenu.GetComponentsInChildren<Button>(true);
+            var template = buttons
+                            .FirstOrDefault(button => Enumerable.Range(0, button.onClick.GetPersistentEventCount())
+                            .Any(index => button.onClick.GetPersistentMethodName(index) == nameof(GameManager.UnPause)));
+           
+            if (template == null) 
+                return;
+                
+            pauseButtons = buttons
+                            .Where(button => button.transform.parent == template.transform.parent)
+                            .Select(button => (RectTransform)button.transform)
+                            .ToArray();
+                            
+            var bottom = pauseButtons
+                            .OrderBy(rect => rect.anchoredPosition.y)
+                            .First();
+            
+            pauseButtonOffset = Vector2.up * (((RectTransform)template.transform).rect.height + 10f) * 0.5f;
+            changeTeamButton = UnityEngine.Object.Instantiate(template, template.transform.parent);
+            changeTeamButton.name = "Change Team";
+            ((RectTransform)changeTeamButton.transform).anchoredPosition = bottom.anchoredPosition - pauseButtonOffset;
+            changeTeamButton.GetComponentInChildren<TMP_Text>(true).text = "Change team";
+            changeTeamButton.onClick = new Button.ButtonClickedEvent();
+            changeTeamButton.onClick.AddListener(() =>
+            {
+                manager.UnPause();
+                ChangeTeam();
+            });
+            changeTeamButton.gameObject.SetActive(false);
+        }
+
+        if (changeTeamButton.gameObject.activeSelf == visible)
+            return;
+            
+        foreach (var rect in pauseButtons)
+            if (rect != null)
+                rect.anchoredPosition += visible ? pauseButtonOffset : -pauseButtonOffset;
+       
+        changeTeamButton.gameObject.SetActive(visible);
+    }
 
     private static void CreatePanel()
     {

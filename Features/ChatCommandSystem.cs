@@ -22,6 +22,16 @@ internal sealed class ChatCommandSystem
             return Scale(message);
         if (IsCommand(message, "/clearblood"))
             return LevelCleanupSystem.Clear();
+        if (IsCommand(message, "/changeteam"))
+        {
+            if (!string.IsNullOrWhiteSpace(message.Substring(11)))
+                MultiplayerHud.AddSystemMessage("Usage: /changeteam.");
+            else if (!TeamSystem.Enabled)
+                MultiplayerHud.AddSystemMessage("Teams are disabled in this lobby.");
+            else
+                TeamSystem.ChangeTeam();
+            return true;
+        }
         return false;
     }
 
