@@ -23,6 +23,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private bool chatBottomPending;
     private int chatBottomPendingFrame;
     private bool chatWasOpen;
+    private Vector2 chatPointerDown;
+    private bool chatLinkPressed;
     private readonly List<TMP_Text> debugMarkers = new();
     private readonly Dictionary<MedicalStationRuntime, TMP_Text> medicalStationTimers = new();
     private readonly Dictionary<BodyScript, NametagVisual> nameTags = new();
@@ -111,6 +113,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             UpdateChat(hud);
         }
         if (!hud.ChatOpen) chatWasOpen = false;
+        UpdateChatLinks(hud.ChatOpen);
         input.gameObject.SetActive(hud.ChatOpen);
         chatHint.gameObject.SetActive(GunsawMultiplayerPlugin.Instance.firstBoot && !hud.ChatOpen && SceneManager.GetActiveScene().name != "LevelSelect" && (null == PlayerScript.player || PlayerScript.player.canvasVisible));
         commandHints.gameObject.SetActive(hud.ChatOpen);
@@ -821,7 +824,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var entry = entries[i];
             var age = now - entry.CreatedAt;
             if (!hud.ChatOpen && age > ChatMsgLifetime) continue;
-            var line = "[" + entry.Clock + "] " + entry.Sender + ": " + entry.Message;
+            var line = "[" + entry.Clock + "] " + entry.Sender + ": " + ChatLinks.Format(entry.Message);
             var alpha = hud.ChatOpen ? 1f : MessageAlpha(age, ChatMsgLifetime);
             if (!hud.ChatOpen)
                 line = ApplyChatFade(line, alpha);
@@ -845,6 +848,31 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         UpdateChatBackgrounds(hud.ChatOpen, lineHeights, lineAlphas);
         chatWasOpen = hud.ChatOpen;
+    }
+
+    private void UpdateChatLinks(bool chatOpen)
+    {
+        if (!chatOpen)
+        {
+            chatLinkPressed = false;
+            return;
+        }
+        var pointer = (Vector2)Input.mousePosition;
+        var inside = RectTransformUtility.RectangleContainsScreenPoint(chatScroll.viewport, pointer, null);
+        if (Input.GetMouseButtonDown(0))
+        {
+            chatPointerDown = pointer;
+            chatLinkPressed = inside;
+        }
+        if (!Input.GetMouseButtonUp(0)) return;
+        var clicked = chatLinkPressed && inside && (pointer - chatPointerDown).sqrMagnitude <= 25f;
+        chatLinkPressed = false;
+        if (!clicked) return;
+        var index = TMP_TextUtilities.FindIntersectingLink(chatText, pointer, null);
+        if (index < 0) return;
+        var link = chatText.textInfo.linkInfo[index];
+        var url = link.GetLinkText();
+        if (link.GetLinkID() == "chat-url" && ChatLinks.IsWebUrl(url)) Application.OpenURL(url);
     }
 
     private void UpdateChatBackgrounds(bool chatOpen, List<float> lineHeights, List<float> lineAlphas)

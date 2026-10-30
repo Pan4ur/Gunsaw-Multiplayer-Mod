@@ -23,6 +23,9 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private string input = "";
     private int chatCaretPosition;
     private bool chatOpen;
+    private bool chatCursorCaptured;
+    private bool previousCursorVisible;
+    private CursorLockMode previousCursorLock;
     private bool focusChat;
     private bool replicationDebugOverlayEnabled;
     private bool networkStatsVisible;
@@ -90,6 +93,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         Camera.onPreCull -= ApplyCarryPoseBeforeRender;
         RestoreSlowmoHud();
+        UpdateChatCursor(false);
     }
 
     private static void ApplyCarryPoseBeforeRender(Camera camera)
@@ -212,6 +216,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void LateUpdate()
     {
         if (HeadlessLobbyService.IsHeadlessMode) return;
+        UpdateChatCursor(chatOpen);
         UpdateSlowmoHud();
         if (nativeUi == null) nativeUi = gameObject.GetComponent<MultiplayerHudUi>() ?? gameObject.AddComponent<MultiplayerHudUi>();
         if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)
@@ -221,6 +226,27 @@ internal sealed class MultiplayerHud : MonoBehaviour
             if (NpcReplication.Instance != null) NpcReplication.Instance.DrawReplicationDebugOverlay();
         }
         nativeUi.Configure(this);
+    }
+
+    private void UpdateChatCursor(bool visible)
+    {
+        if (visible)
+        {
+            if (!chatCursorCaptured)
+            {
+                previousCursorVisible = Cursor.visible;
+                previousCursorLock = Cursor.lockState;
+                chatCursorCaptured = true;
+            }
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+        else if (chatCursorCaptured)
+        {
+            Cursor.lockState = previousCursorLock;
+            Cursor.visible = previousCursorVisible;
+            chatCursorCaptured = false;
+        }
     }
 
     private void UpdateSlowmoHud()
@@ -612,6 +638,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     internal void CloseChat()
     {
         chatOpen = false;
+        UpdateChatCursor(false);
         focusChat = false;
         IsTyping = false;
         savedChatWasOpen = false;
