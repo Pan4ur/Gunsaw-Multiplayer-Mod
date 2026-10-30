@@ -74,6 +74,51 @@ internal static class TeamSystem
         Tick();
     }
 
+    internal static void BalanceTeams()
+    {
+        if (!MultiplayerSession.IsInLobby || !MultiplayerSession.IsHost || !Enabled)
+            return;
+            
+        var players = MultiplayerSession.PeerIds().ToList();
+        if (!HeadlessLobbyService.IsHeadlessServer) 
+            players.Add(MultiplayerSession.LocalPeerId);
+            
+        var groups = teams
+                        .Select(team => team.Name)
+                        .Distinct()
+                        .ToDictionary(name => name, name => players
+                                                                .Where(id => Name(id) == name)
+                                                                .ToList()
+                                      );
+                                      
+        foreach (var id in players.Where(id => !HasTeam(Name(id))))
+        {
+            var smallest = groups
+                                .OrderBy(g => g.Value.Count)
+                                .First();
+                                 
+            smallest.Value.Add(id);
+            Set(id, smallest.Key);
+        }
+
+        while (groups.Count > 1)
+        {
+            var ordered = groups
+                            .OrderBy(group => group.Value.Count)
+                            .ToArray();
+                            
+            var smallest = ordered[0];
+            var largest = ordered[ordered.Length - 1];
+            if (largest.Value.Count - smallest.Value.Count <= 1)
+                break;
+                
+            var id = largest.Value[largest.Value.Count - 1];
+            largest.Value.RemoveAt(largest.Value.Count - 1);
+            smallest.Value.Add(id);
+            Set(id, smallest.Key);
+        }
+    }
+
     internal static void Receive(ushort sender, TeamPacket packet)
     {
         if (!Enabled) return;

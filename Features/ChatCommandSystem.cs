@@ -32,6 +32,21 @@ internal sealed class ChatCommandSystem
                 TeamSystem.ChangeTeam();
             return true;
         }
+        if (IsCommand(message, "/balanceteams"))
+        {
+            if (!MultiplayerSession.IsHost)
+                MultiplayerHud.AddSystemMessage("Only the lobby host can use /balanceteams.");
+            else if (!string.IsNullOrWhiteSpace(message.Substring(13)))
+                MultiplayerHud.AddSystemMessage("Usage: /balanceteams.");
+            else if (!TeamSystem.Enabled)
+                MultiplayerHud.AddSystemMessage("Teams are disabled in this lobby.");
+            else
+            {
+                TeamSystem.BalanceTeams();
+                MultiplayerHud.AddSystemMessage("Teams balanced.");
+            }
+            return true;
+        }
         return false;
     }
 

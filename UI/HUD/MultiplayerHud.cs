@@ -9,7 +9,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
 {
     private static readonly Regex tagRegex = new(@"<(/?)([A-Za-z][\w:-]*)[^>]*>", RegexOptions.Compiled);
     private static readonly HashSet<string> selfClosingTags = ["br", "page", "space", "sprite"];
-    private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban", "/scale", "/clearblood", "/changeteam"];
+    private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban", "/scale", "/clearblood", "/changeteam", "/balanceteams"];
     private static readonly Regex emojiRegex = new(@":([^:\s]*)(:?)\z", RegexOptions.Compiled);
     private static readonly List<string> emojiNames = ["roza", "expie", "milky", "dune"];
     private static string savedChatDraft = "";
