@@ -89,9 +89,8 @@ internal sealed class MedicalStationRuntime : MonoBehaviour
         var screenObject = new GameObject("Screen");
         screenObject.transform.SetParent(transform, false);
         screen = screenObject.transform;
-        screen.localPosition = new Vector3(0f, 0.285715f, 0f);
         var renderer = screenObject.AddComponent<SpriteRenderer>();
-        renderer.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.medical-station-screen.png", 28f, new Vector2(0.5f, 0.5f));
+        renderer.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.medical-station-screen.png", 28f, new Vector2(0.5f, 1f / 6f));
         renderer.sortingLayerName = "Background";
         renderer.sortingOrder = 1000;
         AddLight(new Vector2(0f, 0.588f), Color.green);
@@ -138,7 +137,7 @@ internal sealed class MedicalStationRuntime : MonoBehaviour
         if (animating)
         {
             var elapsed = Time.time - usedAt;
-            screen.localPosition = new Vector3(screenPosition.Evaluate(elapsed) * 0.5f, 0.285715f, 0f);
+            screen.localPosition = new Vector3(screenPosition.Evaluate(elapsed) * 0.5f, 0f, 0f);
             screen.localScale = new Vector3(screenScale.Evaluate(elapsed), 1f, 1f);
             if (bloodline != null)
             {
