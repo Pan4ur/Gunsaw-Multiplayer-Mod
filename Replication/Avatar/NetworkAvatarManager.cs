@@ -377,14 +377,16 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
             LocalPlayerReplication.Instance == null || projectile == null || player == null ||
             shooter != player.bodyScript) return;
+        
         foreach (var projectileCollider in projectile.GetComponentsInChildren<Collider2D>(true))
-        foreach (var replica in NetworkAvatarManager.replicas.Values)
+        foreach (var replica in replicas.Values)
         {
-        if (replica == null || (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId)))
-            continue;
-        foreach (var remoteCollider in replica.remoteColliderTriggers.Keys)
-            if (projectileCollider != null && remoteCollider != null)
-                Physics2D.IgnoreCollision(projectileCollider, remoteCollider, true);
+            if (replica == null || (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId)))
+                continue;
+            
+            foreach (var remoteCollider in replica.remoteColliderTriggers.Keys)
+                if (projectileCollider != null && remoteCollider != null)
+                    Physics2D.IgnoreCollision(projectileCollider, remoteCollider, true);
         }
     }
 
@@ -726,7 +728,7 @@ weapon != activeShotState.Weapon) return;
         if (!MultiplayerSession.IsConnected || !TeamSystem.Enabled) 
             return true;
             
-        var peerId = DamageSourcePeerId(candidate);
+        var peerId = PeerIdOfBody(candidate);
         return peerId == 0 || TeamSystem.Name(peerId) != npc.team;
     }
 
@@ -743,6 +745,20 @@ weapon != activeShotState.Weapon) return;
         activeShotState = state;
         currentShooter = ProjectileOwner(projectile) ?? replicatedExplosionShooter;
         return state;
+    }
+
+    internal static Collider2D[] ExcludeHostFromExplosion(Collider2D[] targets)
+    {
+        if (!MultiplayerSession.IsHost)
+            return targets;
+        
+        var pl = PlayerScript.player;
+        var other = currentShooter;
+        if (pl == null || pl.bodyScript == null || other == null || !other.isPlayer || other == pl.bodyScript 
+            || MultiplayerSession.PvpEnabled && !TeamSystem.IsTeammate(other))
+            return targets;
+
+        return Array.FindAll(targets, c => c == null || c.GetComponentInParent<BodyScript>() != pl.bodyScript);
     }
 
     internal static RocketProjectile BeginRocketUpdate(RocketProjectile projectile)
@@ -1198,7 +1214,7 @@ weapon != activeShotState.Weapon) return;
         var replica = ReplicaForBody(victim);
         if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         if (!replica.lastRemoteAlive || eater == null || KartPassengers.IsProtectedPassenger(victim)) return true;
-        if (eater.isPlayer && (!MultiplayerSession.PvpEnabled || TeamSystem.Same(DamageSourcePeerId(eater), replica.remotePeerId))) return true;
+        if (eater.isPlayer && (!MultiplayerSession.PvpEnabled || TeamSystem.Same(PeerIdOfBody(eater), replica.remotePeerId))) return true;
         var amount = Mathf.Max(1f, replica.lastRemoteHealth + 1f);
 
         if (MultiplayerSession.IsHost)
@@ -1291,15 +1307,14 @@ weapon != activeShotState.Weapon) return;
     {
         if (MultiplayerSession.IsHost)
             MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical, source != null && source.isPlayer,
-                DamageSourcePeerId(source), DamageSourceName(source), DamageWeapon(source), effect), targetPeerId);
+                PeerIdOfBody(source), DamageSourceName(source), DamageWeapon(source), effect), targetPeerId);
     }
 
-    private static ushort DamageSourcePeerId(BodyScript source)
+    public static ushort PeerIdOfBody(BodyScript body)
     {
-        if (source == null || !source.isPlayer) return 0;
+        if (body == null || !body.isPlayer) return 0;
         var player = PlayerScript.player;
-        return source == player?.bodyScript ? MultiplayerSession.LocalPeerId :
-            NetworkAvatarManager.ReplicaForBody(source)?.remotePeerId ?? 0;
+        return body == player?.bodyScript ? MultiplayerSession.LocalPeerId : ReplicaForBody(body)?.remotePeerId ?? 0;
     }
 
     internal static void RecordNetworkPlayerDamageSource(BodyScript victim, PlayerDamagePacket packet)

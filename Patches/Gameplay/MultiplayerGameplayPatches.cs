@@ -1537,6 +1537,19 @@ internal static class MultiplayerRocketUpdatePatch
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class MultiplayerExplosionPatch
 {
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var original = AccessTools.Method(typeof(Physics2D), nameof(Physics2D.OverlapCircleAll), new[] { typeof(Vector2), typeof(float) });
+        var replacement = AccessTools.Method(typeof(NetworkAvatarManager), nameof(NetworkAvatarManager.ExcludeHostFromExplosion));
+        
+        foreach (var i in instructions)
+        {
+            yield return i;
+            if (i.Calls(original))
+                yield return new CodeInstruction(OpCodes.Call, replacement);
+        }
+    }
+
     private static void Prefix(GameObject explosionObj, Vector2 pos, float range, float force, ref float damage, ref int fireAmount, out NetworkAvatarManager.ShotState __state)
     {
         var projectile = NetworkAvatarManager.ResolveExplosionProjectile(explosionObj);

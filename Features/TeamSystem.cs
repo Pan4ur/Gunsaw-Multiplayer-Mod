@@ -78,9 +78,11 @@ internal static class TeamSystem
         foreach (var item in playerTeams) MultiplayerSession.Send(new TeamPacket(item.Key, item.Value), peerId);
     }
 
-    internal static bool Same(ushort first, ushort second) => Enabled && first != 0 &&
+    public static bool Same(ushort first, ushort second) => Enabled && first != 0 &&
                                                               playerTeams.TryGetValue(first, out var a) &&
                                                               playerTeams.TryGetValue(second, out var b) && a == b;
+
+    public static bool IsTeammate(BodyScript other) => Same(MultiplayerSession.LocalPeerId, NetworkAvatarManager.PeerIdOfBody(other));
 
     internal static string Name(ushort id) => playerTeams.TryGetValue(id, out var value) ? value : "";
 
