@@ -209,7 +209,7 @@ internal static class MultiplayerPlayerSlowmoPatch
 
             return false;
         }
-        return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen;
+        return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen && !TeamSystem.BlocksPlayerInput;
     }
 
     private static Exception Finalizer(PlayerScript __instance, Exception __exception, MultiplayerTimeControl.SlowmoKeyState __state)

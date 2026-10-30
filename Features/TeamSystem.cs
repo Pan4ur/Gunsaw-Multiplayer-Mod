@@ -14,7 +14,9 @@ internal static class TeamSystem
     private static bool cursorVisible;
     private static CursorLockMode cursorLock;
     private static bool cursorWrite;
+    private static int panelClosedFrame = -1;
     internal static bool Enabled { get; private set; }
+    internal static bool BlocksPlayerInput => panel != null || Time.frameCount == panelClosedFrame;
 
     internal static void Configure(bool enabled, string cfg)
     {
@@ -280,6 +282,7 @@ internal static class TeamSystem
     private static void ClosePanel()
     {
         if (panel == null) return;
+        panelClosedFrame = Time.frameCount;
         UnityEngine.Object.Destroy(panel);
         panel = null;
         teamHeaders.Clear();
