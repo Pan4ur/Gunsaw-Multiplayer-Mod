@@ -282,7 +282,6 @@ internal static class PlayerCarrySystem
                 target.EnterHalfControl();
                 localTargetActive = true;
             }
-            if (target.controlState == BodyScript.RagdollState.FullControl) target.EnterHalfControl();
             parts = CaptureTargetPose(target);
             targetPoses[target] = parts;
             targetArmsBaseRotation[target] = target.Arms == null ? target.mainTorso.rotation : target.Arms.rotation.eulerAngles.z;
