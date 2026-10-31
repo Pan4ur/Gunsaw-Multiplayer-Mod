@@ -426,7 +426,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             MultiplayerSession.Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x, state.Direction.y, state.Up.x, state.Up.y,
                 state.WeaponSprite, hostNpcShot, targetPeers.ToArray(), state.SpreadSeed, exactDirections, []));
             foreach (var wound in state.Wounds)
-                SendRemotePlayerWound(wound, wound.BaseDamage > 20f || wound.Critical);
+                SendRemotePlayerWound(wound, wound.BaseDamage > 20f || wound.Critical, shooter);
         }
         finally { EndWeaponShot(state); }
     }
@@ -459,8 +459,10 @@ weapon != activeShotState.Weapon) return;
 
     private static void SendRemotePlayerWound(
         PlayerWound wound,
-        bool createScreenCrack)
+        bool createScreenCrack, BodyScript source)
     {
+        var target = RemoteBodyForPeer(wound.TargetPeerId);
+        if (source != null && source.isPlayer && NoPvpZoneRuntime.Protects(target, wound.TargetPeerId)) return;
         var type = MultiplayerSession.IsHost
             ? PacketType.PlayerDamage
             : PacketType.PvpDamage;
@@ -479,7 +481,9 @@ weapon != activeShotState.Weapon) return;
                 createScreenCrack,
                 wound.BaseDamage,
                 wound.BodyColliderHit,
-                wound.IsRozaShot
+                wound.IsRozaShot,
+                source != null && source.isPlayer,
+                PeerIdOfBody(source)
             ),
             wound.TargetPeerId
         );
@@ -535,13 +539,14 @@ weapon != activeShotState.Weapon) return;
             state.WeaponSprite = weapon.stats.name;
         }
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
             LocalPlayerReplication.Instance == null || player == null || currentShooter != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
             if (replica != null && replica.remoteBody != null && replica.remoteBody.isAlive)
             {
-                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId))
+                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId) &&
+                    !NoPvpZoneRuntime.Protects(replica.remoteBody, replica.remotePeerId))
                     continue;
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
                 {
@@ -558,13 +563,14 @@ weapon != activeShotState.Weapon) return;
         var state = new ShotState { PreviousShooter = currentShooter };
         currentShooter = attacker;
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
             LocalPlayerReplication.Instance == null || player == null || attacker != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
             if (replica != null)
             {
-                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId))
+                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId) &&
+                    !NoPvpZoneRuntime.Protects(replica.remoteBody, replica.remotePeerId))
                     continue;
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
                 {
@@ -755,7 +761,8 @@ weapon != activeShotState.Weapon) return;
         var pl = PlayerScript.player;
         var other = currentShooter;
         if (pl == null || pl.bodyScript == null || other == null || !other.isPlayer || other == pl.bodyScript 
-            || MultiplayerSession.PvpEnabled && !TeamSystem.IsTeammate(other))
+            || MultiplayerSession.PvpEnabled && !TeamSystem.IsTeammate(other) &&
+            !NoPvpZoneRuntime.Protects(pl.bodyScript, MultiplayerSession.LocalPeerId))
             return targets;
 
         return Array.FindAll(targets, c => c == null || c.GetComponentInParent<BodyScript>() != pl.bodyScript);
@@ -1214,7 +1221,8 @@ weapon != activeShotState.Weapon) return;
         var replica = ReplicaForBody(victim);
         if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         if (!replica.lastRemoteAlive || eater == null || KartPassengers.IsProtectedPassenger(victim)) return true;
-        if (eater.isPlayer && (!MultiplayerSession.PvpEnabled || TeamSystem.Same(PeerIdOfBody(eater), replica.remotePeerId))) return true;
+        if (eater.isPlayer && (!MultiplayerSession.PvpEnabled || TeamSystem.Same(PeerIdOfBody(eater), replica.remotePeerId) ||
+            NoPvpZoneRuntime.Protects(victim, replica.remotePeerId))) return true;
         var amount = Mathf.Max(1f, replica.lastRemoteHealth + 1f);
 
         if (MultiplayerSession.IsHost)
@@ -1273,6 +1281,9 @@ weapon != activeShotState.Weapon) return;
             if (TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId))
                 return;
        
+            if (currentShooter != null && currentShooter.isPlayer && currentShooter != replica.remoteBody &&
+                NoPvpZoneRuntime.Protects(replica.remoteBody, replica.remotePeerId)) return;
+
             if (KartPassengers.IsProtectedPassenger(replica.remoteBody))
                 return;   
         }
@@ -1349,6 +1360,8 @@ weapon != activeShotState.Weapon) return;
     internal static void ApplyPlayerDamage(BodyScript body, PlayerDamagePacket playerDamage)
     {
         if (body == null) return;
+        if (playerDamage.HasPlayerSource && playerDamage.SourcePeerId != MultiplayerSession.LocalPeerId &&
+            NoPvpZoneRuntime.Protects(body, MultiplayerSession.LocalPeerId)) return;
         if (playerDamage.Effect == PlayerDamageEffect.Damage &&
             playerDamage.Amount == PlayerDamagePacket.TriggerDeathDamage)
         {
@@ -1563,7 +1576,8 @@ weapon != activeShotState.Weapon) return;
     
     internal static void ApplyPvpDamage(BodyScript body, ushort senderId, PlayerDamagePacket packet)
     {
-        if (!MultiplayerSession.PvpEnabled || body == null || TeamSystem.Same(MultiplayerSession.LocalPeerId, senderId)) return;
+        if (!MultiplayerSession.PvpEnabled || body == null || TeamSystem.Same(MultiplayerSession.LocalPeerId, senderId) ||
+            NoPvpZoneRuntime.Protects(body, MultiplayerSession.LocalPeerId)) return;
         var source = senderId == MultiplayerSession.LocalPeerId ? body : NetworkAvatarManager.RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
         ApplyPlayerDamage(body, packet);

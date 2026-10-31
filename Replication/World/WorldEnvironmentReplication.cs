@@ -549,12 +549,13 @@ public class WorldEnvironmentReplication
             buttons.ToArray(), audio.ToArray(), drones.ToArray(),
             manager == null ? 0f : manager.rainIntensity, manager == null ? 0f : manager.snowIntensity,
             manager == null ? 0f : manager.fogIntensity, mission == null ? -1 : mission.killAmount,
-            mission == null ? -1 : mission.totalEnemyCount, lamps.ToArray());
+            mission == null ? -1 : mission.totalEnemyCount, lamps.ToArray(), NoPvpZoneRuntime.CaptureDisabled());
     }
     
     internal void ApplyEnvironment(WorldEnvironmentPacket packet)
     {
         if (!MultiplayerSession.IsSnapshotEpochCurrent(packet.SceneEpoch)) return;
+        NoPvpZoneRuntime.ApplyDisabled(packet.DisabledNoPvpZones);
         Physics2D.gravity = new Vector2(packet.GravityX, packet.GravityY);
         foreach (var button in packet.Buttons)
             ApplyButtonState(WorldReplication.Instance.ResolveWireId(button.Id), button.Active, button.Activations);

@@ -93,6 +93,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             gameObject.tag = "Activateable";
             gameObject.transform.position = instance.Position;
             gameObject.transform.rotation = Quaternion.Euler(0f, 0f, instance.Rotation);
+            if (instance.Data is NoPvpZoneData)
+            {
+                var marker = gameObject.AddComponent<CustomPropMarker>();
+                marker.Instance = instance;
+            }
             definition.CreateRuntime(gameObject, instance.Data);
         }
 
@@ -173,7 +178,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             TypeId = payload.type,
             Data = data,
             Position = part.pos,
-            Rotation = part.rot
+            Rotation = part.rot,
+            Size = NoPvpZoneDefinition.Size(part.size)
         };
     }
 
@@ -210,6 +216,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
         var part = new LevelPart(instance.Position, instance.Rotation, RootPath);
         part.team = JsonUtility.ToJson(payload);
+        part.size = instance.Size;
         return part;
     }
 
@@ -259,6 +266,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         var marker = gameObject.AddComponent<CustomPropMarker>();
         marker.Instance = instance;
         marker.Definition = definition;
+        NoPvpZoneDefinition.UpdateMarker(marker);
         markers.Add(marker);
         return marker;
     }
@@ -288,6 +296,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
             marker.Instance.Position = marker.transform.position;
             marker.Instance.Rotation = marker.transform.eulerAngles.z;
+            if (marker.Instance.Data is NoPvpZoneData)
+                marker.Instance.Size = NoPvpZoneDefinition.Size(marker.GetComponent<SpriteRenderer>().size);
             marker.GetComponent<LevelPartGame>().part = ToPart(marker.Instance);
             instances.Add(marker.Instance);
         }
@@ -334,6 +344,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         marker.transform.rotation = Quaternion.Euler(0f, 0f, instance.Rotation);
         var component = marker.GetComponent<LevelPartGame>();
         component.part = part;
+        NoPvpZoneDefinition.UpdateMarker(marker);
         return component;
     }
 
@@ -407,6 +418,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         var marker = selected == null ? null : selected.GetComponent<CustomPropMarker>();
         if (marker == null || marker.Instance == null) return;
 
+        if (marker.Instance.Data is NoPvpZoneData)
+            marker.Instance.Size = NoPvpZoneDefinition.Size(marker.GetComponent<SpriteRenderer>().size);
         if (shownMarker == marker)
             foreach (var input in GetInputs())
                 if (input != null && input.isFocused) CommitField(input);
@@ -425,7 +438,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             TypeId = source.TypeId,
             Data = definition == null ? serializedData : definition.DeserializeData(serializedData),
             Position = source.Position,
-            Rotation = source.Rotation
+            Rotation = source.Rotation,
+            Size = source.Size
         };
     }
 
@@ -788,6 +802,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private bool HasGenericInspectorLayout(CustomPropMarker marker)
     {
+        if (marker.Instance.Data is NoPvpZoneData) return true;
         var inputs = GetInputs();
         var labels = GetLabels();
         var fields = marker.Definition.Fields ?? new CustomPropField[0];
@@ -806,6 +821,27 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private void ShowGenericFields(CustomPropMarker marker, bool selectionChanged)
     {
+        if (marker.Instance.Data is NoPvpZoneData zone)
+        {
+            RestoreNativeInspector();
+            shownMarker = marker;
+            foreach (var input in GetInputs())
+                if (input != null) input.interactable = false;
+            SetEditable(editor.teamField);
+            SetEditable(editor.idField);
+            var idLabel = FindNativeFieldLabel(editor.idField, "ID");
+            if (idLabel != null) idLabel.text = "Activation ID";
+            if (!editor.idField.isFocused) editor.idField.SetTextWithoutNotify(zone.activationId.ToString());
+            SetPlaceholder(editor.idField, "0 = no activation");
+            SetEditable(editor.sizeXField);
+            SetEditable(editor.sizeYField);
+            if (!editor.teamField.isFocused) editor.teamField.SetTextWithoutNotify(zone.team);
+            var size = marker.GetComponent<SpriteRenderer>().size;
+            if (!editor.sizeXField.isFocused) editor.sizeXField.SetTextWithoutNotify(size.x.ToString());
+            if (!editor.sizeYField.isFocused) editor.sizeYField.SetTextWithoutNotify(size.y.ToString());
+            SetPlaceholder(editor.teamField, "ID, name or color (empty = everyone)");
+            return;
+        }
         var inputs = GetInputs();
         var labels = GetLabels();
         var fields = marker.Definition.Fields ?? new CustomPropField[0];
@@ -838,6 +874,13 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         if (!LevelEditorReplication.CanEdit) return;
         if (shownMarker == null || shownMarker.Definition == null) return;
 
+        if (shownMarker.Instance.Data is NoPvpZoneData zone)
+        {
+            if (input == editor.teamField) zone.team = input.text.Trim();
+            if (input == editor.idField && int.TryParse(input.text, out var activationId))
+                zone.activationId = Mathf.Max(0, activationId);
+            return;
+        }
         var fields = shownMarker.Definition.Fields ?? new CustomPropField[0];
         var inputs = GetInputs();
         var fieldIndex = 0;

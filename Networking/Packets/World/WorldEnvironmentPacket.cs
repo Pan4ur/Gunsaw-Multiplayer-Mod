@@ -62,11 +62,12 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly int EnemyKills;
     internal readonly int EnemyTotal;
     internal readonly EnvironmentLampPowerState[] LampPower;
+    internal readonly ulong[] DisabledNoPvpZones;
 
     internal WorldEnvironmentPacket(int sceneEpoch, float gravityX, float gravityY, EnvironmentButtonState[] buttons,
         EnvironmentAudioState[] audio, ulong[] destroyedDroneIds,
         float rainIntensity, float snowIntensity,
-        float fogIntensity, int enemyKills = -1, int enemyTotal = -1, EnvironmentLampPowerState[] lampPower = null)
+        float fogIntensity, int enemyKills = -1, int enemyTotal = -1, EnvironmentLampPowerState[] lampPower = null, ulong[] disabledNoPvpZones = null)
     {
         SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
         Buttons = buttons ?? [];
@@ -75,6 +76,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         RainIntensity = rainIntensity; SnowIntensity = snowIntensity; FogIntensity = fogIntensity;
         EnemyKills = enemyKills; EnemyTotal = enemyTotal;
         LampPower = lampPower ?? [];
+        DisabledNoPvpZones = disabledNoPvpZones ?? [];
     }
 
     public PacketType Type => PacketType.WorldEnvironment;
@@ -87,7 +89,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
             ArraysEqual(Buttons, other.Buttons) && ArraysEqual(Audio, other.Audio) &&
             ArraysEqual(DestroyedDroneIds, other.DestroyedDroneIds) && RainIntensity.Equals(other.RainIntensity) &&
             SnowIntensity.Equals(other.SnowIntensity) && FogIntensity.Equals(other.FogIntensity) &&
-            EnemyKills == other.EnemyKills && EnemyTotal == other.EnemyTotal && ArraysEqual(LampPower, other.LampPower);
+            EnemyKills == other.EnemyKills && EnemyTotal == other.EnemyTotal && ArraysEqual(LampPower, other.LampPower) && ArraysEqual(DisabledNoPvpZones, other.DisabledNoPvpZones);
     }
 
     private static bool ArraysEqual<T>(T[] left, T[] right)
@@ -113,6 +115,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         writer.WriteInt32(EnemyKills);
         writer.WriteInt32(EnemyTotal);
         WriteLampPower(ref writer, LampPower);
+        WriteIds(ref writer, DisabledNoPvpZones);
     }
 
     internal static WorldEnvironmentPacket Read(ref PacketReader reader)
@@ -129,7 +132,8 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var enemyKills = reader.ReadInt32();
         var enemyTotal = reader.ReadInt32();
         var lampPower = ReadLampPower(ref reader);
-        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, audio, drones, rain, snow, fog, enemyKills, enemyTotal, lampPower);
+        var disabledNoPvpZones = reader.Remaining > 0 ? ReadIds(ref reader) : [];
+        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, audio, drones, rain, snow, fog, enemyKills, enemyTotal, lampPower, disabledNoPvpZones);
     }
 
     private static void WriteButtons(ref PacketWriter writer, EnvironmentButtonState[] values)

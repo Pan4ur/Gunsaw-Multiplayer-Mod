@@ -11,6 +11,7 @@ internal static class CustomPropBootstrap
         CustomPropRegistry.Register(new RandomIdRouterPropDefinition());
         CustomPropRegistry.Register(new ArsenalPropDefinition());
         CustomPropRegistry.Register(new MedicalStationPropDefinition());
+        CustomPropRegistry.Register(new NoPvpZoneDefinition());
         CustomPropRegistry.Register(new ConstantGateDefinition());
         CustomPropRegistry.Register(new ClockSignalDefinition());
         CustomPropRegistry.Register(new NotGateDefinition());

@@ -75,12 +75,15 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         bool createScreenCrack,
         float baseDamage,
         bool bodyColliderHit,
-        bool isRozaShot = false)
+        bool isRozaShot = false,
+        bool hasPlayerSource = false,
+        ushort sourcePeerId = 0)
         => new(
             amount: 0f,
             critical: false,
             effect: PlayerDamageEffect.Wound,
-            hasPlayerSource: false,
+            hasPlayerSource: hasPlayerSource,
+            sourcePeerId: sourcePeerId,
             limbIndex: limbIndex,
             localPointX: localPointX,
             localPointY: localPointY,
@@ -167,7 +170,9 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                     createScreenCrack,
                     baseDamage,
                     bodyColliderHit,
-                    isRozaShot
+                    isRozaShot,
+                    hasPlayerSource,
+                    sourcePeerId
                 );
             }
             default: throw new System.IO.InvalidDataException("Unknown player damage effect.");

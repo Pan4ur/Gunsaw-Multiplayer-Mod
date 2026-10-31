@@ -17,6 +17,7 @@ internal sealed class CustomPropInstance
     internal object Data;
     internal Vector2 Position;
     internal float Rotation;
+    internal Vector2 Size = new Vector2(2f, 2f);
 }
 
 internal sealed class CustomPropMarker : MonoBehaviour
