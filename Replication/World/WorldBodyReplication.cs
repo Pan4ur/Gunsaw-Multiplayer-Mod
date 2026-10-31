@@ -219,6 +219,7 @@ public class WorldBodyReplication
         var player = PlayerScript.player;
         if (player == null || player.bodyScript == null) return;
         var localBody = player.bodyScript;
+        if (PlayerCarrySystem.IsLocalTarget) return;
         var root = localBody.transform.root;
         if (root != WorldReplication.Instance.localContactRoot)
         {
@@ -261,6 +262,13 @@ public class WorldBodyReplication
     
     internal void MaintainMovingLocalAuthorities()
     {
+        if (PlayerCarrySystem.IsLocalTarget)
+        {
+            locallyControlledUntil.Clear();
+            pushes.Clear();
+            WorldReplication.Instance.nextContactStateAt.Clear();
+            return;
+        }
         if (locallyControlledUntil.Count == 0) return;
         var now = Time.unscaledTime;
         var renew = new List<Rigidbody2D>();

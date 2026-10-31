@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.TextCore;
 
 internal sealed class MultiplayerHud : MonoBehaviour
@@ -87,11 +88,18 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void OnEnable()
     {
         Camera.onPreCull += ApplyCarryPoseBeforeRender;
+        Camera.onPostRender += RestoreCarryPoseAfterRender;
+        RenderPipelineManager.beginCameraRendering += ApplyCarryPoseBeforeRender;
+        RenderPipelineManager.endCameraRendering += RestoreCarryPoseAfterRender;
     }
 
     private void OnDisable()
     {
         Camera.onPreCull -= ApplyCarryPoseBeforeRender;
+        Camera.onPostRender -= RestoreCarryPoseAfterRender;
+        RenderPipelineManager.beginCameraRendering -= ApplyCarryPoseBeforeRender;
+        RenderPipelineManager.endCameraRendering -= RestoreCarryPoseAfterRender;
+        PlayerCarrySystem.RestoreRenderPose();
         RestoreSlowmoHud();
         UpdateChatCursor(false);
     }
@@ -100,6 +108,17 @@ internal sealed class MultiplayerHud : MonoBehaviour
     {
         if (camera == Camera.main) PlayerCarrySystem.LateTick();
     }
+
+    private static void ApplyCarryPoseBeforeRender(ScriptableRenderContext context, Camera camera) =>
+        ApplyCarryPoseBeforeRender(camera);
+
+    private static void RestoreCarryPoseAfterRender(Camera camera)
+    {
+        if (camera == Camera.main) PlayerCarrySystem.RestoreRenderPose();
+    }
+
+    private static void RestoreCarryPoseAfterRender(ScriptableRenderContext context, Camera camera) =>
+        RestoreCarryPoseAfterRender(camera);
 
     internal void ResetChat()
     {

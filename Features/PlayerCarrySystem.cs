@@ -1,13 +1,19 @@
 using HarmonyLib;
 using UnityEngine;
 
+/*
+    А, с нами молодая Astra, Astra 6.0
+    Она умеет юзать тулы, ебашит в консоль
+    Эта модель любит лимиты кушать под 0
+    Astra в codex — это боль, а-а-а, а-а
+*/
 internal static class PlayerCarrySystem
 {
     private static ushort carrierId, targetId;
     private static bool carrying;
     private static bool pendingStart;
     private static float pendingStartUntil;
-    private static bool localTargetActive, localTargetWasFullControl;
+    private static bool localTargetActive;
     private static bool localCarrierArmsFrozen, localCarrierAnimatorWasEnabled, localCarrierWasFullControl;
     private static int localCarrierWeaponSlot = -1;
     private static bool restoreCarrierWeaponPending;
@@ -26,9 +32,17 @@ internal static class PlayerCarrySystem
     private static readonly Dictionary<BodyScript, Quaternion> targetArmsOriginalLocalRotation = new();
     private static readonly Dictionary<BodyScript, Vector3> targetArmsOriginalLocalScale = new();
     private static readonly Dictionary<Collider2D, bool> remoteTargetColliders = new();
+    private static readonly Dictionary<Transform, CarryRenderPose> renderPoses = new();
+    private static readonly NetworkAvatarTransformOrder renderOrder = new();
+    private static readonly Dictionary<Transform, Pose> physicsPoses = new();
+    private static readonly NetworkAvatarTransformOrder physicsOrder = new();
+    private static readonly Dictionary<SpriteRenderer, (int Layer, int Order)> carrierArmSorting = new();
+    private static Vector2 releaseVelocity;
     
     internal static string Prompt { get; private set; } = "";
     internal static bool IsLocalCarrier => carrying && carrierId == MultiplayerSession.LocalPeerId;
+    internal static bool IsCarriedPeer(ushort peerId) => carrying && targetId == peerId;
+    internal static bool IsLocalTarget => IsCarriedPeer(MultiplayerSession.LocalPeerId);
     internal static bool IsCarriedTarget(BodyScript body) => carrying && body != null && body == BodyForPeer(targetId);
     internal static bool MustLockRemoteCarryPose(BodyScript body) =>
         carrying && body != null && body == BodyForPeer(targetId) &&
@@ -131,34 +145,79 @@ internal static class PlayerCarrySystem
         
         body.shockTime = Mathf.Max(body.shockTime, 0.5f);
 
-        if (body.controlState == BodyScript.RagdollState.FullControl)
+        if (targetPoses.ContainsKey(body) && body.controlState == BodyScript.RagdollState.FullControl)
             body.EnterHalfControl();
-    }
-
-    internal static void PostBodyFixedUpdate(BodyScript body)
-    {
-        if (carrying && body != null && body == BodyForPeer(targetId))
-            ApplyTargetPose(body, body == PlayerScript.player?.bodyScript, true);
     }
 
     internal static void FixedTick()
     {
+        RestoreRenderPose();
         if (!carrying) return;
         var target = BodyForPeer(targetId);
-        if (target != null) ApplyTargetPose(target, target == PlayerScript.player?.bodyScript, true);
+        if (target != null) ApplyTargetPhysics(target, target == PlayerScript.player?.bodyScript);
     }
 
     internal static void LateTick()
     {
+        RestoreRenderPose();
         if (!carrying) return;
         var target = BodyForPeer(targetId);
-        if (target != null) ApplyTargetPose(target, target == PlayerScript.player?.bodyScript);
+        var carrier = BodyForPeer(carrierId);
+        if (target == null || carrier == null || target.mainTorso == null ||
+            !targetPoses.TryGetValue(target, out var parts)) return;
+        var torso = carrier.mainTorso != null ? carrier.mainTorso : carrier.rb;
+        if (torso == null) return;
+
+        var remote = NetworkAvatarManager.IsRemoteAvatarBody(target);
+        var anchor = (Vector2)torso.transform.position + new Vector2(0f, 0.05f);
+        var delta = anchor - (Vector2)target.mainTorso.transform.position;
+        var poseRotation = Quaternion.Euler(0f, 0f, 80f);
+        var head = target.headTransform == null ? null : target.headTransform.GetComponent<Rigidbody2D>();
+        foreach (var part in parts)
+        {
+            if (part.Body == null) continue;
+            var transform = part.Body.transform;
+            if (!remote && target.Arms != null && transform.IsChildOf(target.Arms)) continue;
+            var pose = new CarryRenderPose(transform);
+            pose.Position += (Vector3)delta;
+            if (!part.IsArm && !IsFreeLowerLeg(part.LimbIndex) && (!part.IsTail || part.IsTailBase))
+            {
+                var position = anchor + (Vector2)(poseRotation * part.Offset);
+                pose.Position = new Vector3(position.x, position.y, pose.Position.z);
+                pose.Rotation = Quaternion.Euler(0f, 0f, CarryPartRotation(part, 80f, head));
+            }
+            renderPoses[transform] = pose;
+        }
+        if (target.Arms != null)
+        {
+            var pose = new CarryRenderPose(target.Arms);
+            pose.Position += (Vector3)delta;
+            renderPoses[target.Arms] = pose;
+        }
+        foreach (var transform in renderOrder.Update(renderPoses))
+        {
+            var pose = renderPoses[transform];
+            transform.SetPositionAndRotation(pose.Position, pose.Rotation);
+        }
+        if (remote) ApplyRemoteArmPose(target, anchor, poseRotation, false);
+    }
+
+    internal static void RestoreRenderPose()
+    {
+        foreach (var pair in renderPoses)
+            if (pair.Key != null)
+            {
+                pair.Key.localPosition = pair.Value.LocalPosition;
+                pair.Key.localRotation = pair.Value.LocalRotation;
+            }
+        renderPoses.Clear();
     }
 
     private static void Receive(ushort sender, PlayerCarryPacket packet)
     {
         if (MultiplayerSession.IsHost)
         {
+            var stop = packet;
             if (packet.Carrying)
             {
                 if (sender != packet.CarrierId || packet.CarrierId == 0 || packet.TargetId == 0 || packet.CarrierId == packet.TargetId || carrying) return;
@@ -178,18 +237,34 @@ internal static class PlayerCarrySystem
                 
                 if ((sender != carrierId && sender != targetId) || packet.CarrierId != carrierId || packet.TargetId != targetId) 
                     return;
-                
+
+                if (carrierId == MultiplayerSession.LocalPeerId)
+                    stop = StopPacketWithVelocity();
+                else if (sender != carrierId || !packet.HasReleaseVelocity)
+                {
+                    MultiplayerSession.Send(new PlayerCarryPacket(false, carrierId, targetId), carrierId, true);
+                    return;
+                }
+                releaseVelocity = new Vector2(stop.ReleaseVelocityX, stop.ReleaseVelocityY);
                 carrying = false;
                 carrierId = targetId = 0;
                 ClearTargetPoses();
             }
-            MultiplayerSession.Send(new PlayerCarryPacket(carrying, carrierId, targetId), 0, true);
+            MultiplayerSession.Send(new PlayerCarryPacket(carrying, carrierId, targetId, stop.ReleaseVelocityX, stop.ReleaseVelocityY, !carrying && stop.HasReleaseVelocity), 0, true);
         }
         else if (sender == 1)
         {
+            if (!packet.Carrying && !packet.HasReleaseVelocity && IsLocalCarrier && packet.CarrierId == carrierId && packet.TargetId == targetId)
+            {
+                MultiplayerSession.Send(StopPacketWithVelocity(), 1, true);
+                return;
+            }
             pendingStart = false;
             if (carrying && (!packet.Carrying || packet.CarrierId != carrierId || packet.TargetId != targetId))
+            {
+                releaseVelocity = new Vector2(packet.ReleaseVelocityX, packet.ReleaseVelocityY);
                 ClearTargetPoses();
+            }
             carrying = packet.Carrying;
             carrierId = packet.CarrierId;
             targetId = packet.TargetId;
@@ -222,8 +297,15 @@ internal static class PlayerCarrySystem
     {
         if (!carrying) return;
         pendingStart = false;
-        if (MultiplayerSession.IsHost) Receive(MultiplayerSession.LocalPeerId, new PlayerCarryPacket(false, carrierId, targetId));
-        else MultiplayerSession.Send(new PlayerCarryPacket(false, carrierId, targetId), 1, true);
+        var packet = IsLocalCarrier ? StopPacketWithVelocity() : new PlayerCarryPacket(false, carrierId, targetId);
+        if (MultiplayerSession.IsHost) Receive(MultiplayerSession.LocalPeerId, packet);
+        else MultiplayerSession.Send(packet, 1, true);
+    }
+
+    private static PlayerCarryPacket StopPacketWithVelocity()
+    {
+        var velocity = (BodyForPeer(carrierId)?.rb?.velocity ?? Vector2.zero) * 1.5f;
+        return new PlayerCarryPacket(false, carrierId, targetId, velocity.x, velocity.y, true);
     }
 
     private static BodyScript BodyForPeer(ushort peerId)
@@ -257,7 +339,7 @@ internal static class PlayerCarrySystem
         return false;
     }
 
-    private static void ApplyTargetPose(BodyScript target, bool localOwner, bool physicsTick = false)
+    private static void ApplyTargetPhysics(BodyScript target, bool localOwner)
     {
         var carrier = BodyForPeer(carrierId);
         if (carrier == null || !carrier.isAlive)
@@ -268,6 +350,8 @@ internal static class PlayerCarrySystem
 
         if (!targetPoses.TryGetValue(target, out var parts))
         {
+            releaseVelocity = Vector2.zero;
+            SetCarrierArmSorting(carrier, target);
             targetOriginalDirections[target] = target.isRight;
             if (target.Arms != null)
             {
@@ -278,18 +362,14 @@ internal static class PlayerCarrySystem
             if (!target.isRight) ForceSwitchDirectionPreservePose(target);
             if (localOwner)
             {
-                localTargetWasFullControl = target.controlState == BodyScript.RagdollState.FullControl;
                 target.EnterHalfControl();
                 localTargetActive = true;
             }
             parts = CaptureTargetPose(target);
             targetPoses[target] = parts;
             targetArmsBaseRotation[target] = target.Arms == null ? target.mainTorso.rotation : target.Arms.rotation.eulerAngles.z;
-            targetArmsOffset[target] = target.Arms == null ? Vector2.zero :
-                Quaternion.Euler(0f, 0f, -target.mainTorso.rotation) *
-                ((Vector2)target.Arms.position - target.mainTorso.position);
-            targetArmsBodyRotation[target] = target.Arms == null ? 0f :
-                Mathf.DeltaAngle(target.mainTorso.rotation, target.Arms.rotation.eulerAngles.z);
+            targetArmsOffset[target] = target.Arms == null ? Vector2.zero : Quaternion.Euler(0f, 0f, -target.mainTorso.rotation) * ((Vector2)target.Arms.position - target.mainTorso.position);
+            targetArmsBodyRotation[target] = target.Arms == null ? 0f : Mathf.DeltaAngle(target.mainTorso.rotation, target.Arms.rotation.eulerAngles.z);
             var animation = new List<bool>(target.limbs.Count);
             foreach (var limb in target.limbs)
             {
@@ -306,54 +386,58 @@ internal static class PlayerCarrySystem
 
         var carrierTorso = carrier.mainTorso != null ? carrier.mainTorso : carrier.rb;
         if (carrierTorso == null) return;
-        var anchor = carrierTorso.position + new Vector2(0f, 0.05f);
-        var rotation = 80f;//target.isRight ? 80f : 100f;
+        var anchor = (Vector2) carrierTorso.transform.position + new Vector2(0f, 0.05f);
+        var rotation = 80f;
         var poseRotation = Quaternion.Euler(0f, 0f, rotation);
-        var armDelta = 0f;
-        if (targetArmsBaseRotation.TryGetValue(target, out var armsBaseRotation) &&
-            remoteArmsRotation.TryGetValue(target, out var currentArmsRotation))
-            armDelta = Mathf.DeltaAngle(armsBaseRotation, currentArmsRotation);
         var head = target.headTransform == null ? null : target.headTransform.GetComponent<Rigidbody2D>();
+        var remote = NetworkAvatarManager.IsRemoteAvatarBody(target);
         foreach (var part in parts)
         {
             if (part.Body == null) continue;
             if (IsFreeLowerLeg(part.LimbIndex) || (part.IsTail && !part.IsTailBase)) continue;
-            if (part.IsArm && NetworkAvatarManager.IsRemoteAvatarBody(target)) continue;
+            if (part.IsArm) continue;
+
             if (!targetInterpolation.ContainsKey(part.Body))
             {
                 targetInterpolation[part.Body] = part.Body.interpolation;
-                part.Body.interpolation = RigidbodyInterpolation2D.Interpolate;
+                part.Body.interpolation = RigidbodyInterpolation2D.None;
             }
-            var offset = part.IsArm
-                ? (Vector2)(Quaternion.Euler(0f, 0f, armDelta) * part.Offset)
-                : part.Offset;
-            var position = anchor + (Vector2)(poseRotation * offset);
-            if (physicsTick) part.Body.MovePosition(position);
-            else part.Body.position = position;
-            if (!part.IsArm)
-            {
-                var partRotation = CarryPartRotation(part, rotation, head);
-                if (physicsTick) part.Body.MoveRotation(partRotation);
-                else part.Body.rotation = partRotation;
-            }
-            else
-            {
-                var partRotation = rotation + part.Rotation + armDelta;
-                if (physicsTick) part.Body.MoveRotation(partRotation);
-                else part.Body.rotation = partRotation;
-            }
+
+            var position = anchor + (Vector2)(poseRotation * part.Offset);
+
+            part.Body.position = position;
+            part.Body.rotation = CarryPartRotation(part, rotation, head);
+
+            part.Body.velocity = Vector2.zero;
             part.Body.angularVelocity = 0f;
         }
-        if (NetworkAvatarManager.IsRemoteAvatarBody(target))
-            ApplyRemoteArmPose(target, anchor, poseRotation, rotation, armDelta, physicsTick);
+        SyncTargetTransforms(parts);
+        if (remote)
+            ApplyRemoteArmPose(target, anchor, poseRotation, true);
+    }
+
+    private static void SyncTargetTransforms(List<CarryBodyPart> parts)
+    {
+        foreach (var part in parts)
+        {
+            if (part.Body == null || part.IsArm) continue;
+            var position = part.Body.position;
+            var transform = part.Body.transform;
+            physicsPoses[transform] = new Pose(new Vector3(position.x, position.y, transform.position.z), Quaternion.Euler(0f, 0f, part.Body.rotation));
+        }
+        
+        foreach (var transform in physicsOrder.Update(physicsPoses))
+        {
+            var pose = physicsPoses[transform];
+            transform.SetPositionAndRotation(pose.position, pose.rotation);
+        }
+        physicsPoses.Clear();
     }
 
     private static void ApplyRemoteArmPose(
         BodyScript target,
         Vector2 anchor,
         Quaternion poseRotation,
-        float bodyRotation,
-        float armDelta,
         bool physicsTick)
     {
         if (target.Arms == null)
@@ -365,7 +449,7 @@ internal static class PlayerCarrySystem
                 : Vector2.zero;
 
         target.Arms.position =
-            anchor + (Vector2)(poseRotation * offset);
+anchor + (Vector2)(poseRotation * offset);
 
         float armsWorldRotation;
 
@@ -401,17 +485,42 @@ internal static class PlayerCarrySystem
 
             if (physicsTick)
             {
-                limb.rb.MovePosition(follow.position);
-                limb.rb.MoveRotation(follow.eulerAngles.z);
-            }
-            else
-            {
                 limb.rb.position = follow.position;
                 limb.rb.rotation = follow.eulerAngles.z;
             }
+            else
+            {
+                limb.transform.SetPositionAndRotation(follow.position, follow.rotation);
+            }
 
-            limb.rb.velocity = Vector2.zero;
-            limb.rb.angularVelocity = 0f;
+            if (physicsTick)
+            {
+                limb.rb.velocity = Vector2.zero;
+                limb.rb.angularVelocity = 0f;
+            }
+        }
+    }
+
+    private static void SetCarrierArmSorting(BodyScript carrier, BodyScript target)
+    {
+        var backmost = target.GetComponentsInChildren<SpriteRenderer>(true)
+            .Where(renderer => renderer.enabled && renderer.sprite != null)
+            .OrderBy(renderer => SortingLayer.GetLayerValueFromID(renderer.sortingLayerID))
+            .ThenBy(renderer => renderer.sortingOrder).FirstOrDefault();
+        if (backmost == null) return;
+        var sprites = new HashSet<SpriteRenderer>();
+        if (carrier.Arms != null)
+            sprites.UnionWith(carrier.Arms.GetComponentsInChildren<SpriteRenderer>(true));
+        foreach (var limb in carrier.limbs)
+            if (limb != null && limb.limbType == 1)
+                sprites.UnionWith(limb.GetComponentsInChildren<SpriteRenderer>(true));
+        if (sprites.Count == 0) return;
+        var offset = backmost.sortingOrder - 1 - sprites.Max(renderer => renderer.sortingOrder);
+        foreach (var renderer in sprites)
+        {
+            carrierArmSorting[renderer] = (renderer.sortingLayerID, renderer.sortingOrder);
+            renderer.sortingLayerID = backmost.sortingLayerID;
+            renderer.sortingOrder += offset;
         }
     }
 
@@ -459,26 +568,41 @@ internal static class PlayerCarrySystem
     {
         if (!localTargetActive) return;
         var local = PlayerScript.player?.bodyScript;
-        if (local != null && localTargetWasFullControl)
+        if (local != null)
         {
-            local.EnterFullControl();
+            local.lastMoveDir = releaseVelocity;
+            if (local.isAlive) local.EnterHalfControl();
+            local.shockTime = Mathf.Max(local.shockTime, 0.5f);
             local.isCrouching = false;
-            if (local.coll != null) local.coll.enabled = true;
             if (local.rb != null)
-            {
-                local.rb.rotation = 0f;
-                local.rb.velocity = Vector2.zero;
-                local.rb.angularVelocity = 0f;
-            }
+                local.rb.velocity = releaseVelocity;
             if (local.mainTorso != null)
-            {
-                local.mainTorso.rotation = 0f;
-                local.mainTorso.velocity = Vector2.zero;
-                local.mainTorso.angularVelocity = 0f;
-            }
+                local.mainTorso.velocity = releaseVelocity;
         }
         localTargetActive = false;
-        localTargetWasFullControl = false;
+    }
+
+    private static void ResetTargetRoot(BodyScript body, List<CarryBodyPart> parts)
+    {
+        if (body.rb == null) return;
+        foreach (var part in parts)
+            if (part.Body != null && part.Body != body.rb)
+            {
+                var transform = part.Body.transform;
+                physicsPoses[transform] = new Pose(transform.position, transform.rotation);
+            }
+        if (body.Arms != null)
+            physicsPoses[body.Arms] = new Pose(body.Arms.position, body.Arms.rotation);
+        body.rb.rotation = 0f;
+        body.rb.angularVelocity = 0f;
+        body.rb.transform.rotation = Quaternion.identity;
+        foreach (var transform in physicsOrder.Update(physicsPoses))
+        {
+            var pose = physicsPoses[transform];
+            transform.SetPositionAndRotation(pose.position, pose.rotation);
+        }
+        physicsPoses.Clear();
+        physicsOrder.Clear();
     }
 
     private static void ApplyCarryCollision(BodyScript local)
@@ -604,7 +728,7 @@ internal static class PlayerCarrySystem
                     Offset = inverse * (body.position - anchor.position),
                     Rotation = Mathf.DeltaAngle(anchor.rotation, body.rotation),
                     LimbIndex = limbIndex,
-                    IsArm = limbIndex >= 0 && target.limbs[limbIndex].limbType == 1,
+                    IsArm = (limbIndex >= 0 && target.limbs[limbIndex].limbType == 1) || (target.Arms != null && body.transform.IsChildOf(target.Arms)),
                     IsTail = tailBodies.Contains(body),
                     IsTailBase = tailBaseBodies.Contains(body)
                 });
@@ -652,6 +776,17 @@ internal static class PlayerCarrySystem
 
     private static void ClearTargetPoses()
     {
+        RestoreRenderPose();
+        foreach (var pair in carrierArmSorting)
+            if (pair.Key != null)
+            {
+                pair.Key.sortingLayerID = pair.Value.Layer;
+                pair.Key.sortingOrder = pair.Value.Order;
+            }
+        carrierArmSorting.Clear();
+        renderOrder.Clear();
+        physicsPoses.Clear();
+        physicsOrder.Clear();
         foreach (var pair in targetLimbAnimation)
         {
             var body = pair.Key;
@@ -719,6 +854,13 @@ internal static class PlayerCarrySystem
         foreach (var pair in remoteTargetColliders)
             if (pair.Key != null) pair.Key.enabled = pair.Value;
         remoteTargetColliders.Clear();
+        foreach (var pair in targetPoses)
+            if (pair.Key == PlayerScript.player?.bodyScript)
+            {
+                ResetTargetRoot(pair.Key, pair.Value);
+                foreach (var part in pair.Value)
+                    if (part.Body != null) part.Body.velocity = releaseVelocity;
+            }
         targetPoses.Clear();
     }
 
@@ -767,12 +909,29 @@ internal static class PlayerCarrySystem
         internal RigidbodyType2D BodyType;
     }
 
+    private struct CarryRenderPose
+    {
+        internal Vector3 LocalPosition;
+        internal Quaternion LocalRotation;
+        internal Vector3 Position;
+        internal Quaternion Rotation;
+
+        internal CarryRenderPose(Transform transform)
+        {
+            LocalPosition = transform.localPosition;
+            LocalRotation = transform.localRotation;
+            Position = transform.position;
+            Rotation = transform.rotation;
+        }
+    }
+
 }
 
 [HarmonyPatch(typeof(BodyScript), "ChangeWeapon")]
 internal static class PlayerCarryWeaponPatch
 {
-    private static bool Prefix() => !PlayerCarrySystem.IsLocalCarrier;
+    private static bool Prefix(BodyScript __instance) =>
+        !PlayerCarrySystem.IsLocalCarrier || __instance != PlayerScript.player?.bodyScript;
 }
 
 [HarmonyPatch(typeof(BodyScript), "SwitchDir")]
@@ -799,6 +958,4 @@ internal static class PlayerCarryPickupCrouchPatch
 internal static class PlayerCarryBodyPhysicsPatch
 {
     private static void Prefix(BodyScript __instance) => PlayerCarrySystem.PreBodyFixedUpdate(__instance);
-
-    private static void Postfix(BodyScript __instance) => PlayerCarrySystem.PostBodyFixedUpdate(__instance);
 }

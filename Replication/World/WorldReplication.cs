@@ -1043,7 +1043,7 @@ public class WorldReplication : MonoBehaviour
 
     internal void QueueBodyState(Rigidbody2D body)
     {
-        if (body == null || body.bodyType == RigidbodyType2D.Kinematic) return;
+        if (PlayerCarrySystem.IsLocalTarget || body == null || body.bodyType == RigidbodyType2D.Kinematic) return;
         if (bodies.localSettings.TryGetValue(body, out var settings) && settings.bodyType == RigidbodyType2D.Kinematic) return;
         bodies.locallyControlledUntil[body] = Time.unscaledTime + ClientAuthorityGrace;
         clientFastSerializeState = ClientAuthorityGrace;
@@ -1148,6 +1148,7 @@ public class WorldReplication : MonoBehaviour
 
     private void ApplyPushes(ushort peerId, WorldInputPacket packet)
     {
+        if (PlayerCarrySystem.IsCarriedPeer(peerId)) return;
         foreach (var state in packet.States)
         {
             var id = ResolveWireId(state.BodyId);
@@ -1168,8 +1169,7 @@ public class WorldReplication : MonoBehaviour
 
             if (body.bodyType == RigidbodyType2D.Kinematic) continue;
            
-            PropAuthority authority;
-            if (bodies.propAuthorities.TryGetValue(id, out authority) && authority.expiresAt >= Time.unscaledTime && authority.peerId != peerId)
+            if (bodies.propAuthorities.TryGetValue(id, out var authority) && authority.expiresAt >= Time.unscaledTime && authority.peerId != peerId && !PlayerCarrySystem.IsCarriedPeer(authority.peerId))
                 continue;
             
             if ((body.position - predicted.position).sqrMagnitude > 9f)
