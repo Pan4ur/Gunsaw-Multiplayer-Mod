@@ -589,9 +589,9 @@ internal static partial class MultiplayerSession
     {
         if (!isHost || peerId == 0 || peerId == localPeerId) return;
         lock (statusLock) blockedPeers.Add(peerId);
-        Send(DisconnectPacket.ClientClosed(), peerId);
         Send(DisconnectPacket.PeerLeft(peerId));
         DropPeer(peerId, false, message);
+        Send(DisconnectPacket.ClientClosed(), peerId);
     }
 
     internal static void UpdateConnection()

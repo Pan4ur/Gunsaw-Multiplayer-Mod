@@ -434,8 +434,17 @@ internal sealed class PropHuntVitals : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!PropHuntSystem.Enabled) { Destroy(this); return; }
-        if (body.maxHealth != maxHealth) { maxHealth = body.maxHealth; ceiling = body.health; }
+        if (!PropHuntSystem.Enabled)
+        {
+            Destroy(this);
+            return;
+        }
+
+        if (body.maxHealth != maxHealth)
+        {
+            maxHealth = body.maxHealth;
+            ceiling = body.health;
+        }
         body.health = Mathf.Min(body.health, ceiling);
         ceiling = body.health;
     }

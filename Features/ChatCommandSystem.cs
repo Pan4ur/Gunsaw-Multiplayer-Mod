@@ -10,6 +10,16 @@ internal sealed class ChatCommandSystem
         
         if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase))
             return Kill();
+        if (IsCommand(message, "/me"))
+        {
+            if (string.IsNullOrWhiteSpace(message.Substring(3)))
+                MultiplayerHud.AddSystemMessage("Usage: /me <text>");
+            else if (MultiplayerSession.IsHost)
+                TryBroadcastActionRequest(MultiplayerSession.LocalPeerId, message);
+            else if (MultiplayerSession.IsConnected && MultiplayerSession.HostPeerId != 0 && ChatService.TryCreate(message, false, out var packet))
+                MultiplayerSession.Send(packet, MultiplayerSession.HostPeerId);
+            return true;
+        }
         if (IsCommand(message, "/spawn"))
             return Spawn(message);
         if (IsCommand(message, "/swap"))
@@ -18,6 +28,8 @@ internal sealed class ChatCommandSystem
             return Teleport(message);
         if (IsCommand(message, "/ban"))
             return Ban(message);
+        if (IsCommand(message, "/kick"))
+            return Kick(message);
         if (IsCommand(message, "/scale"))
             return Scale(message);
         if (IsCommand(message, "/clearblood"))
@@ -48,6 +60,25 @@ internal sealed class ChatCommandSystem
             return true;
         }
         return false;
+    }
+
+    internal static bool TryBroadcastActionRequest(ushort senderId, string message)
+    {
+        if (!MultiplayerSession.IsHost || senderId == 0 || string.IsNullOrWhiteSpace(message) || !IsCommand(message, "/me"))
+            return false;
+
+        var action = message.Substring(3).Trim();
+        if (action.Length == 0)
+            return true;
+
+        var playerName = senderId == MultiplayerSession.LocalPeerId ? MultiplayerSession.LocalPlayerName : MultiplayerSession.PlayerName(senderId);
+
+        if (ChatService.TryCreate(playerName + " " + action, true, out var packet))
+        {
+            MultiplayerHud.AddSystemMessage(packet.Text);
+            MultiplayerSession.Send(packet);
+        }
+        return true;
     }
 
     private bool Kill()
@@ -201,6 +232,33 @@ internal sealed class ChatCommandSystem
 
         MultiplayerHud.AddSystemMessage("Eliminating " + playerName + "...");
         GunsawMultiplayerPlugin.Instance.BanPlayerFromCommand(playerName, peerId);
+        return true;
+    }
+
+    private static bool Kick(string message)
+    {
+        if (!MultiplayerSession.IsHost)
+        {
+            MultiplayerHud.AddSystemMessage("Only the lobby host can use /kick.");
+            return true;
+        }
+
+        var playerName = message.Substring(5).Trim();
+        if (string.IsNullOrEmpty(playerName))
+        {
+            MultiplayerHud.AddSystemMessage("Usage: /kick <player name>");
+            return true;
+        }
+
+        var peerId = FindPeerId(playerName, false);
+        if (peerId == 0)
+        {
+            MultiplayerHud.AddSystemMessage("Player " + playerName + " is not in the lobby.");
+            return true;
+        }
+
+        MultiplayerSession.KickPeer(peerId, playerName + " was kicked from the lobby.");
+        MultiplayerHud.AddSystemMessage(playerName + " was kicked from the lobby.");
         return true;
     }
 

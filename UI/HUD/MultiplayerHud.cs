@@ -10,7 +10,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
 {
     private static readonly Regex tagRegex = new(@"<(/?)([A-Za-z][\w:-]*)[^>]*>", RegexOptions.Compiled);
     private static readonly HashSet<string> selfClosingTags = ["br", "page", "space", "sprite"];
-    private static readonly string[] chatCommands = ["/kill", "/spawn", "/swap", "/tp", "/ban", "/scale", "/clearblood", "/changeteam", "/balanceteams"];
+    private static readonly string[] chatCommands = ["/kill", "/me", "/spawn", "/swap", "/tp", "/ban", "/kick", "/scale", "/clearblood", "/changeteam", "/balanceteams"];
     private static readonly Regex emojiRegex = new(@":([^:\s]*)(:?)\z", RegexOptions.Compiled);
     private static readonly List<string> emojiNames = ["roza", "expie", "milky", "dune"];
     private static string savedChatDraft = "";
@@ -168,6 +168,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         ushort senderId;
         while (MultiplayerSession.TryTakeChat(out senderId, out sender, out message))
         {
+            if (ChatCommandSystem.TryBroadcastActionRequest(senderId, message)) continue;
             if (NetworkAvatarManager.TryBroadcastSwapRequest(senderId, message)) continue;
             if (HeadlessLobbyService.Instance?.TryHandleLobbyChatCommand(senderId, message) == true) continue;
             AddMessage(sender, message, false, senderId);
@@ -704,7 +705,9 @@ internal sealed class MultiplayerHud : MonoBehaviour
                 return;
             }
             
-            if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) && !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase)) 
+            if (!string.Equals(commandName, "/tp", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(commandName, "/ban", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(commandName, "/kick", StringComparison.OrdinalIgnoreCase))
                 return;
 
             var namePrefix = input.Substring(separator).TrimStart();
