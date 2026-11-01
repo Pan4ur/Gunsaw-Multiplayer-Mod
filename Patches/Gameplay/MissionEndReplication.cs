@@ -3,9 +3,11 @@ using HarmonyLib;
 [HarmonyPatch(typeof(MissionManager), nameof(MissionManager.FinishMission))]
 internal static class MissionEndReplicationPatch
 {
+    private static bool Prefix() => !PropHuntSystem.Enabled;
+
     private static void Postfix()
     {
-        if (MultiplayerSession.IsHost)
+        if (MultiplayerSession.IsHost && !PropHuntSystem.Enabled)
             MultiplayerSession.Send(new MissionFinishedPacket(), 0, true);
     }
 }

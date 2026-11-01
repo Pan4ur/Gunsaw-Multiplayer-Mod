@@ -284,6 +284,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     internal static void AddForceWithPropAuthority(Rigidbody2D rb, Vector2 force, ForceMode2D mode)
     {
+        PropHuntSystem.KickHit(currentShooter, rb);
         rb.AddForce(force, mode);
         NpcReplication.QueueClientCorpseImpulse(rb, force, rb.worldCenterOfMass, mode);
         TryTakePropAuthority(rb);
@@ -1100,6 +1101,16 @@ weapon != activeShotState.Weapon) return;
             var collider = hit.collider;
             if (collider == null || collider.GetComponentInParent<BodyScript>() == levitator.refBody ||
                 collider.gameObject.layer == LayerMask.NameToLayer("Cosmetic")) continue;
+            if (PropHuntSystem.IsProp(collider.GetComponentInParent<BodyScript>())) continue;
+            var prop = collider.GetComponentInParent<PropHuntHitbox>();
+            if (prop != null && PropHuntSystem.Enabled)
+            {
+                if (!PropHuntSystem.CanUseGravity(levitator.refBody) || !CanGrabBody(RemoteBodyForPeer(prop.Peer))) return;
+                levitator.currentlyLevitating = collider.attachedRigidbody;
+                levitator.point = hit.point;
+                levitator.localGrabPoint = levitator.currentlyLevitating.transform.InverseTransformPoint(hit.point);
+                return;
+            }
             var marker = collider.GetComponentInParent<NetworkReplica>();
             if (marker == null)
             {
@@ -1119,8 +1130,14 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ValidateRemoteGrab(LevitatorScript levitator)
     {
-        if (levitator == null || levitator.currentlyLevitating == null ||
-            levitator.currentlyLevitating.GetComponentInParent<NetworkReplica>() == null) return;
+        if (levitator == null || levitator.currentlyLevitating == null) return;
+        var prop = levitator.currentlyLevitating.GetComponent<PropHuntHitbox>();
+        if (prop != null)
+        {
+            if (!PropHuntSystem.CanUseGravity(levitator.refBody) || !CanGrabBody(RemoteBodyForPeer(prop.Peer))) levitator.UnGrab();
+            return;
+        }
+        if (levitator.currentlyLevitating.GetComponentInParent<NetworkReplica>() == null) return;
         var body = levitator.currentlyLevitating.GetComponentInParent<BodyScript>();
         if (!MultiplayerSession.CanGrabPlayers || !CanGrabBody(body)) levitator.UnGrab();
     }
@@ -1129,7 +1146,8 @@ weapon != activeShotState.Weapon) return;
     {
         if (LocalPlayerReplication.Instance == null || !MultiplayerSession.IsConnected || levitator == null) return;
         var target = levitator.currentlyLevitating;
-        var targetBody = target == null ? null : target.GetComponentInParent<BodyScript>();
+        var prop = target == null ? null : target.GetComponent<PropHuntHitbox>();
+        var targetBody = prop != null ? RemoteBodyForPeer(prop.Peer) : target == null ? null : target.GetComponentInParent<BodyScript>();
         var replica = NetworkAvatarManager.ReplicaForBody(targetBody);
         byte kind = 0;
         short index = 0;
@@ -1138,14 +1156,19 @@ weapon != activeShotState.Weapon) return;
         if (target != null && replica != null && CanGrabBody(targetBody))
         {
             var limb = target.GetComponent<LimbScript>();
-            if (limb != null && limb.limbType == 1 && targetBody.rb != null)
+            if (prop != null && PropHuntSystem.CanUseGravity(levitator.refBody))
+            {
+                kind = 3;
+                hasTarget = true;
+            }
+            else if (prop == null && limb != null && limb.limbType == 1 && targetBody.rb != null)
             {
                 kind = 0;
                 index = 0;
                 localPoint = targetBody.rb.transform.InverseTransformPoint(levitator.point);
                 hasTarget = true;
             }
-            else hasTarget = replica.TryRemotePart(target, out kind, out index);
+            else if (prop == null) hasTarget = replica.TryRemotePart(target, out kind, out index);
         }
         if (hasTarget)
         {
@@ -1164,6 +1187,7 @@ weapon != activeShotState.Weapon) return;
     internal static bool CanGrabBody(BodyScript body)
     {
         if (body == null || !MultiplayerSession.CanGrabPlayers) return false;
+        if (PropHuntSystem.Enabled) return PropHuntSystem.CanBeGrabbed(body);
         if (!MultiplayerSession.GrabOnlyUnconscious) return true;
         var replica = NetworkAvatarManager.ReplicaForBody(body);
         if (replica != null) return replica.remoteCanBeGrabbed;

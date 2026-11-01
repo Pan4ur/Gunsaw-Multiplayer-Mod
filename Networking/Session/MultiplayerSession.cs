@@ -212,6 +212,8 @@ internal static partial class MultiplayerSession
             InitialScale = 1f;
             StartingWeapon = "Default";
             RespawnWeapon = "Default";
+            PropHuntEnabled = false;
+            PropHuntTime = 300;
             GunGameEnabled = false;
             GGSequence = "";
             GGOnDeath = GunGameDeathMode.Reset;
@@ -403,6 +405,8 @@ internal static partial class MultiplayerSession
     internal static string TeamsCfg { get; private set; } = "";
     internal static string StartingWeapon { get; private set; } = "Default";
     internal static string RespawnWeapon { get; private set; } = "Default";
+    internal static bool PropHuntEnabled { get; private set; }
+    internal static ushort PropHuntTime { get; private set; } = 300;
     internal static bool GunGameEnabled { get; private set; }
     internal static string GGSequence { get; private set; } = "";
     internal static GunGameDeathMode GGOnDeath { get; private set; } = GunGameDeathMode.Reset;
@@ -693,6 +697,8 @@ internal static partial class MultiplayerSession
         InitialScale = 1f;
         StartingWeapon = "Default";
         RespawnWeapon = "Default";
+        PropHuntEnabled = false;
+        PropHuntTime = 300;
         GunGameEnabled = false;
         GGSequence = "";
         GGOnDeath = GunGameDeathMode.Reset;
@@ -736,30 +742,32 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
     {
-        PvpEnabled = settings.Pvp;
-        CanGrabPlayers = settings.CanGrab;
-        GrabOnlyUnconscious = settings.CanGrab && settings.GrabOnlyUnconscious;
-        AllowRespawn = settings.AllowRespawn;
-        AutoRestart = settings.AutoRestart;
+        PropHuntEnabled = settings.PropHunt;
+        PropHuntTime = (ushort)(int.TryParse(settings.PropHuntTime, out var duration) ? Math.Max(1, Math.Min(3600, duration)) : 300);
+        PvpEnabled = settings.PropHunt || settings.Pvp;
+        CanGrabPlayers = settings.PropHunt || settings.CanGrab;
+        GrabOnlyUnconscious = !settings.PropHunt && settings.CanGrab && settings.GrabOnlyUnconscious;
+        AllowRespawn = !settings.PropHunt && settings.AllowRespawn;
+        AutoRestart = !settings.PropHunt && settings.AutoRestart;
         RespawnTimeSeconds = Math.Max(0, Math.Min(3600, parsed.RespawnTime));
         NumberOfLives = Math.Max(0, Math.Min(ushort.MaxValue, parsed.NumberOfLives));
         RespawnAtStart = updating ? settings.AllowRespawn && settings.RespawnAtStart : settings.RespawnAtStart;
         PlayerCollisions = settings.PlayerCollisions;
-        CheatsEnabled = settings.Cheats;
-        AllowSwap = settings.AllowSwap;
-        AllowScaleChanging = settings.AllowScaleChanging;
-        InitialScale = AvatarScaleHandler.Clamp(parsed.InitialScale);
+        CheatsEnabled = !settings.PropHunt && settings.Cheats;
+        AllowSwap = !settings.PropHunt && settings.AllowSwap;
+        AllowScaleChanging = !settings.PropHunt && settings.AllowScaleChanging;
+        InitialScale = settings.PropHunt ? 1f : AvatarScaleHandler.Clamp(parsed.InitialScale);
         AllowObserver = settings.AllowObserver;
-        TeamsEnabled = settings.Teams;
+        TeamsEnabled = !settings.PropHunt && settings.Teams;
         TeamsCfg = settings.TeamsCfg ?? "";
         StartingWeapon = settings.StartingWeapon ?? "Default";
         RespawnWeapon = settings.RespawnWeapon ?? "Default";
-        GunGameEnabled = settings.GunGame;
+        GunGameEnabled = !settings.PropHunt && settings.GunGame;
         GGSequence = settings.GGSequence ?? "";
         GGOnDeath = settings.GGOnDeath;
         StartingAmmo = settings.StartingAmmo ?? LobbyAmmoRules.StartingDefault;

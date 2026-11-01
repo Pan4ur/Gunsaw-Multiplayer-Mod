@@ -58,7 +58,7 @@ internal static class GunGameRule
     }
 
     internal static bool PickupKeyDown(KeyCode key) =>
-        (!MultiplayerSession.IsActive || !MultiplayerSession.GunGameEnabled) && Input.GetKeyDown(key);
+        (!MultiplayerSession.IsActive || (!MultiplayerSession.GunGameEnabled && !MultiplayerSession.PropHuntEnabled)) && Input.GetKeyDown(key);
 
     private static void Apply(BodyScript body)
     {

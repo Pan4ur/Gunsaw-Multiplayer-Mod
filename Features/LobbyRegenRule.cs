@@ -12,7 +12,7 @@ internal static class LobbyRegenRule
     internal static void Apply(BodyScript body, float factor)
     {
         if (body == null) return;
-        factor = Clamp(factor);
+        factor = MultiplayerSession.PropHuntEnabled ? 0f : Clamp(factor);
         var state = body.gameObject.GetComponent<LobbyRegenFactorState>();
         if (state == null)
         {

@@ -28,12 +28,16 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly float RegenFactor;
     internal readonly bool BlackoutEnabled;
     internal readonly bool RestrictLightEnabled;
+    internal readonly bool PropHunt;
+    internal readonly ushort PropHuntTime;
     internal readonly bool GunGame;
     internal readonly string GGSequence;
     internal readonly GunGameDeathMode GGOnDeath;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue, bool propHunt = false, ushort propHuntTime = 300)
     {
+        PropHunt = propHunt;
+        PropHuntTime = (ushort)Math.Max(1, Math.Min(3600, (int)propHuntTime));
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
         GrabOnlyUnconscious = grabOnlyUnconscious;
@@ -104,6 +108,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteByte((byte)GGOnDeath);
         writer.WriteBoolean(UniformHP);
         writer.WriteSingle(UHPValue);
+        writer.WriteBoolean(PropHunt);
+        writer.WriteUInt16(PropHuntTime);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -130,6 +136,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         if (!System.Enum.IsDefined(typeof(GunGameDeathMode), ggOnDeath)) ggOnDeath = GunGameDeathMode.Reset;
         var uniformHP = reader.Remaining >= 1 && reader.ReadBoolean();
         var uhpValue = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : LobbyHealthRule.DefaultUniformHPValue;
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue);
+        var propHunt = reader.Remaining >= 1 && reader.ReadBoolean();
+        var propHuntTime = reader.Remaining >= 2 ? reader.ReadUInt16() : (ushort)300;
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue, propHunt, propHuntTime);
     }
 }

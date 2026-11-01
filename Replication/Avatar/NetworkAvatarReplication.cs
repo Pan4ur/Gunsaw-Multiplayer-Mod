@@ -18,6 +18,13 @@ internal class NetworkAvatarReplication : MonoBehaviour
     internal string? pendingIdentity;
     private float poseStartedAt;
     private float poseDuration = SnapshotInterval;
+    private float feetOffsetFrom, feetOffsetTarget = float.NaN;
+    internal float FeetOffsetY => float.IsNaN(feetOffsetTarget) ? float.NaN : Mathf.Lerp(feetOffsetFrom, feetOffsetTarget, PoseProgress);
+    private PlayerSnapshotPose? disguiseFrom, disguiseTarget;
+    internal PlayerSnapshotPose? DisguisePose => !disguiseTarget.HasValue ? null : new PlayerSnapshotPose(
+        Mathf.Lerp(disguiseFrom.Value.X, disguiseTarget.Value.X, PoseProgress),
+        Mathf.Lerp(disguiseFrom.Value.Y, disguiseTarget.Value.Y, PoseProgress),
+        Mathf.LerpAngle(disguiseFrom.Value.Rotation, disguiseTarget.Value.Rotation, PoseProgress));
     private float PoseProgress => Mathf.Clamp01((Time.unscaledTime - poseStartedAt) / poseDuration);
     private int appliedWeapon = -1;
     private ulong appliedWeaponSprite;
@@ -237,6 +244,9 @@ internal class NetworkAvatarReplication : MonoBehaviour
         remoteFires.Clear();
         remoteRigidbodies = new Rigidbody2D[0];
         remotePhysicsModeKnown = false;
+        feetOffsetFrom = 0f;
+        feetOffsetTarget = float.NaN;
+        disguiseFrom = disguiseTarget = null;
         remoteTailBases.Clear();
         remoteTails = new Transform[0];
         remoteTailSprites.Clear();
@@ -380,6 +390,10 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
             if (remoteVehicleStreamed)
                 ApplyVehicleHeadRotation();
+            feetOffsetFrom = float.IsNaN(feetOffsetTarget) ? snapshot.FeetOffsetY : FeetOffsetY;
+            feetOffsetTarget = snapshot.FeetOffsetY;
+            disguiseFrom = DisguisePose ?? snapshot.DisguisePose;
+            disguiseTarget = snapshot.DisguisePose;
             var now = Time.unscaledTime;
             poseDuration = receivedFirstSnapshot ? Mathf.Clamp(now - poseStartedAt, SnapshotInterval, 0.30f) : SnapshotInterval;
             poseStartedAt = now;
@@ -1704,7 +1718,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
 
     private void ApplyPlayerCollisionRule(BodyScript localBody)
     {
-        var collisionsEnabled = MultiplayerSession.PlayerCollisions;
+        var collisionsEnabled = MultiplayerSession.PlayerCollisions && !PropHuntSystem.IsProp(localBody) && !PropHuntSystem.IsProp(remoteBody);
         if (localBody == null || (collisionRuleApplied && collisionRuleLocalBody == localBody &&
             collisionRulePlayerCollisions == collisionsEnabled)) return;
 

@@ -74,10 +74,17 @@ internal sealed class LobbySettings
     [LobbySetting("GGOnDeath", "GunGame progression after death: Reset, Rollback, or None.", "--gg-on-death")]
     public GunGameDeathMode GGOnDeath = GunGameDeathMode.Reset;
 
+    [LobbySetting("PropHunt", "Enable Prop Hunt rounds.", "--prop-hunt")]
+    public bool PropHunt;
+    [LobbySetting("PropHuntTime", "Hunting time in seconds, after the 30 second hiding period.", "--prop-hunt-time")]
+    public string PropHuntTime = "300";
+
     internal LobbySettings Clone() => (LobbySettings)MemberwiseClone();
 
     internal ParsedLobbySettings Parse(int defaultMaxPlayers)
     {
+        if (!int.TryParse(PropHuntTime, out var propHuntTime)) propHuntTime = 300;
+        PropHuntTime = Mathf.Clamp(propHuntTime, 1, 3600).ToString();
         GGSequence = (GGSequence ?? "").Trim();
         if (GGSequence.Length > 512) GGSequence = GGSequence.Substring(0, 512);
         if (!Enum.IsDefined(typeof(GunGameDeathMode), GGOnDeath)) GGOnDeath = GunGameDeathMode.Reset;

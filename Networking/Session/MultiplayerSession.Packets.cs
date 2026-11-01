@@ -317,6 +317,8 @@ internal static partial class MultiplayerSession
                 TeamsCfg = settings.TeamsCfg;
                 StartingWeapon = settings.StartingWeapon;
                 RespawnWeapon = settings.RespawnWeapon;
+                PropHuntEnabled = settings.PropHunt;
+                PropHuntTime = settings.PropHuntTime;
                 GunGameEnabled = settings.GunGame;
                 GGSequence = settings.GGSequence;
                 GGOnDeath = settings.GGOnDeath;
@@ -333,6 +335,17 @@ internal static partial class MultiplayerSession
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(64, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings updated.");
+            }
+            else if (decodedPacket.Type == PacketType.PropHunt)
+            {
+                if (decodedPacket.Payload.Count > 16384 || decodedPacket.Payload.Count < 18) continue;
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    var state = PropHuntPacket.Read(ref reader);
+                    GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => PropHuntSystem.Receive(senderId, state));
+                }
+                catch (InvalidDataException exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
             else if (decodedPacket.Type == PacketType.Team)
             {

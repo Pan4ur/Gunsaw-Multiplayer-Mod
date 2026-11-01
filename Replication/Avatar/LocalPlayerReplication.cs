@@ -182,7 +182,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             specialLinesWereVisible = specialLinesVisible;
             var snapshot = new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
                 (byte)body.CurrentState, body.isRight, isReflected, isActive, headRotation, coreBody,
-                armsTransform, gunTransformState, gunAnimationTransformState, limbStates, tailBaseStates, tailStates);
+                armsTransform, gunTransformState, gunAnimationTransformState, limbStates, tailBaseStates, tailStates,
+                PropHuntSystem.Enabled ? PropHuntDisguise.FeetOffset(body) : float.NaN,
+                PropHuntSystem.Enabled ? body.GetComponent<PropHuntDisguise>()?.SnapshotPose : null);
             MultiplayerPerformance.AddAvatarSerialize(performanceStarted);
             return snapshot;
         }
@@ -401,11 +403,14 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
     internal void ReceivePlayerGrab(ushort senderId, PlayerGrabPacket packet)
     {
+        if (PropHuntSystem.Enabled && senderId != PropHuntSystem.Hunter) return;
         if (!MultiplayerSession.CanGrabPlayers || !packet.IsGrabbing)
         {
             incomingGrabUntil = 0f;
             return;
         }
+        if (PropHuntSystem.Enabled && (packet.PartKind != 3 || !PropHuntSystem.CanUseGravity(NetworkAvatarManager.RemoteBodyForPeer(senderId)) ||
+            !PropHuntSystem.CanBeGrabbed(PlayerScript.player?.bodyScript))) return;
         var command = new GrabCommand
         {
             Kind = packet.PartKind,
@@ -426,6 +431,11 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         var player = PlayerScript.player;
         var body = player?.bodyScript;
         if (body == null || !CanGrabBody(body)) { incomingGrabUntil = 0f; return; }
+        if (PropHuntSystem.Enabled && incomingGrab.Kind == 3)
+        {
+            body.GetComponent<PropHuntDisguise>()?.ApplyGravity(incomingGrab.Point, incomingGrab.LocalPoint);
+            return;
+        }
         var rigidbody = ResolveLocalPart(body, incomingGrab.Kind, incomingGrab.Index);
         if (rigidbody == null || !rigidbody.simulated) return;
         var force = incomingGrab.Point - rigidbody.position;

@@ -9,6 +9,7 @@ using UnityEngine;
 */
 internal static class PlayerCarrySystem
 {
+    internal const float Range = 2.4f;
     private static ushort carrierId, targetId;
     private static bool carrying;
     private static bool pendingStart;
@@ -81,7 +82,7 @@ internal static class PlayerCarrySystem
         ApplyCarryCollision(local);
         if (restoreCarrierWeaponPending && !IsLocalCarrier)
             RestoreCarrierWeapon(local);
-        if (carrying && (!local.isAlive || (carrierId == MultiplayerSession.LocalPeerId && !local.isAlive))) RequestStop();
+        if (carrying && (!local.isAlive || (carrierId == MultiplayerSession.LocalPeerId && PropHuntSystem.IsProp(local)))) RequestStop();
 
         if (IsLocalCarrier)
         {
@@ -220,7 +221,8 @@ internal static class PlayerCarrySystem
             var stop = packet;
             if (packet.Carrying)
             {
-                if (sender != packet.CarrierId || packet.CarrierId == 0 || packet.TargetId == 0 || packet.CarrierId == packet.TargetId || carrying) return;
+                if (sender != packet.CarrierId || packet.CarrierId == 0 || packet.TargetId == 0 || packet.CarrierId == packet.TargetId || carrying ||
+                    PropHuntSystem.IsProp(BodyForPeer(packet.CarrierId)) || PropHuntSystem.IsProp(BodyForPeer(packet.TargetId))) return;
                 carrying = true;
                 carrierId = packet.CarrierId;
                 targetId = packet.TargetId;
@@ -315,6 +317,7 @@ internal static class PlayerCarrySystem
 
     private static ushort FindCarryTarget(BodyScript local)
     {
+        if (PropHuntSystem.IsProp(local)) return 0;
         var camera = Camera.main;
         if (camera == null) return 0;
         var point = (Vector2)camera.ScreenToWorldPoint(Input.mousePosition);
@@ -324,13 +327,13 @@ internal static class PlayerCarrySystem
                 continue;
             
             var body = remote.Value.remoteBody;
-            if (body == null || !body.isAlive || Vector2.Distance(local.transform.position, body.transform.position) > 2.4f) continue;
+            if (body == null || !body.isAlive || PropHuntSystem.IsProp(body) || Vector2.Distance(local.transform.position, body.transform.position) > Range) continue;
             if (PointerOverBody(body, point)) return remote.Key;
         }
         return 0;
     }
 
-    private static bool PointerOverBody(BodyScript body, Vector2 point)
+    internal static bool PointerOverBody(BodyScript body, Vector2 point)
     {
         foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
             if (collider != null && collider.enabled && collider.OverlapPoint(point)) return true;

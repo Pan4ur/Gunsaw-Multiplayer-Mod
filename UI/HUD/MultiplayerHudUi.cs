@@ -464,7 +464,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             var body = remote.Body;
             if (body == null || body.rb == null) continue;
             var visibility = VoyagerBody.PvpVoyagerVisibility(body);
-            if (!BlackoutRule.IsVisibleInHeadlamp(body)) visibility = 0f;
+            if (PropHuntSystem.IsProp(body) || !BlackoutRule.IsVisibleInHeadlamp(body)) visibility = 0f;
             if (visibility <= 0.01f)
             {
                 activeNameTags.Add(body);
@@ -584,7 +584,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 body = player == null ? null : player.bodyScript;
             }
             else body = NetworkAvatarManager.RemoteBodyForPeer(entry.PeerId);
-            if (body != null && !latest.ContainsKey(body)) latest.Add(body, entry);
+            if (body != null && !PropHuntSystem.IsProp(body) && !latest.ContainsKey(body)) latest.Add(body, entry);
         }
 
         var stale = new List<BodyScript>();

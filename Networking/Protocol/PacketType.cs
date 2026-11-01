@@ -62,5 +62,6 @@ internal enum PacketType : byte
     EditorChecksum = 0x3F,
     EditorClose = 0x40,
     EditorCloseReady = 0x41,
-    NpcImpulse = 0x42
+    NpcImpulse = 0x42,
+    PropHunt = 0x43
 }

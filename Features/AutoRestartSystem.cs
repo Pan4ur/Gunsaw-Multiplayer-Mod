@@ -9,7 +9,7 @@ internal static class AutoRestartSystem
 
     internal static void Tick(bool enabled)
     {
-        if (!enabled || !MultiplayerSession.IsHosting || GameManager.main == null || SceneManager.GetActiveScene().name == "LevelSelect")
+        if (MultiplayerSession.PropHuntEnabled || !enabled || !MultiplayerSession.IsHosting || GameManager.main == null || SceneManager.GetActiveScene().name == "LevelSelect")
         {
             restartAt = -1f;
             sceneHandle = int.MinValue;

@@ -69,7 +69,7 @@ internal sealed class MedicalStationRuntime : MonoBehaviour
     internal static IEnumerable<MedicalStationRuntime> All => stations.Values;
     internal static bool HasCooldowns => stations.Values.Any(station => station != null && station.CooldownRemaining > 0f);
     internal float CooldownRemaining => Mathf.Max(0f, readyAt - Time.unscaledTime);
-    private bool AvailableFor(ushort peerId) => !(data.oneTimeUse == 1 && usedPlayers.Contains(peerId)) && CooldownRemaining <= 0f;
+    private bool AvailableFor(ushort peerId) => !MultiplayerSession.PropHuntEnabled && !(data.oneTimeUse == 1 && usedPlayers.Contains(peerId)) && CooldownRemaining <= 0f;
     internal string CooldownText
     {
         get

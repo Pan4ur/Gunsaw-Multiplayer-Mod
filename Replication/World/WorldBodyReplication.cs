@@ -46,6 +46,7 @@ public class WorldBodyReplication
             return;
         }
 
+        PropHuntDisguise.RegisterWorldBody(body);
         var id = WorldReplication.Instance.Id(body);
         bodies[id] = body;
         lodPositions[body] = body.position;
@@ -97,7 +98,7 @@ public class WorldBodyReplication
 
     internal static bool IsWorldBody(Rigidbody2D body)
     {
-        if (body == null || !body.gameObject.scene.isLoaded) return false;
+        if (body == null || !body.gameObject.scene.isLoaded || body.GetComponent<PropHuntHitbox>() != null) return false;
         if (body.GetComponentInParent<BodyScript>() != null ||
             body.GetComponentInParent<PlayerScript>() != null ||
             body.GetComponentInParent<NetworkReplica>() != null ||

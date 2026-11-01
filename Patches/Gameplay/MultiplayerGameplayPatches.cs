@@ -55,7 +55,7 @@ internal static class ClientLevitatorPropPatch
             return false;
         }
         NetworkAvatarManager.ValidateRemoteGrab(__instance);
-        return true;
+        return PropHuntGravityPatch.Tick(__instance);
     }
 
     private static void Postfix(LevitatorScript __instance)
@@ -209,7 +209,7 @@ internal static class MultiplayerPlayerSlowmoPatch
 
             return false;
         }
-        return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen && !TeamSystem.BlocksPlayerInput;
+        return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen && !TeamSystem.BlocksPlayerInput && !PropHuntSystem.BlocksInput;
     }
 
     private static Exception Finalizer(PlayerScript __instance, Exception __exception, MultiplayerTimeControl.SlowmoKeyState __state)
@@ -1307,10 +1307,11 @@ internal static class MultiplayerWeaponShotPatch
 [HarmonyPatch(typeof(BodyScript), "KickDelayed")]
 internal static class MultiplayerPlayerKickDelayedPatch
 {
-    private static void Prefix(BodyScript __instance, out NetworkAvatarManager.ShotState __state)
+    private static bool Prefix(BodyScript __instance, out NetworkAvatarManager.ShotState __state)
     {
         __state = NetworkAvatarManager.BeginMeleeAttack(__instance);
         NetworkAvatarManager.BeginPlayerSound(__instance);
+        return !PropHuntSystem.IsProp(__instance);
     }
 
     private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)
@@ -1393,10 +1394,11 @@ internal static class MultiplayerTeleportZonePatch
 [HarmonyPatch(typeof(BodyScript), "Kick")]
 internal static class MultiplayerPlayerKickPatch
 {
-    private static void Prefix(BodyScript __instance, out NetworkAvatarManager.ShotState __state)
+    private static bool Prefix(BodyScript __instance, out NetworkAvatarManager.ShotState __state)
     {
         __state = NetworkAvatarManager.BeginMeleeAttack(__instance);
         NetworkAvatarManager.BeginPlayerSound(__instance);
+        return !PropHuntSystem.IsProp(__instance);
     }
 
     private static Exception Finalizer(Exception __exception, NetworkAvatarManager.ShotState __state, BodyScript __instance)

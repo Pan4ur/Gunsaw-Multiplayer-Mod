@@ -475,6 +475,7 @@ public class WorldReplication : MonoBehaviour
     internal static bool IsGameplayOwned(Component component)
     {
         if (component == null) return false;
+        if (component.GetComponentInParent<PropHuntHitbox>() != null) return true;
         if (component.GetComponentInParent<BodyScript>() != null ||
             component.GetComponentInParent<PlayerScript>() != null ||
             component.GetComponentInParent<NetworkReplica>() != null ||
