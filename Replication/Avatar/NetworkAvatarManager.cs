@@ -519,6 +519,10 @@ weapon != activeShotState.Weapon) return;
     private static bool playerSoundClipsLoaded;
     internal static ShotState BeginWeaponShot(WeaponScript weapon)
     {
+//        if (MultiplayerSession.IsConnected && weapon != null && !weapon.dismembered && weapon.body != null &&
+//            weapon.body.IsConsc() && weapon.cooldown < 0f && weapon.ammo > 0 && !weapon.body.unarmed)
+//            Physics2D.SyncTransforms();
+
         var state = new ShotState
         {
             PreviousShooter = currentShooter,
@@ -2251,7 +2255,7 @@ weapon != activeShotState.Weapon) return;
                     WorldReplication.Instance?.SendFullEnvironment(senderId);
                 var replica = NetworkAvatarManager.GetOrCreateReplica(senderId);
                 if (replica != null)
-                    replica.CreateRemote(identity, player.bodyScript);
+                    replica.pendingIdentity = identity;
             }
 
             PlayerSnapshotPacket snapshot;
@@ -2259,7 +2263,14 @@ weapon != activeShotState.Weapon) return;
             {
                 NetworkAvatarReplication replica;
                 if (NetworkAvatarManager.replicas.TryGetValue(senderId, out replica) && replica != null)
+                {
+                    if (replica.pendingIdentity != null)
+                    {
+                        replica.CreateRemote(replica.pendingIdentity, player.bodyScript);
+                        replica.pendingIdentity = null;
+                    }
                     replica.Apply(snapshot);
+                }
             }
 
             PlayerStatePacket state;

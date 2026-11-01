@@ -15,6 +15,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
     private readonly Queue<RemoteProjectileVisual> remoteProjectiles = new();
     private readonly Dictionary<Transform, TargetState> targets = new();
     internal bool receivedFirstSnapshot;
+    internal string? pendingIdentity;
     private float poseStartedAt;
     private float poseDuration = SnapshotInterval;
     private float PoseProgress => Mathf.Clamp01((Time.unscaledTime - poseStartedAt) / poseDuration);

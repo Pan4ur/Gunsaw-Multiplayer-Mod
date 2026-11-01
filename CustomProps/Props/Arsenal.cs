@@ -1,3 +1,4 @@
+using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -94,9 +95,16 @@ internal sealed class ArsenalRuntime : MonoBehaviour
     }
 }
 
+[HarmonyPatch(typeof(GameManager), nameof(GameManager.Pause))]
+internal static class ArsenalPausePatch
+{
+    private static bool Prefix() => !ArsenalMenu.BlocksPause;
+}
+
 internal sealed class ArsenalMenu : MonoBehaviour
 {
     private static ArsenalMenu instance;
+    private static int closedFrame = -1;
     private GameObject menu, content;
     private ScrollRect weaponScroll;
     private TMP_InputField searchInput;
@@ -114,6 +122,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
     private Vector2 previewCenterOffset;
     private float previewScale;
     internal static bool IsOpen => instance != null && instance.menu != null && instance.menu.activeSelf;
+    internal static bool BlocksPause => IsOpen || Time.frameCount == closedFrame;
     internal static bool ConsumesWhineKey(KeyCode key) => key == KeyCode.B && (IsOpen || (instance != null && Time.unscaledTime <= instance.nearbyUntil));
 
     internal static string Prompt => instance != null && !instance.menu.activeSelf &&
@@ -469,6 +478,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
 
     private void CloseAndEquip()
     {
+        closedFrame = Time.frameCount;
         menu.SetActive(false);
         var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
         if (body != null && body.isAlive && (arsenal == null || arsenal.TryGrantAmmo()))
