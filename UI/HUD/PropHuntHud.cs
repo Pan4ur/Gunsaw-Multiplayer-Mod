@@ -7,6 +7,7 @@ internal sealed class PropHuntHud : MonoBehaviour
     private readonly Dictionary<GameObject, bool> hidden = new();
     private PlayerScript player;
     private TMP_Text change, stun;
+    private PropHuntOutline outline;
 
     private void LateUpdate()
     {
@@ -17,7 +18,16 @@ internal sealed class PropHuntHud : MonoBehaviour
             return;
         }
         player = PlayerScript.player;
-        if (player == null || player.mainCanvas == null || player.ammoText == null) return;
+        
+        if (outline == null) 
+            outline = gameObject.AddComponent<PropHuntOutline>();
+            
+        var target = PropHuntSystem.StunTarget();
+        outline.SetTarget(target == 0 ? null : NetworkAvatarManager.RemoteBodyForPeer(target));
+        
+        if (player == null || player.mainCanvas == null || player.ammoText == null) 
+            return;
+            
         if (change == null)
         {
             change = CreateLine(-26f);
@@ -72,6 +82,7 @@ internal sealed class PropHuntHud : MonoBehaviour
 
     private void Restore()
     {
+        if (outline != null) Destroy(outline);
         foreach (var pair in hidden)
             if (pair.Key != null) pair.Key.SetActive(pair.Value);
         hidden.Clear();

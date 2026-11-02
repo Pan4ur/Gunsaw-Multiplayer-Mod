@@ -99,12 +99,9 @@ internal static class PropHuntSystem
                 Request(new PropHuntPacket(PropHuntAction.Change));
             }
             
-            if (Input.GetMouseButtonDown(0) && Time.unscaledTime >= stunAt && body != null && Camera.main != null)
+            if (Input.GetMouseButtonDown(0))
             {
-                var point = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-                var target = hunters.FirstOrDefault(id => alive.Contains(id) && Body(id) != null &&
-                    Vector2.Distance(body.transform.position, Body(id).transform.position) <= PlayerCarrySystem.Range &&
-                    PlayerCarrySystem.PointerOverBody(Body(id), point));
+                var target = StunTarget();
                 if (target != 0)
                 {
                     stunAt = Time.unscaledTime + 30f;
@@ -191,7 +188,7 @@ internal static class PropHuntSystem
         if (packet.Action >= PropHuntAction.Damage &&
             ((packet.Action != PropHuntAction.Push && packet.Action != PropHuntAction.KickMiss) || !MultiplayerSession.IsHost))
         {
-            if (sender == MultiplayerSession.HostPeerId && packet.Player == MultiplayerSession.LocalPeerId) ApplyEffect(packet);
+            if (sender == MultiplayerSession.HostPeerId && (packet.Player == MultiplayerSession.LocalPeerId || packet.Action == PropHuntAction.Shock)) ApplyEffect(packet);
             return;
         }
         
@@ -259,14 +256,18 @@ internal static class PropHuntSystem
 
     private static void Effect(PropHuntPacket packet)
     {
-        if (packet.Player == MultiplayerSession.LocalPeerId) ApplyEffect(packet);
-        else MultiplayerSession.Send(packet, packet.Player);
+        if (packet.Player == MultiplayerSession.LocalPeerId || packet.Action == PropHuntAction.Shock) ApplyEffect(packet);
+        if (packet.Action == PropHuntAction.Shock) MultiplayerSession.Send(packet);
+        else if (packet.Player != MultiplayerSession.LocalPeerId) MultiplayerSession.Send(packet, packet.Player);
     }
 
     private static void ApplyEffect(PropHuntPacket packet)
     {
-        var body = PlayerScript.player?.bodyScript;
+        var body = Body(packet.Player);
         if (body == null || !body.isAlive) return;
+        if (packet.Action == PropHuntAction.Shock && EmbeddedAudioLoader.StunSound != null)
+            Sound.Play(EmbeddedAudioLoader.StunSound, body.transform.position, false, false);
+        if (packet.Player != MultiplayerSession.LocalPeerId) return;
         switch (packet.Action)
         {
             case PropHuntAction.Push:
@@ -396,7 +397,20 @@ internal static class PropHuntSystem
             overlay.Show(Mathf.CeilToInt(Mathf.Max(0f, deadline - Time.unscaledTime)).ToString(), 1f);
         else overlay.Hide();
     }
-
+    
+    internal static ushort StunTarget()
+    {
+        var body = PlayerScript.player?.bodyScript;
+        var camera = Camera.main;
+        if (!AbilitiesVisible || !IsProp(body) || !body.isAlive || StunCooldown > 0f || camera == null || MultiplayerHud.IsTyping || Controls.IsTextInputSelected || GameManager.main.paused) 
+            return 0;
+        
+        var point = camera.ScreenToWorldPoint(Input.mousePosition);
+        return hunters.FirstOrDefault(id => alive.Contains(id) && Body(id) != null && Body(id).isAlive &&
+                                            Vector2.Distance(body.transform.position, Body(id).transform.position) <= PlayerCarrySystem.Range &&
+                                            PlayerCarrySystem.PointerOverBody(Body(id), point));
+    }
+    
     private static void EnsureScene()
     {
         if (scene == SceneManager.GetActiveScene().handle && epoch == MultiplayerSession.CurrentSceneEpoch) return;

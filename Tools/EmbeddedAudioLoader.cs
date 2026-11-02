@@ -9,6 +9,7 @@ internal class EmbeddedAudioLoader
     
     internal static AudioClip RespawnSound;
     internal static AudioClip SprayerSound;
+    internal static AudioClip StunSound;
     internal static AudioClip MedicalStationSound;
 
     public static void Init()
@@ -16,6 +17,7 @@ internal class EmbeddedAudioLoader
         GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.CustomProps.Assets.medical-station.ogg", c => { MedicalStationSound = c; }));
         GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.respawn.ogg", c => { RespawnSound = c; }));
         GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.sprayer.ogg", c => { SprayerSound = c; }));
+        GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.stun.ogg", c => { StunSound = c; }));
     }
 
     private static IEnumerator Load(string name, Action<AudioClip> onLoaded)
