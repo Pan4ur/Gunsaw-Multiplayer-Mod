@@ -20,6 +20,7 @@
     <EmbeddedResource Include="CustomProps\Assets\lamp-color-changer.png" />
     <EmbeddedResource Include="CustomProps\Assets\lamp-intensity-changer.png" />
     <EmbeddedResource Include="CustomProps\Assets\logic-*.png" />
+    <EmbeddedResource Include="Assets\UI\*.png" />
     <EmbeddedResource Include="Assets\play.png" />
     <EmbeddedResource Include="Assets\bin.png" />
     <EmbeddedResource Include="Assets\edit.png" />

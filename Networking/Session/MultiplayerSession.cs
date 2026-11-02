@@ -570,6 +570,11 @@ internal static partial class MultiplayerSession
         }
     }
 
+    internal static string PeerCharacterPrefab(ushort peerId)
+    {
+        lock (statusLock) return peers.TryGet(peerId, out var peer) ? peer.CharacterPrefab : "";
+    }
+
     internal static int PeerPing(ushort peerId)
     {
         lock (statusLock)

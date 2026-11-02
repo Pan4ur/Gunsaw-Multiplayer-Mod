@@ -147,6 +147,7 @@ internal static partial class MultiplayerSession
                 {
                     var name = NormalizePlayerName(identityPacket.Name);
                     TouchPeerLocked(senderId, name);
+                    if (peers.TryGet(senderId, out var peer)) peer.CharacterPrefab = identityPacket.Prefab;
                     identities.Enqueue(new PeerIdentity { PeerId = senderId, Identity = identity });
                     while (identities.Count > MaxPendingIdentities) identities.Dequeue();
                 }

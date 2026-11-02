@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using static LocalPlayerReplication;
 using static NetworkAvatarUtilities;
 
@@ -2132,6 +2133,22 @@ weapon != activeShotState.Weapon) return;
         }
     }
 
+    private void SendLocalIdentity(LocalPlayerReplication local, string prefab)
+    {
+        var serverOnlyHost = HeadlessLobbyService.IsHeadlessServer;
+        var currentIdentity = local.localName + "\n" + prefab;
+        var identityChanged = identitySent != currentIdentity;
+        if (!serverOnlyHost && (identityChanged || Time.unscaledTime >= nextIdentity))
+        {
+            identitySent = currentIdentity;
+            if (identityChanged)
+                local.forceFullInventoryUntil = Time.unscaledTime + 0.5f;
+            nextIdentity = Time.unscaledTime + 2f;
+            MultiplayerSession.Send(new IdentityPacket(local.localName, prefab));
+        }
+
+    }
+
     private void Update()
     {
         var performanceStarted = MultiplayerPerformance.Start();
@@ -2149,6 +2166,11 @@ weapon != activeShotState.Weapon) return;
             if (local == null) return;
             LocalPlayerReplication.EnsureLocalPlayerSingleton();
             MultiplayerSession.UpdatePing();
+            if (SceneManager.GetActiveScene().name == "LevelSelect")
+            {
+                SendLocalIdentity(local, LocalPlayerReplication.SelectedCharacterPrefab);
+                return;
+            }
             var player = PlayerScript.player;
             if (player == null || player.bodyScript == null)
                 return;
@@ -2261,18 +2283,7 @@ weapon != activeShotState.Weapon) return;
             local.UpdateSpectator(player);
             if (!MultiplayerSession.IsConnected) return;
 
-            var serverOnlyHost = HeadlessLobbyService.IsHeadlessServer;
-            var prefab = local.ResolveLocalCharacterPrefab(player.bodyScript);
-            var currentIdentity = local.localName + "\n" + prefab;
-            var identityChanged = identitySent != currentIdentity;
-            if (!serverOnlyHost && (identityChanged || Time.unscaledTime >= nextIdentity))
-            {
-                identitySent = currentIdentity;
-                if (identityChanged)
-                    local.forceFullInventoryUntil = Time.unscaledTime + 0.5f;
-                nextIdentity = Time.unscaledTime + 2f;
-                MultiplayerSession.Send(new IdentityPacket(local.localName, prefab));
-            }
+            SendLocalIdentity(local, local.ResolveLocalCharacterPrefab(player.bodyScript));
 
             string identity;
             while (MultiplayerSession.TryTakeIdentity(out senderId, out identity))

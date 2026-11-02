@@ -107,7 +107,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         UpdateFinalLeaderboard();
         statsText.gameObject.SetActive(hud.NetworkStatsVisible && !string.IsNullOrEmpty(hud.NetworkStatsText));
         if (statsText.gameObject.activeSelf) statsText.text = hud.NetworkStatsText;
-        if (Time.unscaledTime >= nextChatRefresh || hud.ChatOpen || HasActiveChatAnimation(hud))
+        if (Time.unscaledTime >= nextChatRefresh || hud.ChatOpen || chatWasOpen != hud.ChatOpen || HasActiveChatAnimation(hud))
         {
             nextChatRefresh = Time.unscaledTime + 0.15f;
             UpdateChat(hud);

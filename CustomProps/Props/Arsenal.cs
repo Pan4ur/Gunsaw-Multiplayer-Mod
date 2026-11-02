@@ -54,14 +54,7 @@ internal sealed class ArsenalRuntime : MonoBehaviour
 
     internal List<WeaponPreset> Weapons()
     {
-        var all = new List<WeaponPreset>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        IEnumerable<WeaponPreset> presets = Resources.FindObjectsOfTypeAll<WeaponPreset>();
-        if (GameManager.main != null && GameManager.main.allWeapons != null)
-            presets = GameManager.main.allWeapons.Concat(presets);
-        foreach (var preset in presets)
-            if (preset != null && preset.sprite != null && seen.Add(preset.name)) all.Add(preset);
-        all.Sort((left, right) => string.Compare(left.name, right.name, StringComparison.OrdinalIgnoreCase));
+        var all = WeaponPresetProvider.AllWeapons();
         var filter = data == null ? "All" : (data.weapons ?? "All").Trim();
         if (string.IsNullOrEmpty(filter) ||
             string.Equals(filter, "All", StringComparison.OrdinalIgnoreCase)) return all;
@@ -316,7 +309,7 @@ internal sealed class ArsenalMenu : MonoBehaviour
         weaponScroll.verticalNormalizedPosition = 1f;
     }
 
-    private static string SlotCategoryName(int slot)
+    internal static string SlotCategoryName(int slot)
     {
         return slot switch
         {

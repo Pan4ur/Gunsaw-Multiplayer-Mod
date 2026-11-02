@@ -24,7 +24,7 @@ internal static class GunGameRule
         {
             scene = currentScene;
             sequence = MultiplayerSession.GGSequence;
-            weapons = sequence.Split(';').Select(name => name.Trim()).Where(name => name.Length > 0).ToArray();
+            weapons = LobbyWeaponRules.Sequence(sequence).ToArray();
             step = 0;
             appliedBody = null;
             lastDeathBody = null;

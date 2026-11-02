@@ -16,9 +16,56 @@ internal sealed class LobbySettingAttribute : Attribute
     }
 }
 
+[AttributeUsage(AttributeTargets.Field, AllowMultiple = true)]
+internal sealed class LobbySettingVisibleWhenAttribute : Attribute
+{
+    internal readonly string Setting;
+    internal readonly bool Value;
+
+    internal LobbySettingVisibleWhenAttribute(string setting, bool value = true)
+    {
+        Setting = setting;
+        Value = value;
+    }
+}
+
 internal static class LobbySettingsSchema
 {
     private static readonly (FieldInfo Field, LobbySettingAttribute Option)[] fields = DiscoverFields();
+    private static readonly Dictionary<string, LobbySettingVisibleWhenAttribute[]> visibility = DiscoverVisibility();
+
+    internal static bool IsVisible(string setting, Func<string, bool> readBoolean)
+    {
+        if (!visibility.TryGetValue(setting, out var conditions))
+            throw new ArgumentException("Unknown lobby setting: " + setting, nameof(setting));
+        foreach (var condition in conditions)
+            if (readBoolean(condition.Setting) != condition.Value || !IsVisible(condition.Setting, readBoolean)) return false;
+        return true;
+    }
+
+    private static Dictionary<string, LobbySettingVisibleWhenAttribute[]> DiscoverVisibility()
+    {
+        var rules = fields.ToDictionary(item => item.Field.Name,
+            item => item.Field.GetCustomAttributes<LobbySettingVisibleWhenAttribute>().ToArray(), StringComparer.Ordinal);
+        foreach (var setting in rules)
+        {
+            foreach (var condition in setting.Value)
+            {
+                var controller = typeof(LobbySettings).GetField(condition.Setting, BindingFlags.Instance | BindingFlags.Public);
+                if (controller == null || controller.FieldType != typeof(bool))
+                    throw new InvalidOperationException("Visibility condition for " + setting.Key + " requires a boolean lobby setting: " + condition.Setting);
+            }
+        }
+        foreach (var setting in rules.Keys) ValidateVisibility(setting, rules, new HashSet<string>());
+        return rules;
+    }
+
+    private static void ValidateVisibility(string setting, Dictionary<string, LobbySettingVisibleWhenAttribute[]> rules, HashSet<string> path)
+    {
+        if (!path.Add(setting)) throw new InvalidOperationException("Circular lobby setting visibility dependency: " + setting);
+        foreach (var condition in rules[setting]) ValidateVisibility(condition.Setting, rules, path);
+        path.Remove(setting);
+    }
 
     internal static List<Func<bool>> BindConfig(ConfigFile config, Func<LobbySettings> currentSettings)
     {

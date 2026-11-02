@@ -6,6 +6,19 @@ public static class WeaponPresetProvider
     private static readonly Dictionary<ulong, WeaponPreset> nameHashCache = new();
     private static readonly Dictionary<ulong, WeaponPreset> spriteHashCache = new();
 
+    internal static List<WeaponPreset> AllWeapons()
+    {
+        var all = new List<WeaponPreset>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        IEnumerable<WeaponPreset> presets = Resources.LoadAll<WeaponPreset>("Weapons").Concat(Resources.FindObjectsOfTypeAll<WeaponPreset>());
+        if (GameManager.main != null && GameManager.main.allWeapons != null)
+            presets = GameManager.main.allWeapons.Concat(presets);
+        foreach (var preset in presets)
+            if (preset != null && preset.sprite != null && seen.Add(preset.name)) all.Add(preset);
+        all.Sort((left, right) => string.Compare(left.name, right.name, StringComparison.OrdinalIgnoreCase));
+        return all;
+    }
+
     private static WeaponPreset FindWeaponPreset<T>(T id, Dictionary<T, WeaponPreset> genericCache, Func<WeaponPreset, bool> allWeaponsMatch, Func<WeaponPreset, bool> resourcesMatch)
     {
         if (genericCache.TryGetValue(id, out var cached) && cached != null)

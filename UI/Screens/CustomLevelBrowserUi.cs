@@ -79,8 +79,8 @@ internal sealed class CustomLevelBrowserUi
     {
         internal GameObject root;
         internal Image image;
-        internal TMP_Text title;
-        internal TMP_Text author;
+        internal MultiplayerLobbyUi.CyclingLabel title;
+        internal MultiplayerLobbyUi.CyclingLabel author;
         internal TMP_Text details;
         internal TMP_Text rank;
         internal GameObject localActions;
@@ -128,16 +128,18 @@ internal sealed class CustomLevelBrowserUi
         plugin = owner;
         template = textTemplate;
         buttonTemplate = sourceButton;
-        playIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.play.png", 100f, new Vector2(0.5f, 0.5f));
-        binIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.bin.png", 100f, new Vector2(0.5f, 0.5f));
-        editIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.edit.png", 100f, new Vector2(0.5f, 0.5f));
-        configureIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.configure.png", 100f, new Vector2(0.5f, 0.5f));
-        panel = CreatePanel(parent, new Vector2(100f, 0f), new Vector2(600f, 920f));
+        playIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.play.png", 16f, new Vector2(0.5f, 0.5f));
+        binIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.delete.png", 16f, new Vector2(0.5f, 0.5f));
+        editIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.edit.png", 16f, new Vector2(0.5f, 0.5f));
+        configureIcon = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.configure.png", 16f, new Vector2(0.5f, 0.5f));
+        panel = CreatePanel(parent, new Vector2(100f, 0f), new Vector2(600f, 900f));
         panel.transform.SetSiblingIndex(Mathf.Max(0, parent.childCount - 2));
         panel.name = "Custom Level Browser";
         panelRect = panel.GetComponent<RectTransform>();
-        CreateText(panel.transform, "CUSTOM LEVEL BROWSER", new Vector2(0f, 410f), new Vector2(540f, 38f), 23, TextAlignmentOptions.Center, FontStyles.UpperCase);
-        var close = CreateButton(panel.transform, "CLOSE", new Vector2(240f, 410f), new Vector2(100f, 38f));
+        CreateText(panel.transform, "CUSTOM LEVEL BROWSER", new Vector2(-30f, 410f), new Vector2(460f, 38f), 21, TextAlignmentOptions.Left, FontStyles.UpperCase);
+        var close = CreateButton(panel.transform, "", new Vector2(250f, 410f), new Vector2(36f, 36f));
+        close.name = "Close level browser";
+        MultiplayerLobbyUi.CreateIcon(close.transform, MultiplayerLobbyUi.LobbyIcon.Close, new Color(0.88f, 0.89f, 0.91f));
         close.onClick.AddListener(() => SetOpen(false));
         search = CreateInput(panel.transform, new Vector2(-105f, 360f), new Vector2(330f, 40f), "Search levels");
         search.onValueChanged.AddListener(_ => Rebuild());
@@ -244,10 +246,8 @@ internal sealed class CustomLevelBrowserUi
         levels = localMode ? localLevels : onlineLevels;
         renderedSearch = "\u0000";
         renderedLocalMode = !localMode;
-        var onlineImage = onlineButton.GetComponent<Image>();
-        var localImage = localButton.GetComponent<Image>();
-        onlineImage.color = localMode ? new Color(0.16f, 0.2f, 0.2f, 1f) : new Color(0.18f, 0.48f, 0.2f, 1f);
-        localImage.color = localMode ? new Color(0.18f, 0.48f, 0.2f, 1f) : new Color(0.16f, 0.2f, 0.2f, 1f);
+        MultiplayerLobbyUi.SetModeButton(onlineButton, !localMode);
+        MultiplayerLobbyUi.SetModeButton(localButton, localMode);
         addLocalButton.gameObject.SetActive(true);
         onlineButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(-145f, -397f);
         localButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(38f, -397f);
@@ -636,9 +636,9 @@ internal sealed class CustomLevelBrowserUi
         root.GetComponent<LayoutElement>().preferredHeight = 118f;
         var image = root.GetComponent<Image>();
         var outline = root.GetComponent<Outline>();
-        outline.effectColor = new Color(0.78f, 0.78f, 0.78f, 0.7f);
+        outline.effectColor = new Color(0.25f, 0.235f, 0.28f, 1f);
         outline.effectDistance = new Vector2(1f, -1f);
-        var shade = new GameObject("Shade", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); shade.transform.SetParent(root.transform, false); var shadeRect = shade.GetComponent<RectTransform>(); shadeRect.anchorMin = Vector2.zero; shadeRect.anchorMax = Vector2.one; shadeRect.offsetMin = Vector2.zero; shadeRect.offsetMax = Vector2.zero; shade.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.48f);
+        var shade = new GameObject("Shade", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); shade.transform.SetParent(root.transform, false); var shadeRect = shade.GetComponent<RectTransform>(); shadeRect.anchorMin = Vector2.zero; shadeRect.anchorMax = Vector2.one; shadeRect.offsetMin = Vector2.zero; shadeRect.offsetMax = Vector2.zero; shade.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.62f);
         var title = CreateText(root.transform, "", new Vector2(-50f, 35f), new Vector2(390f, 30f), 18, TextAlignmentOptions.Left, FontStyles.Bold);
         title.margin = new Vector4(12f, 0f, 0f, 0f);
         var author = CreateText(root.transform, "", new Vector2(-50f, 10f), new Vector2(390f, 22f), 13, TextAlignmentOptions.Left);
@@ -647,7 +647,7 @@ internal sealed class CustomLevelBrowserUi
         details.margin = new Vector4(12f, 0f, 0f, 0f);
         details.enableWordWrapping = true;
         var rank = CreateText(root.transform, "", new Vector2(145f, 0f), new Vector2(42f, 50f), 42, TextAlignmentOptions.Center, FontStyles.Bold);
-        var card = new LevelCard { root = root, image = image, title = title, author = author, details = details, rank = rank };
+        var card = new LevelCard { root = root, image = image, title = title.gameObject.AddComponent<MultiplayerLobbyUi.CyclingLabel>(), author = author.gameObject.AddComponent<MultiplayerLobbyUi.CyclingLabel>(), details = details, rank = rank };
         var play = CreatePlayButton(root.transform, new Vector2(220f, 0f), new Vector2(50f, 50f));
         play.onClick.AddListener(() => { if (card.entry != null) plugin.StartCatalogCustomLevel(card.entry.code, card.entry.name ?? "Untitled"); });
         var actions = new GameObject("Local Actions", typeof(RectTransform));
@@ -672,9 +672,9 @@ internal sealed class CustomLevelBrowserUi
     {
         card.entry = entry;
         card.image.sprite = null;
-        card.image.color = CoverColor(entry.type);
-        card.title.text = entry.name ?? "Untitled";
-        card.author.text = entry.local ? "LOCAL" : "BY " + (entry.author ?? "Unknown");
+        card.image.color = entry.local ? new Color(0.3f, 0.3f, 0.3f, 0.96f) : CoverColor(entry.type);
+        card.title.SetValue(entry.name ?? "Untitled");
+        card.author.SetValue(entry.local ? "LOCAL" : "BY " + (entry.author ?? "Unknown"));
         card.details.text = entry.local ? (string.IsNullOrWhiteSpace(entry.info) ? "No description." : entry.info) + "\n" +
             (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry)) :
             (entry.difficulty ?? "?").ToUpperInvariant() + "  |  " + (entry.length ?? "?").ToUpperInvariant() + "  |  " + (entry.type ?? "?").ToUpperInvariant() + "\n" + (entry.date ?? "Unknown date") + "  |  " + FormatSize(CodeSize(entry));
@@ -769,7 +769,7 @@ internal sealed class CustomLevelBrowserUi
             cover = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
             covers[levelName] = cover;
             foreach (var card in levelCards)
-                if (card.root != null && card.root.activeInHierarchy && card.image != null && card.entry != null &&
+                if (card.root != null && card.root.activeInHierarchy && card.image != null && card.entry != null && !card.entry.local &&
                     string.Equals(card.entry.name, levelName, System.StringComparison.OrdinalIgnoreCase))
                 {
                     card.image.sprite = cover;
@@ -793,8 +793,8 @@ internal sealed class CustomLevelBrowserUi
     {
         var go = new GameObject("Panel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline));
         go.transform.SetParent(parent, false);
-        go.GetComponent<Image>().color = new Color(0.08f, 0.08f, 0.08f, 0.98f);
-        var outline = go.GetComponent<Outline>(); outline.effectColor = new Color(0.58f, 0.58f, 0.58f, 0.92f); outline.effectDistance = new Vector2(1f, -1f);
+        go.GetComponent<Image>().color = new Color(0.075f, 0.071f, 0.086f, 1f);
+        var outline = go.GetComponent<Outline>(); outline.effectColor = new Color(0.25f, 0.235f, 0.28f, 1f); outline.effectDistance = new Vector2(1f, -1f);
         Rect(go.GetComponent<RectTransform>(), position, size);
         return go;
     }
@@ -805,8 +805,9 @@ internal sealed class CustomLevelBrowserUi
         go.transform.SetParent(parent, false);
         var image = go.GetComponent<Image>();
         var source = buttonTemplate.targetGraphic as Image;
-        image.sprite = source == null ? null : source.sprite; image.material = source == null ? null : source.material; image.color = source == null ? new Color(0.16f, 0.2f, 0.2f, 1f) : source.color;
-        var button = go.GetComponent<Button>(); button.targetGraphic = image; button.colors = buttonTemplate.colors;
+        image.sprite = source == null ? null : source.sprite; image.material = source == null ? null : source.material; image.color = Color.white;
+        var button = go.GetComponent<Button>(); button.targetGraphic = image; button.colors = MultiplayerLobbyUi.MenuButtonColors(buttonTemplate.colors);
+        image.CrossFadeColor(button.colors.normalColor * button.colors.colorMultiplier, 0f, true, true);
         Rect(go.GetComponent<RectTransform>(), position, size);
         CreateText(go.transform, label, Vector2.zero, size, label == "▶" ? 28 : 14, TextAlignmentOptions.Center).raycastTarget = false;
         return button;
@@ -829,11 +830,14 @@ internal sealed class CustomLevelBrowserUi
         var background = button.GetComponent<Image>();
         background.sprite = null;
         background.material = null;
-        background.color = color;
+        background.color = Color.white;
+        var colors = button.colors;
+        colors.highlightedColor = Color.Lerp(colors.highlightedColor, color, 0.3f);
+        button.colors = colors;
         if (sprite == null) return button;
         var icon = new GameObject(label + " Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         icon.transform.SetParent(button.transform, false);
-        Rect(icon.GetComponent<RectTransform>(), Vector2.zero, size);
+        Rect(icon.GetComponent<RectTransform>(), Vector2.zero, new Vector2(32f, 32f));
         var iconImage = icon.GetComponent<Image>();
         iconImage.sprite = sprite;
         iconImage.color = Color.white;
@@ -845,9 +849,11 @@ internal sealed class CustomLevelBrowserUi
     {
         var go = new GameObject("Search", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline), typeof(TMP_InputField));
         go.transform.SetParent(parent, false); Rect(go.GetComponent<RectTransform>(), position, size);
-        var image = go.GetComponent<Image>(); image.color = new Color(0.17f, 0.17f, 0.17f, 0.7f);
-        var outline = go.GetComponent<Outline>(); outline.effectColor = new Color(0.58f, 0.58f, 0.58f, 0.95f); outline.effectDistance = new Vector2(1f, -1f);
+        var image = go.GetComponent<Image>(); image.color = new Color(0.058f, 0.054f, 0.068f, 1f);
+        var outline = go.GetComponent<Outline>(); outline.effectColor = new Color(0.3f, 0.28f, 0.33f, 1f); outline.effectDistance = new Vector2(1f, -1f);
         var field = go.GetComponent<TMP_InputField>(); field.targetGraphic = image; field.characterLimit = characterLimit;
+        field.caretColor = new Color(1f, 0.56f, 0.3f);
+        field.selectionColor = new Color(0.75f, 0.38f, 0.17f, 0.45f);
         if (size.y > 60f) field.lineType = TMP_InputField.LineType.MultiLineNewline;
         var text = CreateText(go.transform, "", Vector2.zero, new Vector2(size.x - 16f, size.y), 15, TextAlignmentOptions.Left); text.margin = new Vector4(8f, 0f, 8f, 0f); text.enableWordWrapping = size.y > 60f; field.textViewport = text.rectTransform; field.textComponent = text;
         var hint = CreateText(go.transform, placeholder, Vector2.zero, new Vector2(size.x - 16f, size.y), 15, TextAlignmentOptions.Left); hint.margin = new Vector4(8f, 0f, 8f, 0f); hint.color = new Color(0.7f, 0.7f, 0.7f, 0.55f); hint.enableWordWrapping = size.y > 60f; field.placeholder = hint;
@@ -857,14 +863,14 @@ internal sealed class CustomLevelBrowserUi
     private Transform CreateScroll(Transform parent, Vector2 position, Vector2 size)
     {
         var view = new GameObject("Level Scroll", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Mask), typeof(ScrollRect)); view.transform.SetParent(parent, false); Rect(view.GetComponent<RectTransform>(), position, size);
-        view.GetComponent<Image>().color = new Color(0.13f, 0.13f, 0.13f, 0.5f); view.GetComponent<Mask>().showMaskGraphic = true;
+        view.GetComponent<Image>().color = new Color(0.058f, 0.054f, 0.068f, 1f); view.GetComponent<Mask>().showMaskGraphic = true;
         var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter)); content.transform.SetParent(view.transform, false);
         var contentRect = content.GetComponent<RectTransform>(); contentRect.anchorMin = new Vector2(0f, 1f); contentRect.anchorMax = new Vector2(1f, 1f); contentRect.pivot = new Vector2(0.5f, 1f); contentRect.anchoredPosition = new Vector2(0f, -5f); contentRect.sizeDelta = new Vector2(-18f, 0f);
         var layout = content.GetComponent<VerticalLayoutGroup>(); layout.padding = new RectOffset(7, 7, 7, 7); layout.spacing = 7; layout.childControlWidth = true; layout.childControlHeight = true; layout.childForceExpandWidth = true; layout.childForceExpandHeight = false;
         content.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         var scroll = view.GetComponent<ScrollRect>(); scroll.viewport = view.GetComponent<RectTransform>(); scroll.content = contentRect; scroll.horizontal = false; scroll.movementType = ScrollRect.MovementType.Clamped; scroll.scrollSensitivity = 28f;
         var barObject = new GameObject("Scrollbar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Scrollbar)); barObject.transform.SetParent(view.transform, false);
-        var barRect = barObject.GetComponent<RectTransform>(); barRect.anchorMin = new Vector2(1f, 0f); barRect.anchorMax = new Vector2(1f, 1f); barRect.pivot = new Vector2(1f, 0.5f); barRect.anchoredPosition = new Vector2(-4f, 0f); barRect.sizeDelta = new Vector2(11f, -10f); barObject.GetComponent<Image>().color = new Color(0.08f, 0.08f, 0.08f, 0.9f);
+        var barRect = barObject.GetComponent<RectTransform>(); barRect.anchorMin = new Vector2(1f, 0f); barRect.anchorMax = new Vector2(1f, 1f); barRect.pivot = new Vector2(1f, 0.5f); barRect.anchoredPosition = new Vector2(-4f, 0f); barRect.sizeDelta = new Vector2(11f, -10f); barObject.GetComponent<Image>().color = new Color(0.12f, 0.11f, 0.14f, 0.9f);
         var handle = new GameObject("Handle", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image)); handle.transform.SetParent(barObject.transform, false); var handleRect = handle.GetComponent<RectTransform>(); handleRect.anchorMin = Vector2.zero; handleRect.anchorMax = Vector2.one; handleRect.offsetMin = new Vector2(2f, 2f); handleRect.offsetMax = new Vector2(-2f, -2f); handle.GetComponent<Image>().color = new Color(0.65f, 0.65f, 0.65f, 0.95f);
         var bar = barObject.GetComponent<Scrollbar>(); bar.targetGraphic = handle.GetComponent<Image>(); bar.handleRect = handleRect; bar.direction = Scrollbar.Direction.BottomToTop; scroll.verticalScrollbar = bar; scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
         return content.transform;
@@ -873,7 +879,7 @@ internal sealed class CustomLevelBrowserUi
     private TMP_Text CreateText(Transform parent, string value, Vector2 position, Vector2 size, float fontSize, TextAlignmentOptions alignment = TextAlignmentOptions.Left, FontStyles style = FontStyles.Normal)
     {
         var go = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI)); go.transform.SetParent(parent, false); Rect(go.GetComponent<RectTransform>(), position, size);
-        var text = go.GetComponent<TextMeshProUGUI>(); text.font = template.font; text.fontSharedMaterial = template.fontSharedMaterial; text.color = template.color; text.fontSize = fontSize; text.alignment = alignment; text.fontStyle = style; text.text = value; text.enableWordWrapping = false; return text;
+        var text = go.GetComponent<TextMeshProUGUI>(); text.font = template.font; text.fontSharedMaterial = template.fontSharedMaterial; text.color = new Color(0.88f, 0.89f, 0.91f); text.fontSize = fontSize; text.alignment = alignment; text.fontStyle = style; text.text = value; text.enableWordWrapping = false; return text;
     }
 
     private static void Rect(RectTransform rect, Vector2 position, Vector2 size) { rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f); rect.pivot = new Vector2(0.5f, 0.5f); rect.anchoredPosition = position; rect.sizeDelta = size; }

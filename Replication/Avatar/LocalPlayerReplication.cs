@@ -7,6 +7,7 @@ using static NetworkAvatarUtilities;
 internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 {
     internal static string selectedCharacterPrefab = "";
+    internal static string SelectedCharacterPrefab => string.IsNullOrEmpty(selectedCharacterPrefab) ? PlayerPrefs.GetString("charPrefab") : selectedCharacterPrefab;
     internal static float localRespawnProtectionUntil = -1f;
     private const float RespawnProtectionSeconds = 1.5f;
     internal static PlayerScript localPlayerInstance;
@@ -1025,7 +1026,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
     {
         if (body == null || string.Equals((rule ?? "").Trim(), "Default", StringComparison.OrdinalIgnoreCase)) return;
         EnsureRespawnWeaponSlots(body);
-        var values = SplitLobbyWeaponRule(rule);
+        var values = LobbyWeaponRules.Split(rule);
         var firstWeapon = -1;
         for (var slot = 0; slot < 3; slot++)
         {
@@ -1121,29 +1122,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         startingAmmoAppliedBody = body;
     }
 
-    private static List<string> SplitLobbyWeaponRule(string rule)
-    {
-        var values = new List<string>();
-        var start = 0;
-        var depth = 0;
-        var text = rule ?? string.Empty;
-        for (var index = 0; index < text.Length; index++)
-        {
-            if (text[index] == '[') depth++;
-            else if (text[index] == ']' && depth > 0) depth--;
-            else if (text[index] == ';' && depth == 0)
-            {
-                values.Add(text.Substring(start, index - start));
-                start = index + 1;
-            }
-        }
-        values.Add(text.Substring(start));
-        return values;
-    }
-
     private static WeaponPreset FindLobbyWeaponPreset(string value)
     {
-        if (!TryParseRandomWeaponRule(value, out var include, out var names)) return FindWeaponPresetByName(value);
+        if (!LobbyWeaponRules.TryParseRandom(value, out var include, out var names)) return FindWeaponPresetByName(value);
         var candidates = new List<WeaponPreset>();
         foreach (var preset in Resources.FindObjectsOfTypeAll<WeaponPreset>())
         {
@@ -1161,25 +1142,6 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             candidates.Add(preset);
         }
         return candidates.Count == 0 ? null : candidates[UnityEngine.Random.Range(0, candidates.Count)];
-    }
-
-    private static bool TryParseRandomWeaponRule(string value, out bool include, out List<string> names)
-    {
-        include = false;
-        names = new List<string>();
-        var text = (value ?? string.Empty).Trim();
-        if (string.Equals(text, "Random", StringComparison.OrdinalIgnoreCase)) return true;
-        if (!text.StartsWith("Random[", StringComparison.OrdinalIgnoreCase) || !text.EndsWith("]")) return false;
-        var filter = text.Substring(7, text.Length - 8).Trim();
-        if (filter.StartsWith("in=", StringComparison.OrdinalIgnoreCase)) include = true;
-        else if (filter.StartsWith("ex=", StringComparison.OrdinalIgnoreCase)) include = false;
-        else return false;
-        foreach (var name in filter.Substring(3).Split(';'))
-        {
-            var trimmed = name.Trim();
-            if (!string.IsNullOrEmpty(trimmed)) names.Add(trimmed);
-        }
-        return true;
     }
 
     private static WeaponPreset FindWeaponPresetByName(string name)

@@ -699,6 +699,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             return;
         }
         hostedLobbyDisplayName = lobbyName;
+        multiplayerLobbyUi.NoteAppliedLobbySettings(lobbySettings, lobbyName);
         status = "Lobby settings updated.";
         if (!string.IsNullOrEmpty(hostedLobbyId) && !string.IsNullOrEmpty(hostRelayKey))
         {
@@ -877,6 +878,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RunOnMainThread(() =>
             {
                 MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, settings, parsed, requestedPlayerName, hostPeerId);
+                multiplayerLobbyUi.NoteAppliedLobbySettings(settings, requestedLobbyName);
                 avatarReplication.Configure(requestedPlayerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = requestedLobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
                 headlessLobbyService.OnLobbyCreated(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
             });
@@ -1101,6 +1103,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 maxPlayers = JsonInt(item, "maxPlayers"),
                 pvp = JsonBool(item, "pvp"),
                 propHunt = JsonBool(item, "propHunt"),
+                gunGame = JsonBool(item, "gunGame"),
+                brutalMode = JsonBool(item, "brutalMode"),
+                teams = JsonBool(item, "teams"),
+                blackout = JsonBool(item, "blackout"),
+                restrictLight = JsonBool(item, "restrictLight"),
+                modVersion = JsonString(item, "modVersion"),
                 canGrab = JsonBool(item, "canGrab"),
                 grabOnlyUnconscious = JsonBool(item, "grabOnlyUnconscious"),
                 allowRespawn = JsonBool(item, "allowRespawn"),
@@ -1317,6 +1325,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public string map = "";
         public int players;
         public int maxPlayers;
+        public string modVersion = "";
+        public bool brutalMode;
         public bool pvp;
         public bool propHunt;
         public bool gunGame;

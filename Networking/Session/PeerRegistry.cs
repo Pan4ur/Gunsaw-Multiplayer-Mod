@@ -37,6 +37,7 @@ internal sealed class PeerRegistry
 internal sealed class PeerState
 {
     internal string Name = "Player";
+    internal string CharacterPrefab = "";
     internal long LastPacketTicks;
     internal int PingMs = -1;
 }
