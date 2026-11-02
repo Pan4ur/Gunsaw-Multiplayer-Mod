@@ -1352,7 +1352,7 @@ internal sealed class NpcReplication : MonoBehaviour
         if (camera == null) return;
         var origin = (Vector2)levitator.refBody.transform.position;
         var mouse = (Vector2)camera.ScreenToWorldPoint(Input.mousePosition);
-        foreach (var hit in Physics2D.LinecastAll(origin, mouse))
+        foreach (var hit in PropHuntTelekinesisRaycastPatch.ExcludeSelf(Physics2D.LinecastAll(origin, mouse), levitator))
         {
             var collider = hit.collider;
             if (collider == null || collider.GetComponentInParent<BodyScript>() == levitator.refBody ||

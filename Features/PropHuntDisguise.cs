@@ -233,7 +233,7 @@ internal sealed class PropHuntDisguise : MonoBehaviour
             (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.Space) ||
              (player != null && player.keys != null && player.keys.Any(pair =>
                  (pair.Key == "MoveUp" || pair.Key == "MoveDown" || pair.Key == "MoveLeft" || pair.Key == "MoveRight" || pair.Key == "Jump") && Input.GetKey(pair.Value))));
-        if (!moving) return;
+        if (!moving && player?.levit?.currentlyLevitating == null) return;
         lastInputAt = Time.unscaledTime;
         if (Time.unscaledTime >= gravityUntil) SetPhysical(false);
     }

@@ -153,6 +153,38 @@ internal static class PropHuntMovementPatch
     }
 }
 
+[HarmonyPatch]
+internal static class PropHuntTelekinesisRaycastPatch
+{
+    private static IEnumerable<MethodBase> TargetMethods()
+    {
+        yield return AccessTools.Method(typeof(LevitatorScript), "TryGrab");
+        yield return AccessTools.Method(typeof(LevitatorScript), "FixedUpdate");
+    }
+
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        foreach (var i in instructions)
+        {
+            yield return i;
+            if (i.operand is MethodInfo method && method.DeclaringType == typeof(Physics2D) && method.Name == nameof(Physics2D.LinecastAll))
+            {
+                yield return new CodeInstruction(OpCodes.Ldarg_0);
+                yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(PropHuntTelekinesisRaycastPatch), nameof(ExcludeSelf)));
+            }
+        }
+    }
+
+    internal static RaycastHit2D[] ExcludeSelf(RaycastHit2D[] hits, LevitatorScript levitator)
+    {
+        if (!PropHuntSystem.IsProp(levitator.refBody))
+            return hits;
+        
+        var peer = NetworkAvatarManager.PeerIdOfBody(levitator.refBody);
+        return [.. hits.Where(hit => hit.collider == null || hit.collider.GetComponentInParent<PropHuntHitbox>()?.Peer != peer)];
+    }
+}
+
 internal static class PropHuntGravityPatch
 {
     internal static bool Tick(LevitatorScript levitator)

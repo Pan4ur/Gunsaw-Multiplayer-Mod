@@ -1097,7 +1097,7 @@ weapon != activeShotState.Weapon) return;
         if (camera == null || levitator.refBody == null) return;
         var mouse = (Vector2)camera.ScreenToWorldPoint(Input.mousePosition);
         var origin = (Vector2)levitator.refBody.transform.position;
-        foreach (var hit in Physics2D.LinecastAll(origin, mouse))
+        foreach (var hit in PropHuntTelekinesisRaycastPatch.ExcludeSelf(Physics2D.LinecastAll(origin, mouse), levitator))
         {
             var collider = hit.collider;
             if (collider == null || collider.GetComponentInParent<BodyScript>() == levitator.refBody ||
