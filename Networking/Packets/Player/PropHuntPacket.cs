@@ -22,10 +22,10 @@ internal readonly struct PropHuntPacket : INetworkPacket
     internal readonly PropHuntPhase Phase;
     internal readonly float Value;
     internal readonly KeyValuePair<ushort, string>[] Props;
-    internal readonly ushort[] Alive;
+    internal readonly ushort[] Alive, Hunters;
 
     internal PropHuntPacket(PropHuntAction action, ushort player = 0, float value = 0f,
-        PropHuntPhase phase = PropHuntPhase.Waiting, KeyValuePair<ushort, string>[] props = null, ushort[] alive = null, int? epoch = null, uint sequence = 0)
+        PropHuntPhase phase = PropHuntPhase.Waiting, KeyValuePair<ushort, string>[] props = null, ushort[] alive = null, int? epoch = null, uint sequence = 0, ushort[] hunters = null)
     {
         Sequence = sequence;
         Epoch = epoch ?? MultiplayerSession.CurrentSceneEpoch;
@@ -35,6 +35,7 @@ internal readonly struct PropHuntPacket : INetworkPacket
         Phase = phase;
         Props = props ?? Array.Empty<KeyValuePair<ushort, string>>();
         Alive = alive ?? Array.Empty<ushort>();
+        Hunters = hunters ?? (player == 0 ? Array.Empty<ushort>() : new[] { player });
     }
 
     public PacketType Type => PacketType.PropHunt;
@@ -56,6 +57,8 @@ internal readonly struct PropHuntPacket : INetworkPacket
         }
         writer.WriteByte((byte)Alive.Length);
         foreach (var player in Alive) writer.WriteUInt16(player);
+        writer.WriteByte((byte)Hunters.Length);
+        foreach (var hunter in Hunters) writer.WriteUInt16(hunter);
     }
 
     internal static PropHuntPacket Read(ref PacketReader reader)
@@ -74,6 +77,14 @@ internal readonly struct PropHuntPacket : INetworkPacket
         if (count > 64) throw new InvalidDataException("Too many players.");
         var alive = new ushort[count];
         for (var index = 0; index < count; index++) alive[index] = reader.ReadUInt16();
-        return new PropHuntPacket(action, player, value, phase, props, alive, epoch, sequence);
+        ushort[] hunters = null;
+        if (reader.Remaining > 0)
+        {
+            count = reader.ReadByte();
+            if (count > 63) throw new InvalidDataException("Too many hunters.");
+            hunters = new ushort[count];
+            for (var index = 0; index < count; index++) hunters[index] = reader.ReadUInt16();
+        }
+        return new PropHuntPacket(action, player, value, phase, props, alive, epoch, sequence, hunters);
     }
 }

@@ -15,6 +15,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle, restrictLightToggle, gunGameToggle, uniformHPToggle;
     private Toggle propHuntToggle;
     private TMP_InputField propHuntTimeInput;
+    private TMP_InputField propHuntHuntersInput;
     private Button ggResetButton, ggRollbackButton, ggNoneButton;
     private TMP_Text statusText, customLevelText, connectionModeText, updateText, tooltipText;
     private GameObject tooltipPanel;
@@ -100,6 +101,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetToggle(pvpToggle, viewingLobbySettings ? MultiplayerSession.PvpEnabled : plugin.lobbySettings.Pvp);
         SetToggle(propHuntToggle, viewingLobbySettings ? MultiplayerSession.PropHuntEnabled : plugin.lobbySettings.PropHunt);
         SetInput(propHuntTimeInput, viewingLobbySettings ? MultiplayerSession.PropHuntTime.ToString() : plugin.lobbySettings.PropHuntTime);
+        SetInput(propHuntHuntersInput, viewingLobbySettings ? MultiplayerSession.PropHuntHunters.ToString() : plugin.lobbySettings.PropHuntHunters);
         SetToggle(gunGameToggle, viewingLobbySettings ? MultiplayerSession.GunGameEnabled : plugin.lobbySettings.GunGame);
         SetInput(ggSequenceInput, viewingLobbySettings ? MultiplayerSession.GGSequence : plugin.lobbySettings.GGSequence);
         var ggOnDeath = viewingLobbySettings ? MultiplayerSession.GGOnDeath : plugin.lobbySettings.GGOnDeath;
@@ -167,6 +169,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         gunGameToggle.interactable = interactable;
         propHuntToggle.interactable = interactable;
         propHuntTimeInput.interactable = interactable;
+        propHuntHuntersInput.interactable = interactable;
         ggSequenceInput.interactable = interactable;
         grabToggle.interactable = interactable;
         downToggle.interactable = interactable;
@@ -353,10 +356,14 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         respawnAmmoInput = CreateInput(respawnAmmoRow, new Vector2(115f, 0f), new Vector2(280f, 36f), 32, value => plugin.lobbySettings.RespawnAmmo = value);
         AddTooltip(respawnAmmoRow.gameObject, "RESPAWN AMMO: Pistol;Rifle;Heavy;Grenade ammo assigned after respawn.");
         propHuntToggle = CreateToggle(CreateSettingsRow(settings), "PROP HUNT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.PropHunt = value);
-        AddTooltip(propHuntToggle.gameObject, "PROP HUNT: One hunter, everyone else hides as props. (LMB on hunter to stun)");
+        AddTooltip(propHuntToggle.gameObject, "PROP HUNT: Hunters search for players hiding as props. (LMB on hunter to stun)");
         var propHuntTimeRow = CreateSettingsRow(settings);
         CreateText(propHuntTimeRow, "PROP HUNT TIME", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         propHuntTimeInput = CreateInput(propHuntTimeRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 4, value => plugin.lobbySettings.PropHuntTime = value);
+        var huntersRow = CreateSettingsRow(settings);
+        CreateText(huntersRow, "PROP HUNT HUNTERS", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        propHuntHuntersInput = CreateInput(huntersRow, new Vector2(170f, 0f), new Vector2(80f, 40f), 2, value => plugin.lobbySettings.PropHuntHunters = value);
+        AddTooltip(huntersRow.gameObject, "Number of hunters selected each round.");
         gunGameToggle = CreateToggle(CreateSettingsRow(settings), "GUNGAME", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.GunGame = value);
         AddTooltip(gunGameToggle.gameObject, "GUNGAME: Each kill advances to the next weapon in GG SEQUENCE.");
         var ggSequenceRow = CreateSettingsRow(settings);

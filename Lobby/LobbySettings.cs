@@ -79,12 +79,17 @@ internal sealed class LobbySettings
     [LobbySetting("PropHuntTime", "Hunting time in seconds, after the 30 second hiding period.", "--prop-hunt-time")]
     public string PropHuntTime = "300";
 
+    [LobbySetting("PropHuntHunters", "Number of hunters.", "--prop-hunt-hunters")]
+    public string PropHuntHunters = "1";
+
     internal LobbySettings Clone() => (LobbySettings)MemberwiseClone();
 
     internal ParsedLobbySettings Parse(int defaultMaxPlayers)
     {
         if (!int.TryParse(PropHuntTime, out var propHuntTime)) propHuntTime = 300;
         PropHuntTime = Mathf.Clamp(propHuntTime, 1, 3600).ToString();
+        if (!int.TryParse(PropHuntHunters, out var hunters)) hunters = 1;
+        PropHuntHunters = Mathf.Clamp(hunters, 1, 63).ToString();
         GGSequence = (GGSequence ?? "").Trim();
         if (GGSequence.Length > 512) GGSequence = GGSequence.Substring(0, 512);
         if (!Enum.IsDefined(typeof(GunGameDeathMode), GGOnDeath)) GGOnDeath = GunGameDeathMode.Reset;

@@ -375,7 +375,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static void ConfigureProjectileCollisions(Component projectile, BodyScript shooter)
     {
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled) ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled) ||
             LocalPlayerReplication.Instance == null || projectile == null || player == null ||
             shooter != player.bodyScript) return;
         
@@ -463,6 +463,7 @@ weapon != activeShotState.Weapon) return;
         bool createScreenCrack, BodyScript source)
     {
         var target = RemoteBodyForPeer(wound.TargetPeerId);
+        if (PropHuntSystem.FriendlyHunters(PeerIdOfBody(source), wound.TargetPeerId)) return;
         if (source != null && source.isPlayer && NoPvpZoneRuntime.Protects(target, wound.TargetPeerId)) return;
         var type = MultiplayerSession.IsHost
             ? PacketType.PlayerDamage
@@ -544,7 +545,7 @@ weapon != activeShotState.Weapon) return;
             state.WeaponSprite = weapon.stats.name;
         }
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
             LocalPlayerReplication.Instance == null || player == null || currentShooter != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
@@ -568,7 +569,7 @@ weapon != activeShotState.Weapon) return;
         var state = new ShotState { PreviousShooter = currentShooter };
         currentShooter = attacker;
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
+        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
             LocalPlayerReplication.Instance == null || player == null || attacker != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
@@ -1301,7 +1302,7 @@ weapon != activeShotState.Weapon) return;
 
     private static void RouteRemotePlayerDamage(NetworkAvatarReplication replica, float amount, bool critical)
     {
-        if (ShouldCancelExplosionDamage())
+        if (ShouldCancelExplosionDamage() || PropHuntSystem.FriendlyHunters(PeerIdOfBody(currentShooter), replica.remotePeerId))
             return;
 
         if (replica != null)
@@ -1388,6 +1389,7 @@ weapon != activeShotState.Weapon) return;
     internal static void ApplyPlayerDamage(BodyScript body, PlayerDamagePacket playerDamage)
     {
         if (body == null) return;
+        if (playerDamage.HasPlayerSource && PropHuntSystem.FriendlyHunters(playerDamage.SourcePeerId, MultiplayerSession.LocalPeerId)) return;
         if (playerDamage.HasPlayerSource && playerDamage.SourcePeerId != MultiplayerSession.LocalPeerId &&
             NoPvpZoneRuntime.Protects(body, MultiplayerSession.LocalPeerId)) return;
         if (playerDamage.Effect == PlayerDamageEffect.Damage &&

@@ -8,25 +8,27 @@ internal static class PropHuntSystem
     private static readonly Dictionary<string, GameObject> templates = new(StringComparer.Ordinal);
     private static readonly Dictionary<ushort, string> props = new();
     private static readonly HashSet<ushort> alive = [];
-    private static readonly HashSet<ushort> seenBodies = [];
     private static readonly Dictionary<ushort, PropHuntDisguise> disguises = new();
     private static PropHuntPhase phase;
-    private static ushort hunter, previousHunter;
+    private static readonly HashSet<ushort> hunters = new(), previousHunters = new();
     private static int scene = int.MinValue;
     private static int epoch = -1;
     private static uint sequence, lastSequence;
-    private static float deadline, broadcastAt, nextShotAt, changeAt, stunAt, pushAt;
+    private static float deadline, broadcastAt, changeAt, stunAt, pushAt;
+    private static readonly Dictionary<ushort, float> shots = new();
     private static BodyScript equippedBody;
     private static WeaponPreset magnum;
     private static bool catalogBuilt;
     private static bool restarting;
-    internal static ushort Hunter => hunter;
+    internal static bool FriendlyHunters(ushort first, ushort second) => Enabled && first != second && IsHunter(first) && IsHunter(second);
+    internal static bool IsHunter(ushort peer) => hunters.Contains(peer);
+    internal static IEnumerable<BodyScript> HunterBodies => hunters.Select(Body).Where(body => body != null);
     internal static int TotalProps => props.Count;
     internal static int AliveProps => props.Keys.Count(alive.Contains);
     internal static float ChangeCooldown => Mathf.Max(0f, changeAt - Time.unscaledTime);
     internal static float StunCooldown => Mathf.Max(0f, stunAt - Time.unscaledTime);
     internal static bool AbilitiesVisible => Enabled && alive.Contains(MultiplayerSession.LocalPeerId) && (phase == PropHuntPhase.Hiding || phase == PropHuntPhase.Hunting);
-    internal static bool CanUseGravity(BodyScript body) => Enabled && phase == PropHuntPhase.Hunting && body != null && NetworkAvatarManager.PeerIdOfBody(body) == hunter && alive.Contains(hunter);
+    internal static bool CanUseGravity(BodyScript body) => Enabled && phase == PropHuntPhase.Hunting && body != null && IsHunter(NetworkAvatarManager.PeerIdOfBody(body)) && alive.Contains(NetworkAvatarManager.PeerIdOfBody(body));
     internal static bool CanBeGrabbed(BodyScript body) => IsProp(body) && body.isAlive && alive.Contains(NetworkAvatarManager.PeerIdOfBody(body));
     internal static float SecondsRemaining => phase == PropHuntPhase.Waiting || phase >= PropHuntPhase.PropsWin ? 0f : Mathf.Max(0f, deadline - Time.unscaledTime);
 
@@ -34,10 +36,10 @@ internal static class PropHuntSystem
         MultiplayerSession.LobbySettingsReceived && GameManager.main != null &&
         SceneManager.GetActiveScene().name != "LevelSelect" && SceneManager.GetActiveScene().name != "LevelEditor";
     internal static bool BlocksInput => Enabled && (phase == PropHuntPhase.Waiting || phase >= PropHuntPhase.PropsWin ||
-        !alive.Contains(MultiplayerSession.LocalPeerId) || (hunter == MultiplayerSession.LocalPeerId && phase == PropHuntPhase.Hiding));
+        !alive.Contains(MultiplayerSession.LocalPeerId) || (IsHunter(MultiplayerSession.LocalPeerId) && phase == PropHuntPhase.Hiding));
     internal static bool IsProp(BodyScript body) => Enabled && body != null && props.ContainsKey(NetworkAvatarManager.PeerIdOfBody(body));
     internal static bool CanShoot(WeaponScript weapon) => !Enabled || (phase == PropHuntPhase.Hunting &&
-        NetworkAvatarManager.PeerIdOfBody(weapon.body) == hunter && alive.Contains(hunter) && weapon.stats == Magnum());
+        IsHunter(NetworkAvatarManager.PeerIdOfBody(weapon.body)) && alive.Contains(NetworkAvatarManager.PeerIdOfBody(weapon.body)) && weapon.stats == Magnum());
 
     internal static void Tick()
     {
@@ -47,7 +49,7 @@ internal static class PropHuntSystem
                 Reset();
             
             if (!MultiplayerSession.IsActive || !MultiplayerSession.PropHuntEnabled || SceneManager.GetActiveScene().name == "LevelSelect")
-                previousHunter = 0;
+                previousHunters.Clear();
             
             return;
         }
@@ -62,8 +64,10 @@ internal static class PropHuntSystem
         var body = PlayerScript.player?.bodyScript;
         if (body != null && !HeadlessLobbyService.IsHeadlessServer)
         {
-            if (phase != PropHuntPhase.Waiting && body.isAlive && !alive.Contains(MultiplayerSession.LocalPeerId)) 
+            if (phase != PropHuntPhase.Waiting && body.isAlive && !alive.Contains(MultiplayerSession.LocalPeerId))
+            {
                 body.Death();
+            }
           
             EnforceLoadout(body);
            
@@ -95,12 +99,17 @@ internal static class PropHuntSystem
                 Request(new PropHuntPacket(PropHuntAction.Change));
             }
             
-            if (Input.GetMouseButtonDown(0) && Time.unscaledTime >= stunAt && body != null && Body(hunter) != null && Camera.main != null &&
-                Vector2.Distance(body.transform.position, Body(hunter).transform.position) <= PlayerCarrySystem.Range &&
-                PlayerCarrySystem.PointerOverBody(Body(hunter), Camera.main.ScreenToWorldPoint(Input.mousePosition)))
+            if (Input.GetMouseButtonDown(0) && Time.unscaledTime >= stunAt && body != null && Camera.main != null)
             {
-                stunAt = Time.unscaledTime + 30f;
-                Request(new PropHuntPacket(PropHuntAction.Stun));
+                var point = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+                var target = hunters.FirstOrDefault(id => alive.Contains(id) && Body(id) != null &&
+                    Vector2.Distance(body.transform.position, Body(id).transform.position) <= PlayerCarrySystem.Range &&
+                    PlayerCarrySystem.PointerOverBody(Body(id), point));
+                if (target != 0)
+                {
+                    stunAt = Time.unscaledTime + 30f;
+                    Request(new PropHuntPacket(PropHuntAction.Stun, target));
+                }
             }
         }
         DrawOverlay();
@@ -115,26 +124,27 @@ internal static class PropHuntSystem
             if (!HeadlessLobbyService.IsHeadlessServer && PlayerScript.player?.bodyScript?.isAlive == true)
                 players.Add(MultiplayerSession.LocalPeerId);
             
-            if (templates.Count < 2 || players.Count < 2 || peers.Any(id => Body(id) == null) || (!HeadlessLobbyService.IsHeadlessServer && PlayerScript.player?.bodyScript == null))
+            if (templates.Count < 2 || players.Count < 2 || peers.Any(id => Body(id) == null || NetworkAvatarManager.ReplicaForBody(Body(id))?.receivedPlayerState != true || NetworkAvatarManager.ReplicaForBody(Body(id))?.receivedFirstSnapshot != true) || (!HeadlessLobbyService.IsHeadlessServer && PlayerScript.player?.bodyScript == null))
                 return;
             
-            var hunters = players.Where(id => id != previousHunter).ToArray();
-            round.Start([.. players], hunters[UnityEngine.Random.Range(0, hunters.Length)], Time.unscaledTime, MultiplayerSession.PropHuntTime);
-            
-            foreach (var player in players.Where(player => player != round.Hunter)) 
-                round.Change(player, [.. templates.Keys], Time.unscaledTime - 30f);
-            
-            nextShotAt = 0f;
+            var candidates = players.OrderBy(id => UnityEngine.Random.value).OrderBy(id => previousHunters.Contains(id)).ToArray();
+            var selected = candidates.Take(Math.Min(MultiplayerSession.PropHuntHunters, players.Count - 1)).ToArray();
+            round.Start([.. players], selected, Time.unscaledTime, MultiplayerSession.PropHuntTime);
+            foreach (var player in players.Where(player => !round.Hunters.Contains(player)))
+                round.Change(player, templates.Keys.ToArray(), Time.unscaledTime - 30f);
+            shots.Clear();
         }
         foreach (var player in round.Alive.ToArray())
         {
             var body = Body(player);
             
-            if (body != null) 
-                seenBodies.Add(player);
-            
-            if ((body != null && !body.isAlive) || (seenBodies.Contains(player) && body == null) || (player != MultiplayerSession.LocalPeerId && !peers.Contains(player)))
+            var disconnected = player != MultiplayerSession.LocalPeerId && !peers.Contains(player);
+            var confirmedDead = body != null && !body.isAlive && (player == MultiplayerSession.LocalPeerId ||
+                NetworkAvatarManager.ReplicaForBody(body)?.receivedPlayerState == true);
+            if (confirmedDead || disconnected)
+            {
                 round.Alive.Remove(player);
+            }
         }
         
         var previousPhase = round.Phase;
@@ -146,7 +156,8 @@ internal static class PropHuntSystem
         if (!restarting && round.RestartDue(Time.unscaledTime))
         {
             restarting = true;
-            previousHunter = round.Hunter;
+            previousHunters.Clear();
+            previousHunters.UnionWith(round.Hunters);
             ScoreboardSystem.PreserveForNextScene();
             MultiplayerSession.MarkNextSceneReloadAutoRestart();
             GameManager.main.Restart();
@@ -158,7 +169,7 @@ internal static class PropHuntSystem
         
         broadcastAt = Time.unscaledTime + 0.5f;
         
-        var packet = new PropHuntPacket(PropHuntAction.State, round.Hunter, Mathf.Max(0f, round.Deadline - Time.unscaledTime), round.Phase, [.. round.Props], [.. round.Alive], sequence: ++sequence);
+        var packet = new PropHuntPacket(PropHuntAction.State, round.Hunter, Mathf.Max(0f, round.Deadline - Time.unscaledTime), round.Phase, [.. round.Props], [.. round.Alive], sequence: ++sequence, hunters: round.Hunters.ToArray());
         AcceptState(packet);
         MultiplayerSession.Send(packet);
     }
@@ -204,14 +215,14 @@ internal static class PropHuntSystem
                 break;
             case PropHuntAction.Stun:
                 var source = Body(sender);
-                var target = Body(round.Hunter);
-                if (source != null && target != null && round.Stun(sender,
+                var target = Body(packet.Player);
+                if (source != null && target != null && round.Stun(sender, packet.Player,
                     Vector2.Distance(source.transform.position, target.transform.position), Time.unscaledTime))
-                    Effect(new PropHuntPacket(PropHuntAction.Shock, round.Hunter));
+                    Effect(new PropHuntPacket(PropHuntAction.Shock, packet.Player));
                 break;
             case PropHuntAction.Hit:
             case PropHuntAction.Miss:
-                if (sender != round.Hunter || round.Phase != PropHuntPhase.Hunting || Time.unscaledTime < nextShotAt) break;
+                if (!round.Hunters.Contains(sender) || round.Phase != PropHuntPhase.Hunting || (shots.TryGetValue(sender, out var nextShotAt) && Time.unscaledTime < nextShotAt)) break;
                 var weapon = Magnum();
                 if (weapon == null) break;
                 if (packet.Action == PropHuntAction.Hit)
@@ -222,11 +233,11 @@ internal static class PropHuntSystem
                     var shooter = Body(sender);
                     if (victim == null || shooter == null || Vector2.Distance(victim.mainTorso.position, shooter.mainTorso.position) > weapon.range + 5f) break;
                     var damage = Mathf.Clamp(weapon.damage + UnityEngine.Random.Range(-weapon.damageRange, weapon.damageRange) - packet.Value * weapon.falloff, 1f, 999999f);
-                    Effect(new PropHuntPacket(PropHuntAction.Damage, packet.Player, damage));
+                    Effect(new PropHuntPacket(PropHuntAction.Damage, packet.Player, damage, hunters: new[] { sender }));
                     Effect(new PropHuntPacket(PropHuntAction.Reward, sender));
                 }
                 else Effect(new PropHuntPacket(PropHuntAction.Penalty, sender));
-                nextShotAt = Time.unscaledTime + Mathf.Max(0.05f, weapon.fireDelay * 0.8f);
+                shots[sender] = Time.unscaledTime + Mathf.Max(0.05f, weapon.fireDelay * 0.8f);
                 break;
         }
         if (changed) broadcastAt = 0f;
@@ -236,7 +247,8 @@ internal static class PropHuntSystem
     {
         if (packet.Sequence <= lastSequence) return;
         lastSequence = packet.Sequence;
-        hunter = packet.Player;
+        hunters.Clear();
+        hunters.UnionWith(packet.Hunters);
         phase = packet.Phase;
         deadline = Time.unscaledTime + packet.Value;
         props.Clear();
@@ -263,7 +275,7 @@ internal static class PropHuntSystem
                 break;
             case PropHuntAction.Damage:
                 if (float.IsNaN(packet.Value) || float.IsInfinity(packet.Value) || packet.Value <= 0f || packet.Value > 999999f) return;
-                NetworkAvatarManager.RecordDamageSource(body, Body(hunter));
+                NetworkAvatarManager.RecordDamageSource(body, Body(packet.Hunters.FirstOrDefault()));
                 var damage = LobbyHealthRule.ClampDamage(body, packet.Value);
                 body.health -= damage;
                 body.stamina -= damage * 1.38f;
@@ -322,8 +334,9 @@ internal static class PropHuntSystem
 
     private static void EnforceLoadout(BodyScript body)
     {
+        if (!body.isAlive) return;
         LocalPlayerReplication.EnsureRespawnWeaponSlots(body);
-        var armed = phase == PropHuntPhase.Hunting && hunter == MultiplayerSession.LocalPeerId && alive.Contains(hunter);
+        var armed = phase == PropHuntPhase.Hunting && IsHunter(MultiplayerSession.LocalPeerId) && alive.Contains(MultiplayerSession.LocalPeerId);
         var weapon = armed ? Magnum() : null;
         var invalid = body != equippedBody || body.weapons[0] != weapon || body.weapons.Skip(1).Any(p => p != null) ||
             (weapon == null ? !body.unarmed : body.unarmed || body.weapon == null || body.weapon.stats != weapon);
@@ -377,9 +390,9 @@ internal static class PropHuntSystem
             return;
         }
         if (phase == PropHuntPhase.PropsWin) overlay.Show("PROPS WIN!");
-        else if (phase == PropHuntPhase.HunterWins) overlay.Show("HUNTER WINS!");
+        else if (phase == PropHuntPhase.HunterWins) overlay.Show("HUNTERS WIN!");
         else if (phase == PropHuntPhase.Waiting) overlay.Show("WAITING FOR PLAYERS", 1f);
-        else if (phase == PropHuntPhase.Hiding && hunter == MultiplayerSession.LocalPeerId)
+        else if (phase == PropHuntPhase.Hiding && IsHunter(MultiplayerSession.LocalPeerId))
             overlay.Show(Mathf.CeilToInt(Mathf.Max(0f, deadline - Time.unscaledTime)).ToString(), 1f);
         else overlay.Hide();
     }
@@ -402,17 +415,17 @@ internal static class PropHuntSystem
         templates.Clear();
         props.Clear();
         alive.Clear();
-        seenBodies.Clear();
         round.Reset();
         phase = PropHuntPhase.Waiting;
-        hunter = 0;
+        hunters.Clear();
         scene = int.MinValue;
         epoch = -1;
         sequence = lastSequence = 0;
         catalogBuilt = false;
         restarting = false;
         equippedBody = null;
-        broadcastAt = changeAt = stunAt = nextShotAt = pushAt = 0f;
+        broadcastAt = changeAt = stunAt = pushAt = 0f;
+        shots.Clear();
         overlay.Hide();
     }
 }

@@ -15,7 +15,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.5.2";
+    public const string PluginVersion = "0.5.1.1";
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     internal const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
@@ -1100,6 +1100,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 players = JsonInt(item, "players"),
                 maxPlayers = JsonInt(item, "maxPlayers"),
                 pvp = JsonBool(item, "pvp"),
+                propHunt = JsonBool(item, "propHunt"),
                 canGrab = JsonBool(item, "canGrab"),
                 grabOnlyUnconscious = JsonBool(item, "grabOnlyUnconscious"),
                 allowRespawn = JsonBool(item, "allowRespawn"),
@@ -1176,6 +1177,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             maxPlayers = live ? MultiplayerSession.MaxPlayers : parsed.MaxPlayers,
             hostPort = 27016,
             pvp = settings.Pvp,
+            propHunt = live ? MultiplayerSession.PropHuntEnabled : settings.PropHunt,
             gunGame = live ? MultiplayerSession.GunGameEnabled : settings.GunGame,
             ggSequence = live ? MultiplayerSession.GGSequence : settings.GGSequence,
             ggOnDeath = (live ? MultiplayerSession.GGOnDeath : settings.GGOnDeath).ToString(),
@@ -1316,6 +1318,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public int players;
         public int maxPlayers;
         public bool pvp;
+        public bool propHunt;
         public bool gunGame;
         public string ggSequence = "";
         public string ggOnDeath = "Reset";
@@ -1369,6 +1372,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         public int maxPlayers;
         public int hostPort;
         public bool pvp;
+        public bool propHunt;
         public bool gunGame;
         public string ggSequence = "";
         public string ggOnDeath = "Reset";

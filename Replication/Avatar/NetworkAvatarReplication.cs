@@ -15,6 +15,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
     private readonly Queue<RemoteProjectileVisual> remoteProjectiles = new();
     private readonly Dictionary<Transform, TargetState> targets = new();
     internal bool receivedFirstSnapshot;
+    internal bool receivedPlayerState;
     internal string? pendingIdentity;
     private float poseStartedAt;
     private float poseDuration = SnapshotInterval;
@@ -260,6 +261,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         targets.Clear();
         targetOrder.Clear();
         receivedFirstSnapshot = false;
+        receivedPlayerState = false;
         appliedWeapon = -1;
         appliedWeaponSprite = 0UL;
         appliedInventory = "";
@@ -414,6 +416,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (remoteBody == null)
             return;
         
+        receivedPlayerState = true;
         var remoteHealth = packet.Health;
         var wasRemoteAlive = lastRemoteAlive;
         LobbyHealthRule.Apply(remoteBody, MultiplayerSession.HealthFactor);

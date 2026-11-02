@@ -30,13 +30,15 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly bool RestrictLightEnabled;
     internal readonly bool PropHunt;
     internal readonly ushort PropHuntTime;
+    internal readonly byte PropHuntHunters;
     internal readonly bool GunGame;
     internal readonly string GGSequence;
     internal readonly GunGameDeathMode GGOnDeath;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue, bool propHunt = false, ushort propHuntTime = 300)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue, bool propHunt = false, ushort propHuntTime = 300, byte propHuntHunters = 1)
     {
         PropHunt = propHunt;
+        PropHuntHunters = (byte)Math.Max(1, Math.Min(63, (int)propHuntHunters));
         PropHuntTime = (ushort)Math.Max(1, Math.Min(3600, (int)propHuntTime));
         PvpEnabled = pvpEnabled;
         CanGrabPlayers = canGrabPlayers;
@@ -110,6 +112,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteSingle(UHPValue);
         writer.WriteBoolean(PropHunt);
         writer.WriteUInt16(PropHuntTime);
+        writer.WriteByte(PropHuntHunters);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -138,6 +141,7 @@ internal readonly struct SettingsPacket : INetworkPacket
         var uhpValue = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : LobbyHealthRule.DefaultUniformHPValue;
         var propHunt = reader.Remaining >= 1 && reader.ReadBoolean();
         var propHuntTime = reader.Remaining >= 2 ? reader.ReadUInt16() : (ushort)300;
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue, propHunt, propHuntTime);
+        var hunters = reader.Remaining >= 1 ? reader.ReadByte() : (byte)1;
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue, propHunt, propHuntTime, hunters);
     }
 }

@@ -214,6 +214,7 @@ internal static partial class MultiplayerSession
             RespawnWeapon = "Default";
             PropHuntEnabled = false;
             PropHuntTime = 300;
+            PropHuntHunters = 1;
             GunGameEnabled = false;
             GGSequence = "";
             GGOnDeath = GunGameDeathMode.Reset;
@@ -407,6 +408,7 @@ internal static partial class MultiplayerSession
     internal static string RespawnWeapon { get; private set; } = "Default";
     internal static bool PropHuntEnabled { get; private set; }
     internal static ushort PropHuntTime { get; private set; } = 300;
+    internal static byte PropHuntHunters { get; private set; } = 1;
     internal static bool GunGameEnabled { get; private set; }
     internal static string GGSequence { get; private set; } = "";
     internal static GunGameDeathMode GGOnDeath { get; private set; } = GunGameDeathMode.Reset;
@@ -699,6 +701,7 @@ internal static partial class MultiplayerSession
         RespawnWeapon = "Default";
         PropHuntEnabled = false;
         PropHuntTime = 300;
+        PropHuntHunters = 1;
         GunGameEnabled = false;
         GGSequence = "";
         GGOnDeath = GunGameDeathMode.Reset;
@@ -742,12 +745,13 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
     {
         PropHuntEnabled = settings.PropHunt;
+        PropHuntHunters = (byte)(int.TryParse(settings.PropHuntHunters, out var hunters) ? Math.Max(1, Math.Min(63, hunters)) : 1);
         PropHuntTime = (ushort)(int.TryParse(settings.PropHuntTime, out var duration) ? Math.Max(1, Math.Min(3600, duration)) : 300);
         PvpEnabled = settings.PropHunt || settings.Pvp;
         CanGrabPlayers = settings.PropHunt || settings.CanGrab;

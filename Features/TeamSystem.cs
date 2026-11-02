@@ -138,7 +138,7 @@ internal static class TeamSystem
         foreach (var item in playerTeams) MultiplayerSession.Send(new TeamPacket(item.Key, item.Value), peerId);
     }
 
-    public static bool Same(ushort first, ushort second) => Enabled && first != 0 &&
+    public static bool Same(ushort first, ushort second) => PropHuntSystem.FriendlyHunters(first, second) || Enabled && first != 0 &&
                                                               playerTeams.TryGetValue(first, out var a) &&
                                                               playerTeams.TryGetValue(second, out var b) && a == b;
 

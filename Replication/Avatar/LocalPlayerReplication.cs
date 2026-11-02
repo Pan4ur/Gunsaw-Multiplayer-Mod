@@ -403,7 +403,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
     internal void ReceivePlayerGrab(ushort senderId, PlayerGrabPacket packet)
     {
-        if (PropHuntSystem.Enabled && senderId != PropHuntSystem.Hunter) return;
+        if (PropHuntSystem.Enabled && !PropHuntSystem.IsHunter(senderId)) return;
         if (!MultiplayerSession.CanGrabPlayers || !packet.IsGrabbing)
         {
             incomingGrabUntil = 0f;

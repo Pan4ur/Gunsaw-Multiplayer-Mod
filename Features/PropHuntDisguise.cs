@@ -24,6 +24,7 @@ internal sealed class PropHuntDisguise : MonoBehaviour
 
     internal void Apply(BodyScript target, ushort peer, string name, GameObject template)
     {
+        if (target == null || target.rb == null || target.coll == null || template == null) return;
         active.Add(this);
         body = target;
         
@@ -62,7 +63,7 @@ internal sealed class PropHuntDisguise : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (body == null || visual == null) 
+        if (body == null || body.rb == null || body.coll == null || visual == null || physics == null)
             return;
        
         if (!PropHuntSystem.Enabled)
@@ -86,14 +87,14 @@ internal sealed class PropHuntDisguise : MonoBehaviour
                     HideRemoteColliders(tail);
                 }
         }
-        foreach (var renderer in hidden.Keys.OfType<Renderer>())
-            renderer.forceRenderingOff = true;
+        foreach (var renderer in hidden.Keys)
+            if (renderer != null) renderer.forceRenderingOff = true;
        
-        foreach (var light in hiddenLights.Keys.OfType<Light2D>()) 
-            light.enabled = false;
+        foreach (var light in hiddenLights.Keys)
+            if (light != null) light.enabled = false;
         
-        foreach (var collider in hiddenColliders.Keys.OfType<Collider2D>()) 
-            collider.enabled = false;
+        foreach (var collider in hiddenColliders.Keys)
+            if (collider != null) collider.enabled = false;
         
         var offset = Peer == MultiplayerSession.LocalPeerId ? FeetOffset(body) : NetworkAvatarManager.ReplicaForBody(body)?.FeetOffsetY ?? float.NaN;
         if (float.IsNaN(offset)) 
@@ -158,7 +159,7 @@ internal sealed class PropHuntDisguise : MonoBehaviour
     {
         visual.transform.rotation = Quaternion.Euler(0f, 0f, rotation);
         Physics2D.SyncTransforms();
-        var hunter = PropHuntSystem.Hunter == MultiplayerSession.LocalPeerId ? PlayerScript.player?.bodyScript : NetworkAvatarManager.RemoteBodyForPeer(PropHuntSystem.Hunter);
+        var hunter = PropHuntSystem.IsHunter(MultiplayerSession.LocalPeerId) ? PlayerScript.player?.bodyScript : null;
         
         if (Peer != MultiplayerSession.LocalPeerId)
         {
@@ -184,22 +185,22 @@ internal sealed class PropHuntDisguise : MonoBehaviour
         var delta = (Vector2)position - start;
         var distance = delta.magnitude;
         var direction = distance > 0.0001f ? delta / distance : Vector2.zero;
-        if (hunter != null && distance > 0.0001f)
+        if (distance > 0.0001f)
             foreach (var hitbox in hitboxes)
             {
                 var count = hitbox.Cast(direction, movementHits, distance);
                 for (var index = 0; index < count; index++)
                 {
                     var hit = movementHits[index];
-                    if (hit.collider.isTrigger || hit.collider.GetComponentInParent<BodyScript>() != hunter || Vector2.Dot(hit.normal, direction) >= -0.01f) continue;
+                    if (hit.collider.isTrigger || !PropHuntSystem.HunterBodies.Contains(hit.collider.GetComponentInParent<BodyScript>()) || Vector2.Dot(hit.normal, direction) >= -0.01f) continue;
                     distance = Mathf.Min(distance, Mathf.Max(0f, hit.distance - 0.005f));
                 }
             }
         physics.position = start + direction * distance;
         Physics2D.SyncTransforms();
-        if (hunter != null)
+        foreach (var blockingHunter in PropHuntSystem.HunterBodies)
         {
-            var colliders = hunter.GetComponentsInChildren<Collider2D>();
+            var colliders = blockingHunter.GetComponentsInChildren<Collider2D>();
             for (var pass = 0; pass < 3; pass++)
                 foreach (var hitbox in hitboxes)
                     foreach (var collider in colliders)
@@ -346,10 +347,10 @@ internal sealed class PropHuntDisguise : MonoBehaviour
         foreach (var collider in target.GetComponentsInChildren<Collider2D>(true))
             foreach (var hitbox in hitboxes)
             {
-                var ignore = peer == PropHuntSystem.Hunter
+                var ignore = PropHuntSystem.IsHunter(peer)
                     ? peer != MultiplayerSession.LocalPeerId && Physical
                     : peer == Peer || collider != target.coll || collider.bounds.min.y < hitbox.bounds.max.y - 0.1f;
-                if (peer == PropHuntSystem.Hunter && peer == MultiplayerSession.LocalPeerId && Peer != peer &&
+                if (PropHuntSystem.IsHunter(peer) && peer == MultiplayerSession.LocalPeerId && Peer != peer &&
                     Physics2D.GetIgnoreCollision(hitbox, collider) && Physics2D.Distance(hitbox, collider).isOverlapped) ignore = true;
                 Physics2D.IgnoreCollision(hitbox, collider, ignore);
             }

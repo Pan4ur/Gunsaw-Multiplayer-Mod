@@ -319,6 +319,7 @@ internal static partial class MultiplayerSession
                 RespawnWeapon = settings.RespawnWeapon;
                 PropHuntEnabled = settings.PropHunt;
                 PropHuntTime = settings.PropHuntTime;
+                PropHuntHunters = settings.PropHuntHunters;
                 GunGameEnabled = settings.GunGame;
                 GGSequence = settings.GGSequence;
                 GGOnDeath = settings.GGOnDeath;
