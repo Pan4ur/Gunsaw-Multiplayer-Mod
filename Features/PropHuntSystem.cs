@@ -15,6 +15,7 @@ internal static class PropHuntSystem
     private static int epoch = -1;
     private static uint sequence, lastSequence;
     private static float deadline, broadcastAt, changeAt, stunAt, pushAt;
+    private static float gravityPenaltyTime;
     private static readonly Dictionary<ushort, float> shots = new();
     private static BodyScript equippedBody;
     private static WeaponPreset magnum;
@@ -289,7 +290,7 @@ internal static class PropHuntSystem
                 body.Damaged();
                 break;
             case PropHuntAction.Reward:
-                body.health = Mathf.Min(body.maxHealth, body.health + body.maxHealth * 0.05f);
+                body.health = Mathf.Min(body.maxHealth, body.health + body.maxHealth * 0.15f);
                 body.GetComponent<PropHuntVitals>()?.AllowHealth(body.health);
                 break;
             case PropHuntAction.Shock:
@@ -308,6 +309,27 @@ internal static class PropHuntSystem
             target.GetComponent<PropHuntHitbox>() != null) return;
         if (target.GetComponent<CrateScript>() != null || WorldBodyReplication.IsSafetyRailingBody(target) || WorldBodyReplication.IsChainlinkFenceBody(target))
             Request(new PropHuntPacket(PropHuntAction.KickMiss));
+    }
+
+    internal static void TickGravityPenalty(LevitatorScript levitator)
+    {
+        var body = levitator.refBody;
+        if (body != PlayerScript.player?.bodyScript)
+            return;
+            
+        var target = levitator.currentlyLevitating;
+        
+        if (!CanUseGravity(body) || !body.isAlive || target == null || target.GetComponent<PropHuntHitbox>() != null || target.GetComponentInParent<BodyScript>() != null)
+        {
+            gravityPenaltyTime = 0f;
+            return;
+        }
+        
+        gravityPenaltyTime += Time.fixedDeltaTime;
+        if (gravityPenaltyTime < 0.5f) return;
+        gravityPenaltyTime -= 0.5f;
+        body.health -= body.maxHealth * 0.05f;
+        body.Damaged();
     }
 
     internal static void Push(ushort player, float direction)
@@ -439,6 +461,7 @@ internal static class PropHuntSystem
         restarting = false;
         equippedBody = null;
         broadcastAt = changeAt = stunAt = pushAt = 0f;
+        gravityPenaltyTime = 0f;
         shots.Clear();
         overlay.Hide();
     }

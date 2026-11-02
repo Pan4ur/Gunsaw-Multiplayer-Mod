@@ -60,6 +60,8 @@ internal static class ClientLevitatorPropPatch
 
     private static void Postfix(LevitatorScript __instance)
     {
+        if (PropHuntSystem.Enabled)
+            PropHuntSystem.TickGravityPenalty(__instance);
         if (GunsawMultiplayerPlugin.World != null)
             GunsawMultiplayerPlugin.World.QueueLevitated(__instance.currentlyLevitating);
         NetworkAvatarManager.QueueRemoteGrab(__instance);
