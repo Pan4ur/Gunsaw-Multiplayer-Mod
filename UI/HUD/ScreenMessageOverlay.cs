@@ -17,7 +17,7 @@ internal sealed class ScreenMessageOverlay
             root = new GameObject("Screen message", typeof(Canvas), typeof(CanvasScaler));
             var canvas = root.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = short.MaxValue;
+            canvas.sortingOrder = short.MaxValue - 1;
             var scaler = root.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);

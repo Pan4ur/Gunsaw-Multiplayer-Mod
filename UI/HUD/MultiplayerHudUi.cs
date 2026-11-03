@@ -191,7 +191,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             eventSystem.hideFlags = HideFlags.HideAndDontSave;
         }
         root = new GameObject("GunsawMultiplayerNativeHud", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        var canvas = root.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = short.MaxValue;
+        var canvas = root.GetComponent<Canvas>(); canvas.renderMode = RenderMode.ScreenSpaceOverlay; canvas.sortingOrder = short.MaxValue - 2;
         var scaler = root.GetComponent<CanvasScaler>(); scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize; scaler.referenceResolution = new Vector2(1920f, 1080f); scaler.matchWidthOrHeight = 0.5f;
 
         hostPanel = Panel(root.transform, Vector2.zero, new Vector2(480f, 66f));
@@ -213,7 +213,16 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         playersText.enableWordWrapping = false;
         playersText.overflowMode = TextOverflowModes.Overflow;
 
-        chatPanel = Panel(root.transform, Vector2.zero, new Vector2(620f, 250f));
+        var chatRoot = new GameObject("Chat", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
+        chatRoot.transform.SetParent(root.transform, false);
+        var chatRect = chatRoot.GetComponent<RectTransform>();
+        chatRect.anchorMin = Vector2.zero;
+        chatRect.anchorMax = Vector2.one;
+        chatRect.offsetMin = chatRect.offsetMax = Vector2.zero;
+        var chatCanvas = chatRoot.GetComponent<Canvas>();
+        chatCanvas.overrideSorting = true;
+        chatCanvas.sortingOrder = short.MaxValue;
+        chatPanel = Panel(chatRoot.transform, Vector2.zero, new Vector2(620f, 250f));
         chatPanel.GetComponent<Image>().raycastTarget = false;
         ScreenAnchor(chatPanel.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 80f));
         var chatViewport = new GameObject("ChatViewport", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
@@ -246,15 +255,15 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         chatText.rectTransform.offsetMin = new Vector2(8f, 0f);
         chatText.enableWordWrapping = true;
         ApplyChatFont(chatText);
-        chatHint = Text(root.transform, "", Vector2.zero, new Vector2(620f, 42f), 14, TextAlignmentOptions.Center);
+        chatHint = Text(chatRoot.transform, "", Vector2.zero, new Vector2(620f, 42f), 14, TextAlignmentOptions.Center);
         ScreenAnchor(chatHint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
         chatHint.color = new Color(template.color.r, template.color.g, template.color.b, 0.45f);
         chatHint.raycastTarget = false;
-        commandHints = Text(root.transform, "", Vector2.zero, new Vector2(620f, 28f), 14, TextAlignmentOptions.BottomLeft);
+        commandHints = Text(chatRoot.transform, "", Vector2.zero, new Vector2(620f, 28f), 14, TextAlignmentOptions.BottomLeft);
         ScreenAnchor(commandHints.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 70f));
         commandHints.color = new Color(template.color.r, template.color.g, template.color.b, 0.68f);
 
-        input = CreateInput(root.transform, Vector2.zero, new Vector2(620f, 42f));
+        input = CreateInput(chatRoot.transform, Vector2.zero, new Vector2(620f, 42f));
         ScreenAnchor(input.GetComponent<RectTransform>(), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(20f, 25f));
         input.onValueChanged.AddListener(value => { if (MultiplayerHud.Instance != null) MultiplayerHud.Instance.ChatInput = value; });
         statsText = Text(root.transform, "", Vector2.zero, new Vector2(920f, 330f), 13, TextAlignmentOptions.TopLeft);
