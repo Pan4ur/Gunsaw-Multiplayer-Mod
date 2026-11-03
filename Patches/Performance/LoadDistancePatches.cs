@@ -51,6 +51,7 @@ internal static class MultiplayerDroppedWeaponAmmoIconPatch
 {
     private static void Postfix(DroppedWeapon __instance)
     {
+        WeaponPropRespawnSystem.TrackWeapon(__instance);
         if (!MultiplayerSession.IsInLobby || __instance == null) return;
         var icon = __instance.transform.Find("myAmmo");
         if (icon == null) return;
