@@ -826,8 +826,8 @@ internal static partial class MultiplayerSession
 
     private sealed class P2PPeer
     {
-        internal IPEndPoint Endpoint;
-        internal IPEndPoint AlternateEndpoint;
+        internal IPEndPoint Endpoint; // main
+        internal IPEndPoint LocalEndpoint; // local network
         internal bool Connected;
         internal long NextProbeTicks;
     }

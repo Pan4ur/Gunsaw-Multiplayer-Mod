@@ -191,6 +191,7 @@ internal static partial class MultiplayerSession
             {
                 senderId = BitConverter.ToUInt16(datagram, 5);
                 metadata = UdpDatagram.RelayMetadataOffset;
+                if (TryAcceptLocalCandidate(datagram, senderId)) continue;
             }
             else if (TryAcceptDirectPacket(datagram, remote, out senderId)) metadata = UdpDatagram.DirectMetadataOffset;
             else continue;
@@ -234,42 +235,52 @@ internal static partial class MultiplayerSession
     {
         if (packet.Length < 10) return;
         var peerId = BitConverter.ToUInt16(packet, 5);
-        var littleEndianPort = BitConverter.ToUInt16(packet, 7);
-        var networkEndianPort = (ushort)((packet[7] << 8) | packet[8]);
+        var port = (ushort)(packet[7] | packet[8] << 8);
         var length = packet[9];
-        if (peerId == 0 || peerId == localPeerId || littleEndianPort == 0 ||
+        if (peerId == 0 || peerId == localPeerId || port == 0 ||
             (length != 4 && length != 16) ||
             packet.Length != 10 + length) return;
         var address = new byte[length];
         Buffer.BlockCopy(packet, 10, address, 0, length);
-        var endpoint = new IPEndPoint(new IPAddress(address), littleEndianPort);
-        var alternateEndpoint = networkEndianPort == 0 || networkEndianPort == littleEndianPort
-            ? null
-            : new IPEndPoint(new IPAddress(address), networkEndianPort);
+        var endpoint = new IPEndPoint(new IPAddress(address), port);
         var shouldProbe = false;
         lock (statusLock)
         {
             P2PPeer peer;
             var knownEndpoint = p2pPeers.TryGetValue(peerId, out peer) &&
-                (EndpointsEqual(peer.Endpoint, endpoint) || EndpointsEqual(peer.Endpoint, alternateEndpoint) ||
-                 EndpointsEqual(peer.AlternateEndpoint, endpoint) ||
-                 EndpointsEqual(peer.AlternateEndpoint, alternateEndpoint));
+                EndpointsEqual(peer.Endpoint, endpoint);
             if (!knownEndpoint)
             {
-                peer = new P2PPeer { Endpoint = endpoint, AlternateEndpoint = alternateEndpoint };
+                peer = new P2PPeer { Endpoint = endpoint };
                 p2pPeers[peerId] = peer;
                 shouldProbe = true;
             }
-            else
-            {
-                peer.AlternateEndpoint = alternateEndpoint;
-                if (!peer.Connected) shouldProbe = true;
-            }
+            else if (!peer.Connected) shouldProbe = true;
             if (shouldProbe) peer.NextProbeTicks = DateTime.UtcNow.Ticks + P2PProbeRetryTicks;
         }
-        GunsawMultiplayerPlugin.LogInfo("P2P candidate for peer " + peerId + ": " + endpoint +
-         (alternateEndpoint == null ? "" : " (alternate byte order: " + alternateEndpoint + ")") + ".");
+        GunsawMultiplayerPlugin.LogInfo("P2P candidate for peer " + peerId + ": " + endpoint + ".");
         if (shouldProbe) SendDirectProbe(peerId);
+    }
+
+    private static bool TryAcceptLocalCandidate(byte[] datagram, ushort peerId)
+    {
+        if (datagram.Length != 21 || BitConverter.ToInt32(datagram, 7) != 0 || BitConverter.ToUInt16(datagram, 11) != 0 || BitConverter.ToUInt16(datagram, 13) != 0 || BitConverter.ToInt32(datagram, 15) != 2)
+            return false;
+
+        if (connectionMode == ConnectionMode.Relay)
+            return true;
+
+        var port = BitConverter.ToUInt16(datagram, 19);
+        if (port == 0) return true;
+        lock (statusLock)
+        {
+            if (!p2pPeers.TryGetValue(peerId, out var peer) || peer.Connected)
+                return true;
+
+            peer.LocalEndpoint = new IPEndPoint(socket.Client.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Loopback : IPAddress.Loopback, port);
+        }
+        SendDirectProbe(peerId);
+        return true;
     }
 
     private static bool TryAcceptDirectPacket(byte[] datagram, IPEndPoint remote, out ushort senderId)
@@ -339,8 +350,20 @@ internal static partial class MultiplayerSession
     private static void SendDirectProbe(ushort peerId)
     {
         IPEndPoint endpoint;
-        IPEndPoint alternateEndpoint;
-        if (!TryGetP2PCandidates(peerId, out endpoint, out alternateEndpoint)) return;
+        IPEndPoint localEndpoint;
+        if (!TryGetP2PCandidates(peerId, out endpoint, out localEndpoint)) return;
+        if (localEndpoint == null)
+        {
+            var candidate = new byte[21];
+            Buffer.BlockCopy(udpMagic, 0, candidate, 0, udpMagic.Length);
+            candidate[4] = UdpData;
+            Buffer.BlockCopy(BitConverter.GetBytes(peerId), 0, candidate, 5, sizeof(ushort));
+            Buffer.BlockCopy(BitConverter.GetBytes(2), 0, candidate, 15, sizeof(int));
+            Buffer.BlockCopy(BitConverter.GetBytes((ushort)((IPEndPoint)socket.Client.LocalEndPoint).Port), 0, candidate, 19, sizeof(ushort));
+            try { socket.Send(candidate, candidate.Length, relayEndpoint); }
+            catch (SocketException) { }
+            catch (ObjectDisposedException) { }
+        }
         var probe = new byte[35];
         Buffer.BlockCopy(udpMagic, 0, probe, 0, udpMagic.Length);
         probe[4] = UdpDirectData;
@@ -348,23 +371,22 @@ internal static partial class MultiplayerSession
         Buffer.BlockCopy(p2pKey, 0, probe, 7, P2PKeySize);
         Buffer.BlockCopy(BitConverter.GetBytes((ushort)1), 0, probe, 29, sizeof(ushort));
         try { socket.Send(probe, probe.Length, endpoint); } catch (SocketException) { } catch (ObjectDisposedException) { }
-        if (alternateEndpoint != null && !EndpointsEqual(endpoint, alternateEndpoint))
-            try { socket.Send(probe, probe.Length, alternateEndpoint); }
+        if (localEndpoint != null && !EndpointsEqual(endpoint, localEndpoint))
+            try { socket.Send(probe, probe.Length, localEndpoint); }
             catch (SocketException) { }
             catch (ObjectDisposedException) { }
     }
 
-    private static bool TryGetP2PCandidates(ushort peerId, out IPEndPoint endpoint,
-        out IPEndPoint alternateEndpoint)
+    private static bool TryGetP2PCandidates(ushort peerId, out IPEndPoint endpoint, out IPEndPoint localEndpoint)
     {
         endpoint = null;
-        alternateEndpoint = null;
+        localEndpoint = null;
         lock (statusLock)
         {
             P2PPeer peer;
             if (!p2pPeers.TryGetValue(peerId, out peer)) return false;
             endpoint = peer.Endpoint;
-            alternateEndpoint = peer.AlternateEndpoint;
+            localEndpoint = peer.LocalEndpoint;
             return endpoint != null && p2pKey != null;
         }
     }

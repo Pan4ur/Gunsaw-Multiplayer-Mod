@@ -425,7 +425,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var maxPlayersRow = CreateSettingsRow(settings, nameof(LobbySettings.MaxPlayers));
         CreateText(maxPlayersRow, "MAX PLAYERS", new Vector2(-150f, 0f), new Vector2(220f, 32f), 14);
         maxPlayersInput = CreateInput(maxPlayersRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 2, value => plugin.lobbySettings.MaxPlayers = value, TMP_InputField.CharacterValidation.Integer);
-        AddNumericRange(maxPlayersInput, 2f, 64f);
+        AddNumericRange(maxPlayersInput, 2f, 64f, false);
         AddTooltip(maxPlayersRow.gameObject, "MAX PLAYERS: The maximum number of players allowed in your lobby.");
         respawnToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.AllowRespawn)), "ALLOW RESPAWN", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.AllowRespawn = value);
         AddTooltip(respawnToggle.gameObject, "ALLOW RESPAWN: When enabled, players can respawn after death. When disabled, they can only spectate living players until the game ends.");
@@ -434,29 +434,29 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var delayRow = CreateSettingsRow(settings, nameof(LobbySettings.RespawnTime));
         CreateText(delayRow, "RESPAWN DELAY", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         respawnInput = CreateInput(delayRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 4, value => plugin.lobbySettings.RespawnTime = value, TMP_InputField.CharacterValidation.Integer);
-        AddNumericRange(respawnInput, 0f, 3600f);
+        AddNumericRange(respawnInput, 0f, 3600f, false);
         AddTooltip(delayRow.gameObject, "RESPAWN DELAY: The time in seconds before a player respawns when ALLOW RESPAWN is enabled.");
         var livesRow = CreateSettingsRow(settings, nameof(LobbySettings.NumberOfLives));
         CreateText(livesRow, "NUMBER OF LIVES", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         numberOfLivesInput = CreateInput(livesRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 5, value => plugin.lobbySettings.NumberOfLives = value, TMP_InputField.CharacterValidation.Integer);
-        AddNumericRange(numberOfLivesInput, 0f, ushort.MaxValue);
+        AddNumericRange(numberOfLivesInput, 0f, ushort.MaxValue, false);
         AddTooltip(livesRow.gameObject, "NUMBER OF LIVES: 0 gives unlimited respawns. With 1 or more, each death uses a life; after the last life, the player spectates until the level reloads.");
         uniformHPToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.UniformHP)), "UNIFORM HP", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.UniformHP = value);
         AddTooltip(uniformHPToggle.gameObject, "UNIFORM HP: Gives every character species the max health set in UHP VALUE. Overrides HEALTH FACTOR.");
         var uhpValueRow = CreateSettingsRow(settings, nameof(LobbySettings.UHPValue));
         CreateText(uhpValueRow, "UHP VALUE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         uhpValueInput = CreateInput(uhpValueRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 8, value => plugin.lobbySettings.UHPValue = value, TMP_InputField.CharacterValidation.Decimal);
-        AddNumericRange(uhpValueInput, LobbyHealthRule.ClampUniformHPValue(float.MinValue), LobbyHealthRule.ClampUniformHPValue(float.MaxValue));
+        AddNumericRange(uhpValueInput, LobbyHealthRule.ClampUniformHPValue(float.MinValue), LobbyHealthRule.ClampUniformHPValue(float.MaxValue), false);
         AddTooltip(uhpValueRow.gameObject, "UHP VALUE: Max health for every player when UNIFORM HP is enabled. Allowed range: 1 to 10000.");
         var healthFactorRow = CreateSettingsRow(settings, nameof(LobbySettings.HealthFactor));
         CreateText(healthFactorRow, "HEALTH FACTOR", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         healthFactorInput = CreateInput(healthFactorRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 4, value => plugin.lobbySettings.HealthFactor = value, TMP_InputField.CharacterValidation.Decimal);
-        AddNumericRange(healthFactorInput, LobbyHealthRule.Clamp(float.MinValue), LobbyHealthRule.Clamp(float.MaxValue));
+        AddNumericRange(healthFactorInput, LobbyHealthRule.Clamp(float.MinValue), LobbyHealthRule.Clamp(float.MaxValue), true);
         AddTooltip(healthFactorRow.gameObject, "HEALTH FACTOR: Multiplies every player's maximum health. Allowed range: 0.01 to 10.");
         var regenFactorRow = CreateSettingsRow(settings, nameof(LobbySettings.RegenFactor));
         CreateText(regenFactorRow, "REGEN FACTOR", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         regenFactorInput = CreateInput(regenFactorRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 4, value => plugin.lobbySettings.RegenFactor = value, TMP_InputField.CharacterValidation.Decimal);
-        AddNumericRange(regenFactorInput, LobbyRegenRule.Clamp(float.MinValue), LobbyRegenRule.Clamp(float.MaxValue));
+        AddNumericRange(regenFactorInput, LobbyRegenRule.Clamp(float.MinValue), LobbyRegenRule.Clamp(float.MaxValue), true);
         AddTooltip(regenFactorRow.gameObject, "REGEN FACTOR: Multiplies every player's health regeneration speed. 0 disables regeneration. Allowed range: 0 to 10.");
         blackoutToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.Blackout)), "BLACKOUT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.Blackout = value);
         AddTooltip(blackoutToggle.gameObject, "BLACKOUT: Turns off level lighting and gives every player a headlamp.");
@@ -483,7 +483,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var initialScaleRow = CreateSettingsRow(settings, nameof(LobbySettings.InitialScale));
         CreateText(initialScaleRow, "INITIAL SCALE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         initialScaleInput = CreateInput(initialScaleRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 4, value => plugin.lobbySettings.InitialScale = value, TMP_InputField.CharacterValidation.Decimal);
-        AddNumericRange(initialScaleInput, AvatarScaleHandler.Clamp(float.MinValue), AvatarScaleHandler.Clamp(float.MaxValue));
+        AddNumericRange(initialScaleInput, AvatarScaleHandler.Clamp(float.MinValue), AvatarScaleHandler.Clamp(float.MaxValue), true);
         AddTooltip(initialScaleRow.gameObject, "INITIAL SCALE: The character scale assigned when a player joins or respawns. Allowed range: 0.25 to 2.0.");
         var startingWeaponRow = CreateSettingsRow(settings, nameof(LobbySettings.StartingWeapon));
         CreateText(startingWeaponRow, "STARTING WEAPON", new Vector2(-155f, 0f), new Vector2(210f, 32f), 14);
@@ -504,11 +504,11 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var propHuntTimeRow = CreateSettingsRow(settings, nameof(LobbySettings.PropHuntTime));
         CreateText(propHuntTimeRow, "PROP HUNT TIME", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         propHuntTimeInput = CreateInput(propHuntTimeRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 4, value => plugin.lobbySettings.PropHuntTime = value, TMP_InputField.CharacterValidation.Integer);
-        AddNumericRange(propHuntTimeInput, 1f, 3600f);
+        AddNumericRange(propHuntTimeInput, 1f, 3600f, false);
         var huntersRow = CreateSettingsRow(settings, nameof(LobbySettings.PropHuntHunters));
         CreateText(huntersRow, "PROP HUNT HUNTERS", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         propHuntHuntersInput = CreateInput(huntersRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 2, value => plugin.lobbySettings.PropHuntHunters = value, TMP_InputField.CharacterValidation.Integer);
-        AddNumericRange(propHuntHuntersInput, 1f, 63f);
+        AddNumericRange(propHuntHuntersInput, 1f, 63f, false);
         AddTooltip(huntersRow.gameObject, "Number of hunters selected each round.");
         gunGameToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.GunGame)), "GUNGAME", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.GunGame = value);
         AddTooltip(gunGameToggle.gameObject, "GUNGAME: Each kill advances to the next weapon in GG SEQUENCE.");
@@ -915,7 +915,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         overlay.offsetMin = overlay.offsetMax = Vector2.zero;
         sequenceEditor.GetComponent<Image>().color = Color.clear;
         var dialog = CreatePanel(sequenceEditor.transform, Vector2.zero, new Vector2(900f, 720f));
-        sequenceTitle = CreateText(dialog.transform, "GUNGAME CHAIN", new Vector2(-35f, 315f), new Vector2(760f, 36f), 22);
+        sequenceTitle = CreateText(dialog.transform, "GUNGAME SEQUENCE", new Vector2(-35f, 315f), new Vector2(760f, 36f), 22);
         var close = CreateIconButton(dialog.transform, LobbyIcon.Close, "Discard chain edits", new Vector2(400f, 315f), new Vector2(36f, 36f));
         close.onClick.AddListener(() => sequenceEditor.SetActive(false));
         sequenceRows = CreateSettingsScroll(dialog.transform, Vector2.zero, new Vector2(840f, 480f));
@@ -969,7 +969,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             row.gameObject.SetActive(false);
             Destroy(row.gameObject);
         }
-        sequenceTitle.text = "GUNGAME CHAIN // " + sequenceDraft.Count + " STAGES";
+        sequenceTitle.text = "GUNGAME SEQUENCE // " + sequenceDraft.Count + " STAGES";
         for (var index = 0; index < sequenceDraft.Count; index++)
         {
             var stage = index;
@@ -1619,10 +1619,12 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         return button;
     }
 
-    private void AddNumericRange(TMP_InputField input, float minimum, float maximum)
+    private void AddNumericRange(TMP_InputField input, float minimum, float maximum, bool floatNum)
     {
         var culture = System.Globalization.CultureInfo.InvariantCulture;
-        var range = "[" + minimum.ToString("0.##", culture) + ".." + maximum.ToString("0.##", culture) + "]";
+        var format = floatNum ? "0.0#" : "0";
+
+        var range = "[" + minimum.ToString(format, culture) + ".." + maximum.ToString(format, culture) + "]";
         var label = CreateText(input.transform, range, new Vector2(-input.GetComponent<RectTransform>().sizeDelta.x * 0.5f - 80f, 0f), new Vector2(140f, 24f), 11, TextAlignmentOptions.Right);
         label.color = new Color(0.58f, 0.58f, 0.58f, 0.38f);
         label.raycastTarget = false;

@@ -4,6 +4,8 @@ using UnityEngine;
 [HarmonyPatch(typeof(Canvas), "SendPreWillRenderCanvases")]
 internal static class HeadlessPreWillRenderCanvasesPatch
 {
+    private static bool Prepare() => HeadlessLobbyService.IsHeadlessMode;
+
     [HarmonyPrefix]
     private static bool Prefix()
     {
@@ -14,6 +16,8 @@ internal static class HeadlessPreWillRenderCanvasesPatch
 [HarmonyPatch(typeof(Canvas), "SendWillRenderCanvases")]
 internal static class HeadlessWillRenderCanvasesPatch
 {
+    private static bool Prepare() => HeadlessLobbyService.IsHeadlessMode;
+
     [HarmonyPrefix]
     private static bool Prefix()
     {

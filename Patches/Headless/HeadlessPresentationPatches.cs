@@ -9,6 +9,8 @@ using UnityEngine.UI;
 [HarmonyPatch(typeof(RainScript2D), "Update")]
 internal static class HeadlessRainUpdatePatch
 {
+    private static bool Prepare() => HeadlessLobbyService.IsHeadlessMode;
+
     [HarmonyPrefix]
     private static bool Prefix() => !HeadlessLobbyService.IsHeadlessMode;
 }
@@ -16,6 +18,8 @@ internal static class HeadlessRainUpdatePatch
 [HarmonyPatch(typeof(Graphic), "OnRectTransformDimensionsChange")]
 internal static class HeadlessGraphicDimensionsPatch
 {
+    private static bool Prepare() => HeadlessLobbyService.IsHeadlessMode;
+
     [HarmonyPrefix]
     private static bool Prefix() => !HeadlessLobbyService.IsHeadlessMode;
 }
@@ -23,6 +27,8 @@ internal static class HeadlessGraphicDimensionsPatch
 [HarmonyPatch(typeof(TextMeshProUGUI), "OnRectTransformDimensionsChange")]
 internal static class HeadlessTextMeshProDimensionsPatch
 {
+    private static bool Prepare() => HeadlessLobbyService.IsHeadlessMode;
+
     [HarmonyPrefix]
     private static bool Prefix() => !HeadlessLobbyService.IsHeadlessMode;
 }
@@ -30,6 +36,8 @@ internal static class HeadlessTextMeshProDimensionsPatch
 [HarmonyPatch]
 internal static class HeadlessMouseEventsPatch
 {
+    private static bool Prepare() => HeadlessLobbyService.IsHeadlessMode;
+
     private static MethodBase TargetMethod() =>
         AccessTools.Method(AccessTools.TypeByName("UnityEngine.SendMouseEvents"), "DoSendMouseEvents");
 
