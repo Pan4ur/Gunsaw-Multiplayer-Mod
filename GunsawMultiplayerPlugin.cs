@@ -675,6 +675,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(lobbyName)) lobbyName = "Lobby";
             var parsed = lobbySettings.Parse(4);
             var settings = lobbySettings.Clone();
             var requestedLobbyName = lobbyName;
@@ -692,6 +693,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             status = "Create a lobby first.";
             return;
         }
+        if (string.IsNullOrWhiteSpace(lobbyName)) lobbyName = "Lobby";
         var parsed = lobbySettings.Parse(MultiplayerSession.MaxPlayers);
         if (!MultiplayerSession.UpdateHostSettings(lobbySettings, parsed))
         {

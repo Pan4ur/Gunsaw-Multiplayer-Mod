@@ -215,6 +215,12 @@ internal static partial class MultiplayerSession
             PropHuntEnabled = false;
             PropHuntTime = 300;
             PropHuntHunters = 1;
+            PropHuntShotPenalty = 5f;
+            PropHuntShotHealing = 15f;
+            PropHuntTelekinesisPenalty = 5f;
+            PropHuntTelekinesisInterval = 0.5f;
+            PropHuntStunCooldown = 30f;
+            PropHuntChangeCooldown = 30f;
             GunGameEnabled = false;
             GGSequence = "";
             GGOnDeath = GunGameDeathMode.Reset;
@@ -409,6 +415,12 @@ internal static partial class MultiplayerSession
     internal static bool PropHuntEnabled { get; private set; }
     internal static ushort PropHuntTime { get; private set; } = 300;
     internal static byte PropHuntHunters { get; private set; } = 1;
+    internal static float PropHuntShotPenalty { get; private set; } = 5f;
+    internal static float PropHuntShotHealing { get; private set; } = 15f;
+    internal static float PropHuntTelekinesisPenalty { get; private set; } = 5f;
+    internal static float PropHuntTelekinesisInterval { get; private set; } = 0.5f;
+    internal static float PropHuntStunCooldown { get; private set; } = 30f;
+    internal static float PropHuntChangeCooldown { get; private set; } = 30f;
     internal static bool GunGameEnabled { get; private set; }
     internal static string GGSequence { get; private set; } = "";
     internal static GunGameDeathMode GGOnDeath { get; private set; } = GunGameDeathMode.Reset;
@@ -707,6 +719,12 @@ internal static partial class MultiplayerSession
         PropHuntEnabled = false;
         PropHuntTime = 300;
         PropHuntHunters = 1;
+        PropHuntShotPenalty = 5f;
+        PropHuntShotHealing = 15f;
+        PropHuntTelekinesisPenalty = 5f;
+        PropHuntTelekinesisInterval = 0.5f;
+        PropHuntStunCooldown = 30f;
+        PropHuntChangeCooldown = 30f;
         GunGameEnabled = false;
         GGSequence = "";
         GGOnDeath = GunGameDeathMode.Reset;
@@ -750,12 +768,18 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
     {
         PropHuntEnabled = settings.PropHunt;
+        PropHuntShotPenalty = LobbySettings.ParsePropHuntValue(settings.PropHuntShotPenalty, 5f, 0f, 100f);
+        PropHuntShotHealing = LobbySettings.ParsePropHuntValue(settings.PropHuntShotHealing, 15f, 0f, 100f);
+        PropHuntTelekinesisPenalty = LobbySettings.ParsePropHuntValue(settings.PropHuntTelekinesisPenalty, 5f, 0f, 100f);
+        PropHuntTelekinesisInterval = LobbySettings.ParsePropHuntValue(settings.PropHuntTelekinesisInterval, 0.5f, 0.01f, 3600f);
+        PropHuntStunCooldown = LobbySettings.ParsePropHuntValue(settings.PropHuntStunCooldown, 30f, 0f, 3600f);
+        PropHuntChangeCooldown = LobbySettings.ParsePropHuntValue(settings.PropHuntChangeCooldown, 30f, 0f, 3600f);
         PropHuntHunters = (byte)(int.TryParse(settings.PropHuntHunters, out var hunters) ? Math.Max(1, Math.Min(63, hunters)) : 1);
         PropHuntTime = (ushort)(int.TryParse(settings.PropHuntTime, out var duration) ? Math.Max(1, Math.Min(3600, duration)) : 300);
         PvpEnabled = settings.PropHunt || settings.Pvp;

@@ -321,6 +321,12 @@ internal static partial class MultiplayerSession
                 PropHuntEnabled = settings.PropHunt;
                 PropHuntTime = settings.PropHuntTime;
                 PropHuntHunters = settings.PropHuntHunters;
+                PropHuntShotPenalty = settings.PropHuntShotPenalty;
+                PropHuntShotHealing = settings.PropHuntShotHealing;
+                PropHuntTelekinesisPenalty = settings.PropHuntTelekinesisPenalty;
+                PropHuntTelekinesisInterval = settings.PropHuntTelekinesisInterval;
+                PropHuntStunCooldown = settings.PropHuntStunCooldown;
+                PropHuntChangeCooldown = settings.PropHuntChangeCooldown;
                 GunGameEnabled = settings.GunGame;
                 GGSequence = settings.GGSequence;
                 GGOnDeath = settings.GGOnDeath;

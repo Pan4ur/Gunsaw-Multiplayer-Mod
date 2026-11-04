@@ -97,6 +97,37 @@ internal sealed class LobbySettings
     [LobbySettingVisibleWhen(nameof(PropHunt))]
     public string PropHuntHunters = "1";
 
+    [LobbySetting("PropHuntShotPenalty", "Maximum health percentage lost when a hunter misses a shot/kick.", "--prop-hunt-shot-penalty")]
+    [LobbySettingVisibleWhen(nameof(PropHunt))]
+    public string PropHuntShotPenalty = "5";
+
+    [LobbySetting("PropHuntShotHealing", "Maximum health percentage restored when a hunter shoots a prop.", "--prop-hunt-shot-healing")]
+    [LobbySettingVisibleWhen(nameof(PropHunt))]
+    public string PropHuntShotHealing = "15";
+
+    [LobbySetting("PropHuntTelekinesisPenalty", "Maximum health percentage lost per interval while holding an ordinary object with telekinesis.", "--prop-hunt-telekinesis-penalty")]
+    [LobbySettingVisibleWhen(nameof(PropHunt))]
+    public string PropHuntTelekinesisPenalty = "5";
+
+    [LobbySetting("PropHuntTelekinesisInterval", "Seconds between telekinesis penalties.", "--prop-hunt-telekinesis-interval")]
+    [LobbySettingVisibleWhen(nameof(PropHunt))]
+    public string PropHuntTelekinesisInterval = "0.5";
+
+    [LobbySetting("PropHuntStunCooldown", "Seconds before a prop can stun again.", "--prop-hunt-stun-cooldown")]
+    [LobbySettingVisibleWhen(nameof(PropHunt))]
+    public string PropHuntStunCooldown = "30";
+
+    [LobbySetting("PropHuntChangeCooldown", "Seconds before a prop can change disguise again.", "--prop-hunt-change-cooldown")]
+    [LobbySettingVisibleWhen(nameof(PropHunt))]
+    public string PropHuntChangeCooldown = "30";
+
+    internal static float ClampPropHuntValue(float value, float fallback, float minimum, float maximum)
+        => float.IsNaN(value) || float.IsInfinity(value) ? fallback : Mathf.Clamp(value, minimum, maximum);
+
+    internal static float ParsePropHuntValue(string value, float fallback, float minimum, float maximum)
+        => float.TryParse((value ?? "").Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? ClampPropHuntValue(parsed, fallback, minimum, maximum) : fallback;
+
     internal LobbySettings Clone() => (LobbySettings)MemberwiseClone();
 
     internal ParsedLobbySettings Parse(int defaultMaxPlayers)
@@ -105,6 +136,12 @@ internal sealed class LobbySettings
         PropHuntTime = Mathf.Clamp(propHuntTime, 1, 3600).ToString();
         if (!int.TryParse(PropHuntHunters, out var hunters)) hunters = 1;
         PropHuntHunters = Mathf.Clamp(hunters, 1, 63).ToString();
+        PropHuntShotPenalty = ParsePropHuntValue(PropHuntShotPenalty, 5f, 0f, 100f).ToString("0.##", CultureInfo.InvariantCulture);
+        PropHuntShotHealing = ParsePropHuntValue(PropHuntShotHealing, 15f, 0f, 100f).ToString("0.##", CultureInfo.InvariantCulture);
+        PropHuntTelekinesisPenalty = ParsePropHuntValue(PropHuntTelekinesisPenalty, 5f, 0f, 100f).ToString("0.##", CultureInfo.InvariantCulture);
+        PropHuntTelekinesisInterval = ParsePropHuntValue(PropHuntTelekinesisInterval, 0.5f, 0.01f, 3600f).ToString("0.##", CultureInfo.InvariantCulture);
+        PropHuntStunCooldown = ParsePropHuntValue(PropHuntStunCooldown, 30f, 0f, 3600f).ToString("0.##", CultureInfo.InvariantCulture);
+        PropHuntChangeCooldown = ParsePropHuntValue(PropHuntChangeCooldown, 30f, 0f, 3600f).ToString("0.##", CultureInfo.InvariantCulture);
         GGSequence = (GGSequence ?? "").Trim();
         if (!Enum.IsDefined(typeof(GunGameDeathMode), GGOnDeath)) GGOnDeath = GunGameDeathMode.Reset;
         if (!int.TryParse(RespawnTime, out var respawnTime)) respawnTime = 5;

@@ -66,7 +66,7 @@ internal sealed class PropHuntRound
         if (Phase >= PropHuntPhase.PropsWin) Deadline = now + 5f;
     }
 
-    internal bool Change(ushort player, string[] choices, float now)
+    internal bool Change(ushort player, string[] choices, float now, float cooldown = 30f)
     {
         if ((Phase != PropHuntPhase.Hiding && Phase != PropHuntPhase.Hunting) || Hunters.Contains(player) || !Alive.Contains(player) ||
             (changes.TryGetValue(player, out var ready) && now < ready)) return false;
@@ -74,18 +74,16 @@ internal sealed class PropHuntRound
         var available = choices.Where(name => name != previous).ToArray();
         if (available.Length == 0) return false;
         Props[player] = available[UnityEngine.Random.Range(0, available.Length)];
-        changes[player] = now + 30f;
+        changes[player] = now + cooldown;
         return true;
     }
-
-    internal bool Stun(ushort player, float distance, float now) => Stun(player, Hunter, distance, now);
-
-    internal bool Stun(ushort player, ushort target, float distance, float now)
+    
+    internal bool Stun(ushort player, ushort target, float distance, float now, float cooldown = 30f)
     {
         if ((Phase != PropHuntPhase.Hiding && Phase != PropHuntPhase.Hunting) || Hunters.Contains(player) || !Alive.Contains(player) || !Hunters.Contains(target) || !Alive.Contains(target) ||
             float.IsNaN(distance) || distance > PlayerCarrySystem.Range || distance < 0f ||
             (stuns.TryGetValue(player, out var ready) && now < ready)) return false;
-        stuns[player] = now + 30f;
+        stuns[player] = now + cooldown;
         return true;
     }
 

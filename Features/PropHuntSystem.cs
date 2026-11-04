@@ -96,7 +96,7 @@ internal static class PropHuntSystem
         {
             if (Input.GetKeyDown(KeyCode.J) && Time.unscaledTime >= changeAt)
             {
-                changeAt = Time.unscaledTime + 30f;
+                changeAt = Time.unscaledTime + MultiplayerSession.PropHuntChangeCooldown;
                 Request(new PropHuntPacket(PropHuntAction.Change));
             }
             
@@ -105,7 +105,7 @@ internal static class PropHuntSystem
                 var target = StunTarget();
                 if (target != 0)
                 {
-                    stunAt = Time.unscaledTime + 30f;
+                    stunAt = Time.unscaledTime + MultiplayerSession.PropHuntStunCooldown;
                     Request(new PropHuntPacket(PropHuntAction.Stun, target));
                 }
             }
@@ -129,7 +129,7 @@ internal static class PropHuntSystem
             var selected = candidates.Take(Math.Min(MultiplayerSession.PropHuntHunters, players.Count - 1)).ToArray();
             round.Start([.. players], selected, Time.unscaledTime, MultiplayerSession.PropHuntTime);
             foreach (var player in players.Where(player => !round.Hunters.Contains(player)))
-                round.Change(player, templates.Keys.ToArray(), Time.unscaledTime - 30f);
+                round.Change(player, templates.Keys.ToArray(), Time.unscaledTime - MultiplayerSession.PropHuntChangeCooldown, MultiplayerSession.PropHuntChangeCooldown);
             shots.Clear();
         }
         foreach (var player in round.Alive.ToArray())
@@ -209,13 +209,13 @@ internal static class PropHuntSystem
                     Effect(new PropHuntPacket(PropHuntAction.Push, packet.Player, packet.Value));
                 break;
             case PropHuntAction.Change:
-                changed = round.Change(sender, templates.Keys.ToArray(), Time.unscaledTime);
+                changed = round.Change(sender, templates.Keys.ToArray(), Time.unscaledTime, MultiplayerSession.PropHuntChangeCooldown);
                 break;
             case PropHuntAction.Stun:
                 var source = Body(sender);
                 var target = Body(packet.Player);
                 if (source != null && target != null && round.Stun(sender, packet.Player,
-                    Vector2.Distance(source.transform.position, target.transform.position), Time.unscaledTime))
+                    Vector2.Distance(source.transform.position, target.transform.position), Time.unscaledTime, MultiplayerSession.PropHuntStunCooldown))
                     Effect(new PropHuntPacket(PropHuntAction.Shock, packet.Player));
                 break;
             case PropHuntAction.Hit:
@@ -286,11 +286,11 @@ internal static class PropHuntSystem
                 ScoreboardSystem.RecordLocalDamageReceived(damage);
                 break;
             case PropHuntAction.Penalty:
-                body.health -= body.maxHealth * 0.05f;
+                body.health -= body.maxHealth * (MultiplayerSession.PropHuntShotPenalty / 100f);
                 body.Damaged();
                 break;
             case PropHuntAction.Reward:
-                body.health = Mathf.Min(body.maxHealth, body.health + body.maxHealth * 0.15f);
+                body.health = Mathf.Min(body.maxHealth, body.health + body.maxHealth * (MultiplayerSession.PropHuntShotHealing / 100f));
                 body.GetComponent<PropHuntVitals>()?.AllowHealth(body.health);
                 break;
             case PropHuntAction.Shock:
@@ -326,9 +326,10 @@ internal static class PropHuntSystem
         }
         
         gravityPenaltyTime += Time.fixedDeltaTime;
-        if (gravityPenaltyTime < 0.5f) return;
-        gravityPenaltyTime -= 0.5f;
-        body.health -= body.maxHealth * 0.05f;
+        if (gravityPenaltyTime < MultiplayerSession.PropHuntTelekinesisInterval) return;
+        var penalties = Mathf.FloorToInt(gravityPenaltyTime / MultiplayerSession.PropHuntTelekinesisInterval);
+        gravityPenaltyTime -= penalties * MultiplayerSession.PropHuntTelekinesisInterval;
+        body.health -= body.maxHealth * (MultiplayerSession.PropHuntTelekinesisPenalty / 100f) * penalties;
         body.Damaged();
     }
 
