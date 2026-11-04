@@ -3,6 +3,12 @@ using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
+[HarmonyPatch(typeof(CrystalTongue), nameof(CrystalTongue.Tongue))]
+internal static class PropHuntCrystalTonguePatch
+{
+    private static bool Prefix(CrystalTongue __instance) => !PropHuntSystem.IsProp(__instance.GetComponent<BodyScript>());
+}
+
 [HarmonyPatch(typeof(WeaponScript), nameof(WeaponScript.Shoot))]
 internal static class PropHuntShotPatch
 {
