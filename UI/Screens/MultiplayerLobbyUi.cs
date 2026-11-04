@@ -64,6 +64,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private Button lobbyActionButton, p2pButton, relayButton, autoButton;
     private Button presetsButton, resetButton;
     private GameObject resetSettingsDialog;
+    private GameObject crossServerDialog;
+    private GunsawMultiplayerPlugin.LobbyInfo pendingJoinLobby;
     private Button customLevelActionButton;
     private GameObject updateIndicator;
     private Transform settingsRows;
@@ -133,6 +135,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             if (sequenceEditor != null) sequenceEditor.SetActive(false);
             if (teamsEditor != null) teamsEditor.SetActive(false);
             if (resetSettingsDialog != null) resetSettingsDialog.SetActive(false);
+            if (crossServerDialog != null) crossServerDialog.SetActive(false);
             customLevelBrowser?.SetOpen(false);
             SetServerBrowserOpen(false);
             return;
@@ -652,6 +655,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         tooltipPanel.SetActive(false);
         CreatePresetManager();
         CreateResetSettingsDialog();
+        CreateCrossServerDialog();
         CreateWeaponPicker();
         CreateSequenceEditor();
         CreateTeamsEditor();
@@ -1224,6 +1228,46 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var cancel = CreateButton(dialog.transform, "CANCEL", new Vector2(125f, -72f), new Vector2(210f, 44f));
         cancel.onClick.AddListener(() => resetSettingsDialog.SetActive(false));
         resetSettingsDialog.SetActive(false);
+    }
+
+    private void CreateCrossServerDialog()
+    {
+        crossServerDialog = CreatePanel(root.transform, Vector2.zero, Vector2.zero);
+        crossServerDialog.name = "Join Lobby On Another Server";
+        var overlay = crossServerDialog.GetComponent<RectTransform>();
+        overlay.anchorMin = Vector2.zero;
+        overlay.anchorMax = Vector2.one;
+        overlay.offsetMin = Vector2.zero;
+        overlay.offsetMax = Vector2.zero;
+        crossServerDialog.GetComponent<Image>().color = Color.clear;
+        var dialog = CreatePanel(crossServerDialog.transform, Vector2.zero, new Vector2(580f, 240f));
+        var message = CreateText(dialog.transform, "This lobby is on another server. Would you like to connect?", new Vector2(0f, 30f), new Vector2(520f, 100f), 22, TextAlignmentOptions.Center);
+        message.enableWordWrapping = true;
+        var no = CreateButton(dialog.transform, "No...", new Vector2(-125f, -72f), new Vector2(210f, 44f));
+        no.onClick.AddListener(() => crossServerDialog.SetActive(false));
+        var yes = CreateButton(dialog.transform, "Yes", new Vector2(125f, -72f), new Vector2(210f, 44f));
+        yes.onClick.AddListener(() =>
+        {
+            crossServerDialog.SetActive(false);
+            plugin.JoinLobby(pendingJoinLobby);
+        });
+        crossServerDialog.SetActive(false);
+    }
+
+    private void RequestJoinLobby(GunsawMultiplayerPlugin.LobbyInfo lobby)
+    {
+        if (!plugin.CanJoinLobby)
+            return;
+        
+        if (!plugin.IsLobbyOnAnotherServer(lobby))
+        {
+            plugin.JoinLobby(lobby);
+            return;
+        }
+        
+        pendingJoinLobby = lobby;
+        crossServerDialog.transform.SetAsLastSibling();
+        crossServerDialog.SetActive(true);
     }
 
     private void OpenResetSettingsDialog()
@@ -1901,6 +1945,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var hash = plugin.lobbies.Count + (canJoin ? 1 : 0) + (MultiplayerSession.IsActive ? 7 : 0);
         foreach (var lobby in plugin.lobbies)
         {
+            hash = hash * 31 + lobby.server.GetHashCode();
             hash = hash * 31 + (lobby.id ?? "").GetHashCode();
             hash = hash * 31 + (lobby.name ?? "").GetHashCode();
             hash = hash * 31 + (lobby.hostName ?? "").GetHashCode();
@@ -1948,10 +1993,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             }
             else
             {
-                var id = lobby.id;
                 var join = CreateIconButton(row.transform, LobbyIcon.Connect, "Join lobby", new Vector2(222f, 4f), new Vector2(44f, 44f));
                 join.interactable = canJoin && lobby.players < lobby.maxPlayers;
-                join.onClick.AddListener(() => plugin.JoinLobby(id));
+                join.onClick.AddListener(() => RequestJoinLobby(lobby));
             }
         }
     }

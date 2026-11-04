@@ -52,6 +52,7 @@ internal static class PlayerCarrySystem
 
     internal static void Tick()
     {
+        Prompt = "";
         if (!MultiplayerSession.IsActive)
         {
             carrying = false;
@@ -61,7 +62,6 @@ internal static class PlayerCarrySystem
             ReleaseLocalTarget();
             RestoreCarrierPose();
             SetCarryCollision(false);
-            Prompt = "";
             return;
         }
 
