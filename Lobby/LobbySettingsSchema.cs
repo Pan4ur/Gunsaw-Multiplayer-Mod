@@ -34,6 +34,8 @@ internal static class LobbySettingsSchema
     private static readonly (FieldInfo Field, LobbySettingAttribute Option)[] fields = DiscoverFields();
     private static readonly Dictionary<string, LobbySettingVisibleWhenAttribute[]> visibility = DiscoverVisibility();
 
+    internal static bool HasParent(string setting) => visibility[setting].Length > 0;
+
     internal static bool IsVisible(string setting, Func<string, bool> readBoolean)
     {
         if (!visibility.TryGetValue(setting, out var conditions))

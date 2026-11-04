@@ -29,13 +29,15 @@ internal sealed class NoPvpZoneDefinition : CustomPropDefinition<NoPvpZoneData>
 
     internal static void UpdateMarker(CustomPropMarker marker)
     {
-        if (!(marker.Instance.Data is NoPvpZoneData data)) return;
+        if (!(marker.Instance.Data is NoPvpZoneData) && !(marker.Instance.Data is PlayerDetectorData))
+            return;
+            
         var renderer = marker.GetComponent<SpriteRenderer>();
         renderer.sprite = Template.sprite;
         renderer.sharedMaterial = Template.sharedMaterial;
         renderer.drawMode = Template.drawMode;
         renderer.size = marker.Instance.Size;
-        renderer.color = new Color(0.2f, 0.8f, 1f, Template.color.a);
+        renderer.color = marker.Instance.Data is PlayerDetectorData ? new Color(1f, 0.55f, 0.15f, Template.color.a) : new Color(0.2f, 0.8f, 1f, Template.color.a);
         var circle = marker.GetComponent<CircleCollider2D>();
         if (circle != null) circle.enabled = false;
         var box = marker.GetComponent<BoxCollider2D>() ?? marker.gameObject.AddComponent<BoxCollider2D>();

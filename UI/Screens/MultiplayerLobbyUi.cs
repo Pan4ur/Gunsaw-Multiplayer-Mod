@@ -450,6 +450,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(maxPlayersRow.gameObject, "MAX PLAYERS: The maximum number of players allowed in your lobby.");
         respawnToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.AllowRespawn)), "ALLOW RESPAWN", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.AllowRespawn = value);
         AddTooltip(respawnToggle.gameObject, "ALLOW RESPAWN: When enabled, players can respawn after death. When disabled, they can only spectate living players until the game ends.");
+        respawnAtStartToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.RespawnAtStart)), "RESPAWN AT START", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.RespawnAtStart = value);
+        AddTooltip(respawnAtStartToggle.gameObject, "RESPAWN AT START: Applies to ALLOW RESPAWN. When enabled, players spawn at a player spawn point placed by the map author. If there are several, one is chosen at random. Some custom maps may accidentally contain too many spawn points and become impossible to complete without removing the extra points. When disabled, players respawn at the position of their corpse.");
         autoRestartToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.AutoRestart)), "AUTO RESTART", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.AutoRestart = value);
         AddTooltip(autoRestartToggle.gameObject, "AUTO RESTART: The host restarts the level after everyone dies, or after only one team remains alive.");
         var delayRow = CreateSettingsRow(settings, nameof(LobbySettings.RespawnTime));
@@ -483,8 +485,6 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(blackoutToggle.gameObject, "BLACKOUT: Turns off level lighting and gives every player a headlamp.");
         restrictLightToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.RestrictLight)), "RESTRICT LIGHT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.RestrictLight = value);
         AddTooltip(restrictLightToggle.gameObject, "RESTRICT LIGHT: Headlamp light is blocked by walls and props.");
-        respawnAtStartToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.RespawnAtStart)), "RESPAWN AT START", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.RespawnAtStart = value);
-        AddTooltip(respawnAtStartToggle.gameObject, "RESPAWN AT START: Applies to ALLOW RESPAWN. When enabled, players spawn at a player spawn point placed by the map author. If there are several, one is chosen at random. Some custom maps may accidentally contain too many spawn points and become impossible to complete without removing the extra points. When disabled, players respawn at the position of their corpse.");
         playerCollisionsToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.PlayerCollisions)), "PLAYER COLLISIONS", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.PlayerCollisions = value);
         AddTooltip(playerCollisionsToggle.gameObject, "PLAYER COLLISIONS: When disabled, players can pass through each other without blocking one another, which can help on parkour maps.");
         cheatsToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.Cheats)), "CHEATS", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.Cheats = value);
@@ -579,8 +579,19 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(ggDeathRow.gameObject, "ON DEATH: Reset starts the sequence over, Rollback moves back one weapon, None keeps the current weapon.");
 
         foreach (Transform row in settingsRows)
+        {
             settingLabels.Add(row.name, string.Join(" ", row.GetComponentsInChildren<TMP_Text>(true)
                 .Where(text => text.name != "State" && text.GetComponentInParent<TMP_InputField>() == null).Select(text => text.text)));
+            if (LobbySettingsSchema.HasParent(row.name)
+                && row.name != nameof(LobbySettings.RespawnWeapon)
+                && row.name != nameof(LobbySettings.RespawnAmmo)
+                && row.name != nameof(LobbySettings.HealthFactor))
+            {
+                var label = row.GetComponentsInChildren<TMP_Text>(true).First(text => text.name != "State");
+                label.margin = new Vector4(6f, 0f, 0f, 0f);
+                label.text = "<color=#888888><voffset=0.3em>∟</voffset></color> " + label.text;
+            }
+        }
 
         CreateText(lobbyGroup.transform, "CONNECTION", new Vector2(-235f, -292f), new Vector2(125f, 32f), 14);
         p2pButton = CreateButton(lobbyGroup.transform, "P2P", new Vector2(-70f, -292f), new Vector2(130f, 36f));

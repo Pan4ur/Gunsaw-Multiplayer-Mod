@@ -93,7 +93,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             gameObject.tag = "Activateable";
             gameObject.transform.position = instance.Position;
             gameObject.transform.rotation = Quaternion.Euler(0f, 0f, instance.Rotation);
-            if (instance.Data is NoPvpZoneData)
+            if (instance.Data is NoPvpZoneData || instance.Data is PlayerDetectorData)
             {
                 var marker = gameObject.AddComponent<CustomPropMarker>();
                 marker.Instance = instance;
@@ -166,6 +166,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         try { payload = JsonUtility.FromJson<CustomPropPayload>(part.team); }
         catch { return null; }
         if (payload == null || string.IsNullOrEmpty(payload.type)) return null;
+        if (string.Equals(payload.type, "MP/PlayerActivationZone", StringComparison.OrdinalIgnoreCase))
+            payload.type = "MP/PlayerDetector";
 
         ICustomPropDefinition definition;
         object data = payload.data;
@@ -296,7 +298,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
             marker.Instance.Position = marker.transform.position;
             marker.Instance.Rotation = marker.transform.eulerAngles.z;
-            if (marker.Instance.Data is NoPvpZoneData)
+            if (marker.Instance.Data is NoPvpZoneData || marker.Instance.Data is PlayerDetectorData)
                 marker.Instance.Size = NoPvpZoneDefinition.Size(marker.GetComponent<SpriteRenderer>().size);
             marker.GetComponent<LevelPartGame>().part = ToPart(marker.Instance);
             instances.Add(marker.Instance);
@@ -418,7 +420,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         var marker = selected == null ? null : selected.GetComponent<CustomPropMarker>();
         if (marker == null || marker.Instance == null) return;
 
-        if (marker.Instance.Data is NoPvpZoneData)
+        if (marker.Instance.Data is NoPvpZoneData || marker.Instance.Data is PlayerDetectorData)
             marker.Instance.Size = NoPvpZoneDefinition.Size(marker.GetComponent<SpriteRenderer>().size);
         if (shownMarker == marker)
             foreach (var input in GetInputs())
@@ -802,7 +804,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private bool HasGenericInspectorLayout(CustomPropMarker marker)
     {
-        if (marker.Instance.Data is NoPvpZoneData) return true;
+        if (marker.Instance.Data is NoPvpZoneData || marker.Instance.Data is PlayerDetectorData) return true;
         var inputs = GetInputs();
         var labels = GetLabels();
         var fields = marker.Definition.Fields ?? new CustomPropField[0];
@@ -840,6 +842,34 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             if (!editor.sizeXField.isFocused) editor.sizeXField.SetTextWithoutNotify(size.x.ToString());
             if (!editor.sizeYField.isFocused) editor.sizeYField.SetTextWithoutNotify(size.y.ToString());
             SetPlaceholder(editor.teamField, "ID, name or color (empty = everyone)");
+            return;
+        }
+        if (marker.Instance.Data is PlayerDetectorData)
+        {
+            RestoreNativeInspector();
+            shownMarker = marker;
+            var zoneInputs = GetInputs();
+            var zoneFields = marker.Definition.Fields;
+            for (var index = 0; index < zoneInputs.Length; index++)
+            {
+                var input = zoneInputs[index];
+                if (input == null) continue;
+                input.interactable = false;
+                if (index < zoneFields.Length)
+                {
+                    SetEditable(input);
+                    var field = zoneFields[index];
+                    var label = GetLabels()[index];
+                    label.Let(it => it.text = field.Label);
+                    SetPlaceholder(input, field.Placeholder);
+                    if (!input.isFocused) input.SetTextWithoutNotify(field.Read(marker.Instance.Data));
+                }
+            }
+            SetEditable(editor.sizeXField);
+            SetEditable(editor.sizeYField);
+            var dimensions = marker.GetComponent<SpriteRenderer>().size;
+            if (!editor.sizeXField.isFocused) editor.sizeXField.SetTextWithoutNotify(dimensions.x.ToString());
+            if (!editor.sizeYField.isFocused) editor.sizeYField.SetTextWithoutNotify(dimensions.y.ToString());
             return;
         }
         var inputs = GetInputs();
