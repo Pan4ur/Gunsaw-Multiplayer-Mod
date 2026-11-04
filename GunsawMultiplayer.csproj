@@ -17,6 +17,9 @@
     <EmbeddedResource Include="CustomProps\Assets\arsenal.png" />
     <EmbeddedResource Include="CustomProps\Assets\medical-station*" />
     <EmbeddedResource Include="CustomProps\Assets\rnd.png" />
+    <EmbeddedResource Include="CustomProps\Assets\hub.png" />
+    <EmbeddedResource Include="CustomProps\Assets\restart-level.png" />
+    <EmbeddedResource Include="CustomProps\Assets\activate-on-start.png" />
     <EmbeddedResource Include="CustomProps\Assets\lamp-color-changer.png" />
     <EmbeddedResource Include="CustomProps\Assets\lamp-intensity-changer.png" />
     <EmbeddedResource Include="CustomProps\Assets\logic-*.png" />

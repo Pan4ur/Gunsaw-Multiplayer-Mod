@@ -84,7 +84,7 @@ internal sealed class RandomIdRouterRuntime : MonoBehaviour, IActivationIdReceiv
         }
     }
 
-    private static List<int> ParseIds(string text)
+    internal static List<int> ParseIds(string text)
     {
         var result = new List<int>();
         if (string.IsNullOrWhiteSpace(text)) return result;

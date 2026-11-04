@@ -9,10 +9,13 @@ internal static class CustomPropBootstrap
 
         CustomPropRegistry.Register(new NpcSpawnerPropDefinition());
         CustomPropRegistry.Register(new RandomIdRouterPropDefinition());
+        CustomPropRegistry.Register(new HubDefinition());
         CustomPropRegistry.Register(new ArsenalPropDefinition());
         CustomPropRegistry.Register(new MedicalStationPropDefinition());
         CustomPropRegistry.Register(new NoPvpZoneDefinition());
         CustomPropRegistry.Register(new PlayerDetectorDefinition());
+        CustomPropRegistry.Register(new ActivateOnStartDefinition());
+        CustomPropRegistry.Register(new RestartLevelDefinition());
         CustomPropRegistry.Register(new ConstantGateDefinition());
         CustomPropRegistry.Register(new ClockSignalDefinition());
         CustomPropRegistry.Register(new NotGateDefinition());
