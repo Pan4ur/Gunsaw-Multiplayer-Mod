@@ -70,6 +70,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private int lastHostedPeerListRevision = -1;
     private bool shuttingDown;
     private bool joinInProgress;
+    private int lobbyRefreshVersion;
     private string joinedLobbyId = "";
     private int updateCheckInProgress;
     private readonly object joinLock = new ();
@@ -375,17 +376,46 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void RefreshLobbies()
     {
-        var server = masterUrl.Value.TrimEnd('/');
-        status = "Refreshing lobbies from " + DisplayServerAddress(server) + "...";
+        var version = ++lobbyRefreshVersion;
+        var addresses = servers.Select(server => server.address).ToList();
+        addresses.Add(masterUrl.Value);
+        status = "Refreshing lobbies...";
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try
             {
-                var response = HttpAt(server, "GET", "/v1/lobbies", null, null);
-                var refreshed = ParseAndSortLobbies(response);
-                RunOnMainThread(() => { lobbies.Clear(); lobbies.AddRange(refreshed); status = "Connected to " + DisplayServerAddress(masterUrl.Value) + ". Found " + lobbies.Count + " lobby/lobbies."; });
+                using var client = new WebClient();
+                addresses.AddRange(ParseServerList(client.DownloadString(ServersUrl)).Select(server => server.address));
             }
-            catch (Exception exception) { RunOnMainThread(() => status = "Lobby server unavailable: " + exception.Message); }
+            catch (Exception exception) { Logger.LogInfo("Could not refresh server catalog: " + exception.Message); }
+            var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var address in addresses)
+                if (TryNormalizeServerAddress(address, out var normalized)) targets.Add(normalized);
+            var refreshed = new List<LobbyInfo>();
+            var unavailable = 0;
+            System.Threading.Tasks.Parallel.ForEach(targets, server =>
+            {
+                try
+                {
+                    var listed = ParseAndSortLobbies(HttpAt(server, "GET", "/v1/lobbies", null, null));
+                    foreach (var lobby in listed) lobby.server = server;
+                    lock (refreshed) refreshed.AddRange(listed);
+                }
+                catch (Exception exception)
+                {
+                    Interlocked.Increment(ref unavailable);
+                    Logger.LogInfo("Lobby server unavailable (" + server + "): " + exception.Message);
+                }
+            });
+            refreshed.Sort((x, y) => x.name.CompareTo(y.name));
+            RunOnMainThread(() =>
+            {
+                if (version != lobbyRefreshVersion) return;
+                lobbies.Clear();
+                lobbies.AddRange(refreshed);
+                status = "Found " + lobbies.Count + " lobby(ies)." +
+                    (unavailable == 0 ? "" : " Unavailable servers: " + unavailable + ".");
+            });
         });
     }
 
@@ -748,6 +778,17 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void JoinLobby(string id)
     {
+        var lobby = lobbies.Find(item => item.id == id && string.Equals(item.server, masterUrl.Value, StringComparison.OrdinalIgnoreCase));
+        JoinLobby(lobby ?? new LobbyInfo { id = id, server = masterUrl.Value });
+    }
+
+    internal bool IsLobbyOnAnotherServer(LobbyInfo lobby)
+    {
+        return !string.Equals(lobby.server, masterUrl.Value.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal void JoinLobby(LobbyInfo lobby)
+    {
         lock (joinLock)
         {
             if (joinInProgress || MultiplayerSession.IsHosting || MultiplayerSession.IsActive) return;
@@ -755,15 +796,14 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         }
         try
         {
-            var mode = ConnectionMode.Relay;
-            foreach (var lobby in lobbies)
-                if (lobby.id == id)
-                {
-                    mode = lobby.connectionMode;
-                    break;
-                }
+            if (IsLobbyOnAnotherServer(lobby))
+            {
+                masterUrl.Value = lobby.server;
+                lobbyServerAddress = DisplayServerAddress(lobby.server);
+                Config.Save();
+            }
             status = "Joining lobby...";
-            ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(id, mode));
+            ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(lobby.server, lobby.id, lobby.connectionMode));
         }
         catch (Exception e)
         {
@@ -814,7 +854,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         get
         {
             foreach (var lobby in lobbies)
-                if (string.Equals(lobby.id, joinedLobbyId, StringComparison.Ordinal)) return lobby.name;
+                if (string.Equals(lobby.id, joinedLobbyId, StringComparison.Ordinal) && !IsLobbyOnAnotherServer(lobby)) return lobby.name;
             return "Current lobby";
         }
     }
@@ -902,11 +942,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return joinedLobbyId;
     }
 
-    private void JoinLobbyRequest(string id, ConnectionMode listedMode)
+    private void JoinLobbyRequest(string server, string id, ConnectionMode listedMode)
     {
         try
         {
-            var response = Http("POST", "/v1/lobbies/" + id + "/join", JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName, modVersion = PluginVersion }), null);
+            var response = HttpAt(server, "POST", "/v1/lobbies/" + id + "/join", JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName, modVersion = PluginVersion }), null);
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "relayKey");
             var relayAddress = JsonString(response, "relayAddress");
@@ -1321,6 +1361,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     [Serializable]
     internal sealed class LobbyInfo
     {
+        public string server = "";
         public string id = "";
         public string name = "";
         public string hostName = "";

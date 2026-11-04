@@ -2,6 +2,28 @@ using UnityEngine;
 
 internal static class EditorPacketData
 {
+    internal static void WriteAllowedEditors(ref PacketWriter writer, ushort[] peers)
+    {
+        writer.WriteInt32(peers.Length);
+        foreach (var peer in peers)
+            writer.WriteUInt16(peer);
+    }
+
+    internal static ushort[] ReadAllowedEditors(ref PacketReader reader)
+    {
+        var count = ReadNonNegative(ref reader);
+        if (count > ushort.MaxValue || count > reader.Remaining / sizeof(ushort))
+            throw new InvalidDataException("Invalid editor permission count.");
+        var peers = new ushort[count];
+        for (var index = 0; index < count; index++)
+        {
+            peers[index] = reader.ReadUInt16();
+            if (peers[index] == 0 || index > 0 && peers[index] <= peers[index - 1])
+                throw new InvalidDataException("Invalid editor permission identity.");
+        }
+        return peers;
+    }
+
     internal static void WriteChanges(ref PacketWriter writer, EditorObjectChange[] changes)
     {
         writer.WriteInt32(changes.Length);

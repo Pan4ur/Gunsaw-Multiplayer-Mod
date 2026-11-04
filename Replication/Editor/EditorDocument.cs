@@ -4,13 +4,15 @@ internal sealed class EditorDocument
 {
     internal Guid Session = Guid.NewGuid();
     internal int Revision;
-    internal bool Locked = true;
+    internal ushort[] AllowedEditors = [];
     internal Level Environment = new();
     internal readonly Dictionary<Guid, EditorObjectChange> Objects = new();
 
-    internal bool CanApply(EditorEditPacket edit)
+    internal bool CanEdit(ushort peer) => Array.BinarySearch(AllowedEditors, peer) >= 0;
+
+    internal bool CanApply(ushort peer, EditorEditPacket edit)
     {
-        if (edit.Session != Session || Locked || edit.Environment != null && edit.BaseRevision != Revision) 
+        if (edit.Session != Session || !CanEdit(peer) || edit.Environment != null && edit.BaseRevision != Revision)
             return false;
         
         foreach (var change in edit.Changes)
@@ -25,7 +27,7 @@ internal sealed class EditorDocument
     internal void Apply(EditorCommitPacket commit)
     {
         Revision = commit.Revision;
-        Locked = commit.Locked;
+        AllowedEditors = commit.AllowedEditors;
         
         if (commit.Environment != null) 
             Environment = CopyEnvironment(commit.Environment);
@@ -39,13 +41,13 @@ internal sealed class EditorDocument
         }
     }
 
-    internal EditorSnapshotPacket Snapshot(int epoch, int request = 0) => new(epoch, Session, Revision, request, Locked, Checksum(), CopyEnvironment(Environment), Objects.Values.OrderBy(value => value.Id).Select(CopyChange).ToArray());
+    internal EditorSnapshotPacket Snapshot(int epoch, int request = 0) => new(epoch, Session, Revision, request, AllowedEditors, Checksum(), CopyEnvironment(Environment), Objects.Values.OrderBy(value => value.Id).Select(CopyChange).ToArray());
 
     internal void Restore(EditorSnapshotPacket snapshot)
     {
         Session = snapshot.Session;
         Revision = snapshot.Revision;
-        Locked = snapshot.Locked;
+        AllowedEditors = snapshot.AllowedEditors;
         Environment = CopyEnvironment(snapshot.Environment);
         Objects.Clear();
         foreach (var change in snapshot.Changes) 
@@ -57,7 +59,7 @@ internal sealed class EditorDocument
         var writer = new PacketWriter(256);
         writer.WriteBytes(Session.ToByteArray());
         writer.WriteInt32(Revision);
-        writer.WriteBoolean(Locked);
+        EditorPacketData.WriteAllowedEditors(ref writer, AllowedEditors);
         EditorPacketData.WriteEnvironment(ref writer, Environment);
         EditorPacketData.WriteChanges(ref writer, Objects.Values.OrderBy(value => value.Id).ToArray());
         using var hash = SHA256.Create();
@@ -68,7 +70,7 @@ internal sealed class EditorDocument
     {
         var basis = new EditorDocument
         {
-            Session = Session, Revision = Revision, Locked = Locked, Environment = CopyEnvironment(Environment)
+            Session = Session, Revision = Revision, AllowedEditors = AllowedEditors, Environment = CopyEnvironment(Environment)
         };
        
         foreach (var change in edit.Changes)

@@ -34,6 +34,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
     private string savedRecoveryPath = "";
     private string savedClipboardCode = "";
     private float nextCloseSend;
+    private EditorPermissionsUi? permissionsUi;
     private Selectable? lockControl;
     private TMP_Text? lockCaption;
     private Image? lockIcon;
@@ -74,6 +75,9 @@ internal sealed class LevelEditorReplication : MonoBehaviour
             
             if (IsLocalEditor) 
                 return true;
+
+            if (instance.permissionsUi?.IsOpen == true)
+                return false;
             
             if (instance.editor == null || !ReferenceEquals(instance.editor, LevelEditor.main))
                 return !MultiplayerSession.IsActive || MultiplayerSession.IsHosting;
@@ -81,7 +85,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
             if (!MultiplayerSession.IsActive) 
                 return true;
             
-            return !instance.failed && instance.ready && !instance.closing && (MultiplayerSession.IsHosting || !instance.document.Locked);
+            return !instance.failed && instance.ready && !instance.closing && (MultiplayerSession.IsHosting || instance.document.CanEdit(MultiplayerSession.LocalPeerId));
         }
     }
 
@@ -214,7 +218,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
             if (buffered.Count != 0 && Time.unscaledTime - gapSince > 0.75f) 
                 RequestSnapshot();
             
-            if (!CanEdit) 
+            if (!CanEdit && permissionsUi?.IsOpen != true)
                 NavigateReadOnly();
             
             if (Time.unscaledTime >= nextTick)
@@ -223,7 +227,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
                 
                 if (MultiplayerSession.IsHosting) 
                     CommitLocal();
-                else if (pending == null && !document.Locked) 
+                else if (pending == null && document.CanEdit(MultiplayerSession.LocalPeerId))
                     Propose();
                 else if (pending != null && Time.unscaledTime - pendingSince > 2f)
                 {
@@ -249,6 +253,9 @@ internal sealed class LevelEditorReplication : MonoBehaviour
             if (MultiplayerSession.IsHosting)
             {
                 var peers = new HashSet<ushort>(MultiplayerSession.PeerIds());
+                var allowed = document.AllowedEditors.Where(peers.Contains).ToArray();
+                if (!allowed.SequenceEqual(document.AllowedEditors))
+                    SetAllowedEditors(allowed);
                 foreach (var peer in processed.Keys.Where(peer => !peers.Contains(peer)).ToArray())
                     processed.Remove(peer);
             }
@@ -280,6 +287,8 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         if (lockControl != null) 
             Destroy(lockControl.gameObject);
         
+        permissionsUi?.Destroy();
+        permissionsUi = null;
         lockCaption = null;
         lockIcon = null;
         editor = value;
@@ -426,9 +435,9 @@ internal sealed class LevelEditorReplication : MonoBehaviour
     {
         var revision = checked(document.Revision + 1);
         var changes = edit.Changes.Select(change => new EditorObjectChange(change.Id, revision, change.Part, change.Scale)).ToArray();
-        var commit = new EditorCommitPacket(epoch, document.Session, revision, edit.Request, author, document.Locked, "", edit.Environment, changes);
+        var commit = new EditorCommitPacket(epoch, document.Session, revision, edit.Request, author, document.AllowedEditors, "", edit.Environment, changes);
         document.Apply(commit);
-        MultiplayerSession.Send(new EditorCommitPacket(epoch, document.Session, revision, edit.Request, author, document.Locked, document.Checksum(), edit.Environment, changes));
+        MultiplayerSession.Send(new EditorCommitPacket(epoch, document.Session, revision, edit.Request, author, document.AllowedEditors, document.Checksum(), edit.Environment, changes));
     }
 
     private void Receive(ushort peer, INetworkPacket packet, int size)
@@ -503,7 +512,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         
         processed[peer] = edit.Request;
         
-        if (!document.CanApply(edit) || !ValidateParts(edit.Changes))
+        if (!document.CanApply(peer, edit) || !ValidateParts(edit.Changes))
         {
             SendSnapshot(peer, edit.Request);
             return;
@@ -568,7 +577,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         nextResync = Time.unscaledTime + 1f;
      
         if (!rebase.Conflicts) 
-            editor!.SetInfoText(document.Locked ? "Editor synced. Host has locked editing." : "Editor synced.");
+            editor!.SetInfoText(!document.CanEdit(MultiplayerSession.LocalPeerId) ? "Editor synced. Editing access is denied." : "Editor synced.");
        
         if (initialClose.HasValue)
         {
@@ -640,7 +649,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
 
     private void RestoreDraft(EditorEditPacket draft)
     {
-        if (HasChanges(draft) && document.Locked)
+        if (HasChanges(draft) && !document.CanEdit(MultiplayerSession.LocalPeerId))
             deferredDraft = (document.BasisFor(draft), draft);
         else
         {
@@ -661,7 +670,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         target.Apply(commit);
     
         var rebase = basis.Rebase(local, target, own ? pending : null);
-        if (rebase.Conflicts || commit.Locked && !document.Locked && HasLocalChanges())
+        if (rebase.Conflicts || !commit.AllowedEditors.Contains(MultiplayerSession.LocalPeerId) && document.CanEdit(MultiplayerSession.LocalPeerId) && HasLocalChanges())
             SaveRecovery();
         
         deferredDraft = (target.BasisFor(rebase.Edit), rebase.Edit);
@@ -893,9 +902,9 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         
         if (pending.HasValue || HasLocalChanges())
         {
-            if (!document.Locked && !pending.HasValue) 
+            if (document.CanEdit(MultiplayerSession.LocalPeerId) && !pending.HasValue)
                 Propose();
-            else if (document.Locked && !pending.HasValue) 
+            else if (!document.CanEdit(MultiplayerSession.LocalPeerId) && !pending.HasValue)
                 return TryPreserveRecovery();
             
             editor!.SetInfoText("Awaiting for the host to confirm edits...");
@@ -1016,7 +1025,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
             return;
         
         nextCloseSend = Time.unscaledTime + 1f;
-        var recovered = failed || document.Locked && HasLocalChanges();
+        var recovered = failed || !document.CanEdit(MultiplayerSession.LocalPeerId) && HasLocalChanges();
         
         if (recovered)
         {
@@ -1182,13 +1191,13 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         if (lockControl is Toggle toggle)
         {
             toggle.onValueChanged = new Toggle.ToggleEvent();
-            toggle.SetIsOnWithoutNotify(document.Locked);
-            toggle.onValueChanged.AddListener(SetLocked);
+            toggle.SetIsOnWithoutNotify(false);
+            toggle.onValueChanged.AddListener(_ => OpenPermissions());
         }
         else if (lockControl is Button button)
         {
             button.onClick = new Button.ButtonClickedEvent();
-            button.onClick.AddListener(() => SetLocked(!document.Locked));
+            button.onClick.AddListener(OpenPermissions);
         }
         UpdateLockPresentation();
     }
@@ -1199,25 +1208,13 @@ internal sealed class LevelEditorReplication : MonoBehaviour
             return;
         
         if (lockCaption != null)
-        {
-            var caption = document.Locked ? "Unlock" : "Lock";
-            if (lockCaption.text != caption) 
-                lockCaption.text = caption;
-        }
-        
-        if (lockIcon != null) 
-            lockIcon.sprite = document.Locked ? unlockSprite : lockSprite;
-        
-        if (lockControl is Toggle toggle) 
-            toggle.SetIsOnWithoutNotify(document.Locked);
-        else
-        {
-            var colors = lockControl.colors;
-            colors.normalColor = document.Locked ? new Color(0.6f, 1f, 0.6f) : Color.white;
-            lockControl.colors = colors;
-        }
-        
+            lockCaption.text = MultiplayerSession.IsHosting ? "Edit Access" : document.CanEdit(MultiplayerSession.LocalPeerId) ? "Editing Allowed" : "Editing Denied";
+        if (lockIcon != null)
+            lockIcon.sprite = document.AllowedEditors.Length == 0 ? lockSprite : unlockSprite;
+        if (lockControl is Toggle toggle)
+            toggle.SetIsOnWithoutNotify(false);
         lockControl.interactable = MultiplayerSession.IsHosting && ready && !failed && !closing && !leaving;
+        permissionsUi?.Refresh(document.AllowedEditors, lockControl.interactable);
     }
 
     private static bool IsLightingCaption(TMP_Text label) =>
@@ -1233,13 +1230,27 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         return false;
     }
 
-    private void SetLocked(bool value)
+    private void OpenPermissions()
     {
-        if (!MultiplayerSession.IsHosting || failed || closing || leaving) 
+        if (!MultiplayerSession.IsHosting || !ready || failed || closing || leaving || lockCaption == null)
             return;
-        
+
+        permissionsUi ??= new EditorPermissionsUi(lockCaption, SetAllowedEditors);
+        permissionsUi.Open(document.AllowedEditors);
+    }
+
+    private void SetAllowedEditors(ushort[] peers)
+    {
+        if (!MultiplayerSession.IsHosting || !ready || failed || closing || leaving)
+            return;
+
+        var connected = MultiplayerSession.PeerIds();
+        var allowed = peers.Where(peer => peer != 0 && connected.Contains(peer)).Distinct().OrderBy(peer => peer).ToArray();
+        if (allowed.SequenceEqual(document.AllowedEditors))
+            return;
+
         CommitLocal();
-        document.Locked = value;
+        document.AllowedEditors = allowed;
         Commit(new EditorEditPacket(epoch, document.Session, document.Revision, 0, null, []), MultiplayerSession.LocalPeerId);
         UpdateLockPresentation();
     }
@@ -1407,6 +1418,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
     private void OnDestroy()
     {
         ClearCursorNames();
+        permissionsUi?.Destroy();
         if (instance == this) instance = null;
     }
 
