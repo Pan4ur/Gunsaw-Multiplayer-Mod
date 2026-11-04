@@ -8,6 +8,7 @@ internal static partial class MultiplayerSession
     private static UdpClient socket;
     private static volatile bool relayConnected;
     private static IPEndPoint relayEndpoint;
+    private static byte[] localP2PAddress;
     private static CancellationTokenSource socketCancellation;
     private static readonly object sendLock = new();
     private static readonly PacketSendQueue sendQueue = new();
@@ -216,7 +217,19 @@ internal static partial class MultiplayerSession
             GunsawMultiplayerPlugin.LogInfo("P2P unavailable: UDP relay did not provide a valid P2P key.");
             return;
         }
-        GunsawMultiplayerPlugin.LogInfo("P2P enabled; waiting for relay candidates.");
+        try
+        {
+            using var route = new UdpClient(socket.Client.AddressFamily);
+            route.Connect(relayEndpoint);
+            localP2PAddress = ((IPEndPoint) route.Client.LocalEndPoint).Address.GetAddressBytes();
+        }
+        catch (SocketException exception)
+        {
+            GunsawMultiplayerPlugin.LogInfo("P2P local address unavailable: " + exception.Message);
+        }
+        GunsawMultiplayerPlugin.LogInfo("P2P enabled; local endpoint " +
+            (localP2PAddress == null ? "unknown" : new IPAddress(localP2PAddress).ToString()) + ":" +
+            ((IPEndPoint)socket.Client.LocalEndPoint).Port + "; waiting for relay candidates.");
         SendControlToRelay(UdpP2PEnable);
     }
 
@@ -264,7 +277,9 @@ internal static partial class MultiplayerSession
 
     private static bool TryAcceptLocalCandidate(byte[] datagram, ushort peerId)
     {
-        if (datagram.Length != 21 || BitConverter.ToInt32(datagram, 7) != 0 || BitConverter.ToUInt16(datagram, 11) != 0 || BitConverter.ToUInt16(datagram, 13) != 0 || BitConverter.ToInt32(datagram, 15) != 2)
+        if ((datagram.Length != 21 && datagram.Length != 25 && datagram.Length != 37) ||
+            BitConverter.ToInt32(datagram, 7) != 0 || BitConverter.ToUInt16(datagram, 11) != 0 ||
+            BitConverter.ToUInt16(datagram, 13) != 0 || BitConverter.ToInt32(datagram, 15) != datagram.Length - 19)
             return false;
 
         if (connectionMode == ConnectionMode.Relay)
@@ -272,13 +287,25 @@ internal static partial class MultiplayerSession
 
         var port = BitConverter.ToUInt16(datagram, 19);
         if (port == 0) return true;
+        var address = socket.Client.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Loopback : IPAddress.Loopback;
+        if (datagram.Length > 21)
+        {
+            var addressBytes = new byte[datagram.Length - 21];
+            Buffer.BlockCopy(datagram, 21, addressBytes, 0, addressBytes.Length);
+            address = new IPAddress(addressBytes);
+            if (address.AddressFamily != socket.Client.AddressFamily || address.Equals(IPAddress.Any) ||
+                address.Equals(IPAddress.IPv6Any) || address.Equals(IPAddress.Broadcast) ||
+                address.IsIPv6Multicast || (addressBytes.Length == 4 && addressBytes[0] >= 224)) return true;
+        }
         lock (statusLock)
         {
             if (!p2pPeers.TryGetValue(peerId, out var peer) || peer.Connected)
                 return true;
 
-            peer.LocalEndpoint = new IPEndPoint(socket.Client.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Loopback : IPAddress.Loopback, port);
+            if (datagram.Length == 21 && peer.LocalEndpoint != null) return true;
+            peer.LocalEndpoint = new IPEndPoint(address, port);
         }
+        GunsawMultiplayerPlugin.LogInfo("P2P local candidate for peer " + peerId + ": " + new IPEndPoint(address, port) + ".");
         SendDirectProbe(peerId);
         return true;
     }
@@ -316,10 +343,10 @@ internal static partial class MultiplayerSession
             p2pPeers[senderId] = peer;
         }
         if (!wasConnected) GunsawMultiplayerPlugin.LogInfo("P2P direct path authenticated with peer " + senderId + " from " + remote + ".");
-        if (BitConverter.ToInt32(datagram, 23) == 0 && BitConverter.ToUInt16(datagram, 27) == 0 &&
+        if (BitConverter.ToInt32(datagram, 23) == 0 && BitConverter.ToUInt16(datagram, 27) <= 1 &&
             BitConverter.ToUInt16(datagram, 29) == 1 && BitConverter.ToInt32(datagram, 31) == 0)
         {
-            if (!wasConnected) SendDirectProbe(senderId);
+            if (BitConverter.ToUInt16(datagram, 27) == 0) SendDirectProbe(senderId, true);
             return false;
         }
         return true;
@@ -347,19 +374,19 @@ internal static partial class MultiplayerSession
         }
     }
 
-    private static void SendDirectProbe(ushort peerId)
+    private static void SendDirectProbe(ushort peerId, bool acknowledgement = false)
     {
-        IPEndPoint endpoint;
-        IPEndPoint localEndpoint;
-        if (!TryGetP2PCandidates(peerId, out endpoint, out localEndpoint)) return;
-        if (localEndpoint == null)
+        if (!TryGetP2PCandidates(peerId, out var endpoint, out var localEndpoint)) return;
+        if (!acknowledgement && localEndpoint == null)
         {
-            var candidate = new byte[21];
+            var address = localP2PAddress;
+            var candidate = new byte[21 + (address?.Length ?? 0)];
             Buffer.BlockCopy(udpMagic, 0, candidate, 0, udpMagic.Length);
             candidate[4] = UdpData;
             Buffer.BlockCopy(BitConverter.GetBytes(peerId), 0, candidate, 5, sizeof(ushort));
-            Buffer.BlockCopy(BitConverter.GetBytes(2), 0, candidate, 15, sizeof(int));
+            Buffer.BlockCopy(BitConverter.GetBytes(candidate.Length - 19), 0, candidate, 15, sizeof(int));
             Buffer.BlockCopy(BitConverter.GetBytes((ushort)((IPEndPoint)socket.Client.LocalEndPoint).Port), 0, candidate, 19, sizeof(ushort));
+            address.Let(it => Buffer.BlockCopy(it, 0, candidate, 21, it.Length));
             try { socket.Send(candidate, candidate.Length, relayEndpoint); }
             catch (SocketException) { }
             catch (ObjectDisposedException) { }
@@ -369,11 +396,14 @@ internal static partial class MultiplayerSession
         probe[4] = UdpDirectData;
         Buffer.BlockCopy(BitConverter.GetBytes(localPeerId), 0, probe, 5, sizeof(ushort));
         Buffer.BlockCopy(p2pKey, 0, probe, 7, P2PKeySize);
+        if (acknowledgement) Buffer.BlockCopy(BitConverter.GetBytes((ushort)1), 0, probe, 27, sizeof(ushort));
         Buffer.BlockCopy(BitConverter.GetBytes((ushort)1), 0, probe, 29, sizeof(ushort));
-        try { socket.Send(probe, probe.Length, endpoint); } catch (SocketException) { } catch (ObjectDisposedException) { }
-        if (localEndpoint != null && !EndpointsEqual(endpoint, localEndpoint))
+        try { socket.Send(probe, probe.Length, endpoint); }
+        catch (SocketException exception) { GunsawMultiplayerPlugin.LogInfo("P2P probe to " + endpoint + " failed: " + exception.SocketErrorCode + "."); }
+        catch (ObjectDisposedException) { }
+        if (!acknowledgement && localEndpoint != null && !EndpointsEqual(endpoint, localEndpoint))
             try { socket.Send(probe, probe.Length, localEndpoint); }
-            catch (SocketException) { }
+            catch (SocketException exception) { GunsawMultiplayerPlugin.LogInfo("P2P local probe to " + localEndpoint + " failed: " + exception.SocketErrorCode + "."); }
             catch (ObjectDisposedException) { }
     }
 
@@ -383,8 +413,7 @@ internal static partial class MultiplayerSession
         localEndpoint = null;
         lock (statusLock)
         {
-            P2PPeer peer;
-            if (!p2pPeers.TryGetValue(peerId, out peer)) return false;
+            if (!p2pPeers.TryGetValue(peerId, out var peer)) return false;
             endpoint = peer.Endpoint;
             localEndpoint = peer.LocalEndpoint;
             return endpoint != null && p2pKey != null;
@@ -399,9 +428,7 @@ internal static partial class MultiplayerSession
     private static bool ProcessReliablePacket(ref ArraySegment<byte> packet, ushort senderId)
     {
         var deliver = reliableChannel.TryUnwrap(packet, senderId, Stopwatch.GetTimestamp(), out packet, out var acknowledgement);
-        if (acknowledgement != null)
-            SendSerialized(PacketType.ReliableAck, default(ReliableAckPacket).Settings,
-                acknowledgement, senderId, true);
+        acknowledgement.Let(it => SendSerialized(PacketType.ReliableAck, default(ReliableAckPacket).Settings, it, senderId, true));
         return deliver;
     }
 
@@ -538,6 +565,7 @@ internal static partial class MultiplayerSession
             socketCancellation = null;
             sendThread = null;
             relayEndpoint = null;
+            localP2PAddress = null;
             p2pKey = null;
             p2pPeers.Clear();
         }

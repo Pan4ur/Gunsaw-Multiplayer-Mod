@@ -452,8 +452,6 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(respawnToggle.gameObject, "ALLOW RESPAWN: When enabled, players can respawn after death. When disabled, they can only spectate living players until the game ends.");
         respawnAtStartToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.RespawnAtStart)), "RESPAWN AT START", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.RespawnAtStart = value);
         AddTooltip(respawnAtStartToggle.gameObject, "RESPAWN AT START: Applies to ALLOW RESPAWN. When enabled, players spawn at a player spawn point placed by the map author. If there are several, one is chosen at random. Some custom maps may accidentally contain too many spawn points and become impossible to complete without removing the extra points. When disabled, players respawn at the position of their corpse.");
-        autoRestartToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.AutoRestart)), "AUTO RESTART", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.AutoRestart = value);
-        AddTooltip(autoRestartToggle.gameObject, "AUTO RESTART: The host restarts the level after everyone dies, or after only one team remains alive.");
         var delayRow = CreateSettingsRow(settings, nameof(LobbySettings.RespawnTime));
         CreateText(delayRow, "RESPAWN DELAY", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         respawnInput = CreateInput(delayRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 4, value => plugin.lobbySettings.RespawnTime = value, TMP_InputField.CharacterValidation.Integer);
@@ -464,6 +462,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         numberOfLivesInput = CreateInput(livesRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 5, value => plugin.lobbySettings.NumberOfLives = value, TMP_InputField.CharacterValidation.Integer);
         AddNumericRange(numberOfLivesInput, 0f, ushort.MaxValue, false);
         AddTooltip(livesRow.gameObject, "NUMBER OF LIVES: 0 gives unlimited respawns. With 1 or more, each death uses a life; after the last life, the player spectates until the level reloads.");
+        autoRestartToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.AutoRestart)), "AUTO RESTART", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.AutoRestart = value);
+        AddTooltip(autoRestartToggle.gameObject, "AUTO RESTART: The host restarts the level after everyone dies, or after only one team remains alive.");
         uniformHPToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.UniformHP)), "UNIFORM HP", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.UniformHP = value);
         AddTooltip(uniformHPToggle.gameObject, "UNIFORM HP: Gives every character species the max health set in UHP VALUE. Overrides HEALTH FACTOR.");
         var uhpValueRow = CreateSettingsRow(settings, nameof(LobbySettings.UHPValue));
@@ -1331,15 +1331,16 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             var row = new GameObject("Preset", typeof(RectTransform), typeof(LayoutElement));
             row.transform.SetParent(presetRows, false);
             row.GetComponent<LayoutElement>().preferredHeight = 46f;
-            CreateText(row.transform, preset.name, new Vector2(-175f, 0f), new Vector2(250f, 36f), 16, TextAlignmentOptions.Left, FontStyles.Bold);
-            var apply = CreateButton(row.transform, "APPLY", new Vector2(105f, 0f), new Vector2(120f, 38f));
+            CreateText(row.transform, preset.name, new Vector2(-60f, 0f), new Vector2(480f, 36f), 16, TextAlignmentOptions.Left, FontStyles.Bold);
+            var apply = CreateIconButton(row.transform, LobbyIcon.Connect, "Apply preset", new Vector2(231f, 0f), new Vector2(38f, 38f));
             apply.onClick.AddListener(() =>
             {
                 plugin.ApplyLobbyPreset(preset);
                 RefreshPendingSettings();
                 presetsPanel.SetActive(false);
             });
-            var delete = CreateButton(row.transform, "DELETE", new Vector2(245f, 0f), new Vector2(120f, 38f));
+            var delete = CreateIconButton(row.transform, LobbyIcon.Delete, "Delete preset", new Vector2(283f, 0f), new Vector2(38f, 38f));
+            delete.transform.Find("Icon").GetComponent<Image>().color = new Color(0.95f, 0.32f, 0.25f);
             delete.onClick.AddListener(() =>
             {
                 plugin.DeleteLobbyPreset(preset);
