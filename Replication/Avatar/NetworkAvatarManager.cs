@@ -278,6 +278,11 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     internal static void AddForceAtPositionWithPropAuthority(Rigidbody2D rb, Vector2 force, Vector2 position, ForceMode2D mode)
     {
+        if (activeShotState != null)
+        {
+            activeShotState.HitRigidbody = rb;
+            activeShotState.HitImpulse = mode == ForceMode2D.Impulse ? force : force * Time.fixedDeltaTime;
+        }
         rb.AddForceAtPosition(force, position, mode);
         NpcReplication.QueueClientCorpseImpulse(rb, force, position, mode);
         TryTakePropAuthority(rb);
@@ -336,6 +341,8 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         internal Vector2 Direction;
         internal Vector2 Up;
         internal string WeaponSprite = "";
+        internal Rigidbody2D HitRigidbody;
+        internal Vector2 HitImpulse;
         internal readonly List<PlayerWound> Wounds = new();
         internal readonly List<Collider2D> DisabledColliders = new();
         internal readonly Dictionary<ushort, Queue<float>> PendingBaseDamage = new();
@@ -354,6 +361,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         internal short LimbIndex;
         internal Vector2 LocalPoint;
         internal Vector2 Direction;
+        internal Vector2 HitImpulse;
         internal string WeaponSprite;
         internal string WoundSprite;
         internal bool HasSplash;
@@ -443,6 +451,8 @@ weapon != activeShotState.Weapon) return;
         var limbIndex = limbs.IndexOf(limb);
         if (limbIndex < 0 || limbIndex > short.MaxValue) return;
         var woundRenderer = FindLatestWound(limb, hitpoint);
+        var bodyColliderHit = TakeBodyColliderHit(activeShotState, replica.remotePeerId, limb);
+        var hitRigidbody = bodyColliderHit ? limb.body.rb : limb.rb;
         activeShotState.Wounds.Add(new PlayerWound
         {
             TargetPeerId = replica.remotePeerId,
@@ -454,7 +464,8 @@ weapon != activeShotState.Weapon) return;
             HasSplash = splash != null,
             Critical = limb.isCritical,
             BaseDamage = TakeBaseDamage(activeShotState, replica.remotePeerId),
-            BodyColliderHit = TakeBodyColliderHit(activeShotState, replica.remotePeerId, limb),
+            BodyColliderHit = bodyColliderHit,
+            HitImpulse = hitRigidbody != null && activeShotState.HitRigidbody == hitRigidbody ? activeShotState.HitImpulse : Vector2.zero,
             IsRozaShot = weapon.isRoza
         });
     }
@@ -486,7 +497,9 @@ weapon != activeShotState.Weapon) return;
                 wound.BodyColliderHit,
                 wound.IsRozaShot,
                 source != null && source.isPlayer,
-                PeerIdOfBody(source)
+                PeerIdOfBody(source),
+                wound.HitImpulse.x,
+                wound.HitImpulse.y
             ),
             wound.TargetPeerId
         );
@@ -1527,7 +1540,7 @@ weapon != activeShotState.Weapon) return;
                     Rigidbody2D hitRb = packet.BodyColliderHit ? body.rb : limb.rb;
 
                     if (hitRb != null)
-                        hitRb.AddForceAtPosition(hitDir * preset.knockback * 1.6f, hitPoint, ForceMode2D.Impulse);
+                        hitRb.AddForceAtPosition(new Vector2(packet.HitKnockbackX, packet.HitKnockbackY), hitPoint, ForceMode2D.Impulse);
 
                     if (packet.BodyColliderHit && body.controlState != BodyScript.RagdollState.FullControl && limb.rb != null)
                         limb.rb.AddForceAtPosition(hitDir * preset.knockback * 1.65f, hitPoint, ForceMode2D.Impulse);

@@ -27,6 +27,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
     internal readonly float BaseDamage;
     internal readonly bool BodyColliderHit;
     internal readonly bool IsRozaShot;
+    internal readonly float HitKnockbackX;
+    internal readonly float HitKnockbackY;
     
     private PlayerDamagePacket(float amount, bool critical, PlayerDamageEffect effect, bool hasPlayerSource = false,
         ushort sourcePeerId = 0,
@@ -34,7 +36,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         float localPointX = 0f, float localPointY = 0f, float directionX = 0f, float directionY = 0f,
         string weaponSprite = "", string woundSprite = "", bool hasSplash = false,
         bool createScreenCrack = false, string sourceName = "", string sourceWeapon = "",
-        float baseDamage = 0f, bool bodyColliderHit = false, bool isRozaShot = false)
+        float baseDamage = 0f, bool bodyColliderHit = false, bool isRozaShot = false,
+        float hitKnockbackX = 0f, float hitKnockbackY = 0f)
     {
         Amount = amount;
         Critical = critical;
@@ -55,13 +58,14 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         BaseDamage = baseDamage;
         BodyColliderHit = bodyColliderHit;
         IsRozaShot = isRozaShot;
+        HitKnockbackX = hitKnockbackX;
+        HitKnockbackY = hitKnockbackY;
     }
 
     internal static PlayerDamagePacket Damage(float amount, bool critical, bool hasPlayerSource = false,
         ushort sourcePeerId = 0,
         string sourceName = "", string sourceWeapon = "", PlayerDamageEffect effect = PlayerDamageEffect.Damage)
-        => new PlayerDamagePacket(amount, critical, effect, hasPlayerSource, sourcePeerId,
-            sourceName: sourceName, sourceWeapon: sourceWeapon);
+        => new (amount, critical, effect, hasPlayerSource, sourcePeerId, sourceName: sourceName, sourceWeapon: sourceWeapon);
 
     internal static PlayerDamagePacket Wound(
         short limbIndex,
@@ -75,9 +79,11 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         bool createScreenCrack,
         float baseDamage,
         bool bodyColliderHit,
-        bool isRozaShot = false,
-        bool hasPlayerSource = false,
-        ushort sourcePeerId = 0)
+        bool isRozaShot,
+        bool hasPlayerSource,
+        ushort sourcePeerId,
+        float hitImpulseX,
+        float hitImpulseY)
         => new(
             amount: 0f,
             critical: false,
@@ -95,7 +101,9 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
             createScreenCrack: createScreenCrack,
             baseDamage: baseDamage,
             bodyColliderHit: bodyColliderHit,
-            isRozaShot: isRozaShot
+            isRozaShot: isRozaShot,
+            hitKnockbackX: hitImpulseX,
+            hitKnockbackY: hitImpulseY
         );
 
     public PacketType Type => PacketType.PlayerDamage;
@@ -124,7 +132,9 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                 writer.WriteBoolean(CreateScreenCrack);
                 writer.WriteSingle(BaseDamage);
                 writer.WriteBoolean(BodyColliderHit);
-                if (IsRozaShot) writer.WriteBoolean(IsRozaShot);
+                writer.WriteBoolean(IsRozaShot);
+                writer.WriteSingle(HitKnockbackX);
+                writer.WriteSingle(HitKnockbackY);
                 break;
         }
     }
@@ -156,8 +166,12 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                 var createScreenCrack = reader.ReadBoolean();
                 var baseDamage = reader.ReadSingle();
                 var bodyColliderHit = reader.ReadBoolean();
-                var isRozaShot = reader.Remaining > 0 && reader.ReadBoolean();
-                
+                var isRozaShot = reader.ReadBoolean();
+                var hitKnockbackX = reader.ReadSingle();
+                var hitKnockbackY = reader.ReadSingle();
+                if (float.IsNaN(hitKnockbackX) || float.IsInfinity(hitKnockbackX) || float.IsNaN(hitKnockbackY) || float.IsInfinity(hitKnockbackY))
+                    throw new InvalidDataException("Invalid hit impulse.");
+
                 return Wound(
                     limbIndex,
                     localPointX,
@@ -172,10 +186,12 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
                     bodyColliderHit,
                     isRozaShot,
                     hasPlayerSource,
-                    sourcePeerId
+                    sourcePeerId,
+                    hitKnockbackX,
+                    hitKnockbackY
                 );
             }
-            default: throw new System.IO.InvalidDataException("Unknown player damage effect.");
+            default: throw new InvalidDataException("Unknown player damage effect.");
         }
     }
 }
