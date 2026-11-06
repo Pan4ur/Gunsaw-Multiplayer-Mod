@@ -774,8 +774,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         
         while (history.Count > 80) 
             history.RemoveAt(0);
-
-
+        
         var shouldSend = entry.Sender.IndexOf("SYSTEM", StringComparison.OrdinalIgnoreCase) < 0 || 
                          entry.Message.IndexOf("joined", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          entry.Message.IndexOf("left", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -797,7 +796,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
 
     internal static void AddSystemMessage(string message)
     {
-        if (Instance != null) Instance.AddMessage("SYSTEM", message, false);
+        Instance?.AddMessage("SYSTEM", message, false);
     }
 
     internal static void DrawReplicationMarker(Vector3 position, bool sent)

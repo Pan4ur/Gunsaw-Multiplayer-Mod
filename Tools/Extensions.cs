@@ -12,6 +12,6 @@ public static class Extensions
 {
     public static void Let<T>(this T? val, Action<T> action) where T : class
     {
-        if (val is not null) action(val);
+        if (val is not null && (val is not UnityEngine.Object obj || obj != null)) action(val);
     }
 }

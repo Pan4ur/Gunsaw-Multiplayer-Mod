@@ -379,6 +379,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         var version = ++lobbyRefreshVersion;
         var addresses = servers.Select(server => server.address).ToList();
         addresses.Add(masterUrl.Value);
+        lobbies.Clear();
         status = "Refreshing lobbies...";
         ThreadPool.QueueUserWorkItem(_ =>
         {
@@ -391,7 +392,6 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var address in addresses)
                 if (TryNormalizeServerAddress(address, out var normalized)) targets.Add(normalized);
-            var refreshed = new List<LobbyInfo>();
             var unavailable = 0;
             System.Threading.Tasks.Parallel.ForEach(targets, server =>
             {
@@ -399,7 +399,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 {
                     var listed = ParseAndSortLobbies(HttpAt(server, "GET", "/v1/lobbies", null, null));
                     foreach (var lobby in listed) lobby.server = server;
-                    lock (refreshed) refreshed.AddRange(listed);
+                    RunOnMainThread(() =>
+                    {
+                        if (version != lobbyRefreshVersion) return;
+                        lobbies.AddRange(listed);
+                        lobbies.Sort((x, y) => x.name.CompareTo(y.name));
+                        status = "Found " + lobbies.Count + " lobby(ies). Refreshing...";
+                    });
                 }
                 catch (Exception exception)
                 {
@@ -407,12 +413,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                     Logger.LogInfo("Lobby server unavailable (" + server + "): " + exception.Message);
                 }
             });
-            refreshed.Sort((x, y) => x.name.CompareTo(y.name));
             RunOnMainThread(() =>
             {
                 if (version != lobbyRefreshVersion) return;
-                lobbies.Clear();
-                lobbies.AddRange(refreshed);
                 status = "Found " + lobbies.Count + " lobby(ies)." +
                     (unavailable == 0 ? "" : " Unavailable servers: " + unavailable + ".");
             });

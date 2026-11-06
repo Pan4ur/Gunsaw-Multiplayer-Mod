@@ -9,17 +9,15 @@ internal static partial class MultiplayerSession
         {
             while (receiveSocket == socket && relayConnected)
             {
-            ushort senderId;
-            var packet = ReadPacket(receiveSocket, out senderId);
+                var packet = ReadPacket(receiveSocket, out var senderId);
             if (packet.Array == null) return;
             lock (statusLock)
                 if (isHost && blockedPeers.Contains(senderId)) continue;
             if (!ProcessReliablePacket(ref packet, senderId)) continue;
-            PayloadPacket decodedPacket;
-            if (!PacketCodec.TryDecode(packet, out decodedPacket)) continue;
+            if (!PacketCodec.TryDecode(packet, out var decodedPacket)) continue;
             if (IsEditorPacket(decodedPacket.Type))
                 ReceiveEditorPacket(senderId, decodedPacket);
-            else if ((decodedPacket.Type == PacketType.Hello) && isHost)
+            else if (decodedPacket.Type == PacketType.Hello && isHost)
             {
                 string connectedName;
                 bool joined;
@@ -42,7 +40,7 @@ internal static partial class MultiplayerSession
                 GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => TeamSystem.SendAll(senderId));
                 ObserverSystem.SendCurrentState(senderId);
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
-                if (joined) BroadcastSystemChat(connectedName + " joined the game.");
+                if (joined) BroadcastSystemChat(connectedName + " joined the game.", true);
             }
             else if ((decodedPacket.Type == PacketType.Accepted) && !isHost)
             {
@@ -125,8 +123,8 @@ internal static partial class MultiplayerSession
                                 else if (fields[index].StartsWith("C", StringComparison.Ordinal))
                                     int.TryParse(fields[index].Substring(1), out customLevelTransferId);
                             }
-                            int epoch;
-                            if (int.TryParse(rest, out epoch) && epoch != expectedSceneEpoch)
+
+                            if (int.TryParse(rest, out var epoch) && epoch != expectedSceneEpoch)
                             {
                                 pendingSceneAdvanced = expectedSceneEpoch >= 0;
                                 expectedSceneEpoch = epoch;
@@ -161,9 +159,9 @@ internal static partial class MultiplayerSession
                 lock (statusLock)
                 {
                     TouchPeerLocked(senderId, null);
-                    int previous;
-                    if (receivedSnapshotSequences.TryGetValue(senderId, out previous) && sequence <= previous)
+                    if (receivedSnapshotSequences.TryGetValue(senderId, out var previous) && sequence <= previous)
                         continue;
+                    
                     if (previous > 0 && sequence > previous + 1)
                         Interlocked.Add(ref lostSnapshotPackets, sequence - previous - 1);
                     else if (previous == 0 && sequence > 1)
@@ -798,35 +796,86 @@ internal static partial class MultiplayerSession
             reliableChannel.RemovePeer(peerId);
             sendQueue.RemovePeer(peerId);
         }
-        if (announceDeparture) BroadcastSystemChat(departedName + " left the game.");
+        if (announceDeparture) BroadcastSystemChat(departedName + " left the game.", true);
     }
 
-    private static void BroadcastSystemChat(string message)
+    public static void BroadcastSystemChat(string message, bool yellow = false, bool richText = false)
     {
-        foreach (var text in FormatSystemChat(message))
+        foreach (var text in richText ? FormatColorSystemChat(message) : FormatSystemChat(message))
         {
-            GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => MultiplayerHud.AddSystemMessage(text));
-            ChatPacket packet;
-            if (ChatService.TryCreate(text, true, out packet)) Send(packet);
+            var formatted = yellow ? "<color=#D4AF37>" + text + "</color>" : text;
+            GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => MultiplayerHud.AddSystemMessage(formatted));
+            if (ChatService.TryCreate(formatted, true, out var packet)) Send(packet);
         }
+    }
+
+    internal static IEnumerable<string> FormatColorSystemChat(string message)
+    {
+        var colors = new List<string>();
+        var chunk = new StringBuilder();
+        var color = string.Empty;
+        var hasText = false;
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(
+                     message, @"<color=(?:#[0-9a-f]{3,8}|[a-z]{1,20})>|</color>|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\s\S]",
+                     System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            var token = match.Value;
+            if (token.StartsWith("<color=", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(token, "</color>", StringComparison.OrdinalIgnoreCase))
+            {
+                if (token[1] != '/') colors.Add(token);
+                else if (colors.Count > 0) colors.RemoveAt(colors.Count - 1);
+                var nextColor = colors.Count > 0 ? colors[colors.Count - 1] : string.Empty;
+                if (nextColor == color) continue;
+                var transition = (color.Length > 0 ? "</color>" : string.Empty) + nextColor;
+                if (hasText && chunk.Length + transition.Length + (nextColor.Length > 0 ? 8 : 0) > 230)
+                {
+                    yield return chunk + (color.Length > 0 ? "</color>" : string.Empty);
+                    chunk.Clear();
+                    hasText = false;
+                }
+                if (hasText) chunk.Append(transition);
+                else
+                {
+                    chunk.Clear();
+                    chunk.Append(nextColor);
+                }
+                color = nextColor;
+                continue;
+            }
+
+            var escaped = EscapeRichText(token);
+            if (chunk.Length + escaped.Length + (color.Length > 0 ? 8 : 0) > 230)
+            {
+                yield return chunk + (color.Length > 0 ? "</color>" : string.Empty);
+                chunk.Clear();
+                chunk.Append(color);
+                hasText = false;
+            }
+            chunk.Append(escaped);
+            hasText = true;
+        }
+
+        if (hasText)
+            yield return chunk + (color.Length > 0 ? "</color>" : string.Empty);
     }
 
     internal static IEnumerable<string> FormatSystemChat(string message)
     {
-        var chunk = new System.Text.StringBuilder();
+        var chunk = new StringBuilder();
         foreach (var character in message)
         {
             var escaped = EscapeRichText(character.ToString());
             if (chunk.Length + escaped.Length > 230 && !char.IsLowSurrogate(character))
             {
-                yield return "<color=#D4AF37>" + chunk + "</color>";
+                yield return chunk.ToString();
                 chunk.Clear();
             }
             chunk.Append(escaped);
         }
         
         if (chunk.Length > 0)
-            yield return "<color=#D4AF37>" + chunk + "</color>";
+            yield return chunk.ToString();
     }
 
     private static void SendPeerNames(ushort targetPeerId)
@@ -1115,9 +1164,7 @@ internal static partial class MultiplayerSession
 
         lock (statusLock)
         {
-            NpcTransfer transfer;
-            if (!npcTransfers.TryGetValue(transferId, out transfer) ||
-                transfer.TotalLength != totalLength || transfer.Chunks.Length != chunkCount)
+            if (!npcTransfers.TryGetValue(transferId, out var transfer) || transfer.TotalLength != totalLength || transfer.Chunks.Length != chunkCount)
             {
                 transfer = new NpcTransfer(totalLength, chunkCount);
                 npcTransfers[transferId] = transfer;

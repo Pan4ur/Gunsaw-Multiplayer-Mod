@@ -16,6 +16,7 @@ internal static class CustomPropBootstrap
         CustomPropRegistry.Register(new PlayerDetectorDefinition());
         CustomPropRegistry.Register(new ActivateOnStartDefinition());
         CustomPropRegistry.Register(new RestartLevelDefinition());
+        CustomPropRegistry.Register(new MessageDefinition());
         CustomPropRegistry.Register(new ConstantGateDefinition());
         CustomPropRegistry.Register(new ClockSignalDefinition());
         CustomPropRegistry.Register(new NotGateDefinition());
