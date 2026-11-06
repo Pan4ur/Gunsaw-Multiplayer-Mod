@@ -22,6 +22,14 @@ internal sealed class PropHuntDisguise : MonoBehaviour
     internal PlayerSnapshotPose? SnapshotPose => visual == null ? null : new PlayerSnapshotPose(visual.transform.position.x, visual.transform.position.y, visual.transform.eulerAngles.z);
     internal ushort Peer;
 
+    internal void RevealLocator(float until)
+    {
+        if (visual == null) return;
+        var outline = visual.GetComponent<PropHuntOutline>();
+        if (outline == null) outline = visual.AddComponent<PropHuntOutline>();
+        outline.RevealLocator(visual, until);
+    }
+
     internal void Apply(BodyScript target, ushort peer, string name, GameObject template)
     {
         if (target == null || target.rb == null || target.coll == null || template == null) return;

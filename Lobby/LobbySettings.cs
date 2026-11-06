@@ -125,6 +125,14 @@ internal sealed class LobbySettings
     [LobbySettingVisibleWhen(nameof(PropHunt))]
     public string PropHuntChangeCooldown = "30";
 
+    [LobbySetting("PropHuntLocator", "Allow hunters to reveal props with J.", "--prop-hunt-locator")]
+    [LobbySettingVisibleWhen(nameof(PropHunt))]
+    public bool PropHuntLocator = true;
+
+    [LobbySetting("PropHuntLocatorCooldown", "Seconds before a hunter can use the locator again.", "--prop-hunt-locator-cooldown")]
+    [LobbySettingVisibleWhen(nameof(PropHuntLocator))]
+    public string PropHuntLocatorCooldown = "30";
+
     internal static float ClampPropHuntValue(float value, float fallback, float minimum, float maximum)
         => float.IsNaN(value) || float.IsInfinity(value) ? fallback : Mathf.Clamp(value, minimum, maximum);
 
@@ -146,6 +154,7 @@ internal sealed class LobbySettings
         PropHuntTelekinesisInterval = ParsePropHuntValue(PropHuntTelekinesisInterval, 0.5f, 0.01f, 3600f).ToString("0.##", CultureInfo.InvariantCulture);
         PropHuntStunCooldown = ParsePropHuntValue(PropHuntStunCooldown, 30f, 0f, 3600f).ToString("0.##", CultureInfo.InvariantCulture);
         PropHuntChangeCooldown = ParsePropHuntValue(PropHuntChangeCooldown, 30f, 0f, 3600f).ToString("0.##", CultureInfo.InvariantCulture);
+        PropHuntLocatorCooldown = ParsePropHuntValue(PropHuntLocatorCooldown, 30f, 0f, 3600f).ToString("0.##", CultureInfo.InvariantCulture);
         GGSequence = (GGSequence ?? "").Trim();
         if (!Enum.IsDefined(typeof(GunGameDeathMode), GGOnDeath)) GGOnDeath = GunGameDeathMode.Reset;
         if (!int.TryParse(RespawnTime, out var respawnTime)) respawnTime = 5;

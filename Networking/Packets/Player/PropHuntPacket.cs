@@ -10,7 +10,9 @@ internal enum PropHuntAction : byte
     Reward,
     Shock,
     Push,
-    KickMiss
+    KickMiss,
+    Locator,
+    Located
 }
 
 internal readonly struct PropHuntPacket : INetworkPacket

@@ -5,32 +5,39 @@ internal sealed class PropHuntOutline : MonoBehaviour
 {
     private readonly Dictionary<Sprite, Sprite> silhouettes = new();
     private readonly List<(SpriteRenderer Source, SpriteRenderer Outline)> renderers = [];
-    private BodyScript target;
+    private GameObject target;
+    private float locatorUntil;
     private Material material;
 
     internal void SetTarget(BodyScript body)
     {
-        if (target == body) 
-            return;
-        
+        var obj = body == null ? null : body.gameObject;
+        if (target == obj) return;
+        var sources = body == null ? Array.Empty<SpriteRenderer>() : body.GetComponentsInChildren<SpriteRenderer>(true)
+            .Concat((body.tails ?? []).Where(tail => tail != null)
+                .SelectMany(tail => tail.GetComponentsInChildren<SpriteRenderer>(true)))
+            .Distinct().ToArray();
+        SetTarget(obj, sources);
+    }
+
+    internal void RevealLocator(GameObject obj, float until)
+    {
+        locatorUntil = until;
+        if (target != obj)
+            SetTarget(obj, obj.GetComponentsInChildren<SpriteRenderer>(true));
+    }
+
+    private void SetTarget(GameObject targetObject, SpriteRenderer[] sources)
+    {
         ClearRenderers();
-        target = body;
-        
-        if (body == null) 
-            return;
-      
-        if (material == null)
+        target = targetObject;
+        if (targetObject == null) return;
+        if (material == null) 
             material = new Material(Shader.Find("Sprites/Default"));
-        
-        var sources = body.GetComponentsInChildren<SpriteRenderer>(true)
-                                            .Concat((body.tails ?? []).Where(tail => tail != null)
-                                            .SelectMany(tail => tail.GetComponentsInChildren<SpriteRenderer>(true)))
-                                            .Distinct()
-                                            .ToArray();
-        
+
         foreach (var source in sources)
         {
-            var obj = new GameObject("Stun outline");
+            var obj = new GameObject("Prop Hunt outline");
             obj.transform.SetParent(transform, false);
             var outline = obj.AddComponent<SpriteRenderer>();
             outline.sharedMaterial = material;
@@ -43,7 +50,13 @@ internal sealed class PropHuntOutline : MonoBehaviour
 
     private void LateUpdate()
     {
-        var color = new Color(1f, 0.9f, 0f, 0.7f + 0.3f * Mathf.Sin(Time.unscaledTime * Mathf.PI * 2f / 1.2f));
+        if (locatorUntil > 0f && (Time.unscaledTime >= locatorUntil || !PropHuntSystem.Enabled || target == null || !target.activeInHierarchy))
+        {
+            foreach (var pair in renderers) pair.Outline.enabled = false;
+            Destroy(this);
+            return;
+        }
+        var color = locatorUntil > 0f ? new Color(0f, 0.5f, 1f, Mathf.Clamp01((locatorUntil - Time.unscaledTime) / 3f)) : new Color(1f, 0.9f, 0f, 0.7f + 0.3f * Mathf.Sin(Time.unscaledTime * Mathf.PI * 2f / 1.2f));
         
         foreach (var pair in renderers)
         {

@@ -38,6 +38,8 @@
                       LogicalName="GunsawMultiplayer.Assets.Sounds.sprayer.ogg" />
     <EmbeddedResource Include="Assets\Sounds\stun.ogg"
                       LogicalName="GunsawMultiplayer.Assets.Sounds.stun.ogg" />
+    <EmbeddedResource Include="Assets\Sounds\locator.ogg"
+                      LogicalName="GunsawMultiplayer.Assets.Sounds.locator.ogg" />
     <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.3" PrivateAssets="all" />
     <Reference Include="BepInEx">
       <HintPath>$(GameDirectory)/BepInEx/core/BepInEx.dll</HintPath>

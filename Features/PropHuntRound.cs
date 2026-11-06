@@ -13,6 +13,7 @@ internal sealed class PropHuntRound
     internal readonly HashSet<ushort> Alive = new();
     private readonly Dictionary<ushort, float> changes = new();
     private readonly Dictionary<ushort, float> stuns = new();
+    private readonly Dictionary<ushort, float> locators = new();
     internal readonly HashSet<ushort> Hunters = new();
     internal ushort Hunter => Hunters.FirstOrDefault();
     internal PropHuntPhase Phase { get; private set; }
@@ -41,6 +42,7 @@ internal sealed class PropHuntRound
         Alive.Clear();
         changes.Clear();
         stuns.Clear();
+        locators.Clear();
         pushes.Clear();
         kicks.Clear();
         Hunters.Clear();
@@ -93,6 +95,15 @@ internal sealed class PropHuntRound
             !Props.ContainsKey(target) || (direction != -1f && direction != 1f) ||
             float.IsNaN(distance) || distance < 0f || distance > 1f || (pushes.TryGetValue(sender, out var pushAt) && now < pushAt)) return false;
         pushes[sender] = now + 0.1f;
+        return true;
+    }
+
+    internal bool Locate(ushort sender, float now, bool enabled, float cooldown)
+    {
+        if (!enabled || Phase != PropHuntPhase.Hunting || !Hunters.Contains(sender) || !Alive.Contains(sender) || (locators.TryGetValue(sender, out var ready) && now < ready))
+            return false;
+            
+        locators[sender] = now + cooldown;
         return true;
     }
 

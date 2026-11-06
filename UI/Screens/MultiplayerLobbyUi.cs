@@ -47,6 +47,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text teamsEditorTitle, teamsEditorHint, teamsEditorError;
     private List<LobbyTeamEntry> teamsDraft = new();
     private static readonly string[] teamColors = { "red", "orange", "yellow", "green", "teal", "cyan", "blue", "purple", "magenta", "white", "grey", "black" };
+    private Toggle propHuntLocatorToggle;
+    private TMP_InputField propHuntLocatorCooldownInput;
     private Toggle propHuntToggle;
     private TMP_InputField propHuntTimeInput;
     private TMP_InputField propHuntHuntersInput;
@@ -187,6 +189,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetToggle(restrictLightToggle, viewingLobbySettings ? MultiplayerSession.RestrictLightEnabled : plugin.lobbySettings.RestrictLight);
         SetInput(serverInput, plugin.lobbyServerAddress);
         SetToggle(pvpToggle, viewingLobbySettings ? MultiplayerSession.PvpEnabled : plugin.lobbySettings.Pvp);
+        SetToggle(propHuntLocatorToggle, viewingLobbySettings ? MultiplayerSession.PropHuntLocator : plugin.lobbySettings.PropHuntLocator);
+        SetInput(propHuntLocatorCooldownInput, viewingLobbySettings ? MultiplayerSession.PropHuntLocatorCooldown.ToString("0.##") : plugin.lobbySettings.PropHuntLocatorCooldown);
         SetToggle(propHuntToggle, viewingLobbySettings ? MultiplayerSession.PropHuntEnabled : plugin.lobbySettings.PropHunt);
         SetInput(propHuntTimeInput, viewingLobbySettings ? MultiplayerSession.PropHuntTime.ToString() : plugin.lobbySettings.PropHuntTime);
         SetInput(propHuntHuntersInput, viewingLobbySettings ? MultiplayerSession.PropHuntHunters.ToString() : plugin.lobbySettings.PropHuntHunters);
@@ -298,6 +302,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         teamsEditorButton.interactable = interactable;
         pvpToggle.interactable = interactable;
         gunGameToggle.interactable = interactable;
+        propHuntLocatorToggle.interactable = interactable;
+        propHuntLocatorCooldownInput.interactable = interactable && plugin.lobbySettings.PropHuntLocator;
         propHuntToggle.interactable = interactable;
         propHuntTimeInput.interactable = interactable;
         propHuntHuntersInput.interactable = interactable;
@@ -602,6 +608,13 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         propHuntTelekinesisIntervalInput = CreateInput(propHuntTelekinesisIntervalRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 7, value => plugin.lobbySettings.PropHuntTelekinesisInterval = value, TMP_InputField.CharacterValidation.Decimal);
         AddNumericRange(propHuntTelekinesisIntervalInput, 0.01f, 3600f, true);
         AddTooltip(propHuntTelekinesisIntervalRow.gameObject, "Seconds between telekinesis penalties. Allowed range: 0.01 to 3600.");
+        propHuntLocatorToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.PropHuntLocator)), "LOCATOR", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.PropHuntLocator = value);
+        AddTooltip(propHuntLocatorToggle.gameObject, "Allow hunters to press J to reveal props for 3 seconds.");
+        var locatorCooldownRow = CreateSettingsRow(settings, nameof(LobbySettings.PropHuntLocatorCooldown));
+        CreateText(locatorCooldownRow, "LOCATOR COOLDOWN", new Vector2(-135f, 0f), new Vector2(250f, 32f), 12);
+        propHuntLocatorCooldownInput = CreateInput(locatorCooldownRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 7, value => plugin.lobbySettings.PropHuntLocatorCooldown = value, TMP_InputField.CharacterValidation.Decimal);
+        AddNumericRange(propHuntLocatorCooldownInput, 0f, 3600f, true);
+        AddTooltip(locatorCooldownRow.gameObject, "Seconds before each hunter can use the locator again.");
         var propHuntStunCooldownRow = CreateSettingsRow(settings, nameof(LobbySettings.PropHuntStunCooldown));
         CreateText(propHuntStunCooldownRow, "STUN COOLDOWN", new Vector2(-135f, 0f), new Vector2(250f, 32f), 12);
         propHuntStunCooldownInput = CreateInput(propHuntStunCooldownRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 7, value => plugin.lobbySettings.PropHuntStunCooldown = value, TMP_InputField.CharacterValidation.Decimal);

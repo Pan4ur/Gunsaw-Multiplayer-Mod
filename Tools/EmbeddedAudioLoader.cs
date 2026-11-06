@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -10,10 +10,12 @@ internal class EmbeddedAudioLoader
     internal static AudioClip RespawnSound;
     internal static AudioClip SprayerSound;
     internal static AudioClip StunSound;
+    internal static AudioClip LocatorSound;
     internal static AudioClip MedicalStationSound;
 
     public static void Init()
     {
+        GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.locator.ogg", c => { LocatorSound = c; }));
         GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.CustomProps.Assets.medical-station.ogg", c => { MedicalStationSound = c; }));
         GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.respawn.ogg", c => { RespawnSound = c; }));
         GunsawMultiplayerPlugin.Instance.StartCoroutine(Load("GunsawMultiplayer.Assets.Sounds.sprayer.ogg", c => { SprayerSound = c; }));

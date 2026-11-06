@@ -221,6 +221,8 @@ internal static partial class MultiplayerSession
             PropHuntTelekinesisInterval = 0.5f;
             PropHuntStunCooldown = 30f;
             PropHuntChangeCooldown = 30f;
+            PropHuntLocator = true;
+            PropHuntLocatorCooldown = 30f;
             GunGameEnabled = false;
             GGSequence = "";
             GGOnDeath = GunGameDeathMode.Reset;
@@ -423,6 +425,8 @@ internal static partial class MultiplayerSession
     internal static float PropHuntTelekinesisInterval { get; private set; } = 0.5f;
     internal static float PropHuntStunCooldown { get; private set; } = 30f;
     internal static float PropHuntChangeCooldown { get; private set; } = 30f;
+    internal static bool PropHuntLocator { get; private set; } = true;
+    internal static float PropHuntLocatorCooldown { get; private set; } = 30f;
     internal static bool GunGameEnabled { get; private set; }
     internal static string GGSequence { get; private set; } = "";
     internal static GunGameDeathMode GGOnDeath { get; private set; } = GunGameDeathMode.Reset;
@@ -727,6 +731,8 @@ internal static partial class MultiplayerSession
         PropHuntTelekinesisInterval = 0.5f;
         PropHuntStunCooldown = 30f;
         PropHuntChangeCooldown = 30f;
+        PropHuntLocator = true;
+        PropHuntLocatorCooldown = 30f;
         GunGameEnabled = false;
         GGSequence = "";
         GGOnDeath = GunGameDeathMode.Reset;
@@ -806,11 +812,13 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown, NoNpcs);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown, NoNpcs, PropHuntLocator, PropHuntLocatorCooldown);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
     {
+        PropHuntLocator = settings.PropHuntLocator;
+        PropHuntLocatorCooldown = LobbySettings.ParsePropHuntValue(settings.PropHuntLocatorCooldown, 30f, 0f, 3600f);
         PropHuntEnabled = settings.PropHunt;
         PropHuntShotPenalty = LobbySettings.ParsePropHuntValue(settings.PropHuntShotPenalty, 5f, 0f, 100f);
         PropHuntShotHealing = LobbySettings.ParsePropHuntValue(settings.PropHuntShotHealing, 15f, 0f, 100f);

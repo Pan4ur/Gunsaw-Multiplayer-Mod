@@ -6,12 +6,12 @@ internal sealed class PropHuntHud : MonoBehaviour
 {
     private readonly Dictionary<GameObject, bool> hidden = new();
     private PlayerScript player;
-    private TMP_Text change, stun;
+    private TMP_Text change, stun, locator;
     private PropHuntOutline outline;
 
     private void LateUpdate()
     {
-        if (!PropHuntSystem.Enabled || !PropHuntSystem.IsProp(PlayerScript.player?.bodyScript))
+        if (!PropHuntSystem.Enabled || (!PropHuntSystem.IsProp(PlayerScript.player?.bodyScript) && !PropHuntSystem.IsHunter(MultiplayerSession.LocalPeerId)))
         {
             Restore();
             Destroy(this);
@@ -19,6 +19,19 @@ internal sealed class PropHuntHud : MonoBehaviour
         }
         player = PlayerScript.player;
         
+        if (PropHuntSystem.IsHunter(MultiplayerSession.LocalPeerId))
+        {
+            if (player == null || player.mainCanvas == null || player.ammoText == null)
+                return;
+                
+            if (locator == null)
+                locator = CreateLine(-134f);
+                
+            locator.gameObject.SetActive(PropHuntSystem.LocatorVisible && !GameManager.main.paused);
+            SetPerk(locator, "[J] Locator", PropHuntSystem.LocatorCooldown);
+            return;
+        }
+
         if (outline == null) 
             outline = gameObject.AddComponent<PropHuntOutline>();
             
@@ -82,12 +95,16 @@ internal sealed class PropHuntHud : MonoBehaviour
 
     private void Restore()
     {
-        if (outline != null) Destroy(outline);
+        outline.Let(Destroy);
+        
         foreach (var pair in hidden)
-            if (pair.Key != null) pair.Key.SetActive(pair.Value);
+            pair.Key.Let(it => it.SetActive(pair.Value));
+
         hidden.Clear();
-        if (change != null) Destroy(change.gameObject);
-        if (stun != null) Destroy(stun.gameObject);
+        
+        locator.Let(it => Destroy(it.gameObject));
+        change.Let(it => Destroy(it.gameObject));
+        stun.Let(it => Destroy(it.gameObject));
     }
 
     private void OnDestroy() => Restore();

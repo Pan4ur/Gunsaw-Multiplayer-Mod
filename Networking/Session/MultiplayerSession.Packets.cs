@@ -318,6 +318,8 @@ internal static partial class MultiplayerSession
                 TeamsCfg = settings.TeamsCfg;
                 StartingWeapon = settings.StartingWeapon;
                 RespawnWeapon = settings.RespawnWeapon;
+                PropHuntLocator = settings.PropHuntLocator;
+                PropHuntLocatorCooldown = settings.PropHuntLocatorCooldown;
                 PropHuntEnabled = settings.PropHunt;
                 PropHuntTime = settings.PropHuntTime;
                 PropHuntHunters = settings.PropHuntHunters;
