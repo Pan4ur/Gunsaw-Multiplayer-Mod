@@ -70,6 +70,8 @@ internal sealed class LobbySettings
     public string HealthFactor = "1.0";
     [LobbySetting("RegenFactor", "Multiplier for each player's health regeneration speed. Allowed range: 0 to 10.", "--regen-factor")]
     public string RegenFactor = "1.0";
+    [LobbySetting("NoNpcs", "Prevent NPCs from spawning in levels.", "--no-npcs")]
+    public bool NoNpcs;
     [LobbySetting("Blackout", "Enables darkness with a headlamp on every player.")]
     public bool Blackout;
     [LobbySetting("RestrictLight", "Makes headlamp light stop at obstacles.")]

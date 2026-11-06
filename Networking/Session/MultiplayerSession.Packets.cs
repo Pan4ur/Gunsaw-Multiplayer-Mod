@@ -336,6 +336,7 @@ internal static partial class MultiplayerSession
                 UHPValue = settings.UHPValue;
                 HealthFactor = settings.HealthFactor;
                 RegenFactor = settings.RegenFactor;
+                NoNpcs = settings.NoNpcs;
                 BlackoutEnabled = settings.BlackoutEnabled;
                 RestrictLightEnabled = settings.RestrictLightEnabled;
                 LobbySettingsReceived = true;

@@ -226,6 +226,7 @@ internal static partial class MultiplayerSession
             GGOnDeath = GunGameDeathMode.Reset;
             BrutalModeEnabled = false;
             AllowObserver = true;
+            NoNpcs = false;
             BlackoutEnabled = false;
             RestrictLightEnabled = false;
             ResetPing();
@@ -406,6 +407,7 @@ internal static partial class MultiplayerSession
     internal static bool IsHosting { get { return socket != null && relayConnected && isHost; } }
     internal static bool IsHost => IsHosting;
     internal static bool PvpEnabled { get; private set; }
+    internal static bool NoNpcs { get; private set; }
     internal static bool BlackoutEnabled { get; private set; }
     internal static bool RestrictLightEnabled { get; private set; }
     internal static bool TeamsEnabled { get; private set; }
@@ -730,6 +732,7 @@ internal static partial class MultiplayerSession
         GGOnDeath = GunGameDeathMode.Reset;
         BrutalModeEnabled = false;
         AllowObserver = true;
+        NoNpcs = false;
         BlackoutEnabled = false;
         RestrictLightEnabled = false;
         TeamsEnabled = false;
@@ -803,7 +806,7 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown, NoNpcs);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
@@ -844,6 +847,7 @@ internal static partial class MultiplayerSession
         UHPValue = LobbyHealthRule.ClampUniformHPValue(parsed.UHPValue);
         HealthFactor = LobbyHealthRule.Clamp(parsed.HealthFactor);
         RegenFactor = LobbyRegenRule.Clamp(parsed.RegenFactor);
+        NoNpcs = settings.NoNpcs;
         BlackoutEnabled = settings.Blackout;
         RestrictLightEnabled = settings.RestrictLight;
     }

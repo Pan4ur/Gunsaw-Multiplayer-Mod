@@ -17,7 +17,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, uhpValueInput, regenFactorInput, initialScaleInput, serverInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, blackoutToggle, restrictLightToggle, gunGameToggle, uniformHPToggle;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, noNpcsToggle, blackoutToggle, restrictLightToggle, gunGameToggle, uniformHPToggle;
     private TMP_InputField[] startingAmmoInputs, respawnAmmoInputs;
     private Button[] startingWeaponButtons, respawnWeaponButtons;
     private string? displayedStartingWeapons, displayedRespawnWeapons;
@@ -182,6 +182,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetInput(uhpValueInput, viewingLobbySettings ? MultiplayerSession.UHPValue.ToString("0.##") : plugin.lobbySettings.UHPValue);
         SetInput(healthFactorInput, viewingLobbySettings ? MultiplayerSession.HealthFactor.ToString("0.##") : plugin.lobbySettings.HealthFactor);
         SetInput(regenFactorInput, viewingLobbySettings ? MultiplayerSession.RegenFactor.ToString("0.##") : plugin.lobbySettings.RegenFactor);
+        SetToggle(noNpcsToggle, viewingLobbySettings ? MultiplayerSession.NoNpcs : plugin.lobbySettings.NoNpcs);
         SetToggle(blackoutToggle, viewingLobbySettings ? MultiplayerSession.BlackoutEnabled : plugin.lobbySettings.Blackout);
         SetToggle(restrictLightToggle, viewingLobbySettings ? MultiplayerSession.RestrictLightEnabled : plugin.lobbySettings.RestrictLight);
         SetInput(serverInput, plugin.lobbyServerAddress);
@@ -286,6 +287,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         uhpValueInput.interactable = interactable && plugin.lobbySettings.UniformHP;
         healthFactorInput.interactable = interactable && !plugin.lobbySettings.UniformHP;
         regenFactorInput.interactable = interactable;
+        noNpcsToggle.interactable = interactable;
         blackoutToggle.interactable = interactable;
         restrictLightToggle.interactable = interactable && plugin.lobbySettings.Blackout;
         initialScaleInput.interactable = interactable;
@@ -528,6 +530,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         regenFactorInput = CreateInput(regenFactorRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 4, value => plugin.lobbySettings.RegenFactor = value, TMP_InputField.CharacterValidation.Decimal);
         AddNumericRange(regenFactorInput, LobbyRegenRule.Clamp(float.MinValue), LobbyRegenRule.Clamp(float.MaxValue), true);
         AddTooltip(regenFactorRow.gameObject, "REGEN FACTOR: Multiplies every player's health regeneration speed. 0 disables regeneration. Allowed range: 0 to 10.");
+        noNpcsToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.NoNpcs)), "NO NPCs", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.NoNpcs = value);
+        AddTooltip(noNpcsToggle.gameObject, "NO NPCs: Prevents NPCs from spawning when levels load, including NPC spawners.");
         blackoutToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.Blackout)), "BLACKOUT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.Blackout = value);
         AddTooltip(blackoutToggle.gameObject, "BLACKOUT: Turns off level lighting and gives every player a headlamp.");
         restrictLightToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.RestrictLight)), "RESTRICT LIGHT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.RestrictLight = value);
