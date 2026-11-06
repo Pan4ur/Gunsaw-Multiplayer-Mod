@@ -135,7 +135,8 @@ jobs:
             gh release create nightly --verify-tag --draft --prerelease --latest=false --title 'Nightly (test build)' --notes-file $notesPath
             if ($LASTEXITCODE -ne 0) { throw 'Could not create the nightly prerelease.' }
           }
-          gh release upload nightly dist/GunsawMultiplayer.dll --clobber
+          Compress-Archive -LiteralPath dist/GunsawMultiplayer.dll -DestinationPath dist/GunsawMultiplayer.zip -Force
+          gh release upload nightly dist/GunsawMultiplayer.dll dist/GunsawMultiplayer.zip --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Could not upload the nightly DLL.' }
           gh release edit nightly --draft=false --prerelease --latest=false --title 'Nightly (test build)' --notes-file $notesPath
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish the nightly prerelease.' }
