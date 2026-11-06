@@ -754,12 +754,47 @@ internal static partial class MultiplayerSession
     internal static bool UpdateHostSettings(LobbySettings settings, ParsedLobbySettings parsed)
     {
         if (!IsHosting) return false;
+        var previous = CreateSettingsPacket();
         ApplyHostSettings(settings, parsed, true);
         TeamSystem.Configure(TeamsEnabled, TeamsCfg);
         RefreshHostBrutalMode();
         lock (statusLock) maxPlayers = Math.Max(2, Math.Min(64, parsed.MaxPlayers));
-        Send(CreateSettingsPacket());
+        var current = CreateSettingsPacket();
+        Send(current);
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (GameManager.main != null && scene != "LevelSelect" && scene != "LevelEditor")
+        {
+            var changes = DescribeSettingsChanges(previous, current);
+            if (changes.Count > 0)
+            {
+                BroadcastSystemChat("Lobby settings changed:");
+                foreach (var change in changes) BroadcastSystemChat(change);
+            }
+        }
         return true;
+    }
+
+    internal static List<string> DescribeSettingsChanges(SettingsPacket previous, SettingsPacket current)
+    {
+        var changes = new List<string>();
+        foreach (var field in typeof(SettingsPacket).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic))
+        {
+            var before = field.GetValue(previous);
+            var after = field.GetValue(current);
+            if (Equals(before, after)) continue;
+            var label = System.Text.RegularExpressions.Regex.Replace(field.Name, "(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ").Replace("Pvp", "PvP");
+            changes.Add(label + ": " + FormatSettingValue(before) + " -> " + FormatSettingValue(after));
+        }
+        return changes;
+    }
+
+    private static string FormatSettingValue(object value)
+    {
+        if (value is bool enabled)
+            return enabled ? "On" : "Off";
+            
+        var text = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture);
+        return string.IsNullOrEmpty(text) ? "(empty)" : text.Replace('\r', ' ').Replace('\n', ' ');
     }
 
     private static SettingsPacket CreateSettingsPacket()

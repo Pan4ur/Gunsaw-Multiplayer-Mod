@@ -182,7 +182,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
         }
         if (networkStatsVisible && MultiplayerSession.IsInLobby) UpdateNetworkStatsWidget();
         else if (networkStatsObject != null) DestroyNetworkStatsWidget();
-        if (ArsenalMenu.IsOpen) return;
+        if (ArsenalMenu.IsOpen || MultiplayerLobbyUi.IsOpenInGame) return;
         bool chatOpenKeyDown = Input.GetKeyDown(Controls.keys[Controls.OPEN_CHAT]);
         if (!chatOpen && chatOpenKeyDown && CanOpenChat(Controls.keys[Controls.OPEN_CHAT]))
         {
@@ -236,7 +236,7 @@ internal sealed class MultiplayerHud : MonoBehaviour
     private void LateUpdate()
     {
         if (HeadlessLobbyService.IsHeadlessMode) return;
-        UpdateChatCursor(chatOpen);
+        UpdateChatCursor(chatOpen || MultiplayerLobbyUi.IsOpenInGame);
         UpdateSlowmoHud();
         if (nativeUi == null) nativeUi = gameObject.GetComponent<MultiplayerHudUi>() ?? gameObject.AddComponent<MultiplayerHudUi>();
         if (replicationDebugOverlayEnabled && MultiplayerSession.IsHost)

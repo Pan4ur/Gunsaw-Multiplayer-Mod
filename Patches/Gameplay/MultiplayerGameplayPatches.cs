@@ -211,7 +211,7 @@ internal static class MultiplayerPlayerSlowmoPatch
 
             return false;
         }
-        return !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen && !TeamSystem.BlocksPlayerInput && !PropHuntSystem.BlocksInput;
+        return !MultiplayerHud.IsTyping && !MultiplayerLobbyUi.IsOpenInGame && !ArsenalMenu.IsOpen && !TeamSystem.BlocksPlayerInput && !PropHuntSystem.BlocksInput;
     }
 
     private static Exception Finalizer(PlayerScript __instance, Exception __exception, MultiplayerTimeControl.SlowmoKeyState __state)
@@ -1673,7 +1673,7 @@ internal static class ClientRestartKeyPatch
     private static void Prefix(PlayerScript __instance)
     {
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || __instance == null ||
-            GameManager.main == null || GameManager.main.paused || __instance.keys == null) return;
+            GameManager.main == null || GameManager.main.paused || MultiplayerLobbyUi.IsOpenInGame || __instance.keys == null) return;
         KeyCode restartKey;
         if (!__instance.keys.TryGetValue("Restart", out restartKey) || !Input.GetKeyDown(restartKey)) return;
         LocalPlayerReplication.KillLocalPlayer(PlayerDeathCause.SelfKill);

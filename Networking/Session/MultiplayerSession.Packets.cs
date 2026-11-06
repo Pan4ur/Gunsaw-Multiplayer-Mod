@@ -800,10 +800,30 @@ internal static partial class MultiplayerSession
 
     private static void BroadcastSystemChat(string message)
     {
-        var text = "<color=#D4AF37>" + EscapeRichText(message) + "</color>";
-        GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => MultiplayerHud.AddSystemMessage(text));
-        ChatPacket packet;
-        if (ChatService.TryCreate(text, true, out packet)) Send(packet);
+        foreach (var text in FormatSystemChat(message))
+        {
+            GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => MultiplayerHud.AddSystemMessage(text));
+            ChatPacket packet;
+            if (ChatService.TryCreate(text, true, out packet)) Send(packet);
+        }
+    }
+
+    internal static IEnumerable<string> FormatSystemChat(string message)
+    {
+        var chunk = new System.Text.StringBuilder();
+        foreach (var character in message)
+        {
+            var escaped = EscapeRichText(character.ToString());
+            if (chunk.Length + escaped.Length > 230 && !char.IsLowSurrogate(character))
+            {
+                yield return "<color=#D4AF37>" + chunk + "</color>";
+                chunk.Clear();
+            }
+            chunk.Append(escaped);
+        }
+        
+        if (chunk.Length > 0)
+            yield return "<color=#D4AF37>" + chunk + "</color>";
     }
 
     private static void SendPeerNames(ushort targetPeerId)

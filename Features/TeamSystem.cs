@@ -19,10 +19,17 @@ internal static class TeamSystem
     private static RectTransform[] pauseButtons;
     private static Vector2 pauseButtonOffset;
     internal static bool Enabled { get; private set; }
+    private static bool configuredEnabled;
+    private static string configuredSettings, configuredLobby;
     internal static bool BlocksPlayerInput => panel != null || Time.frameCount == panelClosedFrame;
 
     internal static void Configure(bool enabled, string cfg)
     {
+        cfg ??= "";
+        if (configuredEnabled == enabled && configuredSettings == cfg && configuredLobby == MultiplayerSession.LobbyId) return;
+        configuredEnabled = enabled;
+        configuredSettings = cfg;
+        configuredLobby = MultiplayerSession.LobbyId;
         Enabled = enabled;
         teams.Clear();
         playerTeams.Clear();

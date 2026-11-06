@@ -9,6 +9,11 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private GunsawMultiplayerPlugin plugin;
     private GameObject root;
     private GameObject panel;
+    private GameObject nativeOpenButton;
+    private RectTransform window;
+    private float browserPanelX;
+    private int sceneHandle = int.MinValue;
+    internal static bool IsOpenInGame { get; private set; }
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, uhpValueInput, regenFactorInput, initialScaleInput, serverInput;
@@ -108,26 +113,39 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             RefreshPendingSettings();
         }
         if (HeadlessLobbyService.IsHeadlessMode) return;
-        if (SceneManager.GetActiveScene().name != "LevelSelect")
+        var scene = SceneManager.GetActiveScene();
+        var inGame = scene.name != "LevelSelect" && GameManager.main != null && scene.name != "LevelEditor";
+        if (sceneHandle != scene.handle)
+        {
+            sceneHandle = scene.handle;
+            plugin.visible = false;
+        }
+        if (inGame && Input.GetKeyDown(KeyCode.RightShift) && (plugin.visible || (!MultiplayerHud.IsTyping && !Controls.IsTextInputSelected && !ArsenalMenu.IsOpen)))
+            plugin.visible = !plugin.visible;
+        IsOpenInGame = inGame && plugin.visible && panel != null;
+        if (scene.name != "LevelSelect" && !inGame)
         {
             if (root != null && root.activeSelf) root.SetActive(false);
             return;
         }
-        if (menu == null) menu = FindObjectOfType<MainMenuManager>();
-        if (menu == null)
-        {
-            if (root != null && root.activeSelf) root.SetActive(false);
-            return;
-        }
+        
+        if (scene.name == "LevelSelect" && menu == null)
+            menu = FindObjectOfType<MainMenuManager>();
+            
         if (root == null || customLevelBrowser == null || !customLevelBrowser.IsReady)
         {
-            if (root != null) Destroy(root);
+            if (menu == null)
+                return;
+                
+            root.Let(it => Destroy(it));
             root = null;
             panel = null;
             customLevelBrowser = null;
             Create(menu);
         }
         if (root == null) return;
+        if (scene.name == "LevelSelect" && nativeOpenButton == null && menu != null)
+            CreateNativeOpenButton(menu, FindNativeMenuButton(menu));
         if (!root.activeSelf) root.SetActive(true);
         if (panel.activeSelf != plugin.visible) panel.SetActive(plugin.visible);
         if (!plugin.visible)
@@ -146,7 +164,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         }
         var panelRect = panel.GetComponent<RectTransform>();
         var targetPanelX = customLevelBrowser != null && customLevelBrowser.IsOpen ? -300f : 0f;
-        panelRect.anchoredPosition = new Vector2(Mathf.Lerp(panelRect.anchoredPosition.x, targetPanelX, 1f - Mathf.Exp(-12f * Time.unscaledDeltaTime)), panelRect.anchoredPosition.y);
+        browserPanelX = Mathf.Lerp(browserPanelX, targetPanelX, 1f - Mathf.Exp(-12f * Time.unscaledDeltaTime));
+        panelRect.anchoredPosition = new Vector2(browserPanelX, 0f);
         FitPanelToScreen();
         customLevelBrowser?.Tick();
 
@@ -365,6 +384,11 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (template == null || templateButton == null) return;
 
         root = new GameObject("GunsawMultiplayerNativeMenu", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        DontDestroyOnLoad(root);
+        template = Instantiate(template, root.transform);
+        template.gameObject.SetActive(false);
+        templateButton = Instantiate(templateButton, root.transform);
+        templateButton.gameObject.SetActive(false);
         var canvas = root.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 500;
@@ -375,10 +399,21 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
         scaler.matchWidthOrHeight = 0.5f;
 
-        CreateNativeOpenButton(menu, templateButton);
+        CreateNativeOpenButton(menu, FindNativeMenuButton(menu));
 
-        panel = CreatePanel(root.transform, Vector2.zero, new Vector2(1320f, 900f));
+        window = new GameObject("Lobby window", typeof(RectTransform)).GetComponent<RectTransform>();
+        window.SetParent(root.transform, false);
+        window.anchorMin = Vector2.zero;
+        window.anchorMax = Vector2.one;
+        window.sizeDelta = Vector2.zero;
+        panel = CreatePanel(window, Vector2.zero, new Vector2(1320f, 900f));
+        var dragHeader = new GameObject("Drag header", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(LobbyHeaderDrag));
+        dragHeader.transform.SetParent(panel.transform, false);
+        SetRect((RectTransform)dragHeader.transform, new Vector2(0f, 417f), new Vector2(1320f, 66f));
+        dragHeader.GetComponent<Image>().color = Color.clear;
+        dragHeader.GetComponent<LobbyHeaderDrag>().Owner = this;
         var header = CreateText(panel.transform, "GUNSAW <color=#F29A64>MP</color> <color=#59616D>//</color> <color=#A6AFBC>" + GunsawMultiplayerPlugin.PluginVersion + "</color>", new Vector2(-350f, 417f), new Vector2(570f, 44f), 30, TextAlignmentOptions.Left);
+        header.raycastTarget = false;
         updateIndicator = new GameObject("Update available", typeof(RectTransform), typeof(CanvasGroup), typeof(CanvasRenderer), typeof(Image), typeof(Button));
         updateIndicator.transform.SetParent(panel.transform, false);
         SetRect((RectTransform)updateIndicator.transform, new Vector2(-635f + header.preferredWidth + 18f, 417f), new Vector2(24f, 24f));
@@ -391,7 +426,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         updateButton.onClick.AddListener(() => Application.OpenURL("https://github.com/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest"));
         AddTooltip(updateIndicator, "Your version is out of date. Click to download the latest release.");
         updateIndicator.SetActive(false);
-        CreateText(panel.transform, "Welcome back,", new Vector2(178f, 417f), new Vector2(220f, 40f), 22, TextAlignmentOptions.Right);
+        CreateText(panel.transform, "Welcome back,", new Vector2(178f, 417f), new Vector2(220f, 40f), 22, TextAlignmentOptions.Right).raycastTarget = false;
         nameInput = CreateInput(panel.transform, new Vector2(441.5f, 417f), new Vector2(279f, 40f), 32, value => plugin.playerName = value);
         nameInput.textComponent.fontSize = 24f;
         nameInput.GetComponent<Image>().color = Color.white;
@@ -646,7 +681,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         var openBrowser = CreateIconButton(customGroup.transform, LobbyIcon.Search, null, new Vector2(260f, -12f), new Vector2(44f, 42f));
         openBrowser.onClick.AddListener(() => customLevelBrowser?.Toggle());
         customLevelText = CreateText(customGroup.transform, "", new Vector2(-75f, -12f), new Vector2(400f, 28f), 13);
-        customLevelBrowser = new CustomLevelBrowserUi(plugin, root.transform, template, templateButton);
+        customLevelBrowser = new CustomLevelBrowserUi(plugin, window, template, templateButton);
         CreateCustomLevelSuggestionDialog();
 
         var connectionGroup = CreateGroup(panel.transform, "RELAY SERVER", new Vector2(-335f, 245f), new Vector2(600f, 80f));
@@ -1682,7 +1717,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
     private void CreateNativeOpenButton(MainMenuManager menu, Button source)
     {
+        if (source == null) return;
         var clone = Instantiate(source.gameObject, source.transform.parent);
+        nativeOpenButton = clone;
         clone.name = "Multiplayer Button";
         var button = clone.GetComponent<Button>();
         button.onClick = new Button.ButtonClickedEvent();
@@ -1988,6 +2025,28 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (available.x <= 0f || available.y <= 0f) return;
         var scale = Mathf.Min(1f, Mathf.Min(available.x / 1320f, available.y / 900f));
         panel.transform.localScale = new Vector3(scale, scale, 1f);
+    }
+
+    private sealed class LobbyHeaderDrag : MonoBehaviour, IBeginDragHandler, IDragHandler
+    {
+        internal MultiplayerLobbyUi Owner;
+
+        public void OnBeginDrag(PointerEventData eventData) { }
+
+        public void OnDrag(PointerEventData eventData)
+        {
+            if (eventData.button != PointerEventData.InputButton.Left)
+                return;
+                
+            var delta = eventData.delta / Owner.root.GetComponent<Canvas>().scaleFactor;
+            Owner.window.anchoredPosition += delta;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        IsOpenInGame = false;
+        root.Let(it => Destroy(it));
     }
     private static void SetInput(TMP_InputField input, string value) { if (input != null && !input.isFocused && input.text != value) input.SetTextWithoutNotify(value); }
 
