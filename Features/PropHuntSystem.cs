@@ -23,6 +23,8 @@ internal static class PropHuntSystem
     private static bool restarting;
     internal static bool FriendlyHunters(ushort first, ushort second) => Enabled && first != second && IsHunter(first) && IsHunter(second);
     internal static bool IsHunter(ushort peer) => hunters.Contains(peer);
+    internal static bool IsProtectedHunter(BodyScript body) => Enabled && phase == PropHuntPhase.Hiding && body != null &&
+        body.isAlive && IsHunter(NetworkAvatarManager.PeerIdOfBody(body)) && alive.Contains(NetworkAvatarManager.PeerIdOfBody(body));
     internal static IEnumerable<BodyScript> HunterBodies => hunters.Select(Body).Where(body => body != null);
     internal static int TotalProps => props.Count;
     internal static int AliveProps => props.Keys.Count(alive.Contains);
@@ -441,7 +443,7 @@ internal static class PropHuntSystem
         else if (phase == PropHuntPhase.HunterWins) overlay.Show("HUNTERS WIN!");
         else if (phase == PropHuntPhase.Waiting) overlay.Show("WAITING FOR PLAYERS", 1f);
         else if (phase == PropHuntPhase.Hiding && IsHunter(MultiplayerSession.LocalPeerId))
-            overlay.Show(Mathf.CeilToInt(Mathf.Max(0f, deadline - Time.unscaledTime)).ToString(), 1f);
+            overlay.Show("You're hunter!\n" + Mathf.CeilToInt(Mathf.Max(0f, deadline - Time.unscaledTime)), 1f);
         else overlay.Hide();
     }
     
@@ -507,6 +509,16 @@ internal sealed class PropHuntVitals : MonoBehaviour
 
     internal void AllowHealth(float value) => ceiling = value;
 
+    internal static bool BlockHunterDamage(BodyScript body)
+    {
+        if (!PropHuntSystem.IsProtectedHunter(body))
+            return false;
+            
+        var vitals = body.GetComponent<PropHuntVitals>();
+        body.health = vitals != null ? vitals.ceiling : NetworkAvatarManager.ReplicaForBody(body)?.lastRemoteHealth ?? body.maxHealth;
+        return true;
+    }
+
     private void LateUpdate()
     {
         if (!PropHuntSystem.Enabled)
@@ -520,7 +532,8 @@ internal sealed class PropHuntVitals : MonoBehaviour
             maxHealth = body.maxHealth;
             ceiling = body.health;
         }
-        body.health = Mathf.Min(body.health, ceiling);
+        if (!BlockHunterDamage(body))
+            body.health = Mathf.Min(body.health, ceiling);
         ceiling = body.health;
     }
 }

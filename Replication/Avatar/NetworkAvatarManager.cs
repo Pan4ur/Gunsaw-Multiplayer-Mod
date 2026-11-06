@@ -1037,6 +1037,9 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ApplyVehicleImpact(BodyScript body, VehicleImpactPacket packet)
     {
+        if (PropHuntSystem.IsProtectedHunter(body))
+            return;
+            
         if (body == null || !body.isAlive || !NetworkAvatarUtilities.IsFinite(packet.Impact) || packet.Impact <= 6f ||
             Time.unscaledTime < localRespawnProtectionUntil || KartPassengers.IsProtectedPassenger(body)) return;
         var impact = Mathf.Min(packet.Impact, 1000f);
@@ -1402,7 +1405,12 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ApplyPlayerDamage(BodyScript body, PlayerDamagePacket playerDamage)
     {
-        if (body == null) return;
+        if (body == null)
+            return;
+            
+        if (PropHuntSystem.IsProtectedHunter(body))
+            return;
+            
         if (playerDamage.HasPlayerSource && PropHuntSystem.FriendlyHunters(playerDamage.SourcePeerId, MultiplayerSession.LocalPeerId)) return;
         if (playerDamage.HasPlayerSource && playerDamage.SourcePeerId != MultiplayerSession.LocalPeerId &&
             NoPvpZoneRuntime.Protects(body, MultiplayerSession.LocalPeerId)) return;

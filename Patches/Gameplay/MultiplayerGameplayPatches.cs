@@ -828,6 +828,9 @@ internal static class ClientNpcDamagePatch
     private static bool Prefix(BodyScript __instance, bool isCrit, out NetworkAvatarManager.TargetScreenEffectState __state)
     {
         __state = NetworkAvatarManager.BeginTargetScreenEffect(__instance);
+        if (PropHuntVitals.BlockHunterDamage(__instance))
+            return false;
+            
         if (KartPassengers.IsProtectedPassenger(__instance))
             return false;
         
@@ -852,6 +855,9 @@ internal static class ClientNpcDeathPatch
 {
     private static bool Prefix(BodyScript __instance)
     {
+        if (PropHuntVitals.BlockHunterDamage(__instance))
+            return false;
+            
         NetworkAvatarManager.CaptureDeathCause(__instance);
         if (MultiplayerSession.IsInLobby && __instance != null && __instance.isPlayer)
             __instance.dropWeapon = false;
@@ -865,6 +871,9 @@ internal static class ClientNpcDeathPatch
 
     private static void Postfix(BodyScript __instance)
     {
+        if (PropHuntSystem.IsProtectedHunter(__instance))
+            return;
+            
         var localPlayer = PlayerScript.player;
         if (MultiplayerSession.IsInLobby && __instance != null && __instance.isPlayer && localPlayer != null && localPlayer.bodyScript == __instance)
             __instance.DropAllWeapons();
