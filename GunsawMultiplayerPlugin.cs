@@ -778,8 +778,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void JoinLobby(string id)
     {
-        var lobby = lobbies.Find(item => item.id == id && string.Equals(item.server, masterUrl.Value, StringComparison.OrdinalIgnoreCase));
-        JoinLobby(lobby ?? new LobbyInfo { id = id, server = masterUrl.Value });
+        RunOnMainThread(() =>
+        {
+            var lobby = lobbies.Find(item => item.id == id && string.Equals(item.server, masterUrl.Value.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
+            JoinLobby(lobby ?? new LobbyInfo { id = id, server = masterUrl.Value });
+        });
     }
 
     internal bool IsLobbyOnAnotherServer(LobbyInfo lobby)
@@ -787,8 +790,14 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return !string.Equals(lobby.server, masterUrl.Value.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
     }
 
-    internal void JoinLobby(LobbyInfo lobby)
+    internal void JoinLobby(LobbyInfo lobby, string? password = null)
     {
+        if (!CanJoinLobby) return;
+        if (lobby.hasPassword && password == null)
+        {
+            multiplayerLobbyUi.ShowPasswordDialog(lobby);
+            return;
+        }
         lock (joinLock)
         {
             if (joinInProgress || MultiplayerSession.IsHosting || MultiplayerSession.IsActive) return;
@@ -803,7 +812,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 Config.Save();
             }
             status = "Joining lobby...";
-            ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(lobby.server, lobby.id, lobby.connectionMode));
+            ThreadPool.QueueUserWorkItem(_ => JoinLobbyRequest(lobby, password ?? ""));
         }
         catch (Exception e)
         {
@@ -942,11 +951,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return joinedLobbyId;
     }
 
-    private void JoinLobbyRequest(string server, string id, ConnectionMode listedMode)
+    private void JoinLobbyRequest(LobbyInfo lobby, string password)
     {
         try
         {
-            var response = HttpAt(server, "POST", "/v1/lobbies/" + id + "/join", JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName, modVersion = PluginVersion }), null);
+            var response = HttpAt(lobby.server, "POST", "/v1/lobbies/" + lobby.id + "/join", JsonUtility.ToJson(new JoinLobbyPayload { playerName = playerName, modVersion = PluginVersion, password = password }), null);
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "relayKey");
             var relayAddress = JsonString(response, "relayAddress");
@@ -954,7 +963,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var hostPeerId = (ushort)Mathf.Clamp(JsonInt(response, "hostPeerId"), 1, 64);
             var maxPlayers = Mathf.Clamp(JsonInt(response, "maxPlayers"), 2, 64);
             var modeText = JsonString(response, "connectionMode");
-            var mode = string.IsNullOrEmpty(modeText) ? listedMode : ParseConnectionMode(modeText);
+            var mode = string.IsNullOrEmpty(modeText) ? lobby.connectionMode : ParseConnectionMode(modeText);
             if (string.IsNullOrEmpty(relayAddress)) relayAddress = DefaultRelayServer;
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) 
                 throw new InvalidDataException("Invalid directory response.");
@@ -969,7 +978,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             RunOnMainThread(() =>
             {
                 SetJoinInProgress(false);
-                status = "Could not join lobby: " + GetDirectoryErrorMessage(exception.Message);
+                var error = GetDirectoryErrorMessage(exception.Message);
+                status = "Could not join lobby: " + error;
+                if (error.StartsWith("Incorrect password.", StringComparison.Ordinal))
+                {
+                    lobby.hasPassword = true;
+                    multiplayerLobbyUi.ShowPasswordDialog(lobby, error);
+                }
             });
         }
     }
@@ -1143,6 +1158,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 map = JsonString(item, "map"),
                 players = JsonInt(item, "players"),
                 maxPlayers = JsonInt(item, "maxPlayers"),
+                hasPassword = JsonBool(item, "hasPassword"),
                 pvp = JsonBool(item, "pvp"),
                 propHunt = JsonBool(item, "propHunt"),
                 gunGame = JsonBool(item, "gunGame"),
@@ -1221,6 +1237,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         return new CreateLobbyRequest
         {
             name = requestedLobbyName,
+            password = settings.Password,
             hostName = requestedPlayerName,
             map = map,
             players = players,
@@ -1361,6 +1378,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     [Serializable]
     internal sealed class LobbyInfo
     {
+        public bool hasPassword;
         public string server = "";
         public string id = "";
         public string name = "";
@@ -1404,6 +1422,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     [Serializable]
     private sealed class JoinLobbyPayload
     {
+        public string password = "";
         public string playerName = "";
         public string modVersion = "";
     }
@@ -1418,6 +1437,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     [Serializable]
     private sealed class CreateLobbyRequest
     {
+        public string password = "";
         public string name = "";
         public string hostName = "";
         public string map = "";

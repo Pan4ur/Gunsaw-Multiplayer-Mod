@@ -11,6 +11,8 @@ internal enum GunGameDeathMode : byte
 [Serializable]
 internal sealed class LobbySettings
 {
+    [LobbySetting("Password", "Password required to join new lobbies. Leave empty for an open lobby.", "--password")]
+    public string Password = "";
     [LobbySetting("Pvp", "Enable PvP in new lobbies.", "--pvp")]
     public bool Pvp;
     [LobbySetting("CanGrab", "Allow player grabbing in new lobbies.", "--can-grab")]

@@ -65,6 +65,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private Button presetsButton, resetButton;
     private GameObject resetSettingsDialog;
     private GameObject crossServerDialog;
+    private GameObject passwordDialog;
+    private TMP_InputField passwordInput, joinPasswordInput;
+    private TMP_Text passwordDialogMessage;
     private GunsawMultiplayerPlugin.LobbyInfo pendingJoinLobby;
     private Button customLevelActionButton;
     private GameObject updateIndicator;
@@ -136,6 +139,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             if (teamsEditor != null) teamsEditor.SetActive(false);
             if (resetSettingsDialog != null) resetSettingsDialog.SetActive(false);
             if (crossServerDialog != null) crossServerDialog.SetActive(false);
+            if (passwordDialog != null) ClosePasswordDialog();
             customLevelBrowser?.SetOpen(false);
             SetServerBrowserOpen(false);
             return;
@@ -148,6 +152,9 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
         SetInput(nameInput, plugin.playerName);
         var viewingLobbySettings = MultiplayerSession.IsActive && !MultiplayerSession.IsHost;
+        SetInput(passwordInput, viewingLobbySettings ? "" : plugin.lobbySettings.Password);
+        if (passwordDialog != null && passwordDialog.activeSelf && (Input.GetKeyDown(KeyCode.Escape) || !plugin.CanJoinLobby))
+            ClosePasswordDialog();
         SetInput(lobbyInput, viewingLobbySettings ? plugin.JoinedLobbyName : plugin.lobbyName);
         SetInput(maxPlayersInput, viewingLobbySettings ? MultiplayerSession.MaxPlayers.ToString() : plugin.lobbySettings.MaxPlayers);
         SetInput(respawnInput, viewingLobbySettings ? MultiplayerSession.RespawnTimeSeconds.ToString() : plugin.lobbySettings.RespawnTime);
@@ -252,6 +259,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void SetLobbySettingsInteractable(bool interactable, bool allowRespawn)
     {
         lobbyInput.interactable = interactable;
+        passwordInput.interactable = interactable;
         maxPlayersInput.interactable = interactable;
         respawnInput.interactable = interactable && allowRespawn;
         numberOfLivesInput.interactable = interactable && allowRespawn;
@@ -437,6 +445,10 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             label.fontSize = 13f;
             label.color = new Color(0.65f, 0.68f, 0.72f);
         }
+        var passwordRow = CreateSettingsRow(settings, nameof(LobbySettings.Password));
+        CreateText(passwordRow, "PASSWORD", new Vector2(-185f, 0f), new Vector2(140f, 32f), 14);
+        passwordInput = CreateInput(passwordRow, new Vector2(80f, 0f), new Vector2(350f, 36f), 128, value => plugin.lobbySettings.Password = value);
+        AddTooltip(passwordRow.gameObject, "PASSWORD: Required to join this lobby. Leave empty to allow anyone to join.");
         pvpToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.Pvp)), "PVP", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.Pvp = value);
         AddTooltip(pvpToggle.gameObject, "PVP: Enables damage between players. Some functions, such as teammate position markers or the /tp command, will not work in this mode.");
         grabToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.CanGrab)), "CAN GRAB", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.CanGrab = value);
@@ -667,6 +679,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         CreatePresetManager();
         CreateResetSettingsDialog();
         CreateCrossServerDialog();
+        CreatePasswordDialog();
         CreateWeaponPicker();
         CreateSequenceEditor();
         CreateTeamsEditor();
@@ -1263,6 +1276,56 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             plugin.JoinLobby(pendingJoinLobby);
         });
         crossServerDialog.SetActive(false);
+    }
+
+    private void CreatePasswordDialog()
+    {
+        passwordDialog = CreatePanel(root.transform, Vector2.zero, Vector2.zero);
+        passwordDialog.name = "Lobby Password";
+        var overlay = passwordDialog.GetComponent<RectTransform>();
+        overlay.anchorMin = Vector2.zero;
+        overlay.anchorMax = Vector2.one;
+        overlay.offsetMin = Vector2.zero;
+        overlay.offsetMax = Vector2.zero;
+        passwordDialog.GetComponent<Image>().color = Color.clear;
+        var dialog = CreatePanel(passwordDialog.transform, Vector2.zero, new Vector2(580f, 300f));
+        CreateText(dialog.transform, "LOBBY PASSWORD", new Vector2(0f, 104f), new Vector2(540f, 40f), 24, TextAlignmentOptions.Center, FontStyles.UpperCase);
+        passwordDialogMessage = CreateText(dialog.transform, "Enter the password to join this lobby.", new Vector2(0f, 50f), new Vector2(520f, 54f), 16, TextAlignmentOptions.Center);
+        passwordDialogMessage.enableWordWrapping = true;
+        joinPasswordInput = CreateInput(dialog.transform, new Vector2(0f, -8f), new Vector2(460f, 42f), 128, _ => { });
+        var join = CreateButton(dialog.transform, "JOIN", new Vector2(-125f, -100f), new Vector2(210f, 44f));
+        join.onClick.AddListener(SubmitPassword);
+        joinPasswordInput.onSubmit.AddListener(_ => SubmitPassword());
+        var cancel = CreateButton(dialog.transform, "CANCEL", new Vector2(125f, -100f), new Vector2(210f, 44f));
+        cancel.onClick.AddListener(ClosePasswordDialog);
+        passwordDialog.SetActive(false);
+    }
+
+    internal void ShowPasswordDialog(GunsawMultiplayerPlugin.LobbyInfo lobby, string error = "")
+    {
+        plugin.visible = true;
+        if (passwordDialog == null) Configure(plugin);
+        if (passwordDialog == null) return;
+        pendingJoinLobby = lobby;
+        passwordDialogMessage.text = error.Length == 0 ? "Enter the password to join this lobby." : error;
+        joinPasswordInput.SetTextWithoutNotify("");
+        passwordDialog.transform.SetAsLastSibling();
+        passwordDialog.SetActive(true);
+        joinPasswordInput.ActivateInputField();
+    }
+
+    private void ClosePasswordDialog()
+    {
+        passwordDialog.SetActive(false);
+        joinPasswordInput.SetTextWithoutNotify("");
+    }
+
+    private void SubmitPassword()
+    {
+        if (!passwordDialog.activeSelf || !plugin.CanJoinLobby || string.IsNullOrEmpty(joinPasswordInput.text)) return;
+        var password = joinPasswordInput.text;
+        ClosePasswordDialog();
+        plugin.JoinLobby(pendingJoinLobby, password);
     }
 
     private void RequestJoinLobby(GunsawMultiplayerPlugin.LobbyInfo lobby)
@@ -1964,6 +2027,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             hash = hash * 31 + (lobby.map ?? "").GetHashCode();
             hash = hash * 31 + lobby.players;
             hash = hash * 31 + lobby.maxPlayers;
+            hash = hash * 31 + (lobby.hasPassword ? 1 : 0);
             hash = hash * 31 + (lobby.teams ? 1 : 0);
             hash = hash * 31 + (lobby.pvp ? 1 : 0);
             hash = hash * 31 + (lobby.propHunt ? 1 : 0);
@@ -1982,14 +2046,26 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             row.name = "Lobby";
             row.AddComponent<LayoutElement>().preferredHeight = 94f;
             var map = lobby.map == "LevelLoader" ? "Custom level" : LevelNames.Resolve(lobby.map ?? "");
-            var title = CreateText(row.transform, lobby.name, new Vector2(-48f, 24f), new Vector2(400f, 28f), 18, TextAlignmentOptions.Left, FontStyles.Bold);
+            var textWidth = lobby.hasPassword ? 370f : 400f;
+            var textX = lobby.hasPassword ? -63f : -48f;
+            if (lobby.hasPassword)
+            {
+                var lockIcon = new GameObject("Password Lock", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                lockIcon.transform.SetParent(row.transform, false);
+                SetRect(lockIcon.GetComponent<RectTransform>(), new Vector2(170f, 4f), new Vector2(24f, 24f));
+                var image = lockIcon.GetComponent<Image>();
+                image.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.editor-lock.png", 16f, new Vector2(0.5f, 0.5f));
+                image.preserveAspect = true;
+                AddTooltip(lockIcon, "Password required");
+            }
+            var title = CreateText(row.transform, lobby.name, new Vector2(textX, 24f), new Vector2(textWidth, 28f), 18, TextAlignmentOptions.Left, FontStyles.Bold);
             title.richText = false;
             title.gameObject.AddComponent<CyclingLabel>().SetValue(lobby.name ?? "");
-            var details = CreateText(row.transform, lobby.hostName + " / " + map, new Vector2(-48f, -4f), new Vector2(400f, 24f), 13);
+            var details = CreateText(row.transform, lobby.hostName + " / " + map, new Vector2(textX, -4f), new Vector2(textWidth, 24f), 13);
             details.richText = false;
             details.overflowMode = TextOverflowModes.Ellipsis;
             details.color = new Color(0.62f, 0.65f, 0.69f);
-            CreateText(row.transform, LobbyModes(lobby), new Vector2(-48f, -29f), new Vector2(400f, 22f), 12);
+            CreateText(row.transform, LobbyModes(lobby), new Vector2(textX, -29f), new Vector2(textWidth, 22f), 12);
             CreateText(row.transform, lobby.players + "/" + lobby.maxPlayers, new Vector2(222f, -34f), new Vector2(64f, 18f), 11, TextAlignmentOptions.Center);
             if (!IsLobbyVersionCompatible(lobby.modVersion))
             {
