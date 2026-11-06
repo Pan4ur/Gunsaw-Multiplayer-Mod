@@ -792,7 +792,7 @@ internal static partial class MultiplayerSession
             var after = field.GetValue(current);
             if (Equals(before, after)) continue;
             var label = System.Text.RegularExpressions.Regex.Replace(field.Name, "(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ").Replace("Pvp", "PvP");
-            changes.Add(label + ": " + FormatSettingValue(before) + " -> " + FormatSettingValue(after));
+            changes.Add(label + ": " + FormatSettingValue(before) + " to " + FormatSettingValue(after));
         }
         return changes;
     }

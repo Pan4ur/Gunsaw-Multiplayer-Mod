@@ -2198,7 +2198,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         row.AddComponent<LayoutElement>().preferredHeight = 58f;
         var portrait = new GameObject("Character head", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         portrait.transform.SetParent(row.transform, false);
-        SetRect((RectTransform)portrait.transform, new Vector2(-222f, 0f), new Vector2(40f, 40f));
+        SetRect((RectTransform)portrait.transform, new Vector2(-228.5f, 0f), new Vector2(40f, 40f));
         var image = portrait.GetComponent<Image>();
         image.sprite = CharacterHead(characterPrefab);
         image.preserveAspect = true;

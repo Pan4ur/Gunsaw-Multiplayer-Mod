@@ -401,11 +401,11 @@ internal static class PropHuntSystem
         if (weapon != null)
         {
             body.weapons[0] = weapon;
-            body.weaponAmmos[0] = Math.Min(weapon.magSize, 100);
+            body.weaponAmmos[0] = weapon.magSize;
             body.currentWeapon = 0;
             body.ChangeWeapon(0);
             while (body.ammoAmount.Count <= weapon.ammoType) body.ammoAmount.Add(0);
-            body.ammoAmount[weapon.ammoType] = 100 - body.weaponAmmos[0];
+            body.ammoAmount[weapon.ammoType] = 999;
             PlayerScript.player?.BodyAmmoChanged();
         }
         equippedBody = body;
