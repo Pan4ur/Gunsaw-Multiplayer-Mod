@@ -186,10 +186,18 @@ internal static class ScoreboardSystem
         var total = PerformanceValue(score);
         var mission = MissionManager.main;
         var kills = mission == null || mission.totalEnemyCount <= 0 ? 0f : Mathf.Clamp01((float)mission.killAmount / mission.totalEnemyCount);
-        if (total < .75f) return "D";
-        if (total < .85f) return "C";
-        if (total < .9f) return "B";
-        if (total < .95f) return "A";
+        switch (total)
+        {
+            case < .75f:
+                return "D";
+            case < .85f:
+                return "C";
+            case < .9f:
+                return "B";
+            case < .95f:
+                return "A";
+        }
+
         if (kills >= 1f && GameManager.main != null && GameManager.main.swapAmount > 0)
             return GameManager.main.hardMode ? "X" : "U";
         return "S";

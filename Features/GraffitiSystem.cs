@@ -45,6 +45,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
     private SpriteRenderer previewRenderer;
     private float pressStarted;
     private bool holdingT, pickerOpen, placing;
+    private int scrollCaptureFrame = -1;
     private float previewScale = 1f, previewRotation;
     private FileSystemWatcher libraryWatcher;
     private int libraryDirty;
@@ -178,6 +179,9 @@ internal sealed class GraffitiSystem : MonoBehaviour
 
     private void HandleInput()
     {
+        if (pickerOpen || placing)
+            scrollCaptureFrame = Time.frameCount;
+
         if (Input.GetKeyDown(Controls.keys[Controls.GRAFFITI]))
         {
             holdingT = true;
@@ -811,6 +815,9 @@ internal sealed class GraffitiSystem : MonoBehaviour
     internal static bool IsPickerOpen => instance != null && instance.pickerOpen;
     
     internal static bool IsPlacementPreview => instance != null && instance.placing;
+    internal static Vector2 GameplayScrollDelta() =>
+        IsPickerOpen || IsPlacementPreview || (instance != null && instance.scrollCaptureFrame == Time.frameCount) ? Vector2.zero : Input.mouseScrollDelta;
+
     internal static bool ShowGraffiti => showGraffiti;
 
     internal static void SetShowGraffiti(bool value)

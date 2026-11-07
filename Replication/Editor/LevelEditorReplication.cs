@@ -1261,7 +1261,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         if (camera == null) 
             return;
         
-        camera.orthographicSize = Mathf.Clamp(camera.orthographicSize - Input.mouseScrollDelta.y, 1f, 50f);
+        camera.orthographicSize = Mathf.Clamp(camera.orthographicSize - GraffitiSystem.GameplayScrollDelta().y, 1f, 50f);
        
         if (Input.GetMouseButtonDown(1))
             editor!.camGrabPos = camera.ScreenToWorldPoint(Input.mousePosition);

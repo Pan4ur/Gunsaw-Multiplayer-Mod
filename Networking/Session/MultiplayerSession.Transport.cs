@@ -259,9 +259,7 @@ internal static partial class MultiplayerSession
         var shouldProbe = false;
         lock (statusLock)
         {
-            P2PPeer peer;
-            var knownEndpoint = p2pPeers.TryGetValue(peerId, out peer) &&
-                EndpointsEqual(peer.Endpoint, endpoint);
+            var knownEndpoint = p2pPeers.TryGetValue(peerId, out var peer) && EndpointsEqual(peer.Endpoint, endpoint);
             if (!knownEndpoint)
             {
                 peer = new P2PPeer { Endpoint = endpoint };
@@ -271,7 +269,6 @@ internal static partial class MultiplayerSession
             else if (!peer.Connected) shouldProbe = true;
             if (shouldProbe) peer.NextProbeTicks = DateTime.UtcNow.Ticks + P2PProbeRetryTicks;
         }
-        GunsawMultiplayerPlugin.LogInfo("P2P candidate for peer " + peerId + ": " + endpoint + ".");
         if (shouldProbe) SendDirectProbe(peerId);
     }
 
@@ -305,7 +302,6 @@ internal static partial class MultiplayerSession
             if (datagram.Length == 21 && peer.LocalEndpoint != null) return true;
             peer.LocalEndpoint = new IPEndPoint(address, port);
         }
-        GunsawMultiplayerPlugin.LogInfo("P2P local candidate for peer " + peerId + ": " + new IPEndPoint(address, port) + ".");
         SendDirectProbe(peerId);
         return true;
     }

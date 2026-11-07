@@ -678,9 +678,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         }
 
         var requestedChange = Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A) ||
-            Input.GetKeyDown(KeyCode.Q) || Input.mouseScrollDelta.y < 0f;
+            Input.GetKeyDown(KeyCode.Q) || GraffitiSystem.GameplayScrollDelta().y < 0f;
         var requestedNext = Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D) ||
-            Input.GetKeyDown(KeyCode.E) || Input.mouseScrollDelta.y > 0f;
+            Input.GetKeyDown(KeyCode.E) || GraffitiSystem.GameplayScrollDelta().y > 0f;
         var selectedIndex = -1;
         for (var index = 0; index < candidates.Count; index++)
             if (candidates[index].remotePeerId == spectatorPeerId)
