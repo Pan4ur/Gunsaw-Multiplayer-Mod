@@ -297,9 +297,9 @@ public class WorldEnvironmentReplication
         foreach (var pair in world.buttons)
         {
             var button = pair.Value;
-            if (button == null || !button.activateOnce ||
+            if (button == null || !button.activateOnce || !OneTimeButtonReactivation.CanReactivate(button) ||
                 (!MultiplayerSession.IsHost && (!world.receivedButtonActivations.TryGetValue(pair.Key, out var activations) || activations == 0)) ||
-                (MultiplayerSession.IsHost && (!OneTimeButtonReactivation.IsUsed(button) || !OneTimeButtonReactivation.CanReactivate(button))) ||
+                (MultiplayerSession.IsHost && !OneTimeButtonReactivation.IsUsed(button)) ||
                 ((Vector2)button.transform.position - (Vector2)body.transform.position).sqrMagnitude > 4f) continue;
             world.promptButton = button;
             break;

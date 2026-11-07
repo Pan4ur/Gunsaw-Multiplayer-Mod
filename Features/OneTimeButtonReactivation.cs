@@ -8,7 +8,7 @@ internal static class OneTimeButtonReactivation
 
     internal static bool IsUsed(ButtonScript button) => button != null && used.Contains(button);
 
-    internal static bool CanReactivate(ButtonScript button) => button != null && (!cooldown.TryGetValue(button, out var time) || Time.unscaledTime >= time);
+    internal static bool CanReactivate(ButtonScript button) => button != null && button.GetComponent<PermanentOneTimeButton>() == null && (!cooldown.TryGetValue(button, out var time) || Time.unscaledTime >= time);
 
     internal static void Clear()
     {
@@ -19,7 +19,7 @@ internal static class OneTimeButtonReactivation
 
     internal static void Reactivate(ButtonScript button)
     {
-        if (button == null || !IsUsed(button)) return;
+        if (!CanReactivate(button) || !IsUsed(button)) return;
         reactivating.Add(button);
         button.Activated();
     }
