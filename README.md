@@ -5,41 +5,49 @@
 
 I only recently learned that another multiplayer project for Gunsaw has been in development, and until then I had no idea it existed. I sincerely wish you the best with your project and hope it continues to grow. My goal is simply to contribute to the community by providing a multiplayer experience and a platform for creating and testing custom maps and ideas :)
 
-![icon](img/preview.gif)
+![lobbyui](img/MPUI.png)
+![cle](img/CLE.png)
+![COOP](img/Coop.png)
+[![PVP](img/PvP.png)](https://youtu.be/LoKfURymy3c?si=6nA0JOXsJi0h0Tlp)
+![GG](img/GG.png)
+![BO](img/Blackout.png)
+![BO+](img/Blackout+.png)
+[![PH](img/PropHunt.png)](https://youtu.be/lIiawFec4HM?si=wMbhd0q6I916qxPI)
+![CProps](img/CProps.png)
+![CoLE](img/CoLE.png)
 
 YT: [Showcase](https://youtu.be/aYmxX_OQOis) | [Gameplay](https://youtu.be/p0NstRIiTQ8)
 
 MP Features:
 
-- Multiplayer for up to 64 players
-- PVP and CO-OP modes
 - Text chat
 - Player nametags and off-screen teammate markers
 - Configurable respawning
 - Player-to-player collisions can be enabled or disabled
 - Multiplayer scoreboard with kills, deaths, accuracy, headshots and ranks
 - Mission MVP and multiplayer leaderboard
-- Host-controlled cheats and multiplayer settings
 - When a player dies, they either respawn or enter spectator mode
 - Players can grab each other with the gravity laser
 - Players can carry each other
 - Players can ride in the same vehicle
-- Players can change their character with /swap
-- Players can change their size with /scale
-- /tp teleports you to another player in CO-OP
-- /spawn returns you to the map spawn point
-- The Host can ban players with /ban
-- Custom levels are automatically transferred from the Host to clients
-- Custom level browser with online and local level libraries
 - Players can suggest custom levels to the Host
-- Custom level ranks
 - Team mode with team selection, team scores and team spawn points
 - Configurable starting and respawn weapons and ammo
 - Configurable number of lives per level
 - P2P and Relay connection modes
 - Discord RPC
-- Blackout mode (lights are off, headlamp only)
-- Co-op level editing
+
+MP Chat commands:
+> Pressing TAB automatically completes what you have typed
+- /spawn - teleports to spawn
+- /kill - kills you
+- /tp <name> - teleports to the player
+- /ban <name> - ban a player (by IP for 1 hour)
+- /kick <name> - kick a player
+- /me <text> - send a text message about the performer to the chat, written from the perspective of a third party
+- /swap <specie> - change specie
+- /changeteam - open the team selection UI
+- /balanceteams - balance the teams (in terms of the number of players)
 
 Props:
 - NPC spawner
@@ -48,6 +56,7 @@ Props:
 - Lamps now have an id to toggle and [angle](img/lamp_angle.png)
 - Player spawn points now have a Team ID field: 0 = first team in TEAMS CFG, 1 = second, etc. Leave it empty for a shared spawn
 - Weapons (props) now have a respawn time
+- One-time buttons can be reactivated, but you can set "Activate Once = 2" if you are certain that they will not lead to a soft-lock
 - Medical station
 
 ## Installation
