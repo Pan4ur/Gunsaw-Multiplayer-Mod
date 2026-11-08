@@ -7,6 +7,10 @@
     {
       "address": "ny.expie.fun",
       "location": "USA"
+    },
+    {
+      "address": "msk.expie.fun",
+      "location": "Moscow (test until 09.11.26)"
     }
   ]
 }
