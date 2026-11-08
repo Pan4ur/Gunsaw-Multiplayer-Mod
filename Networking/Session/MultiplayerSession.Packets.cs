@@ -33,7 +33,7 @@ internal static partial class MultiplayerSession
                 string customLevel;
                 lock (statusLock) customLevel = hostCustomLevel;
                 if (!string.IsNullOrEmpty(customLevel)) QueueCustomLevelTransfer(customLevel, senderId);
-                Send(new ScenePacket(hostScene + "\n" + hostSceneEpoch), senderId, false);
+                Send(CreateHostScenePacket(hostScene, hostSceneEpoch), senderId, false);
                 Send(CreateSettingsPacket(), senderId);
                 SendPeerNames(senderId);
                 Send(new PeerNamePacket(senderId, connectedName));
@@ -101,17 +101,24 @@ internal static partial class MultiplayerSession
                     lock (statusLock)
                     {
                         if (payload == lastReceivedHostScene) continue;
-                        lastReceivedHostScene = payload;
                         var scene = payload;
                         var reload = false;
                         var customLevelTransferId = 0;
+                        var customLevelHash = "";
                         var split = payload.IndexOf('\n');
                         if (split > 0)
                         {
                             scene = payload.Substring(0, split);
                             var rest = payload.Substring(split + 1);
                             var fields = rest.Split('\n');
-                            rest = fields[0];
+                            var hasEpoch = int.TryParse(fields[0], out var epoch);
+                            if (hasEpoch && epoch < expectedSceneEpoch) continue;
+                            var hashField = fields.Skip(1).FirstOrDefault(value => value.StartsWith("H", StringComparison.Ordinal));
+                            if (hashField != null)
+                            {
+                                customLevelHash = hashField.Substring(1).ToLowerInvariant();
+                                if (customLevelHash.Length != 64 || customLevelHash.Any(value => !Uri.IsHexDigit(value))) continue;
+                            }
                             for (var index = 1; index < fields.Length; index++)
                             {
                                 if (fields[index] == "R") reload = true;
@@ -124,15 +131,17 @@ internal static partial class MultiplayerSession
                                     int.TryParse(fields[index].Substring(1), out customLevelTransferId);
                             }
 
-                            if (int.TryParse(rest, out var epoch) && epoch != expectedSceneEpoch)
+                            if (hasEpoch && epoch != expectedSceneEpoch)
                             {
                                 pendingSceneAdvanced = expectedSceneEpoch >= 0;
                                 expectedSceneEpoch = epoch;
                             }
                         }
+                        lastReceivedHostScene = payload;
                         pendingScene = scene;
                         pendingSceneReload = reload;
                         pendingSceneCustomLevelTransferId = customLevelTransferId;
+                        pendingSceneCustomLevelHash = customLevelHash;
                     }
                 }
             }
@@ -915,6 +924,7 @@ internal static partial class MultiplayerSession
 
     private static void ClearPeerQueuesLocked()
     {
+        pendingSceneCustomLevelHash = "";
         receivedCustomLevelTransferId = 0;
         receivedCustomLevelComplete = false;
         blockedPeers.Clear();

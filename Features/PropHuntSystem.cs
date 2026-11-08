@@ -166,12 +166,14 @@ internal static class PropHuntSystem
         
         if (!restarting && round.RestartDue(Time.unscaledTime))
         {
-            restarting = true;
+            var loader = SceneLoader.main;
+            if (loader == null || loader.isLoading) return;
             previousHunters.Clear();
             previousHunters.UnionWith(round.Hunters);
             ScoreboardSystem.PreserveForNextScene();
             MultiplayerSession.MarkNextSceneReloadAutoRestart();
             GameManager.main.Restart();
+            restarting = loader.isLoading;
             return;
         }
         

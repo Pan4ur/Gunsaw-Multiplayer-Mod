@@ -45,9 +45,10 @@ internal static class CustomLevelProgress
 
     private static string ScoreKey(string code) => GetHash(code) + "score";
 
-    private static string GetHash(string code)
+    internal static string GetHash(string code)
     {
-        var bytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(code ?? ""));
+        using var hash = SHA256.Create();
+        var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(code ?? ""));
         return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
     }
 }

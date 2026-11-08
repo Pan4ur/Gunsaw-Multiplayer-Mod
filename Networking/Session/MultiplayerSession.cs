@@ -30,6 +30,7 @@ internal static partial class MultiplayerSession
     private static string pendingScene = "";
     private static bool pendingSceneReload;
     private static int pendingSceneCustomLevelTransferId;
+    private static string pendingSceneCustomLevelHash = "";
     private static bool autoRestartSceneReload;
     private static bool pendingSceneAdvanced;
     private static int hostSceneEpoch;
@@ -37,6 +38,7 @@ internal static partial class MultiplayerSession
     private static int expectedSceneEpoch = -1;
     private static string lastReceivedHostScene = "";
     private static string hostCustomLevel = "";
+    private static string hostCustomLevelHash = "";
     private static string pendingCustomLevel = "";
     private static int pendingCustomLevelTransferId;
     private static readonly PeerRegistry peers = new PeerRegistry();
@@ -133,6 +135,7 @@ internal static partial class MultiplayerSession
             ClearPeerQueuesLocked();
             hostDisconnectPending = false;
             hostCustomLevel = "";
+            hostCustomLevelHash = "";
             pendingCustomLevel = "";
             pendingScene = "";
             pendingSceneReload = false;
@@ -181,6 +184,7 @@ internal static partial class MultiplayerSession
                 ClearPeerQueuesLocked();
                 hostDisconnectPending = false;
                 hostCustomLevel = "";
+                hostCustomLevelHash = "";
                 pendingCustomLevel = "";
                 pendingScene = "";
                 pendingSceneReload = false;
@@ -265,7 +269,7 @@ internal static partial class MultiplayerSession
         if (!isHost || string.IsNullOrEmpty(scene) || !string.IsNullOrEmpty(hostCustomLevel)) return;
         if (hostScene == scene) return;
         hostScene = scene;
-        Send(new ScenePacket(scene + "\n" + hostSceneEpoch), 0, false);
+        Send(CreateHostScenePacket(scene, hostSceneEpoch), 0, false);
     }
 
     internal static void NoteHostSceneHandle(int handle)
@@ -286,7 +290,7 @@ internal static partial class MultiplayerSession
         }
         
         if (!string.IsNullOrEmpty(customScene))
-            Send(new ScenePacket(customScene + "\n" + epoch), 0, false);
+            Send(CreateHostScenePacket(customScene, epoch), 0, false);
     }
 
     internal static int SnapshotEpoch { get { lock (statusLock) return hostSceneEpoch; } }
@@ -304,7 +308,14 @@ internal static partial class MultiplayerSession
         int epoch;
         lock (statusLock) { scene = hostScene; epoch = hostSceneEpoch; }
         if (string.IsNullOrEmpty(scene)) return;
-        Send(new ScenePacket(scene + "\n" + epoch), 0, false);
+        Send(CreateHostScenePacket(scene, epoch), 0, false);
+    }
+
+    private static ScenePacket CreateHostScenePacket(string scene, int epoch, string suffix = "")
+    {
+        lock (statusLock)
+            return new ScenePacket(scene + "\n" + epoch + suffix +
+                (scene == "LevelLoader" && !string.IsNullOrEmpty(hostCustomLevelHash) ? "\nH" + hostCustomLevelHash : ""));
     }
 
     internal static string GetHostMapName()
@@ -329,7 +340,7 @@ internal static partial class MultiplayerSession
         autoRestartSceneReload = false;
         var customLevelSuffix = waitForCustomLevel && hostCustomLevelTransferId != 0
             ? "\nC" + hostCustomLevelTransferId : "";
-        Send(new ScenePacket(scene + "\n" + (hostSceneEpoch + 1) + (autoRestart ? "\nA" : "\nR") + customLevelSuffix), 0, false);
+        Send(CreateHostScenePacket(scene, hostSceneEpoch + 1, (autoRestart ? "\nA" : "\nR") + customLevelSuffix), 0, false);
     }
 
     internal static void MarkNextSceneReloadAutoRestart()
@@ -340,9 +351,13 @@ internal static partial class MultiplayerSession
     internal static void EndHostCustomLevel(string scene)
     {
         if (!isHost || string.IsNullOrEmpty(hostCustomLevel)) return;
-        lock (statusLock) hostCustomLevel = "";
+        lock (statusLock)
+        {
+            hostCustomLevel = "";
+            hostCustomLevelHash = "";
+        }
         hostScene = scene;
-        Send(new ScenePacket(scene + "\n" + hostSceneEpoch), 0, false);
+        Send(CreateHostScenePacket(scene, hostSceneEpoch), 0, false);
     }
 
     internal static void StartHostCustomLevel(string levelJson, string levelCode)
@@ -352,14 +367,19 @@ internal static partial class MultiplayerSession
             throw new InvalidOperationException("Custom level data is empty or too large.");
         if (string.IsNullOrWhiteSpace(levelCode)) throw new InvalidOperationException("Custom level code is empty.");
         levelCode = levelCode.Trim();
-        lock (statusLock) hostCustomLevel = levelCode;
+        var hash = CustomLevelProgress.GetHash(levelCode);
+        lock (statusLock)
+        {
+            hostCustomLevel = levelCode;
+            hostCustomLevelHash = hash;
+        }
         hostScene = "LevelLoader";
         hostCustomLevelTransferId = QueueCustomLevelTransfer(levelCode);
         RefreshHostBrutalMode();
         Send(CreateSettingsPacket());
     }
 
-    internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced, out int customLevelTransferId)
+    internal static bool TryTakeScene(out string scene, out bool reload, out bool epochAdvanced, out int customLevelTransferId, out string customLevelHash)
     {
         lock (statusLock)
         {
@@ -367,10 +387,12 @@ internal static partial class MultiplayerSession
             reload = pendingSceneReload;
             epochAdvanced = pendingSceneAdvanced;
             customLevelTransferId = pendingSceneCustomLevelTransferId;
+            customLevelHash = pendingSceneCustomLevelHash;
             pendingScene = "";
             pendingSceneReload = false;
             pendingSceneAdvanced = false;
             pendingSceneCustomLevelTransferId = 0;
+            pendingSceneCustomLevelHash = "";
             return !string.IsNullOrEmpty(scene);
         }
     }
@@ -387,7 +409,7 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static void DeferScene(string scene, bool reload, bool epochAdvanced, int customLevelTransferId)
+    internal static void DeferScene(string scene, bool reload, bool epochAdvanced, int customLevelTransferId, string customLevelHash)
     {
         lock (statusLock)
         {
@@ -396,6 +418,7 @@ internal static partial class MultiplayerSession
             pendingSceneReload = reload;
             pendingSceneAdvanced = epochAdvanced;
             pendingSceneCustomLevelTransferId = customLevelTransferId;
+            pendingSceneCustomLevelHash = customLevelHash;
         }
     }
 
@@ -754,6 +777,7 @@ internal static partial class MultiplayerSession
             expectedSceneEpoch = -1;
             lastReceivedHostScene = "";
             hostCustomLevel = "";
+            hostCustomLevelHash = "";
             pendingCustomLevel = "";
             hostDisconnectPending = false;
             maxPlayers = 2;

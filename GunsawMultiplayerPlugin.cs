@@ -15,7 +15,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 {
     public const string PluginGuid = "com.gunsaw.multiplayer";
     public const string PluginName = "Gunsaw Multiplayer";
-    public const string PluginVersion = "0.5.2";
+    public const string PluginVersion = "0.5.2.1";
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     internal const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
@@ -46,9 +46,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal string customLevelJson = "";
     internal string customLevelCode = "";
     private string receivedCustomLevelJson = "";
+    private string receivedCustomLevelHash = "";
+    private string loadedCustomLevelHash = "";
     private int receivedCustomLevelTransferId;
     private bool waitingForCustomLevel;
     private int waitingForCustomLevelTransferId;
+    private string waitingForCustomLevelHash = "";
     private string requestedHostScene = "";
     private bool pendingHostDisconnect;
     private float customLevelPhysicsRefreshUntil;
@@ -232,13 +235,17 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 RPCManager.instance?.UpdateCustomLevel(incomingCustomLevel);
                 CustomLevelProgress.SetActive(incomingCustomLevel);
                 receivedCustomLevelJson = levelJson;
+                receivedCustomLevelHash = CustomLevelProgress.GetHash(incomingCustomLevel);
                 receivedCustomLevelTransferId = incomingCustomLevelTransferId;
-                if (waitingForCustomLevel && (waitingForCustomLevelTransferId == 0 ||
-                    waitingForCustomLevelTransferId == incomingCustomLevelTransferId))
+                if (waitingForCustomLevel && (!string.IsNullOrEmpty(waitingForCustomLevelHash)
+                    ? receivedCustomLevelHash == waitingForCustomLevelHash
+                    : waitingForCustomLevelTransferId == 0 || waitingForCustomLevelTransferId == incomingCustomLevelTransferId))
                 {
+                    StartCustomLevelLocally(receivedCustomLevelJson);
+                    loadedCustomLevelHash = receivedCustomLevelHash;
                     waitingForCustomLevel = false;
                     waitingForCustomLevelTransferId = 0;
-                    StartCustomLevelLocally(receivedCustomLevelJson);
+                    waitingForCustomLevelHash = "";
                 }
             }
             catch (Exception e) { status = "Could not load custom level from host: " + e.Message; }
@@ -247,11 +254,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         string sceneToLoad;
         bool sceneReload, sceneEpochAdvanced;
         int sceneCustomLevelTransferId;
+        string sceneCustomLevelHash;
         if (MultiplayerSession.TryTakeScene(out sceneToLoad, out sceneReload, out sceneEpochAdvanced,
-            out sceneCustomLevelTransferId))
+            out sceneCustomLevelTransferId, out sceneCustomLevelHash))
         {
             var activeScene = SceneManager.GetActiveScene().name;
-            var mustReload = sceneReload || (sceneEpochAdvanced && sceneToLoad == activeScene);
+            var mustReload = sceneReload || (sceneEpochAdvanced && sceneToLoad == activeScene) ||
+                (sceneToLoad == "LevelLoader" && !string.IsNullOrEmpty(sceneCustomLevelHash) && sceneCustomLevelHash != loadedCustomLevelHash);
             if (!mustReload && (sceneToLoad == requestedHostScene || sceneToLoad == activeScene))
             {
                 status = "Already in host scene " + sceneToLoad + ".";
@@ -259,7 +268,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             }
             if (!LevelEditorReplication.PrepareSceneChange())
             {
-                MultiplayerSession.DeferScene(sceneToLoad, sceneReload, sceneEpochAdvanced, sceneCustomLevelTransferId);
+                MultiplayerSession.DeferScene(sceneToLoad, sceneReload, sceneEpochAdvanced, sceneCustomLevelTransferId, sceneCustomLevelHash);
                 return;
             }
             requestedHostScene = sceneToLoad;
@@ -267,25 +276,31 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             ObserverSystem.ResetForLevelChange(mustReload);
             if (sceneToLoad == "LevelLoader")
             {
-                if (sceneCustomLevelTransferId != 0 && receivedCustomLevelTransferId != sceneCustomLevelTransferId)
+                var matches = !string.IsNullOrEmpty(sceneCustomLevelHash)
+                    ? receivedCustomLevelHash == sceneCustomLevelHash
+                    : sceneCustomLevelTransferId == 0 || receivedCustomLevelTransferId == sceneCustomLevelTransferId;
+                if (matches && !string.IsNullOrEmpty(receivedCustomLevelJson))
                 {
-                    waitingForCustomLevel = true;
-                    waitingForCustomLevelTransferId = sceneCustomLevelTransferId;
-                    status = "Receiving custom level from host...";
-                }
-                else if (!string.IsNullOrEmpty(receivedCustomLevelJson))
                     StartCustomLevelLocally(receivedCustomLevelJson);
+                    loadedCustomLevelHash = receivedCustomLevelHash;
+                    waitingForCustomLevel = false;
+                    waitingForCustomLevelTransferId = 0;
+                    waitingForCustomLevelHash = "";
+                }
                 else
                 {
                     waitingForCustomLevel = true;
                     waitingForCustomLevelTransferId = sceneCustomLevelTransferId;
+                    waitingForCustomLevelHash = sceneCustomLevelHash;
                     status = "Receiving custom level from host...";
                 }
                 return;
             }
             waitingForCustomLevel = false;
             waitingForCustomLevelTransferId = 0;
+            waitingForCustomLevelHash = "";
             receivedCustomLevelJson = "";
+            receivedCustomLevelHash = loadedCustomLevelHash = "";
             receivedCustomLevelTransferId = 0;
             status = mustReload ? "Host restarted the level. Reloading..." : "Loading host scene " + sceneToLoad + "...";
             EndLocalLevelEditing();
@@ -771,6 +786,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         requestedHostScene = "";
         waitingForCustomLevel = false;
         waitingForCustomLevelTransferId = 0;
+        waitingForCustomLevelHash = "";
+        receivedCustomLevelHash = loadedCustomLevelHash = "";
         receivedCustomLevelTransferId = 0;
         nextHeartbeat = 0f;
         lastHostedPeerListRevision = -1;
@@ -879,7 +896,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         requestedHostScene = "";
         waitingForCustomLevel = false;
         waitingForCustomLevelTransferId = 0;
+        waitingForCustomLevelHash = "";
         receivedCustomLevelJson = "";
+        receivedCustomLevelHash = loadedCustomLevelHash = "";
         receivedCustomLevelTransferId = 0;
         status = "Left lobby.";
         RefreshLobbies();
