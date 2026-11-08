@@ -102,6 +102,7 @@ Props:
 - E - Reactivate one-time triggers
 - B - Play a whine
 - L - Toggle headlamp (in Blackout mode)
+- Right Shift - Open MP UI mid-game
 
 ## Crashes
 
