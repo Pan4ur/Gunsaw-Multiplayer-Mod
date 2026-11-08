@@ -814,7 +814,7 @@ internal static partial class MultiplayerSession
         {
             var formatted = yellow ? "<color=#D4AF37>" + text + "</color>" : text;
             GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => MultiplayerHud.AddSystemMessage(formatted));
-            if (ChatService.TryCreate(formatted, true, out var packet)) Send(packet);
+            if (IsInLobby && ChatService.TryCreate(formatted, true, out var packet)) Send(packet);
         }
     }
 

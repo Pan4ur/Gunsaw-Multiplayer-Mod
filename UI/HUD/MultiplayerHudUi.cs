@@ -38,7 +38,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     internal void Configure(MultiplayerHud hud)
     {
-        if (!MultiplayerSession.IsInLobby && string.IsNullOrEmpty(ArsenalMenu.Prompt) && !MedicalStationRuntime.HasCooldowns)
+        if (!MultiplayerSession.IsInLobby && string.IsNullOrEmpty(ArsenalMenu.Prompt) && !MedicalStationRuntime.HasCooldowns && !HasActiveChatAnimation(hud))
         {
             if (root != null) root.SetActive(false);
             return;
@@ -56,7 +56,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         {
             SetActive(hostPanel, false);
             SetActive(playersPanel, false);
-            SetActive(chatPanel, false);
+            SetActive(chatPanel, true);
+            UpdateChat(hud);
             input.gameObject.SetActive(false);
             chatHint.gameObject.SetActive(false);
             commandHints.gameObject.SetActive(false);
