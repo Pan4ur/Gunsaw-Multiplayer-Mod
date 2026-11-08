@@ -188,6 +188,7 @@ internal sealed class CustomLevelBrowserUi
         open = value;
         if (!value)
         {
+            panelRect.anchoredPosition = new Vector2(100f, 0f);
             if (rebuildRoutine != null) plugin.StopCoroutine(rebuildRoutine);
             rebuildRoutine = null;
             if (coverLoadRoutine != null) plugin.StopCoroutine(coverLoadRoutine);
