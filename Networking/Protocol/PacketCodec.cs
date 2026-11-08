@@ -54,7 +54,7 @@ internal static class PacketCodec
         {
             var reader = new PacketReader(payload);
             var length = reader.ReadInt32();
-            if (length < 0 || length > MaxPayloadLength) return false;
+            if (length < 0 || length > PayloadLimit(header.Type)) return false;
             using var input = new MemoryStream(data.Array!, payload.Offset + sizeof(int), payload.Count - sizeof(int), false);
             using var inflater = new DeflateStream(input, CompressionMode.Decompress);
             var decoded = new byte[length];
@@ -75,5 +75,5 @@ internal static class PacketCodec
         }
     }
 
-    private static int PayloadLimit(PacketType type) => MaxPayloadLength + (type == PacketType.Reliable ? ReliablePacket.HeaderSize : 0);
+    private static int PayloadLimit(PacketType type) => type == PacketType.Graffiti ? GraffitiSystem.MaxPacketPayloadBytes : MaxPayloadLength + (type == PacketType.Reliable ? ReliablePacket.HeaderSize : 0);
 }

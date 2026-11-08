@@ -21,7 +21,7 @@ internal readonly struct GraffitiPacket : INetworkPacket
 
     public PacketType Type => PacketType.Graffiti;
     
-    public DeliverySettings Settings => new(true, false, false);
+    public DeliverySettings Settings => new(true, false, false, true);
 
     public void Write(ref PacketWriter writer)
     {

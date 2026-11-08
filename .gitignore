@@ -3,6 +3,8 @@ obj/
 *.user
 *.suo
 *.userprefs
+*.psd
 .vs/
 .idea/
 .dependencies/
+/Examples/8bit CPU/out/
