@@ -1,8 +1,7 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public class WorldEnvironmentReplication
 {
-    private readonly HashSet<string> seenSnapshotAudio = [];
     private readonly HashSet<ActivateZoneScript> vehicleZones = [];
     
     internal void RefreshButtons()
@@ -87,53 +86,6 @@ public class WorldEnvironmentReplication
             SendFireState(id, fire);
         }
         foreach (var fire in ready) WorldReplication.Instance.pendingRuntimeFires.Remove(fire);
-    }
-    
-    internal void RefreshMechanismAudio()
-    {
-        if (MultiplayerSession.IsHost) WorldReplication.Instance.mechanismAudio.Clear();
-        CollectMechanismAudio(WorldReplication.FindObjectsOfType<DoorScript>());
-        CollectMechanismAudio(WorldReplication.FindObjectsOfType<MovingBelt>());
-        CollectMechanismAudio(WorldReplication.FindObjectsOfType<RbMoveToObj>());
-        CollectMechanismAudio(WorldReplication.FindObjectsOfType<SawScript>());
-        CollectMechanismAudio(WorldReplication.FindObjectsOfType<CustJoint>());
-    }
-    
-    private void CollectMechanismAudio<T>(T[] controllers) where T : MonoBehaviour
-    {
-        foreach (var controller in controllers)
-        {
-            if (controller == null || WorldReplication.IsGameplayOwned(controller)) continue;
-            var door = controller as DoorScript;
-            foreach (var source in controller.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source, door);
-            var parentSource = controller.GetComponentInParent<AudioSource>();
-            RegisterMechanismAudio(parentSource, door);
-            var body = controller.GetComponentInParent<Rigidbody2D>();
-            if (body == null) continue;
-            foreach (var source in body.GetComponentsInChildren<AudioSource>(true))
-                RegisterMechanismAudio(source, door);
-        }
-    }
-    
-    private void RegisterMechanismAudio(AudioSource source, DoorScript door = null)
-    {
-        if (source == null || WorldReplication.IsGameplayOwned(source)) return;
-        string id;
-        if (!WorldReplication.Instance.mechanismAudioIds.TryGetValue(source, out id))
-        {
-            id = WorldReplication.Instance.ComponentId(source);
-            WorldReplication.Instance.mechanismAudioIds[source] = id;
-        }
-        WorldReplication.Instance.mechanismAudio[id] = source;
-        if (door != null)
-        {
-            WorldReplication.Instance.doorAudioSources[source] = door;
-            WorldReplication.Instance.doorAudioBodies[source] = door.GetComponent<Rigidbody2D>();
-        }
-        if (MultiplayerSession.IsHost || WorldReplication.Instance.clientAudioWasPlaying.ContainsKey(source)) return;
-        WorldReplication.Instance.clientAudioWasPlaying[source] = source.isPlaying;
-        source.Stop();
     }
     
     internal void ApplyButtonState(string id, bool exists, uint activations)
@@ -461,55 +413,6 @@ public class WorldEnvironmentReplication
         WorldReplication.Destroy(drone);
     }
     
-    private void ApplyMechanismAudio(string id, bool playing, bool loop, float volume, float pitch)
-    {
-        AudioSource source;
-        if (!WorldReplication.Instance.mechanismAudio.TryGetValue(id, out source) || source == null) return;
-        source.loop = loop;
-        source.volume = Mathf.Clamp01(volume);
-        source.pitch = Mathf.Clamp(pitch, -3f, 3f);
-        if (playing)
-        {
-            if (!source.isPlaying && source.clip != null)
-            {
-                source.Play();
-                if (WorldReplication.Instance.doorAudioSources.ContainsKey(source)) WorldReplication.Instance.clientDoorAudioStartedAt[source] = Time.unscaledTime;
-            }
-        }
-        else if (source.isPlaying)
-        {
-            source.Stop();
-            WorldReplication.Instance.clientDoorAudioStartedAt.Remove(source);
-        }
-    }
-    
-    internal void StopSettledClientDoorAudio()
-    {
-        if (MultiplayerSession.IsHost) return;
-        var stale = WorldReplication.Instance.staleClientDoorAudio;
-        stale.Clear();
-        foreach (var pair in WorldReplication.Instance.clientDoorAudioStartedAt)
-        {
-            var source = pair.Key;
-            DoorScript door;
-            Rigidbody2D body;
-            if (!WorldReplication.Instance.doorAudioSources.TryGetValue(source, out door) ||
-                !WorldReplication.Instance.doorAudioBodies.TryGetValue(source, out body) ||
-                source == null || door == null || !source.isPlaying)
-            {
-                stale.Add(source);
-                continue;
-            }
-            if (Time.unscaledTime - pair.Value < 0.2f) continue;
-            if (body == null || body.velocity.sqrMagnitude > 0.0001f || door.point1 == null || door.point2 == null) continue;
-            var closeEnough = Mathf.Min(Vector2.Distance(door.transform.position, door.point1.position), Vector2.Distance(door.transform.position, door.point2.position)) < door.speed * 0.05f;
-            if (!closeEnough) continue;
-            source.Stop();
-            stale.Add(source);
-        }
-        foreach (var source in stale) WorldReplication.Instance.clientDoorAudioStartedAt.Remove(source);
-    }
-    
     internal WorldEnvironmentPacket CaptureEnvironment()
     {
         var world = WorldReplication.Instance;
@@ -519,14 +422,6 @@ public class WorldEnvironmentReplication
             if (buttons.Count >= ushort.MaxValue) break;
             world.buttonActivations.TryGetValue(pair.Key, out var activations);
             buttons.Add(new EnvironmentButtonState(world.WireId(pair.Key), pair.Value != null, activations));
-        }
-        var audio = new List<EnvironmentAudioState>();
-        foreach (var pair in world.mechanismAudio)
-        {
-            if (audio.Count >= ushort.MaxValue) break;
-            if (pair.Value == null) continue;
-            audio.Add(new EnvironmentAudioState(world.WireId(pair.Key), pair.Value.isPlaying, pair.Value.loop,
-                pair.Value.volume, pair.Value.pitch));
         }
         CaptureDestroyedDrones();
         var drones = new List<ulong>();
@@ -546,7 +441,7 @@ public class WorldEnvironmentReplication
         var manager = GameManager.main;
         var mission = MissionManager.main;
         return new WorldEnvironmentPacket(MultiplayerSession.SnapshotEpoch, Physics2D.gravity.x, Physics2D.gravity.y,
-            buttons.ToArray(), audio.ToArray(), drones.ToArray(),
+            buttons.ToArray(), drones.ToArray(),
             manager == null ? 0f : manager.rainIntensity, manager == null ? 0f : manager.snowIntensity,
             manager == null ? 0f : manager.fogIntensity, mission == null ? -1 : mission.killAmount,
             mission == null ? -1 : mission.totalEnemyCount, lamps.ToArray(), NoPvpZoneRuntime.CaptureDisabled());
@@ -559,14 +454,6 @@ public class WorldEnvironmentReplication
         Physics2D.gravity = new Vector2(packet.GravityX, packet.GravityY);
         foreach (var button in packet.Buttons)
             ApplyButtonState(WorldReplication.Instance.ResolveWireId(button.Id), button.Active, button.Activations);
-        seenSnapshotAudio.Clear();
-        foreach (var audio in packet.Audio)
-        {
-            var id = WorldReplication.Instance.ResolveWireId(audio.Id);
-            seenSnapshotAudio.Add(id);
-            ApplyMechanismAudio(id, audio.IsPlaying, audio.Loop, audio.Volume, audio.Pitch);
-        }
-        StopMissingMechanismAudio(seenSnapshotAudio);
         foreach (var id in packet.DestroyedDroneIds)
             ApplyDroneState(WorldReplication.Instance.ResolveWireId(id));
         ApplyWeather(packet.RainIntensity, packet.SnowIntensity, packet.FogIntensity);
@@ -616,13 +503,6 @@ public class WorldEnvironmentReplication
             manager.fogIntensity = fog;
             manager.UpdateFog();
         }
-    }
-    
-    private void StopMissingMechanismAudio(HashSet<string> seen)
-    {
-        foreach (var pair in WorldReplication.Instance.mechanismAudio)
-            if (pair.Value != null && !seen.Contains(pair.Key) && pair.Value.isPlaying)
-                pair.Value.Stop();
     }
     
     private void CaptureDestroyedDrones()

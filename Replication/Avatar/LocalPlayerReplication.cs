@@ -94,7 +94,6 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
                 ? GunsawMultiplayerPlugin.World.VehicleWireId(body.curVehicle) : 0UL;
             var inVehicle = vehicleId != 0UL;
             var isVehicleDriver = inVehicle && body.curVehicle.occupant == body;
-            var isReflected = body.transform.localScale.x < 0f;
             var isActive = body.transform.root.gameObject.activeInHierarchy;
             var headReferenceRotation = vehicleId != 0UL && body.curVehicle.mainPart != null &&
                 body.curVehicle.mainPart.rb != null ? body.curVehicle.mainPart.transform.eulerAngles.z : body.transform.eulerAngles.z;
@@ -181,11 +180,17 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             if (specialLinesVisible || specialLinesWereVisible)
                 pendingSpecialLinesPacket = new PlayerSpecialLinesPacket(levitatorLaserState, crystalTongueState);
             specialLinesWereVisible = specialLinesVisible;
+            ulong mechanismId = 0;
+            var mechanismOffset = Vector2.zero;
+            var grounded = false;
+            if (!inVehicle && !PlayerCarrySystem.IsLocalTarget && WorldReplication.Instance != null)
+                WorldReplication.Instance.doors.TryGetPlayerSupport(body, out mechanismId, out mechanismOffset, out grounded);
+            var disguisePose = PropHuntSystem.IsProp(body) ? body.GetComponent<PropHuntDisguise>()?.SnapshotPose : null;
             var snapshot = new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver,
-                (byte)body.CurrentState, body.isRight, isReflected, isActive, headRotation, coreBody,
+                (byte)body.CurrentState, body.isRight, isActive, headRotation, coreBody,
                 armsTransform, gunTransformState, gunAnimationTransformState, limbStates, tailBaseStates, tailStates,
-                PropHuntSystem.Enabled ? PropHuntDisguise.FeetOffset(body) : float.NaN,
-                PropHuntSystem.Enabled ? body.GetComponent<PropHuntDisguise>()?.SnapshotPose : null);
+                disguisePose.HasValue ? PropHuntDisguise.FeetOffset(body) : float.NaN, disguisePose,
+                mechanismId, mechanismOffset.x, mechanismOffset.y, grounded);
             MultiplayerPerformance.AddAvatarSerialize(performanceStarted);
             return snapshot;
         }

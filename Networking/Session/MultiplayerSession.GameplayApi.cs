@@ -69,6 +69,8 @@ internal static partial class MultiplayerSession
     
     internal static bool TryTakeWorldEnvironment(out WorldEnvironmentPacket packet) => TryTakePacket(worldEnvironments, out _, out packet);
 
+    internal static bool TryTakeDoorState(out ushort peerId, out DoorStatePacket packet) => TryTakePacket(doorStates, out peerId, out packet);
+
     internal static bool TryTakeWorldInput(out ushort peerId, out WorldInputPacket packet)
     {
         lock (statusLock)

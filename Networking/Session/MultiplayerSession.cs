@@ -51,6 +51,7 @@ internal static partial class MultiplayerSession
     private static readonly Dictionary<ushort, PlayerSpecialLinesPacket> playerSpecialLines = new Dictionary<ushort, PlayerSpecialLinesPacket>();
     private static readonly Queue<PeerPayload> worldSnapshots = new Queue<PeerPayload>();
     private static readonly Queue<PeerPacket<WorldEnvironmentPacket>> worldEnvironments = new Queue<PeerPacket<WorldEnvironmentPacket>>();
+    private static readonly Queue<PeerPacket<DoorStatePacket>> doorStates = new();
     private static readonly Queue<PeerPacket<WorldFirePacket>> worldFires = new Queue<PeerPacket<WorldFirePacket>>();
     private static readonly Queue<PeerPacket<WorldExplosionPacket>> worldExplosions = new Queue<PeerPacket<WorldExplosionPacket>>();
     private static readonly Queue<PeerPacket<WorldInputPacket>> worldInputs = new Queue<PeerPacket<WorldInputPacket>>();

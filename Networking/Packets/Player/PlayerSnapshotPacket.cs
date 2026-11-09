@@ -22,12 +22,14 @@ internal enum PlayerDeathCause : byte
 internal readonly struct PlayerSnapshotPacket : INetworkPacket
 {
     internal readonly int Sequence;
+    internal readonly ulong MechanismId;
+    internal readonly float MechanismOffsetX, MechanismOffsetY;
     internal readonly bool InVehicle;
     internal readonly ulong VehicleId;
     internal readonly bool IsVehicleDriver;
     internal readonly byte EntityState;
     internal readonly bool IsRight;
-    internal readonly bool IsReflected;
+    internal readonly bool Grounded;
     internal readonly bool IsActive;
     internal readonly float HeadRotation;
     internal readonly float FeetOffsetY;
@@ -41,22 +43,26 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     internal readonly PlayerSnapshotPose GunAnimationTransform;
 
     internal PlayerSnapshotPacket(int sequence, bool inVehicle, ulong vehicleId,
-        bool isVehicleDriver, byte entityState, bool isRight, bool isReflected, bool isActive,
+        bool isVehicleDriver, byte entityState, bool isRight, bool isActive,
         float headRotation, PlayerSnapshotPose body,
         PlayerSnapshotPose armsTransform, PlayerSnapshotPose gunTransform,
         PlayerSnapshotPose gunAnimationTransform,
-        PlayerSnapshotLimbState[] limbs, PlayerSnapshotTailState[] tailBases, PlayerSnapshotTailState[] tails, float feetOffsetY = float.NaN, PlayerSnapshotPose? disguisePose = null)
+        PlayerSnapshotLimbState[] limbs, PlayerSnapshotTailState[] tailBases, PlayerSnapshotTailState[] tails, float feetOffsetY = float.NaN, PlayerSnapshotPose? disguisePose = null,
+        ulong mechanismId = 0, float mechanismOffsetX = 0f, float mechanismOffsetY = 0f, bool grounded = false)
     {
         Sequence = sequence;
+        MechanismId = mechanismId;
+        MechanismOffsetX = mechanismOffsetX;
+        MechanismOffsetY = mechanismOffsetY;
         InVehicle = inVehicle;
         VehicleId = vehicleId;
         IsVehicleDriver = isVehicleDriver;
         EntityState = entityState;
-        IsRight = isRight;
-        IsReflected = isReflected;
+        IsRight = inVehicle || isRight;
+        Grounded = grounded;
         IsActive = isActive;
         HeadRotation = headRotation;
-        FeetOffsetY = feetOffsetY;
+        FeetOffsetY = disguisePose.HasValue ? feetOffsetY : float.NaN;
         DisguisePose = disguisePose;
         Body = body;
         ArmsTransform = armsTransform;
@@ -78,8 +84,9 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
     private void WriteTypedState(ref PacketWriter writer)
     {
         writer.WriteInt32(Sequence);
-        var flags = (byte)((InVehicle ? 1 : 0) | (IsVehicleDriver ? 2 : 0) | (IsRight ? 4 : 0) |
-                           (IsReflected ? 8 : 0) | (IsActive ? 16 : 0) | (!float.IsNaN(FeetOffsetY) ? 32 : 0) | (DisguisePose.HasValue ? 64 : 0));
+        
+        // removed 2 flags, added 1, so there is now space for 1 more flag
+        var flags = (byte)((InVehicle ? 1 : 0) | (IsVehicleDriver ? 2 : 0) | (!InVehicle && IsRight ? 4 : 0) | (Grounded ? 8 : 0) | (IsActive ? 16 : 0) | (DisguisePose.HasValue ? 32 : 0) | (MechanismId != 0 ? 128 : 0));
         writer.WriteByte(flags);
         if (InVehicle) writer.WriteUInt64(VehicleId);
         writer.WriteByte(EntityState);
@@ -96,8 +103,17 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         WritePose(ref writer, ArmsTransform);
         WritePose(ref writer, GunTransform);
         WritePose(ref writer, GunAnimationTransform);
-        if (!float.IsNaN(FeetOffsetY)) writer.WriteSingle(FeetOffsetY);
-        if (DisguisePose.HasValue) WritePose(ref writer, DisguisePose.Value);
+        if (DisguisePose.HasValue)
+        {
+            writer.WriteSingle(FeetOffsetY);
+            WritePose(ref writer, DisguisePose.Value);
+        }
+        if (MechanismId != 0)
+        {
+            writer.WriteUInt64(MechanismId);
+            writer.WriteSingle(MechanismOffsetX);
+            writer.WriteSingle(MechanismOffsetY);
+        }
     }
 
     private static void WritePose(ref PacketWriter writer, PlayerSnapshotPose value)
@@ -198,8 +214,7 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var vehicleId = inVehicle ? reader.ReadUInt64() : 0UL;
         var isVehicleDriver = (flags & 2) != 0;
         var entityState = reader.ReadByte();
-        var isRight = (flags & 4) != 0;
-        var isReflected = (flags & 8) != 0;
+        var isRight = inVehicle || (flags & 4) != 0;
         var isActive = (flags & 16) != 0;
         var headRotation = ReadRotation(ref reader);
         var body = ReadPose(ref reader);
@@ -214,11 +229,19 @@ internal readonly struct PlayerSnapshotPacket : INetworkPacket
         var feetOffsetY = (flags & 32) != 0 ? reader.ReadSingle() : float.NaN;
         if ((flags & 32) != 0 && (float.IsNaN(feetOffsetY) || float.IsInfinity(feetOffsetY) || Math.Abs(feetOffsetY) > 50f))
             throw new InvalidDataException("Invalid player feet offset.");
-        PlayerSnapshotPose? disguisePose = (flags & 64) != 0 ? ReadPose(ref reader) : null;
+        PlayerSnapshotPose? disguisePose = (flags & 32) != 0 ? ReadPose(ref reader) : null;
         if (disguisePose.HasValue && (float.IsNaN(disguisePose.Value.X) || float.IsInfinity(disguisePose.Value.X) ||
             float.IsNaN(disguisePose.Value.Y) || float.IsInfinity(disguisePose.Value.Y))) throw new InvalidDataException("Invalid disguise position.");
+        var mechanismId = (flags & 128) != 0 ? reader.ReadUInt64() : 0UL;
+        var mechanismOffsetX = (flags & 128) != 0 ? reader.ReadSingle() : 0f;
+        var mechanismOffsetY = (flags & 128) != 0 ? reader.ReadSingle() : 0f;
+        if ((flags & 128) != 0 && (mechanismId == 0 || inVehicle ||
+            float.IsNaN(mechanismOffsetX) || float.IsInfinity(mechanismOffsetX) ||
+            float.IsNaN(mechanismOffsetY) || float.IsInfinity(mechanismOffsetY)))
+            throw new InvalidDataException("Invalid player mechanism offset.");
         return new PlayerSnapshotPacket(sequence, inVehicle, vehicleId, isVehicleDriver, entityState, isRight,
-            isReflected, isActive, headRotation, body, arms, gun, gunAnimation, limbs, tailBases, tails, feetOffsetY, disguisePose);
+            isActive, headRotation, body, arms, gun, gunAnimation, limbs, tailBases, tails, feetOffsetY, disguisePose,
+            mechanismId, mechanismOffsetX, mechanismOffsetY, (flags & 8) != 0);
     }
 
     private static PlayerSnapshotPose ReadPose(ref PacketReader reader) => new (reader.ReadSingle(), reader.ReadSingle(), ReadRotation(ref reader));

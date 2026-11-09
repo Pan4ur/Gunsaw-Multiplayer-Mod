@@ -60,13 +60,6 @@ public class WorldReplication : MonoBehaviour
     internal readonly Dictionary<FireScript, int> pendingRuntimeFires = new();
     internal int nextRuntimeFireId;
     internal readonly HashSet<FireScript> clientCreatedFires = [];
-    internal readonly Dictionary<string, AudioSource> mechanismAudio = new();
-    internal readonly Dictionary<AudioSource, string> mechanismAudioIds = new();
-    internal readonly Dictionary<AudioSource, bool> clientAudioWasPlaying = new();
-    internal readonly Dictionary<AudioSource, DoorScript> doorAudioSources = new();
-    internal readonly Dictionary<AudioSource, Rigidbody2D> doorAudioBodies = new();
-    internal readonly Dictionary<AudioSource, float> clientDoorAudioStartedAt = new();
-    internal readonly List<AudioSource> staleClientDoorAudio = [];
     private readonly HashSet<SawScript> clientSaws = [];
     private WorldSnapshotPacket? lastSentWorldSnapshot;
     private WorldEnvironmentPacket? lastCapturedEnvironment;
@@ -111,7 +104,7 @@ public class WorldReplication : MonoBehaviour
     {
         get
         {
-            var count = buttons.Count + mechanismAudio.Count;
+            var count = buttons.Count;
             foreach (var fire in fires.Values) if (fire != null) count++;
             foreach (var body in bodies.bodies.Values)
                 if (body != null && !bodies.IsInteractivePropBody(body)) count++;
@@ -128,6 +121,7 @@ public class WorldReplication : MonoBehaviour
     internal int ReceivedPacketsPerSecond => receivedPacketsPerSecond;
     internal int ReceivedStatesPerSecond => receivedStatesPerSecond;
     
+    internal readonly WorldDoorReplication doors = new();
     internal WorldBodyReplication bodies;
     private WorldEnvironmentReplication enviroment;
     internal DroppedWeaponReplication weapons;
@@ -267,6 +261,7 @@ public class WorldReplication : MonoBehaviour
             if (!discoveredScene) DiscoverScene();
 
             enviroment.ProcessPendingRuntimeFires();
+            doors.Update();
             if (isHost)
             {
                 var zonePromptStarted = MultiplayerPerformance.StartPhase();
@@ -333,7 +328,6 @@ public class WorldReplication : MonoBehaviour
             weapons.AnimateClientDroppedWeaponIndicators();
             MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDroppedWeaponIndicators,
                 weaponIndicatorsStarted);
-            enviroment.StopSettledClientDoorAudio();
         }
         finally
         {
@@ -349,12 +343,12 @@ public class WorldReplication : MonoBehaviour
         bodies.RefreshWorldBodies();
         enviroment.RefreshButtons();
         enviroment.RefreshProximityDoors();
+        doors.Refresh();
         enviroment.RefreshActivationZones();
         enviroment.RefreshLamps();
         enviroment.RefreshDrones();
         RefreshClientSaws();
         RefreshWorldControllers();
-        enviroment.RefreshMechanismAudio();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldDiscovery, discoveryStarted);
     }
 
@@ -431,7 +425,7 @@ public class WorldReplication : MonoBehaviour
         }
 
         bodies.TickVehiclePaths();
-        bodies.TickMechanismTargets();
+        doors.FixedTick();
         if (clientFastSerializeState > 0f || Time.unscaledTime >= nextSnapshot)
         {
             var clientSendStarted = MultiplayerPerformance.StartPhase();
@@ -510,10 +504,6 @@ public class WorldReplication : MonoBehaviour
         if (MultiplayerSession.IsHost) return;
         RestoreGameplayControllers();
         DisableControllers(FindObjectsOfType<DoorScript>());
-        DisableControllers(FindObjectsOfType<RbMoveToObj>());
-        foreach (var joint in FindObjectsOfType<CustJoint>())
-            if (joint != null && !IsGameplayOwned(joint) && !bodies.IsInteractivePropBody(joint.GetComponentInParent<Rigidbody2D>()))
-                DisableController(joint);
         DisableControllers(FindObjectsOfType<DelayedTrigger>());
         DisableControllers(FindObjectsOfType<TimedTrigger>());
         DisableControllers(FindObjectsOfType<MiniCrateSpawner>());
@@ -568,6 +558,7 @@ public class WorldReplication : MonoBehaviour
     private void RestoreClientWorld()
     {
         nextRuntimeId = 0;
+        doors.Clear();
         foreach (var pair in bodies.localSettings)
         {
             if (pair.Key == null) continue;
@@ -637,19 +628,6 @@ public class WorldReplication : MonoBehaviour
         nextRuntimeFireId = 0;
         fireIds.Clear();
         fires.Clear();
-        foreach (var pair in clientAudioWasPlaying)
-        {
-            if (pair.Key == null) continue;
-            if (pair.Value && pair.Key.clip != null) pair.Key.Play();
-            else pair.Key.Stop();
-        }
-        clientAudioWasPlaying.Clear();
-        doorAudioSources.Clear();
-        doorAudioBodies.Clear();
-        clientDoorAudioStartedAt.Clear();
-        staleClientDoorAudio.Clear();
-        mechanismAudioIds.Clear();
-        mechanismAudio.Clear();
         clientSaws.Clear();
         bodies.wireIds.Clear();
         bodies.idsByWire.Clear();
@@ -683,6 +661,7 @@ public class WorldReplication : MonoBehaviour
         foreach (var pair in bodies.bodies)
         {
             var body = pair.Value;
+            if (WorldBodyReplication.IsDoorBody(body)) continue;
             if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
             if (!fullSnapshot && IsIdleVehiclePart(body)) continue;
             var awake = body != null && body.IsAwake();
@@ -831,7 +810,6 @@ public class WorldReplication : MonoBehaviour
         foreach (var id in bodies.bodies.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in buttons.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in fires.Keys) if (NetworkWireId.FromString(id) == wire) return id;
-        foreach (var id in mechanismAudio.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in proximityDoors.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in activationZones.Keys) if (NetworkWireId.FromString(id) == wire) return id;
         foreach (var id in drones.Keys) if (NetworkWireId.FromString(id) == wire) return id;

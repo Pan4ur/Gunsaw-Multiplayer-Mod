@@ -125,24 +125,6 @@ internal static class MultiplayerDoorTickCullPatch
     }
 }
 
-[HarmonyPatch(typeof(MovingBelt), "FixedUpdate")]
-internal static class MultiplayerBeltTickCullPatch
-{
-    private static bool Prefix(MovingBelt __instance)
-    {
-        return LoadDistanceSystem.ShouldTickWorld(__instance);
-    }
-}
-
-[HarmonyPatch(typeof(RbMoveToObj), "FixedUpdate")]
-internal static class MultiplayerRbMoveTickCullPatch
-{
-    private static bool Prefix(RbMoveToObj __instance)
-    {
-        return LoadDistanceSystem.ShouldTickWorld(__instance);
-    }
-}
-
 [HarmonyPatch(typeof(SawScript), "Update")]
 internal static class MultiplayerSawTickCullPatch
 {

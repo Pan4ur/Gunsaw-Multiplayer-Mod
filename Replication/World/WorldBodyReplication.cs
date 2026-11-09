@@ -11,7 +11,6 @@ public class WorldBodyReplication
     private readonly Dictionary<Rigidbody2D, Vector2> lodPositions = new();
     internal readonly Dictionary<Rigidbody2D, WorldReplication.State> received = new();
     internal readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
-    private readonly Dictionary<Rigidbody2D, Vector2> mechanismTargets = new();
     internal readonly Dictionary<string, WorldReplication.ClientBodyState> pushes = new();
     internal readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
     internal readonly Dictionary<string, WorldReplication.PropAuthority> propAuthorities = new();
@@ -87,7 +86,6 @@ public class WorldBodyReplication
         frozenFarClientProps.Remove(body);
         lodPositions.Remove(body);
         received.Remove(body);
-        mechanismTargets.Remove(body);
         locallyControlledUntil.Remove(body);
         WorldReplication.Instance.nextContactStateAt.Remove(body);
         localSettings.Remove(body);
@@ -126,13 +124,14 @@ public class WorldBodyReplication
     internal static bool IsMechanismBody(Rigidbody2D body)
     {
         return body != null && (body.GetComponentInParent<DoorScript>() != null ||
-                                body.GetComponentInParent<MovingBelt>() != null ||
-                                body.GetComponentInParent<RbMoveToObj>() != null ||
-                                body.GetComponentInParent<SawScript>() != null ||
-                                body.GetComponentInParent<CustJoint>() != null ||
                                 body.GetComponentInParent<VehiclePart>() != null ||
                                 IsSafetyRailingBody(body) ||
                                 IsChainlinkFenceBody(body));
+    }
+
+    internal static bool IsDoorBody(Rigidbody2D body)
+    {
+        return body != null && body.GetComponentInParent<DoorScript>() != null;
     }
 
     internal static bool TryGetMechanismTarget(Rigidbody2D body, out Vector2 target)
@@ -300,6 +299,7 @@ public class WorldBodyReplication
     
     internal void ApplyAuthoritativeState(Rigidbody2D body, WorldReplication.State state)
     {
+        if (!MultiplayerSession.IsHost && IsDoorBody(body)) return;
         lodPositions[body] = state.position;
         if (state.safetyRailing && !state.safetyRailingAttached) DetachSafetyRailing(body);
         
@@ -313,23 +313,6 @@ public class WorldBodyReplication
 
         var classification = ClassificationFor(body);
         var mechanism = classification.Mechanism && !classification.InteractiveProp && !classification.ClientPhysicsJoint;
-        var awaitingNewVelo = false;
-       
-        if (mechanism && state.hasMechanismTarget)
-        {
-            // Fixes visual bug after dir change due to interp
-            var hasTarget = mechanismTargets.TryGetValue(body, out var previousTarget);
-            var posDelta = state.mechanismTarget - state.position;
-            var targetChanged = !hasTarget || previousTarget != state.mechanismTarget;
-            var wrongDir = targetChanged && posDelta.sqrMagnitude > 0.0001f && Vector2.Dot(posDelta, state.velocity) <= 0f;
-            if (!wrongDir) 
-                mechanismTargets[body] = state.mechanismTarget;
-            else 
-                awaitingNewVelo = !hasTarget;
-        }
-        else
-            mechanismTargets.Remove(body);
-            
         float controlUntil;
         if (!mechanism && locallyControlledUntil.TryGetValue(body, out controlUntil))
         {
@@ -350,23 +333,6 @@ public class WorldBodyReplication
 
         if (mechanism)
         {
-            // TODO This is more of a temporary fix
-            // it would be better to simply signal to clients when the door is about to open or close,
-            // but I'm not sure if that would break some of the custom level features
-
-            if (!state.vehiclePart)
-            {
-                body.position = state.position;
-                body.rotation = state.rotation;
-                if (!WorldReplication.Instance.initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
-                {
-                    WorldReplication.Instance.initializedBodies.Add(body);
-                }
-                body.velocity = awaitingNewVelo ? Vector2.zero : state.velocity;
-                body.angularVelocity = awaitingNewVelo ? 0f : state.angularVelocity;
-                return;
-            }
-            
             if (!WorldReplication.Instance.initializedBodies.Contains(body) || (state.position - body.position).sqrMagnitude > 256f)
             {
                 WorldReplication.Instance.initializedBodies.Add(body);
@@ -547,31 +513,6 @@ public class WorldBodyReplication
         foreach (var body in staleVehiclePaths) vehiclePaths.Remove(body);
     }
 
-    internal void TickMechanismTargets()
-    {
-        if (mechanismTargets.Count == 0) return;
-        staleVehiclePaths.Clear();
-        foreach (var pair in mechanismTargets)
-        {
-            var body = pair.Key;
-            if (body == null || !body.simulated)
-            {
-                staleVehiclePaths.Add(body);
-                continue;
-            }
-
-            var velocity = body.velocity;
-            if (velocity.sqrMagnitude <= 0.0001f) continue;
-            var remaining = pair.Value - body.position;
-            if (remaining.sqrMagnitude > 0.0001f && Vector2.Dot(remaining, velocity) > 0f) continue;
-
-            body.position = pair.Value;
-            body.velocity = Vector2.zero;
-            body.angularVelocity = 0f;
-        }
-        foreach (var body in staleVehiclePaths) mechanismTargets.Remove(body);
-    }
-    
     internal void FreezeFarClientProps()
     {
         if (MultiplayerSession.IsHost) return;

@@ -17,11 +17,9 @@ public class VoyagerBody
         foreach (var renderer in layout.AlphaRenderers)
         {
             if (renderer == null) continue;
-            float baseAlpha;
-            if (!voyagerWeaponBaseAlpha.TryGetValue(renderer, out baseAlpha))
+            if (!voyagerWeaponBaseAlpha.TryGetValue(renderer, out var baseAlpha))
             {
-                baseAlpha = isRemote && visibility > 0.001f
-                    ? renderer.color.a / visibility : renderer.color.a;
+                baseAlpha = isRemote && visibility > 0.001f ? renderer.color.a / visibility : renderer.color.a;
                 voyagerWeaponBaseAlpha[renderer] = baseAlpha;
             }
             var color = renderer.color;
@@ -32,8 +30,7 @@ public class VoyagerBody
         foreach (var line in layout.ScarfLines)
         {
             if (line == null) continue;
-            Vector2 baseAlpha;
-            if (!voyagerScarfBaseAlpha.TryGetValue(line, out baseAlpha))
+            if (!voyagerScarfBaseAlpha.TryGetValue(line, out var baseAlpha))
             {
                 baseAlpha = new Vector2(line.startColor.a, line.endColor.a);
                 voyagerScarfBaseAlpha[line] = baseAlpha;
@@ -49,8 +46,9 @@ public class VoyagerBody
 
     internal static float PvpVoyagerVisibility(BodyScript body)
     {
-        if (body == null || !MultiplayerSession.PvpEnabled ||
-            body.GetComponentInChildren<CarverCamo>(true) == null) return 1f;
+        if (body == null || !MultiplayerSession.PvpEnabled || body.GetComponentInChildren<CarverCamo>(true) == null)
+            return 1f;
+        
         return PvpVoyagerVisibility(body, true);
     }
 
@@ -62,30 +60,27 @@ public class VoyagerBody
 
     private static VoyagerVisualLayout VisualLayout(BodyScript body)
     {
-        VoyagerVisualLayout layout;
-        if (visualLayouts.TryGetValue(body, out layout) && layout.Root == body.transform) return layout;
+        if (visualLayouts.TryGetValue(body, out var layout) && layout.Root == body.transform)
+            return layout;
 
         var renderers = body.GetComponentsInChildren<SpriteRenderer>(true);
-        var alphaRenderers = new List<SpriteRenderer>();
-        foreach (var renderer in renderers)
-        {
-            if (renderer == null) continue;
-            var name = renderer.gameObject.name;
-            if (name == "testGun" || name == "BackWep1" || name == "BackWep2" ||
-                name == "ScarfHold" || name == "MP Remote Scarf Hold") alphaRenderers.Add(renderer);
-        }
+        var alphaRenderers = Enumerable.OfType<SpriteRenderer>(renderers)
+            .Select(r => new { r, r.gameObject.name })
+            .Where(t => t.name is "testGun" or "BackWep1" or "BackWep2" or "ScarfHold" or "MP Remote Scarf Hold")
+            .Select(t => t.r).ToList();
 
         var scarves = body.GetComponentsInChildren<ScarfPhysics>(true);
         var scarfLines = new List<LineRenderer>();
         foreach (var scarf in scarves)
-            if (scarf != null && scarf.pointRenderer != null) scarfLines.Add(scarf.pointRenderer);
+            if (scarf != null && scarf.pointRenderer != null)
+                scarfLines.Add(scarf.pointRenderer);
 
         layout = new VoyagerVisualLayout
         {
             Root = body.transform,
             HasCamo = body.GetComponentInChildren<CarverCamo>(true) != null,
-            AlphaRenderers = alphaRenderers.ToArray(),
-            ScarfLines = scarfLines.ToArray()
+            AlphaRenderers = [.. alphaRenderers],
+            ScarfLines = [.. scarfLines]
         };
         visualLayouts[body] = layout;
         return layout;
@@ -95,7 +90,7 @@ public class VoyagerBody
     {
         internal Transform Root;
         internal bool HasCamo;
-        internal SpriteRenderer[] AlphaRenderers = Array.Empty<SpriteRenderer>();
-        internal LineRenderer[] ScarfLines = Array.Empty<LineRenderer>();
+        internal SpriteRenderer[] AlphaRenderers = [];
+        internal LineRenderer[] ScarfLines = [];
     }
 }

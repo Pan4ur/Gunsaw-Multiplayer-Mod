@@ -30,31 +30,12 @@ internal readonly struct EnvironmentLampPowerState
     }
 }
 
-internal readonly struct EnvironmentAudioState
-{
-    internal readonly ulong Id;
-    internal readonly bool IsPlaying;
-    internal readonly bool Loop;
-    internal readonly float Volume;
-    internal readonly float Pitch;
-    
-    internal EnvironmentAudioState(ulong id, bool isPlaying, bool loop, float volume, float pitch)
-    {
-        Id = id;
-        IsPlaying = isPlaying;
-        Loop = loop;
-        Volume = volume;
-        Pitch = pitch;
-    }
-}
-
 internal readonly struct WorldEnvironmentPacket : INetworkPacket
 {
     internal readonly int SceneEpoch;
     internal readonly float GravityX;
     internal readonly float GravityY;
     internal readonly EnvironmentButtonState[] Buttons;
-    internal readonly EnvironmentAudioState[] Audio;
     internal readonly ulong[] DestroyedDroneIds;
     internal readonly float RainIntensity;
     internal readonly float SnowIntensity;
@@ -65,13 +46,12 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal readonly ulong[] DisabledNoPvpZones;
 
     internal WorldEnvironmentPacket(int sceneEpoch, float gravityX, float gravityY, EnvironmentButtonState[] buttons,
-        EnvironmentAudioState[] audio, ulong[] destroyedDroneIds,
+        ulong[] destroyedDroneIds,
         float rainIntensity, float snowIntensity,
         float fogIntensity, int enemyKills = -1, int enemyTotal = -1, EnvironmentLampPowerState[] lampPower = null, ulong[] disabledNoPvpZones = null)
     {
         SceneEpoch = sceneEpoch; GravityX = gravityX; GravityY = gravityY;
         Buttons = buttons ?? [];
-        Audio = audio ?? [];
         DestroyedDroneIds = destroyedDroneIds ?? [];
         RainIntensity = rainIntensity; SnowIntensity = snowIntensity; FogIntensity = fogIntensity;
         EnemyKills = enemyKills; EnemyTotal = enemyTotal;
@@ -86,7 +66,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
     internal bool ContentEquals(WorldEnvironmentPacket other)
     {
         return SceneEpoch == other.SceneEpoch && GravityX.Equals(other.GravityX) && GravityY.Equals(other.GravityY) &&
-            ArraysEqual(Buttons, other.Buttons) && ArraysEqual(Audio, other.Audio) &&
+            ArraysEqual(Buttons, other.Buttons) &&
             ArraysEqual(DestroyedDroneIds, other.DestroyedDroneIds) && RainIntensity.Equals(other.RainIntensity) &&
             SnowIntensity.Equals(other.SnowIntensity) && FogIntensity.Equals(other.FogIntensity) &&
             EnemyKills == other.EnemyKills && EnemyTotal == other.EnemyTotal && ArraysEqual(LampPower, other.LampPower) && ArraysEqual(DisabledNoPvpZones, other.DisabledNoPvpZones);
@@ -107,7 +87,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         writer.WriteSingle(GravityX);
         writer.WriteSingle(GravityY);
         WriteButtons(ref writer, Buttons);
-        WriteAudio(ref writer, Audio);
         WriteIds(ref writer, DestroyedDroneIds);
         writer.WriteSingle(RainIntensity);
         writer.WriteSingle(SnowIntensity);
@@ -124,7 +103,6 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var gravityX = reader.ReadSingle();
         var gravityY = reader.ReadSingle();
         var buttons = ReadButtons(ref reader);
-        var audio = ReadAudio(ref reader);
         var drones = ReadIds(ref reader);
         var rain = reader.ReadSingle();
         var snow = reader.ReadSingle();
@@ -133,7 +111,7 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         var enemyTotal = reader.ReadInt32();
         var lampPower = ReadLampPower(ref reader);
         var disabledNoPvpZones = reader.Remaining > 0 ? ReadIds(ref reader) : [];
-        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, audio, drones, rain, snow, fog, enemyKills, enemyTotal, lampPower, disabledNoPvpZones);
+        return new WorldEnvironmentPacket(sceneEpoch, gravityX, gravityY, buttons, drones, rain, snow, fog, enemyKills, enemyTotal, lampPower, disabledNoPvpZones);
     }
 
     private static void WriteButtons(ref PacketWriter writer, EnvironmentButtonState[] values)
@@ -192,25 +170,4 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
         return values;
     }
 
-    private static void WriteAudio(ref PacketWriter writer, EnvironmentAudioState[] values)
-    {
-        writer.WriteUInt16((ushort)Math.Min(values.Length, ushort.MaxValue));
-        for (var index = 0; index < values.Length && index < ushort.MaxValue; index++)
-        {
-            var value = values[index];
-            writer.WriteUInt64(value.Id);
-            writer.WriteBoolean(value.IsPlaying);
-            writer.WriteBoolean(value.Loop);
-            writer.WriteSingle(value.Volume);
-            writer.WriteSingle(value.Pitch);
-        }
-    }
-
-    private static EnvironmentAudioState[] ReadAudio(ref PacketReader reader)
-    {
-        var values = new EnvironmentAudioState[reader.ReadUInt16()];
-        for (var index = 0; index < values.Length; index++)
-            values[index] = new EnvironmentAudioState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadBoolean(), reader.ReadSingle(), reader.ReadSingle());
-        return values;
-    }
 }

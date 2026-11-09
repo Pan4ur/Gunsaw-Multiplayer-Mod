@@ -218,6 +218,17 @@ internal static partial class MultiplayerSession
                 var reader = new PacketReader(decodedPacket.Payload);
                 EnqueueLatestWorldEnvironment(senderId, WorldEnvironmentPacket.Read(ref reader));
             }
+            else if (decodedPacket.Type == PacketType.DoorState && (isHost || senderId == hostPeerId))
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    var doorPacket = DoorStatePacket.Read(ref reader);
+                    if ((isHost && doorPacket.OpCode == DoorStateOpCode.RequestSnapshot) || (!isHost && doorPacket.OpCode == DoorStateOpCode.States))
+                        EnqueueEvent(doorStates, senderId, doorPacket);
+                }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
+            }
             else if (!isHost && decodedPacket.Type == PacketType.WorldFire && senderId == hostPeerId)
             {
                 try
@@ -935,6 +946,7 @@ internal static partial class MultiplayerSession
         receivedSnapshotSequences.Clear();
         worldSnapshots.Clear();
         worldEnvironments.Clear();
+        doorStates.Clear();
         worldFires.Clear();
         worldExplosions.Clear();
         worldInputs.Clear();
