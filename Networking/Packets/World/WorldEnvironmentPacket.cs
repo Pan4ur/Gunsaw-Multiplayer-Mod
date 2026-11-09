@@ -1,6 +1,6 @@
 using UnityEngine;
 
-internal readonly struct EnvironmentButtonState
+internal readonly struct EnvironmentButtonState : IEquatable<EnvironmentButtonState>
 {
     internal readonly ulong Id;
     internal readonly bool Active;
@@ -12,9 +12,12 @@ internal readonly struct EnvironmentButtonState
         Active = active;
         Activations = activations;
     }
+
+    public bool Equals(EnvironmentButtonState other) =>
+        Id == other.Id && Active == other.Active && Activations == other.Activations;
 }
 
-internal readonly struct EnvironmentLampPowerState
+internal readonly struct EnvironmentLampPowerState : IEquatable<EnvironmentLampPowerState>
 {
     internal readonly ulong Id;
     internal readonly bool Powered;
@@ -28,6 +31,9 @@ internal readonly struct EnvironmentLampPowerState
         Intensity = intensity;
         Color = color;
     }
+
+    public bool Equals(EnvironmentLampPowerState other) =>
+        Id == other.Id && Powered == other.Powered && Intensity.Equals(other.Intensity) && Color.r == other.Color.r && Color.g == other.Color.g && Color.b == other.Color.b && Color.a == other.Color.a;
 }
 
 internal readonly struct WorldEnvironmentPacket : INetworkPacket
@@ -169,5 +175,4 @@ internal readonly struct WorldEnvironmentPacket : INetworkPacket
             values[index] = new EnvironmentLampPowerState(reader.ReadUInt64(), reader.ReadBoolean(), reader.ReadSingle(), new Color32(reader.ReadByte(), reader.ReadByte(), reader.ReadByte(), reader.ReadByte()));
         return values;
     }
-
 }

@@ -7,6 +7,7 @@ internal static class TailScalePatch
 {
     private static bool Prefix(CustJoint __instance)
     {
+        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || NpcReplication.Instance == null) return true;
         var body = __instance.transConnect == null ? null : __instance.transConnect.GetComponentInParent<BodyScript>();
         return body == null || body.isPlayer || !NpcReplication.IsClientProxy(body);
     }

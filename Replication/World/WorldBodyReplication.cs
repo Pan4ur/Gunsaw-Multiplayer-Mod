@@ -129,16 +129,17 @@ public class WorldBodyReplication
                                 IsChainlinkFenceBody(body));
     }
 
-    internal static bool IsDoorBody(Rigidbody2D body)
+    internal bool IsDoorBody(Rigidbody2D body)
     {
-        return body != null && body.GetComponentInParent<DoorScript>() != null;
+        return body != null && BodyLayoutFor(body).Door != null;
     }
 
-    internal static bool TryGetMechanismTarget(Rigidbody2D body, out Vector2 target)
+    internal bool TryGetMechanismTarget(Rigidbody2D body, out Vector2 target)
     {
         target = Vector2.zero;
         if (body == null) return false;
-        var door = body.GetComponentInParent<DoorScript>();
+        var layout = BodyLayoutFor(body);
+        var door = layout.Door;
         if (door != null)
         {
             var point = door.followingFirstPoint ? door.point1 : door.point2;
@@ -147,7 +148,7 @@ public class WorldBodyReplication
             return true;
         }
 
-        var mover = body.GetComponentInParent<RbMoveToObj>();
+        var mover = layout.Mover;
         if (mover == null || mover.TransformToMoveTo == null) return false;
         target = mover.TransformToMoveTo.position;
         return true;
@@ -173,6 +174,8 @@ public class WorldBodyReplication
         var vehiclePart = body.GetComponent<VehiclePart>();
         return new WorldReplication.BodyLayout
         {
+            Door = body.GetComponentInParent<DoorScript>(),
+            Mover = body.GetComponentInParent<RbMoveToObj>(),
             Crate = crate,
             CratePrefabName = crate == null ? "" : WorldReplication.CleanCloneName(crate.transform.root.name),
             SafetyRailing = IsSafetyRailingBody(body) || IsChainlinkFenceBody(body),

@@ -661,7 +661,7 @@ public class WorldReplication : MonoBehaviour
         foreach (var pair in bodies.bodies)
         {
             var body = pair.Value;
-            if (WorldBodyReplication.IsDoorBody(body)) continue;
+            if (bodies.IsDoorBody(body)) continue;
             if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
             if (!fullSnapshot && IsIdleVehiclePart(body)) continue;
             var awake = body != null && body.IsAwake();
@@ -741,7 +741,7 @@ public class WorldReplication : MonoBehaviour
         var vehiclePart = layout.VehiclePart;
         var vehicle = vehiclePart == null ? null : vehiclePart.vehicle ?? layout.Vehicle;
         var joint = layout.VehicleJoint;
-        var hasMechanismTarget = WorldBodyReplication.TryGetMechanismTarget(body, out var mechanismTarget);
+        var hasMechanismTarget = bodies.TryGetMechanismTarget(body, out var mechanismTarget);
         return new WorldBodySnapshot(
             id: wireId,
             destroyed: false,
@@ -1636,6 +1636,8 @@ public class WorldReplication : MonoBehaviour
 
     internal sealed class BodyLayout
     {
+        public DoorScript Door;
+        public RbMoveToObj Mover;
         public CrateScript Crate;
         public string CratePrefabName = "";
         public bool SafetyRailing;
