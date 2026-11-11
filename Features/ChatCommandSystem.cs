@@ -201,7 +201,7 @@ internal sealed class ChatCommandSystem
             return true;
         }
 
-        local.transform.position = target.transform.position;
+        local.transform.position = CustomLevelSpawnSelection.RandomizePosition(target.transform.position);
         ResetTeleportVelocity(local);
         PlayTeleportEffect(local.transform.position);
         MultiplayerHud.AddSystemMessage("Teleported to " + playerName + ".");

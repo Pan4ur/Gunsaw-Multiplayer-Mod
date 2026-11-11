@@ -1074,7 +1074,7 @@ weapon != activeShotState.Weapon) return;
             ? (PlayerScript.player == null ? null : PlayerScript.player.bodyScript)
             : NetworkAvatarManager.RemoteBodyForPeer(request.TargetPeerId);
         if (target == null || !target.isAlive) return;
-        var position = target.transform.position;
+        var position = CustomLevelSpawnSelection.RandomizePosition(target.transform.position);
         if (!NetworkAvatarUtilities.IsFinite(position.x) || !NetworkAvatarUtilities.IsFinite(position.y)) return;
         MultiplayerSession.Send(new PlayerTeleportPacket(position.x, position.y, true), requesterId);
     }

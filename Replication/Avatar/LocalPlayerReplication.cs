@@ -554,7 +554,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
             localSpawnScene = scene.handle;
             localSpawnPosition = body.transform.position;
         }
-        position = localSpawnPosition;
+        position = CustomLevelSpawnSelection.RandomizePosition(localSpawnPosition);
         return true;
     }
 
@@ -934,6 +934,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         var candidate = MultiplayerSession.RespawnAtStart
             ? localSpawnPosition
             : (oldBody == null ? localDeathPosition : oldBody.transform.position);
+        candidate = CustomLevelSpawnSelection.RandomizePosition(candidate);
         if (!IsRespawnPositionBlocked(candidate, oldBody)) return candidate;
         if (!MultiplayerSession.RespawnAtStart &&
             TryFindRespawnPositionNearPlayer(oldBody, out candidate)) return candidate;

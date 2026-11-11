@@ -398,8 +398,14 @@ internal static class CustomLevelSpawnSelection
             foreach (var spawn in spawnPoints)
                 if (string.IsNullOrWhiteSpace(spawn.Team)) candidates.Add(spawn);
         if (!TeamSystem.Enabled || !hasTeamSpawn || candidates.Count == 0) candidates = spawnPoints;
-        position = candidates[UnityEngine.Random.Range(0, candidates.Count)].Position;
+        position = RandomizePosition(candidates[UnityEngine.Random.Range(0, candidates.Count)].Position);
         return true;
+    }
+
+    internal static Vector3 RandomizePosition(Vector3 position)
+    {
+        position.x += UnityEngine.Random.Range(-0.5f, 0.5f);
+        return position;
     }
 
     private static void AddSpawnPoint(GameObject spawn)
