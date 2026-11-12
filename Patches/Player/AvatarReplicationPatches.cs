@@ -57,7 +57,8 @@ internal static class LocalCharacterCreationPatch
     {
         if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected) return;
         if (__instance == null || __instance.bodyScript == null) return;
-        __instance.bodyScript.transform.position = CustomLevelSpawnSelection.RandomizePosition(__instance.bodyScript.transform.position);
+        var root = __instance.bodyScript.transform.root;
+        root.position = CustomLevelSpawnSelection.RandomizePosition(root.position);
         LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
         LobbyHealthRule.RestoreFull(__instance.bodyScript);
         BlackoutRule.RegisterBody(__instance.bodyScript);

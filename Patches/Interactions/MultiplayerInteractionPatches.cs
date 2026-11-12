@@ -80,76 +80,28 @@ internal static class MultiplayerPlayerWoundPatch
 [HarmonyPatch(typeof(VehiclePart), "OnCollisionEnter2D")]
 internal static class ClientVehicleCollisionPatch
 {
-    private static bool Prefix(VehiclePart __instance, Collision2D col, out float __state)
+    private static bool Prefix(VehiclePart __instance, Collision2D col)
     {
-        __state = __instance == null ? 0f : __instance.health;
-        if (__instance == null || col == null || __instance.isWheel || __instance.vehicle == null)
-            return !MultiplayerSession.IsConnected || MultiplayerSession.IsHost;
-
-        var localBody = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
-        if (MultiplayerSession.IsHost)
-        {
-            var hostImpact = Mathf.Abs(col.relativeVelocity.magnitude *Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
-            if (hostImpact > 28f)
-            {
-                if (KartPassengers.IsProtectedPassenger(localBody) && localBody.curVehicle == __instance.vehicle)
-                    localBody.ExitVehicle();
-                NetworkAvatarManager.EjectRemoteVehicleOccupants(__instance.vehicle);
-            }
-            return true;
-        }
-        
-        if (KartPassengers.IsProtectedPassenger(localBody) &&
-            localBody.curVehicle == __instance.vehicle && __instance.vehicle.occupant != localBody)
-        {
-            return false;
-        }
-        
-        var hitBody = col.collider == null ? null : col.collider.GetComponentInParent<BodyScript>();
-        
-        if (hitBody == null && col.collider != null)
-        {
-            var hitLimb = col.collider.GetComponentInParent<LimbScript>();
-            hitBody = hitLimb == null ? null : hitLimb.body;
-        }
-        
-        if (hitBody != null && hitBody.inVehicle && hitBody.curVehicle == __instance.vehicle && __instance.vehicle.occupant != hitBody) return false;
         if (!MultiplayerSession.IsConnected) return true;
-        
-        var impact = Mathf.Abs(col.relativeVelocity.magnitude *
-            Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
-        if (impact > 6f && GunsawMultiplayerPlugin.World != null)
-            GunsawMultiplayerPlugin.World.QueueVehicleDamage(__instance, impact * __instance.vehicle.impactDamageMult, true);
-        return false;
-    }
-
-    private static void Postfix(VehiclePart __instance, Collision2D col, float __state)
-    {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || __instance == null ||
-            col == null || col.contactCount == 0 || __instance.isWheel || __instance.vehicle == null ||
-            __instance.health >= __state || !__instance.doBodyDamage || __instance.health <= 0f ||
-            __instance.rb == null || __instance.rb.velocity.magnitude <= 6f) return;
-
-        var impact = Mathf.Abs(col.relativeVelocity.magnitude *
-            Mathf.Abs(Vector3.Dot(col.relativeVelocity.normalized, col.GetContact(0).normal)));
-        if (impact <= 6f) return;
-
-        BodyScript hitBody;
-        bool ragdoll;
-        if (col.gameObject.TryGetComponent(out hitBody))
+        if (!MultiplayerSession.IsHost || __instance == null || col == null || col.contactCount == 0)
+            return false;
+        if (__instance.isWheel || __instance.vehicle == null) return true;
+        var hitBody = col.collider == null ? null : col.collider.GetComponentInParent<BodyScript>();
+        if (hitBody == null && col.collider != null)
+            hitBody = col.collider.GetComponentInParent<LimbScript>()?.body;
+        if (hitBody != null && hitBody.inVehicle && hitBody.curVehicle == __instance.vehicle) return false;
+        var normal = col.GetContact(0).normal;
+        var impact = Mathf.Abs(Vector3.Dot(col.relativeVelocity, normal));
+        if (__instance.dmgcooldown <= 0f && __instance.doBodyDamage && __instance.health > 0f && impact > 6f)
+            NetworkAvatarManager.RouteVehicleImpact(hitBody, impact, __instance.transform.position, -normal * impact);
+        var localBody = PlayerScript.player?.bodyScript;
+        if (impact > 28f)
         {
-            if (__instance.vehicle.occupant != null && __instance.vehicle.occupant == hitBody) return;
-            ragdoll = true;
+            if (KartPassengers.IsProtectedPassenger(localBody) && localBody.curVehicle == __instance.vehicle)
+                localBody.ExitVehicle();
+            NetworkAvatarManager.EjectRemoteVehicleOccupants(__instance.vehicle);
         }
-        else
-        {
-            LimbScript hitLimb;
-            if (!col.gameObject.TryGetComponent(out hitLimb) || hitLimb == null) return;
-            hitBody = hitLimb.body;
-            ragdoll = false;
-        }
-
-        NetworkAvatarManager.RouteVehicleImpact(hitBody, impact, __instance.transform.position, ragdoll);
+        return true;
     }
 }
 

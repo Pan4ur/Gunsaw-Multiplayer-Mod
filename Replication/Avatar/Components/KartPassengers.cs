@@ -3,7 +3,12 @@ using UnityEngine;
 internal static class KartPassengers
 {
     private static readonly HashSet<BodyScript> passengers = new HashSet<BodyScript>();
+    private static readonly HashSet<BodyScript> reportedRagdolls = new();
     private static readonly Dictionary<BodyScript, Dictionary<Collider2D, bool>> colliderStates = new Dictionary<BodyScript, Dictionary<Collider2D, bool>>();
+    private static readonly Dictionary<BodyScript, Dictionary<Rigidbody2D, bool>> physicsStates = new();
+
+    private static readonly Dictionary<BodyScript, VehicleBase> collisionVehicles = new();
+    private static readonly Dictionary<BodyScript, List<(Collider2D Left, Collider2D Right, bool Ignored)>> vehicleCollisionStates = new();
 
     private static bool IsPassenger(BodyScript body) => body != null && passengers.Contains(body);
 
@@ -60,7 +65,8 @@ internal static class KartPassengers
             body.BodyAnimator.SetBool("inVehicle", true);
             body.BodyAnimator.Play("PlayerSit");
         }
-        DisableCollisions(body);
+        UpdateVehicleCollisions(body, vehicle);
+        MaintainPassenger(body);
         RefreshDriver(vehicle);
     }
 
@@ -68,37 +74,55 @@ internal static class KartPassengers
     {
         if (vehicle == null || body == null || vehicle.occupant != body) return;
         passengers.Remove(body);
+        UpdateVehicleCollisions(body, vehicle);
         RefreshDriver(vehicle);
     }
 
-    internal static void Exit(BodyScript body)
+    internal static void Exit(BodyScript body, VehicleBase vehicle)
     {
         if (body == null) return;
-        var vehicle = body.curVehicle;
         passengers.Remove(body);
-        RestoreCollisions(body);
-        if (vehicle != null) RefreshDriver(vehicle);
-    }
-
-    internal static bool ExitPassenger(BodyScript body)
-    {
-        if (!IsPassenger(body) || body.curVehicle == null) return false;
-        var vehicle = body.curVehicle;
-        var joint = body.GetComponent<FixedJoint2D>();
-        if (joint != null) UnityEngine.Object.Destroy(joint);
-        body.inVehicle = false;
+        reportedRagdolls.Remove(body);
         if (body.BodyAnimator != null)
         {
             body.BodyAnimator.SetBool("inVehicle", false);
             body.BodyAnimator.Rebind();
             body.BodyAnimator.Update(0f);
         }
-        body.transform.position += vehicle.mainPart.transform.up * vehicle.upPush * 2f;
+        body.transform.rotation = Quaternion.identity;
+        var velocity = vehicle.mainPart.rb.velocity;
+        foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
+        {
+            rigidbody.position = rigidbody.transform.position;
+            rigidbody.rotation = rigidbody.transform.eulerAngles.z;
+            rigidbody.velocity = velocity;
+            rigidbody.angularVelocity = 0f;
+        }
+        body.lastMoveDir = velocity;
+        body.framesInGround = 0;
+        body.grounded = false;
+        if (body == PlayerScript.player?.bodyScript)
+            LocalPlayerReplication.Instance?.RestoreLocalVehiclePhysics();
+        RestorePhysics(body);
+        RestoreCollisions(body);
+        UpdateVehicleCollisions(body, null);
+        RefreshDriver(vehicle);
+    }
+
+    internal static bool ExitPassenger(BodyScript body)
+    {
+        if (!IsPassenger(body) || body.curVehicle == null) return false;
+        var joint = body.GetComponent<FixedJoint2D>();
+        if (joint != null)
+        {
+            joint.enabled = false;
+            UnityEngine.Object.Destroy(joint);
+        }
+        body.inVehicle = false;
+        body.transform.position += body.curVehicle.mainPart.transform.up * body.curVehicle.upPush * 2f;
         body.curVehicle = null;
         body.rb.freezeRotation = true;
-        body.rb.transform.rotation = Quaternion.identity;
         body.standAnimForce = 1f;
-        Exit(body);
         return true;
     }
 
@@ -110,15 +134,91 @@ internal static class KartPassengers
         driver.transform.position = SeatPosition(vehicle, driver);
     }
 
-    private static void DisableCollisions(BodyScript body)
+    internal static void UpdateVehicleCollisions(BodyScript body, VehicleBase vehicle)
     {
-        var states = new Dictionary<Collider2D, bool>();
-        foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
+        if (body == null) return;
+        if (collisionVehicles.TryGetValue(body, out var previous) && previous == vehicle)
         {
-            states[collider] = collider.enabled;
-            collider.enabled = false;
+            if (vehicleCollisionStates.TryGetValue(body, out var current))
+                foreach (var pair in current)
+                    if (pair.Left != null && pair.Right != null && pair.Left.enabled && pair.Right.enabled)
+                        Physics2D.IgnoreCollision(pair.Left, pair.Right, true);
+            return;
         }
-        colliderStates[body] = states;
+        if (vehicleCollisionStates.TryGetValue(body, out var states))
+        {
+            foreach (var pair in states)
+                if (pair.Left != null && pair.Right != null)
+                    Physics2D.IgnoreCollision(pair.Left, pair.Right, pair.Ignored);
+            vehicleCollisionStates.Remove(body);
+            collisionVehicles.Remove(body);
+        }
+        if (vehicle == null) return;
+        states = new List<(Collider2D Left, Collider2D Right, bool Ignored)>();
+        foreach (var part in vehicle.GetComponentsInChildren<VehiclePart>(true))
+            foreach (var left in part.GetComponents<Collider2D>())
+                foreach (var right in body.GetComponentsInChildren<Collider2D>(true))
+                {
+                    var ignored = right == body.coll && vehicle.occupant == body
+                        ? false : Physics2D.GetIgnoreCollision(left, right);
+                    states.Add((left, right, ignored));
+                    Physics2D.IgnoreCollision(left, right, true);
+                }
+        collisionVehicles[body] = vehicle;
+        vehicleCollisionStates[body] = states;
+    }
+
+    internal static void ReportPassengerRagdoll(BodyScript body)
+    {
+        if (reportedRagdolls.Add(body))
+            GunsawMultiplayerPlugin.LogInfo("Blocked seated passenger ragdoll, health=" + body.health +
+                ", stamina=" + body.stamina + ". Caller: " + Environment.StackTrace);
+    }
+
+    internal static void MaintainPassenger(BodyScript body)
+    {
+        if (!IsProtectedPassenger(body)) return;
+        body.framesInGround = 0;
+        body.grounded = false;
+        if (!colliderStates.TryGetValue(body, out var colliders))
+        {
+            colliders = new Dictionary<Collider2D, bool>();
+            foreach (var collider in body.GetComponentsInChildren<Collider2D>(true))
+                colliders[collider] = collider.enabled;
+            colliderStates[body] = colliders;
+        }
+        foreach (var collider in colliders.Keys)
+            if (collider != null) collider.enabled = false;
+        if (!physicsStates.TryGetValue(body, out var rigidbodies))
+        {
+            rigidbodies = new Dictionary<Rigidbody2D, bool>();
+            foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
+                if (rigidbody != body.rb) rigidbodies[rigidbody] = rigidbody.simulated;
+            physicsStates[body] = rigidbodies;
+        }
+        foreach (var rigidbody in rigidbodies.Keys)
+            if (rigidbody != null)
+            {
+                rigidbody.velocity = Vector2.zero;
+                rigidbody.angularVelocity = 0f;
+                rigidbody.simulated = false;
+            }
+    }
+
+    private static void RestorePhysics(BodyScript body)
+    {
+        if (!physicsStates.TryGetValue(body, out var states)) return;
+        foreach (var pair in states)
+            if (pair.Key != null)
+            {
+                if (body.rb != null)
+                {
+                    pair.Key.velocity = body.rb.velocity;
+                    pair.Key.angularVelocity = body.rb.angularVelocity;
+                }
+                pair.Key.simulated = pair.Value;
+            }
+        physicsStates.Remove(body);
     }
 
     private static void RestoreCollisions(BodyScript body)

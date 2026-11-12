@@ -14,7 +14,7 @@ internal sealed class WorldDoorReplication
     private float nextDoorSnapshotRequest;
     private readonly ContactPoint2D[] playerContacts = new ContactPoint2D[16];
     private BodyScript referencePlayer;
-    private DoorScript playerReference;
+    private Transform playerReference;
     private float referenceContactAt;
 
     internal void Update()
@@ -233,31 +233,40 @@ internal sealed class WorldDoorReplication
             return;
         }
         
-        var supportDoor = PlayerSupport(body, body.coll, ref grounded);
-        if (supportDoor == null && (body.coll == null || !body.coll.enabled) && body.limbs != null)
+        var support = PlayerSupport(body, body.coll, ref grounded);
+        if (support == null && (body.coll == null || !body.coll.enabled) && body.limbs != null)
         {
             foreach (var limb in body.limbs)
             {
                 if (limb == null || limb.dismembered) continue;
-                supportDoor = PlayerSupport(body, limb.GetComponent<Collider2D>(), ref grounded);
-                if (supportDoor != null) break;
+                support = PlayerSupport(body, limb.GetComponent<Collider2D>(), ref grounded);
+                if (support != null) break;
             }
         }
 
         if (grounded)
         {
-            playerReference = supportDoor;
+            playerReference = support;
             referenceContactAt = Time.unscaledTime;
         }
         
         if (playerReference == null || Time.unscaledTime - referenceContactAt > 0.5f)
             return;
         
-        id = WorldReplication.Instance.WireId(replicatedDoorIds[playerReference]);
-        offset = (Vector2)body.transform.position - (Vector2)playerReference.transform.position;
+        var door = playerReference.GetComponent<DoorScript>();
+        if (door != null && replicatedDoorIds.TryGetValue(door, out var doorId))
+            id = WorldReplication.Instance.WireId(doorId);
+        else
+        {
+            var part = playerReference.GetComponent<VehiclePart>();
+            var vehicle = part == null ? null : part.vehicle ?? part.GetComponentInParent<VehicleBase>();
+            if (vehicle == null) return;
+            id = WorldReplication.Instance.VehicleWireId(vehicle);
+        }
+        offset = (Vector2)body.transform.position - (Vector2)playerReference.position;
     }
 
-    private DoorScript PlayerSupport(BodyScript body, Collider2D collider, ref bool grounded)
+    private Transform PlayerSupport(BodyScript body, Collider2D collider, ref bool grounded)
     {
         if (collider == null || !collider.enabled) return null;
         var count = collider.GetContacts(playerContacts);
@@ -270,7 +279,11 @@ internal sealed class WorldDoorReplication
             grounded = true;
             var support = other.attachedRigidbody;
             var door = support == null ? null : support.GetComponentInParent<DoorScript>();
-            if (door != null && replicatedDoorIds.ContainsKey(door)) return door;
+            if (door != null && replicatedDoorIds.ContainsKey(door)) return door.transform;
+            var part = support == null ? null : support.GetComponent<VehiclePart>();
+            var vehicle = part == null ? null : part.vehicle ?? part.GetComponentInParent<VehicleBase>();
+            if (vehicle != null && vehicle.mainPart != null && !WorldBodyReplication.IsDetachedVehiclePart(support))
+                return vehicle.mainPart.transform;
         }
         return null;
     }
@@ -278,7 +291,9 @@ internal sealed class WorldDoorReplication
     internal Transform SupportTransform(ulong id)
     {
         var key = WorldReplication.Instance.ResolveWireId(id);
-        return replicatedDoors.TryGetValue(key, out var door) && door != null ? door.transform : null;
+        if (replicatedDoors.TryGetValue(key, out var door) && door != null) return door.transform;
+        return WorldReplication.Instance.bodies.bodies.TryGetValue(key, out var body) && body != null &&
+            body.GetComponent<VehiclePart>() != null ? body.transform : null;
     }
 
     internal void Clear()

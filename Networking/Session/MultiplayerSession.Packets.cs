@@ -478,7 +478,7 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.VehicleImpact)
+            else if (!isHost && decodedPacket.Type == PacketType.VehicleImpact && senderId == hostPeerId)
             {
                 try
                 {

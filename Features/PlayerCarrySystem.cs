@@ -155,7 +155,13 @@ internal static class PlayerCarrySystem
         RestoreRenderPose();
         if (!carrying) return;
         var target = BodyForPeer(targetId);
-        if (target != null) ApplyTargetPhysics(target, target == PlayerScript.player?.bodyScript);
+        if (target != null)
+        {
+            var carrier = BodyForPeer(carrierId);
+            if (!target.inVehicle)
+                KartPassengers.UpdateVehicleCollisions(target, carrier != null && carrier.inVehicle ? carrier.curVehicle : null);
+            ApplyTargetPhysics(target, target == PlayerScript.player?.bodyScript);
+        }
     }
 
     internal static void LateTick()
@@ -222,6 +228,7 @@ internal static class PlayerCarrySystem
             if (packet.Carrying)
             {
                 if (sender != packet.CarrierId || packet.CarrierId == 0 || packet.TargetId == 0 || packet.CarrierId == packet.TargetId || carrying ||
+                    BodyForPeer(packet.CarrierId)?.inVehicle == true || BodyForPeer(packet.TargetId)?.inVehicle == true ||
                     PropHuntSystem.IsProp(BodyForPeer(packet.CarrierId)) || PropHuntSystem.IsProp(BodyForPeer(packet.TargetId))) return;
                 carrying = true;
                 carrierId = packet.CarrierId;
@@ -317,7 +324,7 @@ internal static class PlayerCarrySystem
 
     private static ushort FindCarryTarget(BodyScript local)
     {
-        if (PropHuntSystem.IsProp(local)) return 0;
+        if (local.inVehicle || PropHuntSystem.IsProp(local)) return 0;
         var camera = Camera.main;
         if (camera == null) return 0;
         var point = (Vector2)camera.ScreenToWorldPoint(Input.mousePosition);
@@ -327,7 +334,7 @@ internal static class PlayerCarrySystem
                 continue;
             
             var body = remote.Value.remoteBody;
-            if (body == null || !body.isAlive || PropHuntSystem.IsProp(body) || Vector2.Distance(local.transform.position, body.transform.position) > Range) continue;
+            if (body == null || !body.isAlive || body.inVehicle || PropHuntSystem.IsProp(body) || Vector2.Distance(local.transform.position, body.transform.position) > Range) continue;
             if (PointerOverBody(body, point)) return remote.Key;
         }
         return 0;
@@ -858,12 +865,15 @@ anchor + (Vector2)(poseRotation * offset);
             if (pair.Key != null) pair.Key.enabled = pair.Value;
         remoteTargetColliders.Clear();
         foreach (var pair in targetPoses)
+        {
+            if (pair.Key != null && !pair.Key.inVehicle) KartPassengers.UpdateVehicleCollisions(pair.Key, null);
             if (pair.Key == PlayerScript.player?.bodyScript)
             {
                 ResetTargetRoot(pair.Key, pair.Value);
                 foreach (var part in pair.Value)
                     if (part.Body != null) part.Body.velocity = releaseVelocity;
             }
+        }
         targetPoses.Clear();
     }
 

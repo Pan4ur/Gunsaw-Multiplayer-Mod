@@ -72,6 +72,7 @@ public class WorldBodyReplication
     internal void RemoveWorldBody(Rigidbody2D body)
     {
         if (body == null) return;
+        vehiclePaths.Remove(body);
         LoadDistanceSystem.UnregisterWorldBody(body);
         string id;
         if (ids.TryGetValue(body, out id))
@@ -352,9 +353,8 @@ public class WorldBodyReplication
                 vehiclePaths.Remove(body);
                 body.position = state.position;
                 body.rotation = state.rotation;
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
-                return;
+                body.velocity = Vector2.zero;
+                body.angularVelocity = 0f;
             }
 
             body.interpolation = RigidbodyInterpolation2D.Interpolate;
@@ -366,16 +366,9 @@ public class WorldBodyReplication
             {
                 position = state.position,
                 rotation = state.rotation,
-                velocity = state.velocity,
-                angularVelocity = state.angularVelocity,
                 arrivedAt = now
             });
             while (path.Count > 2 && path[0].arrivedAt < now - 0.3f) path.RemoveAt(0);
-            if (path.Count < 2)
-            {
-                body.velocity = state.velocity;
-                body.angularVelocity = state.angularVelocity;
-            }
             return;
         }
 
@@ -448,18 +441,43 @@ public class WorldBodyReplication
 
     internal static bool IsClientAuthorityJointBody(Rigidbody2D body)
     {
-        return IsSafetyRailingBody(body) || IsChainlinkFenceBody(body);
+        return IsSafetyRailingBody(body) || IsChainlinkFenceBody(body) || IsDetachedVehiclePart(body);
+    }
+
+    internal static bool IsDetachedVehiclePart(Rigidbody2D body)
+    {
+        if (body == null)
+            return false;
+            
+        var part = body.GetComponent<VehiclePart>();
+        if (part == null)
+            return false;
+            
+        var vehicle = part.vehicle ?? part.GetComponentInParent<VehicleBase>();
+        if (vehicle == null || vehicle.mainPart == part)
+            return false;
+            
+        foreach (var joint in body.GetComponents<Joint2D>())
+            if (joint != null && joint.enabled && joint.connectedBody != null)
+                return false;
+                
+        return true;
     }
 
     private static bool IsClientPhysicsJointBody(Rigidbody2D body)
     {
-        return IsSafetyRailingBody(body) || IsChainlinkFenceBody(body);
+        return IsSafetyRailingBody(body) || IsChainlinkFenceBody(body) || IsDetachedVehiclePart(body);
     }
 
     private BodyClassification ClassificationFor(Rigidbody2D body)
     {
         BodyClassification classification;
-        if (classifications.TryGetValue(body, out classification)) return classification;
+        if (classifications.TryGetValue(body, out classification))
+        {
+            if (body.GetComponent<VehiclePart>() != null)
+                classification.ClientPhysicsJoint = IsDetachedVehiclePart(body);
+            return classification;
+        }
         classification = new BodyClassification
         {
             Mechanism = IsMechanismBody(body),
@@ -504,24 +522,23 @@ public class WorldBodyReplication
             var body = pair.Key;
             if (body == null) { staleVehiclePaths.Add(body); continue; }
             var path = pair.Value;
-            if (path.Count < 2 || !body.simulated ||
-                body.bodyType != RigidbodyType2D.Kinematic) continue;
-            var segment = path.Count - 2;
+            if (!body.simulated || body.bodyType != RigidbodyType2D.Kinematic)
+            {
+                staleVehiclePaths.Add(body);
+                continue;
+            }
+            if (path.Count == 0) continue;
+            var segment = Math.Max(0, path.Count - 2);
             while (segment > 0 && path[segment].arrivedAt > renderTime) segment--;
             var from = path[segment];
-            var to = path[segment + 1];
+            var to = path[Math.Min(segment + 1, path.Count - 1)];
             var span = Mathf.Max(0.001f, to.arrivedAt - from.arrivedAt);
             var alpha = Mathf.Clamp01((renderTime - from.arrivedAt) / span);
             var targetPosition = Vector2.Lerp(from.position, to.position, alpha);
             var targetRotation = from.rotation +
                                  Mathf.DeltaAngle(from.rotation, to.rotation) * alpha;
-            const float correctionGain = 5f;
-            var correction = (targetPosition - body.position) * correctionGain;
-            if (correction.sqrMagnitude > 25f) correction = correction.normalized * 5f;
-            body.velocity = Vector2.Lerp(body.velocity, to.velocity + correction, 0.35f);
-            var angularCorrection = Mathf.DeltaAngle(body.rotation, targetRotation) * correctionGain;
-            body.angularVelocity = Mathf.Lerp(body.angularVelocity,
-                to.angularVelocity + angularCorrection, 0.35f);
+            body.MovePosition(targetPosition);
+            body.MoveRotation(targetRotation);
         }
         foreach (var body in staleVehiclePaths) vehiclePaths.Remove(body);
     }
@@ -574,8 +591,6 @@ public class WorldBodyReplication
     {
         public Vector2 position;
         public float rotation;
-        public Vector2 velocity;
-        public float angularVelocity;
         public float arrivedAt;
     }
     

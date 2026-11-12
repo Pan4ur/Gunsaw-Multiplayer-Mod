@@ -606,9 +606,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         {
             if (remoteBody.inVehicle && remoteBody.curVehicle != null)
             {
-                var previousVehicle = remoteBody.curVehicle;
                 remoteBody.ExitVehicle();
-                SetRemoteVehicleCollisions(previousVehicle, false);
                 DetachRemoteAvatar();
             }
             return false;
@@ -620,9 +618,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         {
             if (remoteBody.inVehicle && remoteBody.curVehicle != null)
             {
-                var previousVehicle = remoteBody.curVehicle;
                 remoteBody.ExitVehicle();
-                SetRemoteVehicleCollisions(previousVehicle, false);
                 DetachRemoteAvatar();
             }
             AttachRemoteToVehicle(vehicle, driver);
@@ -667,7 +663,6 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (remoteAvatar != null)
         {
             var offset = (Vector3) KartPassengers.SeatPosition(vehicle, remoteBody) - remoteBody.transform.position;
-            remoteAvatar.transform.SetParent(vehicle.mainPart.transform, true);
             remoteAvatar.transform.position += offset;
         }
 
@@ -675,7 +670,6 @@ internal class NetworkAvatarReplication : MonoBehaviour
         SnapRemoteVehicleLimbs();
         targets.Clear();
         CaptureRemoteVehicleRigPose(vehicle);
-        SetRemoteVehicleCollisions(vehicle, true);
     }
 
     private void MaintainRemoteVehiclePose()
@@ -813,9 +807,9 @@ internal class NetworkAvatarReplication : MonoBehaviour
             remoteBody.curVehicle.mainPart.rb == null || remoteBody.rb == null) return;
         if (remoteAvatar == null) return;
         var vehicleTransform = remoteBody.curVehicle.mainPart.transform;
+        var rotationDelta = vehicleTransform.rotation * Quaternion.Inverse(remoteBody.transform.rotation);
+        remoteAvatar.transform.rotation = rotationDelta * remoteAvatar.transform.rotation;
         var offset = KartPassengers.SeatPosition(remoteBody.curVehicle, remoteBody) - (Vector2)remoteBody.transform.position;
-        if (remoteAvatar.transform.parent != vehicleTransform)
-            remoteAvatar.transform.SetParent(vehicleTransform, true);
         remoteAvatar.transform.position += (Vector3)offset;
         remoteBody.transform.rotation = vehicleTransform.rotation;
         remoteBody.rb.position = remoteBody.transform.position;
@@ -909,17 +903,12 @@ internal class NetworkAvatarReplication : MonoBehaviour
         }
     }
 
-    private void SetRemoteVehicleCollisions(VehicleBase vehicle, bool ignored)
+    private void UpdateVehicleSupportCollisions()
     {
-        if (vehicle == null) return;
-        var vehicleColliders = vehicle.GetComponentsInChildren<Collider2D>(true);
-        foreach (var remoteCollider in remoteColliderTriggers.Keys)
-        {
-            if (remoteCollider == null) continue;
-            foreach (var vehicleCollider in vehicleColliders)
-                if (vehicleCollider != null)
-                    Physics2D.IgnoreCollision(remoteCollider, vehicleCollider, ignored);
-        }
+        if (!MultiplayerSession.IsHost || remoteBody == null || remoteBody.inVehicle) return;
+        var part = remoteGrounded && snapshotMechanism != null ? snapshotMechanism.GetComponent<VehiclePart>() : null;
+        var vehicle = part == null ? null : part.vehicle ?? part.GetComponentInParent<VehicleBase>();
+        KartPassengers.UpdateVehicleCollisions(remoteBody, vehicle);
     }
 
     internal void UpdateRemotePhysicsMode(bool refreshPropCollisions = true)
@@ -930,6 +919,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
             remoteBody.team = RemoteTeam(player.bodyScript);
 
         ApplyPlayerCollisionRule(player == null ? null : player.bodyScript);
+        UpdateVehicleSupportCollisions();
 
         if (remotePhysicsModeKnown) return;
         remotePhysicsModeKnown = true;

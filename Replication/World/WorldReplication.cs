@@ -664,9 +664,8 @@ public class WorldReplication : MonoBehaviour
             var body = pair.Value;
             if (bodies.IsDoorBody(body)) continue;
             if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
-            if (!fullSnapshot && IsIdleVehiclePart(body)) continue;
             var awake = body != null && body.IsAwake();
-            if (!fullSnapshot && body != null && !awake) continue;
+            if (!fullSnapshot && body != null && !awake && bodies.BodyLayoutFor(body).VehiclePart == null) continue;
             var state = CaptureWorldBodyState(pair.Key, body, awake);
             WorldBodySnapshot previous;
             var stateChanged = !lastSerializedBodyStates.TryGetValue(pair.Key, out previous) ||
@@ -704,20 +703,6 @@ public class WorldReplication : MonoBehaviour
         lastCapturedEnvironment = packet;
         MultiplayerSession.Send(packet, peerId);
         enviroment.SendFireStates(peerId);
-    }
-
-    private bool IsIdleVehiclePart(Rigidbody2D body)
-    {
-        if (body == null) return false;
-        var layout = bodies.BodyLayoutFor(body);
-        var part = layout.VehiclePart;
-        if (part == null) return false;
-        var vehicle = part.vehicle ?? layout.Vehicle;
-        if (vehicle == null || vehicle.occupant != null) return false;
-        var mainPart = vehicle.mainPart;
-        var mainBody = mainPart == null ? body : mainPart.rb;
-        return mainBody != null && mainBody.velocity.sqrMagnitude < 0.0025f &&
-               Mathf.Abs(mainBody.angularVelocity) < 0.25f;
     }
 
     internal void DrawReplicationDebugOverlay()
@@ -1379,7 +1364,7 @@ public class WorldReplication : MonoBehaviour
         if (part == null || (remoteBody.transform.position - part.transform.position).sqrMagnitude > 36f)
             return;
         amount = Mathf.Clamp(amount, 0f, 100f);
-        if (collision) part.health -= amount;
+        if (collision) return;
         part.Damage(amount);
     }
 

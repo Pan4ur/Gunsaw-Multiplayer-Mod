@@ -511,7 +511,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         body.lastMoveDir = vehicleVelocity;
     }
 
-    private void RestoreLocalVehiclePhysics()
+    internal void RestoreLocalVehiclePhysics()
     {
         if (!localVehicleLocked)
             return;
@@ -528,7 +528,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
                 localVehicle.mainPart.rb != null)
             {
                 rb.velocity = localVehicle.mainPart.rb.velocity;
-                rb.angularVelocity = localVehicle.mainPart.rb.angularVelocity;
+                rb.angularVelocity = localVehicleBody.inVehicle ? localVehicle.mainPart.rb.angularVelocity : 0f;
             }
 
             rb.simulated = localVehicleWasSimulated;

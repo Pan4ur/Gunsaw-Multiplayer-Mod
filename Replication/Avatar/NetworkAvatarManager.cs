@@ -1023,7 +1023,7 @@ weapon != activeShotState.Weapon) return;
         if (sound != null) Sound.Play(sound, position, false, false);
     }
 
-    internal static void RouteVehicleImpact(BodyScript body, float impact, Vector2 position, bool ragdoll)
+    internal static void RouteVehicleImpact(BodyScript body, float impact, Vector2 position, Vector2 velocityChange)
     {
         if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || body == null || !NetworkAvatarUtilities.IsFinite(impact) || impact <= 6f) 
             return;
@@ -1032,7 +1032,7 @@ weapon != activeShotState.Weapon) return;
         if (replica == null || replica.remotePeerId == 0 || !replica.receivedFirstSnapshot || KartPassengers.IsProtectedPassenger(body)) 
             return;
         
-        MultiplayerSession.Send(new VehicleImpactPacket(impact, position.x, position.y, ragdoll), replica.remotePeerId);
+        MultiplayerSession.Send(new VehicleImpactPacket(impact, position.x, position.y, true, velocityChange.x, velocityChange.y), replica.remotePeerId);
     }
 
     internal static void ApplyVehicleImpact(BodyScript body, VehicleImpactPacket packet)
@@ -1047,6 +1047,15 @@ weapon != activeShotState.Weapon) return;
 
         if (packet.Ragdoll && body.controlState == BodyScript.RagdollState.FullControl)
             body.EnterHalfControl();
+
+        if (NetworkAvatarUtilities.IsFinite(packet.VelocityX) && NetworkAvatarUtilities.IsFinite(packet.VelocityY))
+        {
+            var velocityChange = Vector2.ClampMagnitude(new Vector2(packet.VelocityX, packet.VelocityY), impact);
+            body.lastMoveDir += velocityChange;
+            foreach (var rigidbody in body.GetComponentsInChildren<Rigidbody2D>(true))
+                if (rigidbody != null && rigidbody.simulated && rigidbody.bodyType == RigidbodyType2D.Dynamic)
+                    rigidbody.velocity += velocityChange;
+        }
 
         body.health -= impact * 2.5f;
         body.stamina -= impact * 3f;
