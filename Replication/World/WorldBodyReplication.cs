@@ -10,6 +10,7 @@ public class WorldBodyReplication
     internal readonly HashSet<Rigidbody2D> frozenFarClientProps = new();
     private readonly Dictionary<Rigidbody2D, Vector2> lodPositions = new();
     internal readonly Dictionary<Rigidbody2D, WorldReplication.State> received = new();
+    internal readonly Dictionary<Rigidbody2D, WorldReplication.State> authoritativeStates = new();
     internal readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
     internal readonly Dictionary<string, WorldReplication.ClientBodyState> pushes = new();
     internal readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
@@ -86,6 +87,7 @@ public class WorldBodyReplication
         frozenFarClientProps.Remove(body);
         lodPositions.Remove(body);
         received.Remove(body);
+        authoritativeStates.Remove(body);
         locallyControlledUntil.Remove(body);
         WorldReplication.Instance.nextContactStateAt.Remove(body);
         localSettings.Remove(body);
@@ -303,6 +305,7 @@ public class WorldBodyReplication
     internal void ApplyAuthoritativeState(Rigidbody2D body, WorldReplication.State state)
     {
         if (!MultiplayerSession.IsHost && IsDoorBody(body)) return;
+        authoritativeStates[body] = state;
         lodPositions[body] = state.position;
         if (state.safetyRailing && !state.safetyRailingAttached) DetachSafetyRailing(body);
         
@@ -310,6 +313,8 @@ public class WorldBodyReplication
         
         if (!MultiplayerSession.IsHost && !state.vehiclePart && frozenFarClientProps.Contains(body))
         {
+            body.position = state.position;
+            body.rotation = state.rotation;
             if (body.simulated) body.simulated = false;
             return;
         }
@@ -332,7 +337,12 @@ public class WorldBodyReplication
         body.constraints = state.constraints;
         body.simulated = state.simulated;
         body.bodyType = mechanism && state.simulated ? RigidbodyType2D.Kinematic : state.bodyType;
-        if (!state.simulated) return;
+        if (!state.simulated)
+        {
+            body.position = state.position;
+            body.rotation = state.rotation;
+            return;
+        }
 
         if (mechanism)
         {
@@ -538,7 +548,16 @@ public class WorldBodyReplication
             }
             if ((position - localPosition).sqrMagnitude < LoadDistanceSystem.WorldDistanceSqr)
             {
-                frozenFarClientProps.Remove(body);
+                if (frozenFarClientProps.Remove(body))
+                {
+                    if (authoritativeStates.TryGetValue(body, out var state))
+                        ApplyAuthoritativeState(body, state);
+                    else if (localSettings.TryGetValue(body, out var settings))
+                    {
+                        body.bodyType = settings.bodyType;
+                        body.simulated = settings.simulated;
+                    }
+                }
                 continue;
             }
             if (frozenFarClientProps.Add(body) || body.simulated || body.bodyType != RigidbodyType2D.Static)

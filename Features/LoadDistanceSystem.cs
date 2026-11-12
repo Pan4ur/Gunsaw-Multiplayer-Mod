@@ -225,6 +225,9 @@ internal static class LoadDistanceSystem
         return body != null && savedSimulationStates.ContainsKey(body);
     }
 
+    internal static bool IsSimulationEnabled(Rigidbody2D body) =>
+        body != null && (savedSimulationStates.TryGetValue(body, out var simulated) ? simulated : body.simulated);
+
     internal static bool IsNpcSimulationCulled(BodyScript body)
     {
         if (body == null) return false;

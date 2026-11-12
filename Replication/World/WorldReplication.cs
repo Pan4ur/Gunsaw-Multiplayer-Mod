@@ -578,6 +578,7 @@ public class WorldReplication : MonoBehaviour
         pendingDestroyedWeaponPickups.Clear();
         clientDestroyedBodyIds.Clear();
         bodies.received.Clear();
+        bodies.authoritativeStates.Clear();
         bodies.vehiclePaths.Clear();
         bodies.pushes.Clear();
         bodies.locallyControlledUntil.Clear();
@@ -761,7 +762,7 @@ public class WorldReplication : MonoBehaviour
             gravityScale: body.gravityScale,
             constraints: (int)body.constraints,
             bodyType: (byte)body.bodyType,
-            simulated: body.simulated,
+            simulated: LoadDistanceSystem.IsSimulationEnabled(body),
             awake: awake,
             safetyRailing: layout.SafetyRailing,
             safetyRailingAttached: layout.SafetyRailing && IsSafetyRailingAttached(layout),
@@ -1194,6 +1195,8 @@ public class WorldReplication : MonoBehaviour
                 return;
 
             case InteractionType.WorldHistoryRequest:
+                nextSnapshot = 0f;
+                nextFullWorldSnapshot = 0f;
                 SendLampHistory(peerId);
                 MedicalStationRuntime.SendHistory(peerId);
                 return;
@@ -1390,10 +1393,22 @@ public class WorldReplication : MonoBehaviour
 
     internal void RegisterLevelLoaderWorldObjects()
     {
-        if (!MultiplayerSession.IsConnected) return;
+        if (!MultiplayerSession.IsInLobby) return;
+        var scene = SceneManager.GetActiveScene();
+        var isHost = MultiplayerSession.IsHost;
+        if (activeSceneHandle != scene.handle)
+        {
+            if (wasConnected || wasHost) RestoreClientWorld();
+            activeSceneHandle = scene.handle;
+        }
+        if (isHost) bodies.RefreshWorldBodies();
         enviroment.RefreshLamps();
+        discoveredScene = false;
         worldHistoryRequested = false;
+        wasConnected = MultiplayerSession.IsConnected;
+        wasHost = isHost;
         nextSnapshot = 0f;
+        nextFullWorldSnapshot = 0f;
     }
 
     internal void QueueDroneDamage(DroneScript drone, float amount)
