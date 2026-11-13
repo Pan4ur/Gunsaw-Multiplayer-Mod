@@ -1318,7 +1318,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
 
     private void SendCursor()
     {
-        if (Camera.main == null || Time.unscaledTime < nextCursor) 
+        if (!Application.isFocused || Camera.main == null || Time.unscaledTime < nextCursor)
             return;
         
         var position = (Vector2)Camera.main.ScreenToWorldPoint(Input.mousePosition);
