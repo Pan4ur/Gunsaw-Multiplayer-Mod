@@ -12,6 +12,20 @@ internal static class TailScalePatch
         return body == null || body.isPlayer || !NpcReplication.IsClientProxy(body);
     }
 
+    /*
+    --- a/CustJoint.cs
+    +++ b/CustJoint.cs
+    @@ private void FixedUpdate()
+    -    Vector2 vector = (Vector2)transConnect.TransformPoint(origOffset) - oldPos;
+    -    oldPos = transConnect.TransformPoint(origOffset);
+    -    Vector2 vector2 = (transConnect.TransformPoint(origOffset) - transform.position) * (updateSpeed * 1.3f);
+    +    Vector2 vector = (Vector2)TailScalePatch.GetConnectionPoint(transConnect, origOffset) - oldPos;
+    +    oldPos = TailScalePatch.GetConnectionPoint(transConnect, origOffset);
+    +    Vector2 vector2 = (TailScalePatch.GetConnectionPoint(transConnect, origOffset) - TailScalePatch.GetTailPosition(transform)) * (updateSpeed * 1.3f);
+    @@
+    -    joints[0].transform.localScale = new Vector2(1f, scaleObj.localScale.x);
+    +    TailScalePatch.SetTailScale(joints[0].transform, new Vector2(1f, scaleObj.localScale.x));
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var original = AccessTools.PropertySetter(typeof(Transform), nameof(Transform.localScale));

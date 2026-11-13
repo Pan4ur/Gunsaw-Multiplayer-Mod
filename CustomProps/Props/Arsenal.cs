@@ -88,11 +88,7 @@ internal sealed class ArsenalRuntime : MonoBehaviour
     }
 }
 
-[HarmonyPatch(typeof(GameManager), nameof(GameManager.Pause))]
-internal static class ArsenalPausePatch
-{
-    private static bool Prefix() => !ArsenalMenu.BlocksPause;
-}
+
 
 internal sealed class ArsenalMenu : MonoBehaviour
 {

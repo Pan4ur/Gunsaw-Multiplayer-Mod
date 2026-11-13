@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-internal static class TeamSystem
+internal static partial class TeamSystem
 {
     private static readonly List<Team> teams = new();
     private static readonly Dictionary<ushort, string> playerTeams = new();
@@ -420,19 +420,9 @@ internal static class TeamSystem
         cursorWrite = false;
     }
 
-    [HarmonyPatch(typeof(Cursor), "set_lockState")]
-    private static class CursorLockPatch
-    {
-        [HarmonyPrefix]
-        private static bool Prefix() => panel == null || cursorWrite;
-    }
 
-    [HarmonyPatch(typeof(Cursor), "set_visible")]
-    private static class CursorVisiblePatch
-    {
-        [HarmonyPrefix]
-        private static bool Prefix() => panel == null || cursorWrite;
-    }
+
+
 
     private sealed class Team
     {

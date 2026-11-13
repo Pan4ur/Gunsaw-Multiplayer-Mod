@@ -6,7 +6,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.TextCore;
 
-internal sealed class MultiplayerHud : MonoBehaviour
+internal sealed partial class MultiplayerHud : MonoBehaviour
 {
     private static readonly Regex tagRegex = new(@"<(/?)([A-Za-z][\w:-]*)[^>]*>", RegexOptions.Compiled);
     private static readonly HashSet<string> selfClosingTags = ["br", "page", "space", "sprite"];
@@ -888,51 +888,5 @@ internal sealed class MultiplayerHud : MonoBehaviour
     }
 
     // Prevents game ui from reading anything when chat is open
-    [HarmonyPatch(typeof(Input))]
-    internal static class ChatOpenHandler
-    {
-        [HarmonyPatch(nameof(Input.GetKey), typeof(KeyCode))]
-        [HarmonyPrefix]
-        private static bool PrefixGetKey(ref bool __result, KeyCode key)
-        {
-            if (IsChatOpenAndKeyIsTypable(key))
-            {
-                __result = false;
-                return false;
-            }
-            return true;
-        }
 
-        [HarmonyPatch(nameof(Input.GetKeyDown), typeof(KeyCode))]
-        [HarmonyPrefix]
-        private static bool PrefixGetKeyDown(ref bool __result, KeyCode key)
-        {
-            if (IsChatOpenAndKeyIsTypable(key))
-            {
-                __result = false;
-                return false;
-            }
-            return true;
-        }
-
-        [HarmonyPatch(nameof(Input.GetKeyUp), typeof(KeyCode))]
-        [HarmonyPrefix]
-        private static bool PrefixGetKeyUp(ref bool __result, KeyCode key)
-        {
-            if (IsChatOpenAndKeyIsTypable(key))
-            {
-                __result = false;
-                return false;
-            }
-            return true;
-        }
-
-        private static bool IsChatOpenAndKeyIsTypable(KeyCode key)
-        {
-            return (null != MultiplayerHud.Instance && MultiplayerHud.Instance.ChatOpen) &&
-                !readingChatInput &&
-                ((KeyCode.Space == key) || (KeyCode.A <= key && KeyCode.Z >= key) || (KeyCode.Alpha0 <= key && KeyCode.Alpha9 >= key) ||
-                 key == Controls.keys[Controls.CLOSE_CHAT]);
-        }
-    }
 }

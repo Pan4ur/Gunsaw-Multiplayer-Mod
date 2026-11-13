@@ -7,42 +7,7 @@ using TMPro;
 using DiscordIPC;
 
 // Creates RPC toggle button in setting
-[HarmonyPatch(typeof(ControlBinder), "Start")]
-internal static class RPCSettings
-{
-    private static void Postfix(ControlBinder __instance)
-    {
-        if (HeadlessLobbyService.IsHeadlessMode) return;
 
-        GameObject crossToggle = GameObject.Find("Canvas/Settings/CrosshairSettings/CrossToggle");
-        GameObject rpcToggle = UnityEngine.Object.Instantiate(crossToggle);
-        rpcToggle.transform.SetParent(crossToggle.transform.parent);
-        rpcToggle.transform.localScale = crossToggle.transform.localScale;
-        rpcToggle.transform.localPosition = new Vector3(crossToggle.transform.localPosition.x,
-            crossToggle.transform.localPosition.y - 125f, crossToggle.transform.localPosition.z);
-        Toggle rpcToggleToggle = rpcToggle.GetComponent<Toggle>();
-        rpcToggleToggle.SetIsOnWithoutNotify(0 == PlayerPrefs.GetInt("rpcdisable"));
-        rpcToggleToggle.onValueChanged = new Toggle.ToggleEvent();
-        rpcToggleToggle.onValueChanged.AddListener(ToggleRPC);
-
-        GameObject mainName = GameObject.Find("Canvas/Settings/CrosshairSettings/MainName (13)");
-        GameObject rpcName = UnityEngine.Object.Instantiate(mainName);
-        rpcName.transform.SetParent(mainName.transform.parent);
-        rpcName.transform.localScale = mainName.transform.localScale;
-        rpcName.transform.localPosition = new Vector3(mainName.transform.localPosition.x,
-            mainName.transform.localPosition.y - 125f, mainName.transform.localPosition.z);
-        rpcName.GetComponent<TextMeshProUGUI>().text = "Discord RPC";
-    }
-
-    private static void ToggleRPC(bool isOn)
-    {
-        RPCManager.instance.enable = isOn;
-        if (isOn)
-            PlayerPrefs.SetInt("rpcdisable", 0);
-        else
-            PlayerPrefs.SetInt("rpcdisable", 1);
-    }
-}
 
 internal sealed class RPCManager : MonoBehaviour
 {
