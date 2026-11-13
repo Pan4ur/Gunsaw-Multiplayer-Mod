@@ -303,6 +303,15 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
+            else if (decodedPacket.Type == PacketType.DuneEat)
+            {
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    EnqueueEvent(duneEats, senderId, DuneEatPacket.Read(ref reader));
+                }
+                catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
+            }
             else if (decodedPacket.Type == PacketType.PvpDamage)
             {
                 try
@@ -954,6 +963,7 @@ internal static partial class MultiplayerSession
         npcSnapshots.Clear();
         npcTransfers.Clear();
         npcDamage.Clear();
+        duneEats.Clear();
         npcSpeech.Clear();
         worldInteractions.Clear();
         playerDamage.Clear();

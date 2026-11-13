@@ -64,5 +64,6 @@ internal enum PacketType : byte
     EditorCloseReady = 0x41,
     NpcImpulse = 0x42,
     PropHunt = 0x43,
-    DoorState = 0x44
+    DoorState = 0x44,
+    DuneEat = 0x45
 }

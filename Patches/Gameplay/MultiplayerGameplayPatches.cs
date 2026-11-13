@@ -1060,54 +1060,76 @@ internal static class IncineratorDeathCausePatch
 }
 
 [HarmonyPatch]
-internal static class DuneEatDeathCausePatch
+internal static class DuneEatPatch
 {
-    private static System.Reflection.MethodBase TargetMethod()
-    {
-        return AccessTools.EnumeratorMoveNext(AccessTools.Method(typeof(AnglerScript), "Eat"));
-    }
+    private static System.Reflection.MethodBase TargetMethod() =>
+        AccessTools.EnumeratorMoveNext(AccessTools.Method(typeof(AnglerScript), nameof(AnglerScript.Eat)));
 
     /*
     [Harmony dif]
-    --- AnglerScript.Eat iterator MoveNext
-    +++ AnglerScript.Eat iterator MoveNext (patched)
+    --- AnglerScript.Eat
+    +++ AnglerScript.Eat (patched)
     @@
-      componentsInChildren[0].currentDamage = 1E+12f;
-    + DuneEatDeathCausePatch.RecordDeathCause(this, bod);
+    - DismemberManager[] componentsInChildren = bod.GetComponentsInChildren<DismemberManager>();
+    + DismemberManager[] componentsInChildren = DuneEatReplication.YummyParts(bod);
+    @@
+    - componentsInChildren[0].currentDamage = 1E+12f;
+    + if (!DuneEatReplication.TryBite(componentsInChildren[0], 1E+12f, this, bod))
+    +     yield break;
+    @@
+    - body.health = Mathf.Clamp(body.health, 0f, 100f);
+    + body.health = Mathf.Clamp(body.health, 0f, body.maxHealth);
     */
-    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, System.Reflection.MethodBase __originalMethod)
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions,
+        System.Reflection.MethodBase __originalMethod)
     {
-        var codes = new List<CodeInstruction>(instructions);
-
-        var currentDamageField = AccessTools.Field(typeof(DismemberManager), nameof(DismemberManager.currentDamage));
-        var recordMethod = AccessTools.Method(typeof(DuneEatDeathCausePatch), nameof(RecordDeathCause));
+        var codes = instructions.ToList();
+        var partCount = codes.FindIndex(code => code.opcode == OpCodes.Ldlen);
+        if (partCount < 0 || partCount + 1 >= codes.Count ||
+            (codes[partCount + 1].opcode != OpCodes.Brfalse && codes[partCount + 1].opcode != OpCodes.Brfalse_S))
+            throw new InvalidOperationException("Dune bite body part check not found.");
+        var skipBite = codes[partCount + 1].operand;
+        codes[partCount + 1].opcode = OpCodes.Brfalse;
         var eaterField = AccessTools.Field(__originalMethod.DeclaringType, "<>4__this");
         var victimField = AccessTools.Field(__originalMethod.DeclaringType, "bod");
-
+        var damageField = AccessTools.Field(typeof(DismemberManager), nameof(DismemberManager.currentDamage));
+        var clamp = AccessTools.Method(typeof(Mathf), nameof(Mathf.Clamp), [typeof(float), typeof(float), typeof(float)]);
+        var partsPatched = 0;
+        var bitePatched = 0;
+        var healthPatched = 0;
         for (var i = 0; i < codes.Count; i++)
         {
-            yield return codes[i];
-
-            if (codes[i].StoresField(currentDamageField) && i > 0 && codes[i - 1].opcode == OpCodes.Ldc_R4 && (float) codes[i - 1].operand == 1E+12f)
+            var code = codes[i];
+            if (code.operand is System.Reflection.MethodInfo method && method.Name == nameof(Component.GetComponentsInChildren) &&
+                method.ReturnType == typeof(DismemberManager[]) && method.GetParameters().Length == 0)
             {
-                yield return new CodeInstruction(OpCodes.Ldarg_0);
+                code.opcode = OpCodes.Call;
+                code.operand = AccessTools.Method(typeof(DuneEatReplication), nameof(DuneEatReplication.YummyParts));
+                partsPatched++;
+            }
+
+            if (code.StoresField(damageField))
+            {
+                yield return new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(code).MoveBlocksFrom(code);
                 yield return new CodeInstruction(OpCodes.Ldfld, eaterField);
                 yield return new CodeInstruction(OpCodes.Ldarg_0);
                 yield return new CodeInstruction(OpCodes.Ldfld, victimField);
-                yield return new CodeInstruction(OpCodes.Call, recordMethod);
+                yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(DuneEatReplication), nameof(DuneEatReplication.TryBite)));
+                yield return new CodeInstruction(OpCodes.Brfalse, skipBite);
+                bitePatched++;
+                continue;
             }
+            if (code.opcode == OpCodes.Ldc_R4 && Equals(code.operand, 100f) && i + 1 < codes.Count && codes[i + 1].Calls(clamp))
+            {
+                yield return new CodeInstruction(OpCodes.Ldarg_0).MoveLabelsFrom(code).MoveBlocksFrom(code);
+                yield return new CodeInstruction(OpCodes.Ldfld, eaterField);
+                yield return new CodeInstruction(OpCodes.Ldfld, AccessTools.Field(typeof(AnglerScript), "body"));
+                yield return new CodeInstruction(OpCodes.Ldfld, AccessTools.Field(typeof(BodyScript), nameof(BodyScript.maxHealth)));
+                healthPatched++;
+                continue;
+            }
+            yield return code;
         }
-    }
-
-    private static void RecordDeathCause(AnglerScript eater, BodyScript victim)
-    {
-        if (!victim.isAlive) return;
-
-        NetworkAvatarManager.RecordEnvironmentalDeathCause(victim, PlayerDeathCause.EatenByDune);
-        NetworkAvatarManager.RecordDamageSource(victim, eater.body);
-
-        if (NetworkAvatarManager.RouteDuneEatDamage(victim, eater.body))
-            victim.GetComponentInChildren<DismemberManager>().currentDamage = 0f;
     }
 }
 

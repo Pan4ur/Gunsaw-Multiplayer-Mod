@@ -58,6 +58,7 @@ internal static partial class MultiplayerSession
     private static readonly Queue<PeerPacket<WorldDamagePacket>> worldDamage = new Queue<PeerPacket<WorldDamagePacket>>();
     private static readonly Queue<PeerPayload> npcSnapshots = new Queue<PeerPayload>();
     private static readonly Queue<PeerPacket<NpcDamagePacket>> npcDamage = new Queue<PeerPacket<NpcDamagePacket>>();
+    private static readonly Queue<PeerPacket<DuneEatPacket>> duneEats = new();
     private static readonly Queue<PeerPacket<NpcSpeechPacket>> npcSpeech = new Queue<PeerPacket<NpcSpeechPacket>>();
     private static readonly Queue<PeerPacket<WorldInteractionPacket>> worldInteractions = new Queue<PeerPacket<WorldInteractionPacket>>();
     private static readonly Queue<PeerPacket<PlayerDamagePacket>> playerDamage = new Queue<PeerPacket<PlayerDamagePacket>>();

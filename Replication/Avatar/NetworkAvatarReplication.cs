@@ -1952,7 +1952,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 displayedDismembermentEffects.Remove(managerId);
                 continue;
             }
-            var showEffect = dismembermentVisualsInitialized && displayedDismembermentEffects.Add(managerId);
+            var showEffect = displayedDismembermentEffects.Add(managerId) && dismembermentVisualsInitialized;
             if (manager.dismemberJoint != null)
                 foreach (var joint in manager.dismemberJoint)
                     if (joint != null) joint.enabled = false;
@@ -1963,21 +1963,27 @@ internal class NetworkAvatarReplication : MonoBehaviour
                     if (manager.dismemberRender[index] != null)
                         manager.dismemberRender[index].sprite = manager.dismemberSprites[index];
             }
-            if (showEffect) SpawnRemoteDismembermentEffects(manager);
+            if (showEffect) SpawnRemoteDismembermentEffects(remoteBody, manager);
         }
         dismembermentVisualsInitialized = true;
     }
 
-    private void SpawnRemoteDismembermentEffects(DismemberManager manager)
+    internal static void SpawnRemoteDismembermentEffects(BodyScript body, DismemberManager manager)
     {
-        if (HeadlessLobbyService.IsHeadlessMode || remoteBody == null || remoteBody.isRobot) return;
+        if (HeadlessLobbyService.IsHeadlessMode || body == null || body.isRobot) return;
         var position = manager.transform.position;
+        if (CameraFollow.cam != null && CameraFollow.cam.DistanceFromCam(position) < 4f)
+        {
+            CameraFollow.cam.AddRot(UnityEngine.Random.Range(-2.5f, 2.5f));
+            CameraFollow.cam.AddOffset(new Vector2(UnityEngine.Random.Range(-0.5f, 0.5f), UnityEngine.Random.Range(-0.5f, 0.5f)));
+            CameraFollow.cam.CreateBloodSplat(position, body.bloodColor);
+        }
         Sound.Play(Resources.Load<AudioClip>("Sounds/dismember" + UnityEngine.Random.Range(1, 4)), position, false, false);
-        Sound.Play(Resources.Load<AudioClip>("Sounds/bloodDrip"), position, false, false, remoteBody.transform);
+        Sound.Play(Resources.Load<AudioClip>("Sounds/bloodDrip"), position, false, false, body.transform);
         var blood = Resources.Load<GameObject>("Spawnables/BloodSplashGoreBleed");
         if (blood != null)
         {
-            var effect = Instantiate(blood, position, Quaternion.identity, remoteBody.transform);
+            var effect = Instantiate(blood, position, Quaternion.identity, body.transform);
             BlackoutRule.ApplyToObject(effect);
             Destroy(effect, 10f);
         }
@@ -1998,7 +2004,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (particles != null)
         {
             var main = particles.main;
-            main.startColor = remoteBody.bloodColor;
+            main.startColor = body.bloodColor;
         }
         Destroy(chunk, 120f);
     }

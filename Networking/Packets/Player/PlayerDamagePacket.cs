@@ -1,8 +1,7 @@
 internal enum PlayerDamageEffect : byte
 {
     Damage = 0,
-    Wound = 1,
-    DuneEat = 2
+    Wound = 1
 }
 
 internal readonly struct PlayerDamagePacket : INetworkPacket
@@ -64,8 +63,8 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
 
     internal static PlayerDamagePacket Damage(float amount, bool critical, bool hasPlayerSource = false,
         ushort sourcePeerId = 0,
-        string sourceName = "", string sourceWeapon = "", PlayerDamageEffect effect = PlayerDamageEffect.Damage)
-        => new (amount, critical, effect, hasPlayerSource, sourcePeerId, sourceName: sourceName, sourceWeapon: sourceWeapon);
+        string sourceName = "", string sourceWeapon = "")
+        => new (amount, critical, PlayerDamageEffect.Damage, hasPlayerSource, sourcePeerId, sourceName: sourceName, sourceWeapon: sourceWeapon);
 
     internal static PlayerDamagePacket Wound(
         short limbIndex,
@@ -151,8 +150,7 @@ internal readonly struct PlayerDamagePacket : INetworkPacket
         switch (effect)
         {
             case PlayerDamageEffect.Damage:
-            case PlayerDamageEffect.DuneEat:
-                return Damage(amount, critical, hasPlayerSource, sourcePeerId, sourceName, sourceWeapon, effect);
+                return Damage(amount, critical, hasPlayerSource, sourcePeerId, sourceName, sourceWeapon);
             case PlayerDamageEffect.Wound:
             {
                 var limbIndex = reader.ReadInt16();

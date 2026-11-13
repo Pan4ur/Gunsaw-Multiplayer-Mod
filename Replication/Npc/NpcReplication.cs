@@ -1483,6 +1483,12 @@ internal sealed class NpcReplication : MonoBehaviour
         return IsClientProxy(body);
     }
 
+    internal static ulong ClientNpcId(BodyScript body) =>
+        Instance != null && Instance.clientBodies.TryGetValue(body, out var proxy) && proxy.ReceivedFirstState ? Instance.WireId(proxy.NetworkId) : 0;
+
+    internal static BodyScript HostNpcForId(ulong id) =>
+        MultiplayerSession.IsHost && Instance != null && Instance.hostNpcs.TryGetValue(Instance.ResolveWireId(id), out var body) ? body : null;
+
     private void ApplyClientDamage(ushort peerId, NpcDamagePacket packet)
     {
         var id = ResolveWireId(packet.NpcId);
@@ -1947,7 +1953,14 @@ internal sealed class NpcReplication : MonoBehaviour
             if (manager.dismemberLimbs != null)
                 foreach (var limb in manager.dismemberLimbs)
                     if (limb != null && limb.dismembered) { triggered = true; break; }
-            if (!triggered) continue;
+            if (!triggered)
+            {
+                proxy.DisplayedDismembermentEffects.Remove(manager.GetInstanceID());
+                continue;
+            }
+            if (proxy.DisplayedDismembermentEffects.Add(manager.GetInstanceID()) && proxy.ReceivedFirstState)
+                NetworkAvatarReplication.SpawnRemoteDismembermentEffects(proxy.Body, manager);
+           
             if (manager.dismemberJoint != null)
                 foreach (var joint in manager.dismemberJoint)
                     if (joint != null) joint.enabled = false;
@@ -2858,6 +2871,7 @@ internal sealed class NpcReplication : MonoBehaviour
         public readonly Dictionary<Transform, Transform> OriginalLimbParents = new ();
         public readonly Dictionary<Joint2D, bool> OriginalJointStates = new ();
         public DismemberManager[] DismemberManagers = [];
+        public readonly HashSet<int> DisplayedDismembermentEffects = new();
         public AIScript[] AiControllers = [];
         public CustJoint[] TailJoints = [];
         public readonly Dictionary<Transform, CustJoint> TailJointsByTransform = new ();
