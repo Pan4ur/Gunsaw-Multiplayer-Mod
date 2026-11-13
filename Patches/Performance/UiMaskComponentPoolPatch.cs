@@ -15,6 +15,16 @@ internal static class UiMaskComponentPoolPatch
         yield return typeof(MaskUtilities).GetMethod(nameof(MaskUtilities.NotifyStencilStateChanged));
     }
 
+    /*
+    [Harmony dif]
+    --- MaskUtilities.Notify2DMaskStateChanged / NotifyStencilStateChanged
+    +++ MaskUtilities.Notify2DMaskStateChanged / NotifyStencilStateChanged (patched)
+    @@
+    - CollectionPool<List<Component>, Component>.Get()
+    + UiMaskComponentPoolPatch.GetComponents()
+    - CollectionPool<List<Component>, Component>.Release(components)
+    + UiMaskComponentPoolPatch.ReleaseComponents(components)
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var get = typeof(CollectionPool<List<Component>, Component>).GetMethod("Get", Type.EmptyTypes);

@@ -11,6 +11,14 @@ internal static class GraffitiScrollPatch
         AccessTools.Method(typeof(LevelEditor), "Update")
     ];
 
+    /*
+    [Harmony dif]
+    --- PlayerScript.Update / LevelEditor.Update
+    +++ PlayerScript.Update / LevelEditor.Update (patched)
+    @@
+    - Input.mouseScrollDelta
+    + GraffitiSystem.GameplayScrollDelta()
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var original = AccessTools.PropertyGetter(typeof(Input), nameof(Input.mouseScrollDelta));

@@ -9,6 +9,14 @@ internal static class PreventAbomination
     private static KeyCode AbominationKey() => MultiplayerSession.IsInLobby ? KeyCode.None : KeyCode.R;
 
     // Replace all KeyCode.R with KeyCode.None
+    /*
+    [Harmony dif]
+    --- GameManager.Update
+    +++ GameManager.Update (patched)
+    @@
+    - KeyCode.R
+    + PreventAbomination.AbominationKey()
+    */
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {

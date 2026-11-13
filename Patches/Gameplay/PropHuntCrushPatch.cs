@@ -5,6 +5,14 @@ using UnityEngine;
 [HarmonyPatch(typeof(BodyScript), "FixedUpdate")]
 internal static class PropHuntCrushPatch
 {
+    /*
+    [Harmony dif]
+    --- BodyScript.FixedUpdate
+    +++ BodyScript.FixedUpdate (patched)
+    @@
+    - Physics2D.OverlapPoint(point, mask)
+    + PropHuntCrushPatch.OverlapGround(point, mask, this)
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var overlap = AccessTools.Method(typeof(Physics2D), nameof(Physics2D.OverlapPoint), new[] { typeof(Vector2), typeof(int) });

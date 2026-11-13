@@ -13,6 +13,7 @@ internal static class TailScalePatch
     }
 
     /*
+    [Harmony dif]
     --- a/CustJoint.cs
     +++ b/CustJoint.cs
     @@ private void FixedUpdate()

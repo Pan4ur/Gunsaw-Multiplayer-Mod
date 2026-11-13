@@ -57,6 +57,14 @@ internal static class ObserverPausePatch
 {
     private static bool IsObserved(bool observed) => !MultiplayerSession.IsInLobby && observed;
 
+    /*
+    [Harmony dif]
+    --- GameManager.Pause
+    +++ GameManager.Pause (patched)
+    @@
+    - PlayerScript.player.observed
+    + ObserverPausePatch.IsObserved(PlayerScript.player.observed)
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var observed = AccessTools.Field(typeof(PlayerScript), nameof(PlayerScript.observed));

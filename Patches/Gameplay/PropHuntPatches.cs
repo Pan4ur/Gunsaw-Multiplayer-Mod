@@ -27,6 +27,14 @@ internal static class PropHuntShotPatch
         return __exception;
     }
 
+    /*
+    [Harmony dif]
+    --- WeaponScript.Shoot
+    +++ WeaponScript.Shoot (patched)
+    @@
+    - Physics2D.RaycastAll(origin, direction, distance, mask)
+    + PropHuntShotPatch.Raycast(origin, direction, distance, mask)
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var raycast = AccessTools.Method(typeof(Physics2D), nameof(Physics2D.RaycastAll), new[] { typeof(Vector2), typeof(Vector2), typeof(float), typeof(int) });
@@ -89,6 +97,14 @@ internal static class PropHuntDyingThresholdPatch
         yield return AccessTools.Method(typeof(BodyScript), nameof(BodyScript.Damaged));
     }
 
+    /*
+    [Harmony dif]
+    --- BodyScript.Update / FixedUpdate / Damaged
+    +++ BodyScript.Update / FixedUpdate / Damaged (patched)
+    @@
+    - body.dyingStateTreshold
+    + PropHuntDyingThresholdPatch.Threshold(body)
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var threshold = AccessTools.Field(typeof(BodyScript), nameof(BodyScript.dyingStateTreshold));
@@ -168,6 +184,14 @@ internal static class PropHuntTelekinesisRaycastPatch
         yield return AccessTools.Method(typeof(LevitatorScript), "FixedUpdate");
     }
 
+    /*
+    [Harmony dif]
+    --- LevitatorScript.TryGrab / FixedUpdate
+    +++ LevitatorScript.TryGrab / FixedUpdate (patched)
+    @@
+    - Physics2D.LinecastAll(...)
+    + PropHuntTelekinesisRaycastPatch.ExcludeSelf(Physics2D.LinecastAll(...), this)
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         foreach (var i in instructions)

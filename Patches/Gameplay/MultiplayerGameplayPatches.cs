@@ -249,6 +249,15 @@ internal static class MultiplayerGameManagerFocusPatch
         LoadDistanceSystem.Apply();
     }
 
+    /*
+    [Harmony dif]
+    --- GameManager.Update
+    +++ GameManager.Update (patched)
+    @@
+    - gameObject.SetActive(requested)
+    + MultiplayerGameManagerFocusPatch.SetAiActive(gameObject, requested)
+    (first two calls)
+    */
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -531,6 +540,14 @@ internal static class MultiplayerNpcOnScreenPatch
 [HarmonyPatch(typeof(LimbScript), "OnWillRenderObject")]
 internal static class MultiplayerLimbAnimationPatch
 {
+    /*
+    [Harmony dif]
+    --- LimbScript.OnWillRenderObject
+    +++ LimbScript.OnWillRenderObject (patched)
+    @@
+    - Application.isFocused
+    + MultiplayerLimbAnimationPatch.AllowAnimation()
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var original = AccessTools.PropertyGetter(typeof(Application), nameof(Application.isFocused));
@@ -1050,6 +1067,14 @@ internal static class DuneEatDeathCausePatch
         return AccessTools.EnumeratorMoveNext(AccessTools.Method(typeof(AnglerScript), "Eat"));
     }
 
+    /*
+    [Harmony dif]
+    --- AnglerScript.Eat iterator MoveNext
+    +++ AnglerScript.Eat iterator MoveNext (patched)
+    @@
+      componentsInChildren[0].currentDamage = 1E+12f;
+    + DuneEatDeathCausePatch.RecordDeathCause(this, bod);
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, System.Reflection.MethodBase __originalMethod)
     {
         var codes = new List<CodeInstruction>(instructions);
@@ -1207,6 +1232,17 @@ internal static class ClientDroppedWeaponAmmoPatch
 [HarmonyPatch(typeof(SpecialTrigger), "Activate")]
 internal static class SpecialTriggerActivatePatch
 {
+    /*
+    [Harmony dif]
+    --- SpecialTrigger.Activate
+    +++ SpecialTrigger.Activate (patched)
+    @@
+      GameManager.main.EnableAllAis();
+    + NetworkAvatarManager.BroadcastDeathByTrigger(text);
+    @@ second EnableAllAis call
+      GameManager.main.EnableAllAis();
+    + NetworkAvatarManager.BroadcastHalfControlByTrigger(text, number);
+    */
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -1281,6 +1317,18 @@ internal static class MultiplayerWeaponShotPatch
         return __exception;
     }
     
+    /*
+    [Harmony dif]
+    --- WeaponScript.Shoot
+    +++ WeaponScript.Shoot (patched)
+    @@
+    - rigidbody.AddForceAtPosition(force, position, mode)
+    + NetworkAvatarManager.AddForceAtPositionWithPropAuthority(rigidbody, force, position, mode)
+    - Sound.Play(...)
+    + NetworkAvatarManager.PlayPlayerActionSound(...)
+    @@ lamp destruction
+    + WorldReplication.NotifyShotLamp(raycastHit2D2);
+    */
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -1338,6 +1386,16 @@ internal static class MultiplayerPlayerKickDelayedPatch
         return __exception;
     }
 
+    /*
+    [Harmony dif]
+    --- BodyScript.KickDelayed
+    +++ BodyScript.KickDelayed (patched)
+    @@
+    - rigidbody.AddForce(force, mode)
+    + NetworkAvatarManager.AddForceWithPropAuthority(rigidbody, force, mode)
+    - Sound.Play(...)
+    + NetworkAvatarManager.PlayPlayerActionSound(...)
+    */
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -1425,6 +1483,16 @@ internal static class MultiplayerPlayerKickPatch
         return __exception;
     }
     
+    /*
+    [Harmony dif]
+    --- BodyScript.Kick
+    +++ BodyScript.Kick (patched)
+    @@
+    - rigidbody.AddForce(force, mode)
+    + NetworkAvatarManager.AddForceWithPropAuthority(rigidbody, force, mode)
+    - Sound.Play(...)
+    + NetworkAvatarManager.PlayPlayerActionSound(...)
+    */
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -1461,6 +1529,14 @@ internal static class MultiplayerPlayerKickPatch
 [HarmonyPatch(typeof(AIScript), "FixedUpdate")]
 internal static class MultiplayerNpcTargetPatch
 {
+    /*
+    [Harmony dif]
+    --- AIScript.FixedUpdate
+    +++ AIScript.FixedUpdate (patched)
+    @@
+    - left.team != right.team
+    + NetworkAvatarManager.NpcTeamsDiffer(left, right)
+    */
     [HarmonyTranspiler]
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
@@ -1556,6 +1632,14 @@ internal static class MultiplayerRocketUpdatePatch
 [HarmonyPatch(typeof(ExplosionHandler), "CreateExplosion")]
 internal static class MultiplayerExplosionPatch
 {
+    /*
+    [Harmony dif]
+    --- ExplosionHandler.CreateExplosion
+    +++ ExplosionHandler.CreateExplosion (patched)
+    @@
+    - Physics2D.OverlapCircleAll(point, radius)
+    + NetworkAvatarManager.ExcludeHostFromExplosion(Physics2D.OverlapCircleAll(point, radius))
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var original = AccessTools.Method(typeof(Physics2D), nameof(Physics2D.OverlapCircleAll), new[] { typeof(Vector2), typeof(float) });
@@ -1596,6 +1680,14 @@ internal static class ExplosionCrackLifetimePatch
         if (MultiplayerSession.IsInLobby) UnityEngine.Object.Destroy(crack, lifetime);
     }
 
+    /*
+    [Harmony dif]
+    --- ExplosionHandler.CreateExplosion
+    +++ ExplosionHandler.CreateExplosion (patched)
+    @@
+      crack = Object.Instantiate(crackPrefab, position, rotation);
+    + ExplosionCrackLifetimePatch.DestroyCrack(crack, 120f);
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions) {
         var destroy = AccessTools.Method(typeof(ExplosionCrackLifetimePatch), nameof(DestroyCrack));
         var foundPrefab = false;

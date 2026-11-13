@@ -30,6 +30,14 @@ internal static partial class CustomWeaponsCompatibility
             harmony.Patch(AccessTools.EnumeratorMoveNext(coroutine), transpiler: transpiler);
     }
 
+    /*
+    [Harmony dif]
+    --- ReloadSoundPatch.Prefix / SpecialReloadManager.CustomReloadCoroutine iterator MoveNext
+    +++ ReloadSoundPatch.Prefix / SpecialReloadManager.CustomReloadCoroutine iterator MoveNext (patched)
+    @@
+    - Sound.Play(clip, position, twoDimensional, pitchShift, parent, volume, pitch)
+    + CustomWeaponsCompatibility.PlayReloadSound(clip, position, twoDimensional, pitchShift, parent, volume, pitch, weapon)
+    */
     private static IEnumerable<CodeInstruction> ReplicateReloadSound(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
     {
         var original = AccessTools.Method(typeof(Sound), nameof(Sound.Play));

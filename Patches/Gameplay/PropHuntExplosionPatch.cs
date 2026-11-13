@@ -12,6 +12,14 @@ internal static class PropHuntExplosionPatch
         yield return AccessTools.Method(typeof(ExplosionHandler), nameof(ExplosionHandler.CreateExplosion));
     }
 
+    /*
+    [Harmony dif]
+    --- FireScript.Update / ExplosionHandler.CreateExplosion
+    +++ FireScript.Update / ExplosionHandler.CreateExplosion (patched)
+    @@
+    - Physics2D.OverlapCircleAll(point, radius)
+    + PropHuntExplosionPatch.Filter(Physics2D.OverlapCircleAll(point, radius))
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var original = AccessTools.Method(typeof(Physics2D), nameof(Physics2D.OverlapCircleAll), [typeof(Vector2), typeof(float)]);

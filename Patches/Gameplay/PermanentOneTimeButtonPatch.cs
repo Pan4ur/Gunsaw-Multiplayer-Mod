@@ -7,6 +7,14 @@ internal sealed class PermanentOneTimeButton : MonoBehaviour;
 [HarmonyPatch(typeof(LevelLoader), "Start")]
 internal static class PermanentOneTimeButtonPatch
 {
+    /*
+    [Harmony dif]
+    --- LevelLoader.Start
+    +++ LevelLoader.Start (patched)
+    @@
+    - component4.activateOnce = levelPart.activId > 0;
+    + PermanentOneTimeButtonPatch.Configure(component4, levelPart.activId);
+    */
     private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
     {
         var codes = new List<CodeInstruction>(instructions);
@@ -28,7 +36,7 @@ internal static class PermanentOneTimeButtonPatch
 
     private static void Configure(ButtonScript button, int mode)
     {
-        button.activateOnce = mode > 0;
+        component4.activateOnce = levelPart.activId > 0;
         if (mode == 2) button.gameObject.AddComponent<PermanentOneTimeButton>();
     }
 }
