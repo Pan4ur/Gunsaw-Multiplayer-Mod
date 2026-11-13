@@ -505,6 +505,9 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
         var vehicleRb = vehicle.mainPart.rb;
         var vehicleVelocity = vehicleRb.velocity;
+        var world = WorldReplication.Instance;
+        if (world != null && world.bodies.renderedVelocities.TryGetValue(vehicleRb, out var renderedVelocity))
+            vehicleVelocity = renderedVelocity;
 
         body.rb.velocity = vehicleVelocity;
         body.rb.angularVelocity = vehicleRb.angularVelocity;

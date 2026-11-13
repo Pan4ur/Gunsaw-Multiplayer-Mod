@@ -12,6 +12,13 @@ public class WorldBodyReplication
     internal readonly Dictionary<Rigidbody2D, WorldReplication.State> received = new();
     internal readonly Dictionary<Rigidbody2D, WorldReplication.State> authoritativeStates = new();
     internal readonly Dictionary<Rigidbody2D, List<VehiclePathState>> vehiclePaths = new();
+    internal float snapshotClockOffset = float.PositiveInfinity;
+    internal float snapshotClockWindowOffset = float.PositiveInfinity;
+    internal float nextSnapshotClockWindow;
+    internal float vehicleInterpolationDelay = 0.15f;
+    internal float vehicleInterpolationTargetDelay = 0.15f;
+    internal float vehicleRenderTime = float.NegativeInfinity;
+    internal readonly Dictionary<Rigidbody2D, Vector2> renderedVelocities = new();
     internal readonly Dictionary<string, WorldReplication.ClientBodyState> pushes = new();
     internal readonly Dictionary<Rigidbody2D, float> locallyControlledUntil = new();
     internal readonly Dictionary<string, WorldReplication.PropAuthority> propAuthorities = new();
@@ -73,6 +80,7 @@ public class WorldBodyReplication
     {
         if (body == null) return;
         vehiclePaths.Remove(body);
+        renderedVelocities.Remove(body);
         LoadDistanceSystem.UnregisterWorldBody(body);
         string id;
         if (ids.TryGetValue(body, out id))
@@ -335,9 +343,10 @@ public class WorldBodyReplication
             locallyControlledUntil.Remove(body);
         }
         body.gravityScale = state.gravityScale;
-        body.constraints = state.constraints;
-        body.simulated = state.simulated;
-        body.bodyType = mechanism && state.simulated ? RigidbodyType2D.Kinematic : state.bodyType;
+        if (body.constraints != state.constraints) body.constraints = state.constraints;
+        if (body.simulated != state.simulated) body.simulated = state.simulated;
+        var bodyType = mechanism && state.simulated ? RigidbodyType2D.Kinematic : state.bodyType;
+        if (body.bodyType != bodyType) body.bodyType = bodyType;
         if (!state.simulated)
         {
             body.position = state.position;
@@ -357,18 +366,19 @@ public class WorldBodyReplication
                 body.angularVelocity = 0f;
             }
 
-            body.interpolation = RigidbodyInterpolation2D.Interpolate;
+            if (body.interpolation != RigidbodyInterpolation2D.Interpolate)
+                body.interpolation = RigidbodyInterpolation2D.Interpolate;
             List<VehiclePathState> path;
             if (!vehiclePaths.TryGetValue(body, out path))
                 vehiclePaths[body] = path = new List<VehiclePathState>(12);
-            var now = Time.unscaledTime;
             path.Add(new VehiclePathState
             {
                 position = state.position,
                 rotation = state.rotation,
-                arrivedAt = now
+                velocity = state.velocity,
+                arrivedAt = state.sampleTime
             });
-            while (path.Count > 2 && path[0].arrivedAt < now - 0.3f) path.RemoveAt(0);
+            while (path.Count > 2 && path[0].arrivedAt < state.sampleTime - 0.5f) path.RemoveAt(0);
             return;
         }
 
@@ -512,10 +522,31 @@ public class WorldBodyReplication
         public float NextSampleAt;
     }
 
+    internal void ObserveSnapshotTime(float sampleTime)
+    {
+        var offset = Time.fixedTime - sampleTime;
+        if (Time.realtimeSinceStartup >= nextSnapshotClockWindow)
+        {
+            if (!float.IsPositiveInfinity(snapshotClockWindowOffset) && snapshotClockWindowOffset > snapshotClockOffset + 0.05f)
+            {
+                snapshotClockOffset = snapshotClockWindowOffset;
+                vehicleInterpolationTargetDelay = 0.15f;
+            }
+            snapshotClockWindowOffset = offset;
+            nextSnapshotClockWindow = Time.realtimeSinceStartup + 0.5f;
+        }
+     
+        snapshotClockWindowOffset = Mathf.Min(snapshotClockWindowOffset, offset);
+        snapshotClockOffset = Mathf.Min(snapshotClockOffset, offset);
+        vehicleInterpolationTargetDelay = Mathf.Min(0.4f, Mathf.Max(vehicleInterpolationTargetDelay, offset - snapshotClockOffset + 0.1f));
+    }
+
     internal void TickVehiclePaths()
     {
         if (vehiclePaths.Count == 0) return;
-        var renderTime = Time.unscaledTime - 0.1f;
+        vehicleInterpolationDelay = Mathf.MoveTowards(vehicleInterpolationDelay, vehicleInterpolationTargetDelay, Time.fixedDeltaTime * 0.1f);
+        var renderTime = Mathf.Max(vehicleRenderTime, Time.fixedTime - (float.IsPositiveInfinity(snapshotClockOffset) ? 0f : snapshotClockOffset) - vehicleInterpolationDelay);
+        vehicleRenderTime = renderTime;
         staleVehiclePaths.Clear();
         foreach (var pair in vehiclePaths)
         {
@@ -537,10 +568,15 @@ public class WorldBodyReplication
             var targetPosition = Vector2.Lerp(from.position, to.position, alpha);
             var targetRotation = from.rotation +
                                  Mathf.DeltaAngle(from.rotation, to.rotation) * alpha;
+            renderedVelocities[body] = Vector2.Lerp(from.velocity, to.velocity, alpha);
             body.MovePosition(targetPosition);
             body.MoveRotation(targetRotation);
         }
-        foreach (var body in staleVehiclePaths) vehiclePaths.Remove(body);
+        foreach (var body in staleVehiclePaths)
+        {
+            vehiclePaths.Remove(body);
+            renderedVelocities.Remove(body);
+        }
     }
 
     internal void FreezeFarClientProps()
@@ -592,6 +628,7 @@ public class WorldBodyReplication
         public Vector2 position;
         public float rotation;
         public float arrivedAt;
+        public Vector2 velocity;
     }
     
     internal struct LocalSettings

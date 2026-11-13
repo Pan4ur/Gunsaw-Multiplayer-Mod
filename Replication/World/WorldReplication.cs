@@ -61,7 +61,6 @@ public class WorldReplication : MonoBehaviour
     internal int nextRuntimeFireId;
     internal readonly HashSet<FireScript> clientCreatedFires = [];
     private readonly HashSet<SawScript> clientSaws = [];
-    private WorldSnapshotPacket? lastSentWorldSnapshot;
     private WorldEnvironmentPacket? lastCapturedEnvironment;
     private WorldEnvironmentPacket? lastReliableEnvironment;
     private readonly Dictionary<string, WorldBodySnapshot> lastSerializedBodyStates = new();
@@ -580,6 +579,13 @@ public class WorldReplication : MonoBehaviour
         bodies.received.Clear();
         bodies.authoritativeStates.Clear();
         bodies.vehiclePaths.Clear();
+        bodies.snapshotClockOffset = float.PositiveInfinity;
+        bodies.snapshotClockWindowOffset = float.PositiveInfinity;
+        bodies.nextSnapshotClockWindow = 0f;
+        bodies.vehicleInterpolationDelay = 0.15f;
+        bodies.vehicleInterpolationTargetDelay = 0.15f;
+        bodies.vehicleRenderTime = float.NegativeInfinity;
+        bodies.renderedVelocities.Clear();
         bodies.pushes.Clear();
         bodies.locallyControlledUntil.Clear();
         nextContactStateAt.Clear();
@@ -632,7 +638,6 @@ public class WorldReplication : MonoBehaviour
         clientSaws.Clear();
         bodies.wireIds.Clear();
         bodies.idsByWire.Clear();
-        lastSentWorldSnapshot = null;
         worldSnapshotSequence = 0;
         lastReceivedWorldSnapshotSequence = 0;
         hasReceivedWorldSnapshotSequence = false;
@@ -653,8 +658,9 @@ public class WorldReplication : MonoBehaviour
     {
         var sceneEpoch = MultiplayerSession.SnapshotEpoch;
         var sequence = ++worldSnapshotSequence;
-        var fullSnapshot = Time.unscaledTime >= nextFullWorldSnapshot;
-        if (fullSnapshot) nextFullWorldSnapshot = Time.unscaledTime + FullSnapshotInterval;
+        var now = Time.unscaledTime;
+        var fullSnapshot = now >= nextFullWorldSnapshot;
+        if (fullSnapshot) nextFullWorldSnapshot = now + FullSnapshotInterval;
         var changedStates = new List<WorldBodySnapshot>();
         var changedPropCount = 0;
         var changedOtherBodyCount = 0;
@@ -670,11 +676,16 @@ public class WorldReplication : MonoBehaviour
             WorldBodySnapshot previous;
             var stateChanged = !lastSerializedBodyStates.TryGetValue(pair.Key, out previous) ||
                                !state.WireEquals(previous);
-            if (stateChanged) lastSerializedBodyStates[pair.Key] = state;
-            if (fullSnapshot || stateChanged)
+            if (stateChanged)
+            {
+                lastSerializedBodyStates[pair.Key] = state;
+                lastChangedBodyAt[pair.Key] = now;
+            }
+            
+            var repeatVehicleState = state.IsVehiclePart && lastChangedBodyAt.TryGetValue(pair.Key, out var changedAt) && now - changedAt < 0.5f;
+            if (fullSnapshot || stateChanged || repeatVehicleState)
             {
                 changedStates.Add(state);
-                if (stateChanged) lastChangedBodyAt[pair.Key] = Time.unscaledTime;
                 if (body != null && bodies.IsInteractivePropBody(body)) changedPropCount++;
                 else changedOtherBodyCount++;
             }
@@ -683,10 +694,8 @@ public class WorldReplication : MonoBehaviour
         var environmentSerializeStarted = MultiplayerPerformance.StartPhase();
         lastCapturedEnvironment = enviroment.CaptureEnvironment();
         MultiplayerPerformance.AddPhase(MultiplayerPerformancePhase.WorldSerializeEnvironment, environmentSerializeStarted);
-        var packet = new WorldSnapshotPacket(sceneEpoch, sequence, changedStates.ToArray());
-        if (!fullSnapshot && lastSentWorldSnapshot.HasValue && packet.ContentEquals(lastSentWorldSnapshot.Value))
-            return null;
-        lastSentWorldSnapshot = packet;
+        if (!fullSnapshot && changedStates.Count == 0) return null;
+        var packet = new WorldSnapshotPacket(sceneEpoch, sequence, changedStates.ToArray(), Time.fixedTime);
         lastSentPropCount = changedPropCount;
         lastSentOtherCount = changedOtherBodyCount;
         sentPacketsWindow++;
@@ -828,6 +837,8 @@ public class WorldReplication : MonoBehaviour
             if (hasReceivedWorldSnapshotSequence &&
                 !IsNewerWorldSnapshotSequence(sequence, lastReceivedWorldSnapshotSequence)) return;
             var snapshot = WorldSnapshotPacket.ReadBodies(ref reader, sceneEpoch, sequence);
+            if (!float.IsNaN(snapshot.SampleTime))
+                bodies.ObserveSnapshotTime(snapshot.SampleTime);
             lastReceivedWorldSnapshotSequence = sequence;
             hasReceivedWorldSnapshotSequence = true;
             var count = snapshot.Bodies.Length;
@@ -900,6 +911,7 @@ public class WorldReplication : MonoBehaviour
                 var position = new Vector2(snapshotBody.PositionX, snapshotBody.PositionY);
                 var state = new State
                 {
+                    sampleTime = float.IsNaN(snapshot.SampleTime) ? Time.fixedTime : snapshot.SampleTime,
                     position = position,
                     rotation = snapshotBody.Rotation,
                     velocity = new Vector2(snapshotBody.VelocityX, snapshotBody.VelocityY),
@@ -1614,6 +1626,7 @@ public class WorldReplication : MonoBehaviour
 
     internal struct State
     {
+        public float sampleTime;
         public Vector2 position;
         public float rotation;
         public Vector2 velocity;

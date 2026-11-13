@@ -36,7 +36,7 @@ internal static class PermanentOneTimeButtonPatch
 
     private static void Configure(ButtonScript button, int mode)
     {
-        component4.activateOnce = levelPart.activId > 0;
+        button.activateOnce = mode > 0;
         if (mode == 2) button.gameObject.AddComponent<PermanentOneTimeButton>();
     }
 }

@@ -192,25 +192,19 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
     internal readonly int SceneEpoch;
     internal readonly int Sequence;
     internal readonly WorldBodySnapshot[] Bodies;
+    internal readonly float SampleTime;
 
-    internal WorldSnapshotPacket(int sceneEpoch, int sequence, WorldBodySnapshot[] bodies)
+    internal WorldSnapshotPacket(int sceneEpoch, int sequence, WorldBodySnapshot[] bodies, float sampleTime = float.NaN)
     {
         SceneEpoch = sceneEpoch;
         Sequence = sequence;
         Bodies = bodies ?? [];
+        SampleTime = sampleTime;
     }
 
     public PacketType Type => PacketType.WorldSnapshot;
     
     public DeliverySettings Settings => new (false, true, false);
-
-    internal bool ContentEquals(WorldSnapshotPacket other)
-    {
-        if (Bodies.Length != other.Bodies.Length) return false;
-        for (var index = 0; index < Bodies.Length; index++)
-            if (!Bodies[index].WireEquals(other.Bodies[index])) return false;
-        return true;
-    }
 
     public void Write(ref PacketWriter writer)
     {
@@ -218,6 +212,7 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
         writer.WriteInt32(Sequence);
         writer.WriteUInt16((ushort) Math.Min(Bodies.Length, ushort.MaxValue));
         for (var index = 0; index < Bodies.Length && index < ushort.MaxValue; index++) Bodies[index].Write(ref writer);
+        if (!float.IsNaN(SampleTime)) writer.WriteSingle(SampleTime);
     }
 
     internal static bool TryReadSequence(byte[] data, out int sequence)
@@ -265,7 +260,7 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
         if (states.Count > ushort.MaxValue)
             throw new InvalidDataException("Too many pending world bodies.");
         
-        return new WorldSnapshotPacket(newer.SceneEpoch, newer.Sequence, states.Values.ToArray());
+        return new WorldSnapshotPacket(newer.SceneEpoch, newer.Sequence, states.Values.ToArray(), newer.SampleTime);
     }
 
     internal static void ReadHeader(ref PacketReader reader, out int sceneEpoch, out int sequence)
@@ -280,6 +275,9 @@ internal readonly struct WorldSnapshotPacket : INetworkPacket
         if (count > reader.Remaining / (sizeof(ulong) + sizeof(byte))) throw new EndOfStreamException();
         var bodies = new WorldBodySnapshot[count];
         for (var index = 0; index < bodies.Length; index++) bodies[index] = WorldBodySnapshot.Read(ref reader);
-        return new WorldSnapshotPacket(sceneEpoch, sequence, bodies);
+        var sampleTime = reader.Remaining > 0 ? reader.ReadSingle() : float.NaN;
+        if (!float.IsNaN(sampleTime) && (float.IsInfinity(sampleTime) || sampleTime < 0f))
+            throw new InvalidDataException("Invalid world sample time.");
+        return new WorldSnapshotPacket(sceneEpoch, sequence, bodies, sampleTime);
     }
 }
