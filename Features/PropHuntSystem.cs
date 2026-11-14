@@ -31,6 +31,7 @@ internal static class PropHuntSystem
     internal static float LocatorCooldown => Mathf.Max(0f, locatorAt - Time.unscaledTime);
     internal static bool LocatorVisible => AbilitiesVisible && phase == PropHuntPhase.Hunting && IsHunter(MultiplayerSession.LocalPeerId) && MultiplayerSession.PropHuntLocator;
     internal static float ChangeCooldown => Mathf.Max(0f, changeAt - Time.unscaledTime);
+    internal static bool ChangePending { get; private set; }
     internal static float StunCooldown => Mathf.Max(0f, stunAt - Time.unscaledTime);
     internal static bool AbilitiesVisible => Enabled && alive.Contains(MultiplayerSession.LocalPeerId) && (phase == PropHuntPhase.Hiding || phase == PropHuntPhase.Hunting);
     internal static bool CanUseGravity(BodyScript body) => Enabled && phase == PropHuntPhase.Hunting && body != null && IsHunter(NetworkAvatarManager.PeerIdOfBody(body)) && alive.Contains(NetworkAvatarManager.PeerIdOfBody(body));
@@ -105,12 +106,12 @@ internal static class PropHuntSystem
             Request(new PropHuntPacket(PropHuntAction.Locator));
         }
 
-        if (props.ContainsKey(MultiplayerSession.LocalPeerId) && alive.Contains(MultiplayerSession.LocalPeerId) && !MultiplayerHud.IsTyping && !Controls.IsTextInputSelected && !GameManager.main.paused)
+        if (props.ContainsKey(MultiplayerSession.LocalPeerId) && AbilitiesVisible && !MultiplayerHud.IsTyping && !Controls.IsTextInputSelected && !GameManager.main.paused)
         {
-            if (Input.GetKeyDown(KeyCode.J) && Time.unscaledTime >= changeAt)
+            if (Input.GetKeyDown(KeyCode.J) && !ChangePending && Time.unscaledTime >= changeAt)
             {
-                changeAt = Time.unscaledTime + MultiplayerSession.PropHuntChangeCooldown;
-                Request(new PropHuntPacket(PropHuntAction.Change));
+                ChangePending = true;
+                if (!Request(new PropHuntPacket(PropHuntAction.Change))) ChangePending = false;
             }
             
             if (Input.GetMouseButtonDown(0))
@@ -229,6 +230,7 @@ internal static class PropHuntSystem
                 break;
             case PropHuntAction.Change:
                 changed = round.Change(sender, templates.Keys.ToArray(), Time.unscaledTime, MultiplayerSession.PropHuntChangeCooldown);
+                Effect(new PropHuntPacket(PropHuntAction.ChangeResult, sender, round.ChangeCooldown(sender, Time.unscaledTime)));
                 break;
             case PropHuntAction.Stun:
                 var source = Body(sender);
@@ -283,6 +285,13 @@ internal static class PropHuntSystem
 
     private static void ApplyEffect(PropHuntPacket packet)
     {
+        if (packet.Action == PropHuntAction.ChangeResult)
+        {
+            if (packet.Player != MultiplayerSession.LocalPeerId || !ChangePending || float.IsNaN(packet.Value) || float.IsInfinity(packet.Value) || packet.Value < 0f || packet.Value > 3600f) return;
+            changeAt = Time.unscaledTime + packet.Value;
+            ChangePending = false;
+            return;
+        }
         if (packet.Action == PropHuntAction.Located)
         {
             locatorUntil = Time.unscaledTime + 3f;
@@ -368,10 +377,14 @@ internal static class PropHuntSystem
         Request(new PropHuntPacket(PropHuntAction.Push, player, direction));
     }
 
-    private static void Request(PropHuntPacket packet)
+    private static bool Request(PropHuntPacket packet)
     {
-        if (MultiplayerSession.IsHost) Receive(MultiplayerSession.LocalPeerId, packet);
-        else MultiplayerSession.Send(packet, MultiplayerSession.HostPeerId);
+        if (MultiplayerSession.IsHost)
+        {
+            Receive(MultiplayerSession.LocalPeerId, packet);
+            return true;
+        }
+        return MultiplayerSession.Send(packet, MultiplayerSession.HostPeerId);
     }
 
     private static BodyScript Body(ushort peer) => peer == MultiplayerSession.LocalPeerId
@@ -490,6 +503,7 @@ internal static class PropHuntSystem
         restarting = false;
         equippedBody = null;
         broadcastAt = changeAt = stunAt = pushAt = locatorAt = locatorUntil = 0f;
+        ChangePending = false;
         gravityPenaltyTime = 0f;
         shots.Clear();
         overlay.Hide();

@@ -68,6 +68,8 @@ internal sealed class PropHuntRound
         if (Phase >= PropHuntPhase.PropsWin) Deadline = now + 5f;
     }
 
+    internal float ChangeCooldown(ushort player, float now) => changes.TryGetValue(player, out var ready) ? Math.Max(0f, ready - now) : 0f;
+
     internal bool Change(ushort player, string[] choices, float now, float cooldown = 30f)
     {
         if ((Phase != PropHuntPhase.Hiding && Phase != PropHuntPhase.Hunting) || Hunters.Contains(player) || !Alive.Contains(player) ||
