@@ -671,11 +671,12 @@ public class WorldReplication : MonoBehaviour
             if (bodies.IsDoorBody(body)) continue;
             if (!fullSnapshot && body != null && !LoadDistanceSystem.IsWorldNearAnyPlayer(body)) continue;
             var awake = body != null && body.IsAwake();
-            if (!fullSnapshot && body != null && !awake && bodies.BodyLayoutFor(body).VehiclePart == null) continue;
-            var state = CaptureWorldBodyState(pair.Key, body, awake);
             WorldBodySnapshot previous;
-            var stateChanged = !lastSerializedBodyStates.TryGetValue(pair.Key, out previous) ||
-                               !state.WireEquals(previous);
+            var hasPrevious = lastSerializedBodyStates.TryGetValue(pair.Key, out previous);
+            if (!fullSnapshot && body != null && !awake && bodies.BodyLayoutFor(body).VehiclePart == null &&
+                hasPrevious && !previous.Awake) continue;
+            var state = CaptureWorldBodyState(pair.Key, body, awake);
+            var stateChanged = !hasPrevious || !state.WireEquals(previous);
             if (stateChanged)
             {
                 lastSerializedBodyStates[pair.Key] = state;
@@ -1022,7 +1023,10 @@ public class WorldReplication : MonoBehaviour
     {
         if (PlayerCarrySystem.IsLocalTarget || body == null || body.bodyType == RigidbodyType2D.Kinematic) return;
         if (bodies.localSettings.TryGetValue(body, out var settings) && settings.bodyType == RigidbodyType2D.Kinematic) return;
+        var hadLocalAuthority = bodies.locallyControlledUntil.ContainsKey(body);
         bodies.locallyControlledUntil[body] = Time.unscaledTime + ClientAuthorityGrace;
+        if (!hadLocalAuthority && bodies.IsInteractivePropBody(body))
+            NetworkAvatarManager.UpdateRemotePlayerPropCollisions(body);
         clientFastSerializeState = ClientAuthorityGrace;
         body.simulated = true;
         body.bodyType = RigidbodyType2D.Dynamic;
@@ -1491,7 +1495,11 @@ public class WorldReplication : MonoBehaviour
             bodies.wireIds[id] = wire;
             bodies.idsByWire[wire] = id;
             droppedWeapons[body] = null;
-            if (IsInteractivePropBodyUncached(body)) bodies.interactivePropBodies.Add(body);
+            if (IsInteractivePropBodyUncached(body))
+            {
+                bodies.interactivePropBodies.Add(body);
+                NetworkAvatarManager.UpdateRemotePlayerPropCollisions(body);
+            }
             networkCrateDebrisBodies.Add(body);
             var debrisCrate = body.GetComponentInParent<CrateScript>();
             if (debrisCrate != null)

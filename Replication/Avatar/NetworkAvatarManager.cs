@@ -1088,9 +1088,10 @@ weapon != activeShotState.Weapon) return;
         MultiplayerSession.Send(new PlayerTeleportPacket(position.x, position.y, true), requesterId);
     }
     
-    internal static void IgnoreRemotePlayerPropCollisions(Rigidbody2D prop, NetworkAvatarReplication? onlyReplica = null)
+    internal static void UpdateRemotePlayerPropCollisions(Rigidbody2D prop, NetworkAvatarReplication? onlyReplica = null)
     {
-        if (prop == null || !MultiplayerSession.IsHost) return;
+        if (prop == null) return;
+        var ignore = MultiplayerSession.IsHost || WorldReplication.Instance == null || !WorldReplication.Instance.bodies.locallyControlledUntil.ContainsKey(prop);
         var propColliders = prop.GetComponentsInChildren<Collider2D>(true);
         if (propColliders == null || propColliders.Length == 0) return;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
@@ -1101,18 +1102,17 @@ weapon != activeShotState.Weapon) return;
                 if (remoteCollider == null) continue;
                 foreach (var propCollider in propColliders)
                     if (propCollider != null)
-                        Physics2D.IgnoreCollision(remoteCollider, propCollider, true);
+                        Physics2D.IgnoreCollision(remoteCollider, propCollider, ignore);
             }
         }
     }
 
     internal static void RefreshRemotePropCollisions(NetworkAvatarReplication? onlyReplica = null)
     {
-        if (!MultiplayerSession.IsHost) return;
         foreach (var prop in FindObjectsOfType<Rigidbody2D>())
             if (prop != null && (prop.GetComponentInParent<CrateScript>() != null ||
                 prop.GetComponentInParent<DroppedWeapon>() != null))
-                IgnoreRemotePlayerPropCollisions(prop, onlyReplica);
+                UpdateRemotePlayerPropCollisions(prop, onlyReplica);
     }
 
     internal static void TryGrabRemotePlayer(LevitatorScript levitator)

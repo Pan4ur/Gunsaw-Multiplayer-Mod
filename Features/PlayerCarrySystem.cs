@@ -863,6 +863,8 @@ anchor + (Vector2)(poseRotation * offset);
         targetPhysics.Clear();
         foreach (var pair in remoteTargetColliders)
             if (pair.Key != null) pair.Key.enabled = pair.Value;
+        if (remoteTargetColliders.Count > 0)
+            NetworkAvatarManager.RefreshRemotePropCollisions();
         remoteTargetColliders.Clear();
         foreach (var pair in targetPoses)
         {

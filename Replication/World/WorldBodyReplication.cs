@@ -72,7 +72,7 @@ public class WorldBodyReplication
         if (interactiveProp) interactivePropBodies.Add(body);
         else interactivePropBodies.Remove(body);
         if (MultiplayerSession.IsHost && interactiveProp)
-            NetworkAvatarManager.IgnoreRemotePlayerPropCollisions(body);
+            NetworkAvatarManager.UpdateRemotePlayerPropCollisions(body);
         if (!MultiplayerSession.IsHost) MakeClientControlled(body);
     }
 
@@ -224,6 +224,8 @@ public class WorldBodyReplication
                 joint.breakTorque = Mathf.Infinity;
             }
         var classification = ClassificationFor(body);
+        if (classification.InteractiveProp)
+            NetworkAvatarManager.UpdateRemotePlayerPropCollisions(body);
         if (classification.Mechanism && !classification.InteractiveProp && !classification.ClientPhysicsJoint && body.simulated)
             body.bodyType = RigidbodyType2D.Kinematic;
     }
@@ -278,25 +280,38 @@ public class WorldBodyReplication
     {
         if (PlayerCarrySystem.IsLocalTarget)
         {
-            locallyControlledUntil.Clear();
+            if (locallyControlledUntil.Count > 0)
+            {
+                locallyControlledUntil.Clear();
+                NetworkAvatarManager.RefreshRemotePropCollisions();
+            }
             pushes.Clear();
             WorldReplication.Instance.nextContactStateAt.Clear();
             return;
         }
         if (locallyControlledUntil.Count == 0) return;
         var now = Time.unscaledTime;
-        var renew = new List<Rigidbody2D>();
+        var expired = new List<Rigidbody2D>();
         foreach (var pair in locallyControlledUntil)
+            if (pair.Value <= now) expired.Add(pair.Key);
+        foreach (var body in expired)
         {
-            var body = pair.Key;
-            if (body == null || pair.Value >= now ||
-                !(IsInteractivePropBody(body) || WorldReplication.Instance.droneBodies.Contains(body) ||
-                  IsClientAuthorityJointBody(body))) continue;
-            if (body.velocity.sqrMagnitude > 0.0004f || Mathf.Abs(body.angularVelocity) > 1f)
-                renew.Add(body);
+            if (body != null &&
+                (IsInteractivePropBody(body) || WorldReplication.Instance.droneBodies.Contains(body) || IsClientAuthorityJointBody(body)) &&
+                (body.velocity.sqrMagnitude > 0.0004f || Mathf.Abs(body.angularVelocity) > 1f))
+            {
+                locallyControlledUntil[body] = now + WorldReplication.ClientAuthorityGrace;
+                continue;
+            }
+            locallyControlledUntil.Remove(body!);
+            if (body == null) continue;
+            pushes.Remove(WorldReplication.Instance.Id(body));
+            if (IsInteractivePropBody(body))
+            {
+                NetworkAvatarManager.UpdateRemotePlayerPropCollisions(body);
+                if (authoritativeStates.TryGetValue(body, out var state) && !state.awake) body.Sleep();
+            }
         }
-        foreach (var body in renew)
-            locallyControlledUntil[body] = now + WorldReplication.ClientAuthorityGrace;
         WorldReplication.Instance.clientFastSerializeState = WorldReplication.ClientAuthorityGrace;
     }
     
@@ -341,6 +356,8 @@ public class WorldBodyReplication
                 return;
             }
             locallyControlledUntil.Remove(body);
+            if (classification.InteractiveProp)
+                NetworkAvatarManager.UpdateRemotePlayerPropCollisions(body);
         }
         body.gravityScale = state.gravityScale;
         if (body.constraints != state.constraints) body.constraints = state.constraints;
@@ -398,7 +415,7 @@ public class WorldBodyReplication
             body.angularVelocity = state.angularVelocity;
         }
         if (state.awake) body.WakeUp();
-        else if (state.bodyType != RigidbodyType2D.Dynamic) body.Sleep();
+        else if (classification.InteractiveProp || state.bodyType != RigidbodyType2D.Dynamic) body.Sleep();
     }
     
     internal static void ApplyVehicleState(Rigidbody2D body, WorldReplication.State state)
