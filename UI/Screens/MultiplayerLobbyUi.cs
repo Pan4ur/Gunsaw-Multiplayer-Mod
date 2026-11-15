@@ -2090,6 +2090,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
             var peerIds = MultiplayerSession.PeerIds();
             var localPrefab = LocalPlayerReplication.SelectedCharacterPrefab;
             var playerHash = MultiplayerSession.PeerListRevision * 31 + (MultiplayerSession.IsHost ? 1 : 0);
+            playerHash = playerHash * 31 + (plugin.CanBanPlayers ? 1 : 0);
             playerHash = playerHash * 31 + MultiplayerSession.PingMs;
             playerHash = playerHash * 31 + localPrefab.GetHashCode();
             foreach (var peerId in peerIds)
@@ -2101,7 +2102,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
                 MultiplayerSession.IsHost, localPrefab);
             foreach (var peerId in peerIds)
                 AddCurrentLobbyPlayerRow(MultiplayerSession.PlayerName(peerId), peerId == MultiplayerSession.HostPeerId ? 0 : MultiplayerSession.PeerPing(peerId),
-                    peerId == MultiplayerSession.HostPeerId, MultiplayerSession.PeerCharacterPrefab(peerId));
+                    peerId == MultiplayerSession.HostPeerId, MultiplayerSession.PeerCharacterPrefab(peerId), peerId);
             return;
         }
         publicLobbiesTitle.text = "PUBLIC LOBBIES";
@@ -2205,7 +2206,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         return head;
     }
 
-    private void AddCurrentLobbyPlayerRow(string name, int pingMs, bool host, string characterPrefab)
+    private void AddCurrentLobbyPlayerRow(string name, int pingMs, bool host, string characterPrefab, ushort peerId = 0)
     {
         var row = CreatePanel(lobbyRows, Vector2.zero, new Vector2(530f, 58f));
         row.name = "Lobby Player";
@@ -2221,9 +2222,37 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         if (image.sprite == null) CreateText(portrait.transform, "?", Vector2.zero, new Vector2(40f, 40f), 20, TextAlignmentOptions.Center).raycastTarget = false;
         var displayName = (host ? "[HOST] " : "") + (name ?? "Player");
         var pingColor = ColorUtility.ToHtmlStringRGB(PingColor(pingMs));
-        var player = CreateText(row.transform, displayName, new Vector2(-30f, 0f), new Vector2(310f, 42f), 17, TextAlignmentOptions.Left, FontStyles.Bold);
+        var canModerate = MultiplayerSession.IsHost && peerId != 0 && !host;
+        var player = CreateText(row.transform, displayName, new Vector2(canModerate ? -85f : -30f, 0f), new Vector2(canModerate ? 200f : 310f, 42f), 17, TextAlignmentOptions.Left, FontStyles.Bold);
         player.richText = false;
         player.overflowMode = TextOverflowModes.Ellipsis;
-        CreateText(row.transform, "<color=#" + pingColor + ">" + FormatPing(pingMs) + "</color>", new Vector2(196f, 0f), new Vector2(100f, 32f), 14, TextAlignmentOptions.Right);
+        CreateText(row.transform, "<color=#" + pingColor + ">" + FormatPing(pingMs) + "</color>", new Vector2(canModerate ? 204f : 196f, 0f), new Vector2(canModerate ? 84f : 100f, 32f), 14, TextAlignmentOptions.Right);
+        if (canModerate)
+        {
+            var kick = CreateButton(row.transform, "Kick", new Vector2(54f, 0f), new Vector2(62f, 34f));
+            kick.onClick.AddListener(() => ModerateLobbyPlayer(peerId, false));
+
+            var ban = CreateButton(row.transform, "Ban", new Vector2(126f, 0f), new Vector2(66f, 34f));
+            ban.interactable = plugin.CanBanPlayers;
+            ban.onClick.AddListener(() => ModerateLobbyPlayer(peerId, true));
+        }
+    }
+
+    private void ModerateLobbyPlayer(ushort peerId, bool ban)
+    {
+        if (!MultiplayerSession.IsHost || peerId == 0 || peerId == MultiplayerSession.LocalPeerId ||
+            Array.IndexOf(MultiplayerSession.PeerIds(), peerId) < 0) return;
+        var name = MultiplayerSession.PlayerName(peerId);
+        if (ban)
+        {
+            if (!plugin.CanBanPlayers) return;
+            plugin.BanPlayerFromCommand(name, peerId);
+        }
+        else
+        {
+            var message = name + " was kicked from the lobby.";
+            MultiplayerSession.KickPeer(peerId, message);
+            MultiplayerHud.AddSystemMessage(message);
+        }
     }
 }

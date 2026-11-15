@@ -10,12 +10,20 @@ internal sealed class NetworkAvatarTransformOrder
     {
         var changed = targets.Count != ordered.Count;
         if (!changed)
-            if (targets.Keys.Any(target => !depths.ContainsKey(target)))
-                changed = true;
+            foreach (var target in targets.Keys)
+                if (!depths.ContainsKey(target))
+                {
+                    changed = true;
+                    break;
+                }
         
         if (!changed)
-            if (parents.Any(pair => pair.Key == null || pair.Key.parent != pair.Value))
-                changed = true;
+            foreach (var pair in parents)
+                if (pair.Key == null || pair.Key.parent != pair.Value)
+                {
+                    changed = true;
+                    break;
+                }
         
         if (!changed) 
             return ordered;

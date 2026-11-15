@@ -4,9 +4,8 @@ internal sealed class WorldDoorReplication
 {
     private readonly Dictionary<string, DoorScript> replicatedDoors = new();
     private readonly Dictionary<DoorScript, string> replicatedDoorIds = new();
-    private readonly Dictionary<string, bool> hostDoorTargets = new();
-    private readonly Dictionary<string, bool> hostDoorMoving = new();
-    private readonly Dictionary<string, uint> hostDoorRevisions = new();
+    private readonly Dictionary<string, HostDoorState> hostDoorStates = new();
+    private readonly List<DoorStateEntry> changedDoorStates = new();
     private readonly Dictionary<string, uint> clientDoorRevisions = new();
     private readonly Dictionary<string, bool> clientDoorTargets = new();
     private readonly Dictionary<string, bool> clientDoorMoving = new();
@@ -42,10 +41,13 @@ internal sealed class WorldDoorReplication
             }
             if (MultiplayerSession.IsHost)
             {
-                if (hostDoorTargets.ContainsKey(id)) continue;
-                hostDoorTargets[id] = door.followingFirstPoint;
-                hostDoorMoving[id] = IsDoorMoving(door);
-                hostDoorRevisions[id] = 1;
+                if (hostDoorStates.TryGetValue(id, out var state) && state.Target.HasValue) continue;
+                hostDoorStates[id] = new HostDoorState
+                {
+                    Target = door.followingFirstPoint,
+                    Moving = IsDoorMoving(door, DoorTarget(door)),
+                    Revision = 1
+                };
             }
             else
             {
@@ -80,24 +82,24 @@ internal sealed class WorldDoorReplication
 
     private void BroadcastChangedDoorStates()
     {
-        var changed = new List<DoorStateEntry>();
+        var changed = changedDoorStates;
+        changed.Clear();
         foreach (var pair in replicatedDoors)
         {
             var door = pair.Value;
             if (door == null) continue;
-            var moving = IsDoorMoving(door);
-            hostDoorMoving.TryGetValue(pair.Key, out var wasMoving);
+            var target = DoorTarget(door);
+            var moving = IsDoorMoving(door, target);
+            hostDoorStates.TryGetValue(pair.Key, out var previous);
             
-            if (hostDoorTargets.TryGetValue(pair.Key, out var previous) && previous == door.followingFirstPoint && wasMoving == moving)
+            if (previous != null && previous.Target == door.followingFirstPoint && previous.Moving == moving)
                 continue;
             
-            hostDoorTargets[pair.Key] = door.followingFirstPoint;
-            hostDoorMoving[pair.Key] = moving;
-            hostDoorRevisions.TryGetValue(pair.Key, out var revision);
-            revision++;
-            hostDoorRevisions[pair.Key] = revision;
-            var target = DoorTarget(door);
-            changed.Add(new DoorStateEntry(WorldReplication.Instance.WireId(pair.Key), revision, door.followingFirstPoint, moving, target.x, target.y));
+            if (previous == null) hostDoorStates[pair.Key] = previous = new HostDoorState();
+            previous.Target = door.followingFirstPoint;
+            previous.Moving = moving;
+            previous.Revision++;
+            changed.Add(new DoorStateEntry(WorldReplication.Instance.WireId(pair.Key), previous.Revision, door.followingFirstPoint, moving, target.x, target.y));
         }
         
         if (changed.Count > 0)
@@ -113,12 +115,12 @@ internal sealed class WorldDoorReplication
             if (door == null)
                 continue;
             
-            hostDoorRevisions.TryGetValue(pair.Key, out var revision);
-            revision++;
-            hostDoorRevisions[pair.Key] = revision;
+            if (!hostDoorStates.TryGetValue(pair.Key, out var state))
+                hostDoorStates[pair.Key] = state = new HostDoorState();
+            state.Revision++;
             var position = door.transform.position;
             var target = DoorTarget(door);
-            states.Add(new DoorStateEntry(WorldReplication.Instance.WireId(pair.Key), revision, door.followingFirstPoint, IsDoorMoving(door), target.x, target.y, position.x, position.y, door.transform.eulerAngles.z));
+            states.Add(new DoorStateEntry(WorldReplication.Instance.WireId(pair.Key), state.Revision, door.followingFirstPoint, IsDoorMoving(door, target), target.x, target.y, position.x, position.y, door.transform.eulerAngles.z));
         }
         MultiplayerSession.Send(DoorStatePacket.StatesUpdate(MultiplayerSession.SnapshotEpoch, true, [.. states]), peerId);
     }
@@ -200,12 +202,11 @@ internal sealed class WorldDoorReplication
         }
     }
 
-    private static bool IsDoorMoving(DoorScript door)
+    private static bool IsDoorMoving(DoorScript door, Vector2 target)
     {
         if (door == null)
             return false;
         
-        var target = DoorTarget(door);
         return Vector2.Distance(door.transform.position, target) >= door.speed * 0.05f;
     }
 
@@ -300,9 +301,8 @@ internal sealed class WorldDoorReplication
     {
         replicatedDoors.Clear();
         replicatedDoorIds.Clear();
-        hostDoorTargets.Clear();
-        hostDoorMoving.Clear();
-        hostDoorRevisions.Clear();
+        hostDoorStates.Clear();
+        changedDoorStates.Clear();
         clientDoorRevisions.Clear();
         clientDoorTargets.Clear();
         clientDoorMoving.Clear();
@@ -310,5 +310,12 @@ internal sealed class WorldDoorReplication
         nextDoorSnapshotRequest = 0f;
         playerReference = null;
         referencePlayer = null;
+    }
+
+    private sealed class HostDoorState
+    {
+        internal bool? Target;
+        internal bool Moving;
+        internal uint Revision;
     }
 }
