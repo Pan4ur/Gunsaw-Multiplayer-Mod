@@ -74,6 +74,12 @@ internal sealed class LobbySettings
     public bool NoNpcs;
     [LobbySetting("Blackout", "Enables darkness with a headlamp on every player.")]
     public bool Blackout;
+    [LobbySetting("HeadlampRadius", "Headlamp radius.")]
+    [LobbySettingVisibleWhen(nameof(Blackout))]
+    public string HeadlampRadius = "12";
+    [LobbySetting("HeadlampAngle", "Headlamp cone angle in degrees.")]
+    [LobbySettingVisibleWhen(nameof(Blackout))]
+    public string HeadlampAngle = "64";
     [LobbySetting("RestrictLight", "Makes headlamp light stop at obstacles.")]
     [LobbySettingVisibleWhen(nameof(Blackout))]
     public bool RestrictLight;
@@ -181,7 +187,11 @@ internal sealed class LobbySettings
             uhpValue = LobbyHealthRule.DefaultUniformHPValue;
         uhpValue = LobbyHealthRule.ClampUniformHPValue(uhpValue);
         UHPValue = uhpValue.ToString("0.##", CultureInfo.InvariantCulture);
-        return new ParsedLobbySettings(respawnTime, numberOfLives, maxPlayers, initialScale, healthFactor, regenFactor, uhpValue);
+        var headlampRadius = ParsePropHuntValue(HeadlampRadius, 12f, 1f, 100f);
+        var headlampAngle = ParsePropHuntValue(HeadlampAngle, 64f, 1f, 180f);
+        HeadlampRadius = headlampRadius.ToString("0.##", CultureInfo.InvariantCulture);
+        HeadlampAngle = headlampAngle.ToString("0.##", CultureInfo.InvariantCulture);
+        return new ParsedLobbySettings(respawnTime, numberOfLives, maxPlayers, initialScale, healthFactor, regenFactor, uhpValue, headlampRadius, headlampAngle);
     }
 }
 
@@ -194,8 +204,10 @@ internal readonly struct ParsedLobbySettings
     internal readonly float HealthFactor;
     internal readonly float RegenFactor;
     internal readonly float UHPValue;
+    internal readonly float HeadlampRadius;
+    internal readonly float HeadlampAngle;
 
-    internal ParsedLobbySettings(int respawnTime, int numberOfLives, int maxPlayers, float initialScale, float healthFactor, float regenFactor, float uhpValue)
+    internal ParsedLobbySettings(int respawnTime, int numberOfLives, int maxPlayers, float initialScale, float healthFactor, float regenFactor, float uhpValue, float headlampRadius, float headlampAngle)
     {
         RespawnTime = respawnTime;
         NumberOfLives = numberOfLives;
@@ -204,5 +216,7 @@ internal readonly struct ParsedLobbySettings
         HealthFactor = healthFactor;
         RegenFactor = regenFactor;
         UHPValue = uhpValue;
+        HeadlampRadius = headlampRadius;
+        HeadlampAngle = headlampAngle;
     }
 }

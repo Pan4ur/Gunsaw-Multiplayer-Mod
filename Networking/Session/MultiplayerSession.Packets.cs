@@ -368,6 +368,8 @@ internal static partial class MultiplayerSession
                 NoNpcs = settings.NoNpcs;
                 BlackoutEnabled = settings.BlackoutEnabled;
                 RestrictLightEnabled = settings.RestrictLightEnabled;
+                HeadlampRadius = settings.HeadlampRadius;
+                HeadlampAngle = settings.HeadlampAngle;
                 LobbySettingsReceived = true;
                 GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => TeamSystem.Configure(settings.Teams, settings.TeamsCfg));
                 lock (statusLock)

@@ -270,9 +270,9 @@ internal static class BlackoutRule
         light.enabled = false;
         light.lightType = Light2D.LightType.Point;
         light.pointLightInnerRadius = 0.4f;
-        light.pointLightInnerAngle = 38f;
-        light.pointLightOuterAngle = 64f;
-        light.pointLightOuterRadius = 12f;
+        light.pointLightInnerAngle = MultiplayerSession.HeadlampAngle * (38f / 64f);
+        light.pointLightOuterAngle = MultiplayerSession.HeadlampAngle;
+        light.pointLightOuterRadius = MultiplayerSession.HeadlampRadius;
         light.m_ApplyToSortingLayers = Array.ConvertAll(SortingLayer.layers, layer => layer.id);
         light.intensity = 2f;
         light.color = Color.white;
@@ -1227,8 +1227,9 @@ internal sealed class Headlamp : MonoBehaviour
         mainLight.shadowsEnabled = MultiplayerSession.RestrictLightEnabled;
         mainLight.shadowIntensity = MultiplayerSession.RestrictLightEnabled ? 1f : 0f;
         mainLight.lightType = Light2D.LightType.Point;
-        mainLight.pointLightInnerAngle = 38f;
-        mainLight.pointLightOuterAngle = 64f;
+        mainLight.pointLightInnerAngle = MultiplayerSession.HeadlampAngle * (38f / 64f);
+        mainLight.pointLightOuterAngle = MultiplayerSession.HeadlampAngle;
+        mainLight.pointLightOuterRadius = MultiplayerSession.HeadlampRadius;
         blockerCount = 0;
         if (!MultiplayerSession.RestrictLightEnabled)
             return;
@@ -1494,9 +1495,9 @@ internal sealed class Headlamp : MonoBehaviour
         if (!Enabled || mainLight == null)
             return false;
         var offset = position - (Vector2)mainLight.transform.position;
-        if (offset.sqrMagnitude > 144f || offset.sqrMagnitude < 0.01f)
+        if (offset.sqrMagnitude > mainLight.pointLightOuterRadius * mainLight.pointLightOuterRadius || offset.sqrMagnitude < 0.01f)
             return offset.sqrMagnitude < 0.01f;
-        return Vector2.Angle(mainLight.transform.up, offset) <= 32f;
+        return Vector2.Angle(mainLight.transform.up, offset) <= mainLight.pointLightOuterAngle * 0.5f;
     }
 
     internal bool CanIlluminate(Bounds bounds)

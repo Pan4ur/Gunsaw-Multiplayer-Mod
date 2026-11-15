@@ -16,7 +16,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     internal static bool IsOpenInGame { get; private set; }
     private TMP_Text template;
     private Button templateButton;
-    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, uhpValueInput, regenFactorInput, initialScaleInput, serverInput;
+    private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, uhpValueInput, regenFactorInput, headlampRadiusInput, headlampAngleInput, initialScaleInput, serverInput;
     private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, noNpcsToggle, blackoutToggle, restrictLightToggle, gunGameToggle, uniformHPToggle;
     private TMP_InputField[] startingAmmoInputs, respawnAmmoInputs;
     private Button[] startingWeaponButtons, respawnWeaponButtons;
@@ -186,6 +186,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetInput(regenFactorInput, viewingLobbySettings ? MultiplayerSession.RegenFactor.ToString("0.##") : plugin.lobbySettings.RegenFactor);
         SetToggle(noNpcsToggle, viewingLobbySettings ? MultiplayerSession.NoNpcs : plugin.lobbySettings.NoNpcs);
         SetToggle(blackoutToggle, viewingLobbySettings ? MultiplayerSession.BlackoutEnabled : plugin.lobbySettings.Blackout);
+        SetInput(headlampRadiusInput, viewingLobbySettings ? MultiplayerSession.HeadlampRadius.ToString("0.##") : plugin.lobbySettings.HeadlampRadius);
+        SetInput(headlampAngleInput, viewingLobbySettings ? MultiplayerSession.HeadlampAngle.ToString("0.##") : plugin.lobbySettings.HeadlampAngle);
         SetToggle(restrictLightToggle, viewingLobbySettings ? MultiplayerSession.RestrictLightEnabled : plugin.lobbySettings.RestrictLight);
         SetInput(serverInput, plugin.lobbyServerAddress);
         SetToggle(pvpToggle, viewingLobbySettings ? MultiplayerSession.PvpEnabled : plugin.lobbySettings.Pvp);
@@ -293,6 +295,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         regenFactorInput.interactable = interactable;
         noNpcsToggle.interactable = interactable;
         blackoutToggle.interactable = interactable;
+        headlampRadiusInput.interactable = interactable && plugin.lobbySettings.Blackout;
+        headlampAngleInput.interactable = interactable && plugin.lobbySettings.Blackout;
         restrictLightToggle.interactable = interactable && plugin.lobbySettings.Blackout;
         initialScaleInput.interactable = interactable;
         foreach (var button in startingWeaponButtons) button.interactable = interactable;
@@ -540,6 +544,16 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(noNpcsToggle.gameObject, "NO NPCs: Prevents NPCs from spawning when levels load, including NPC spawners.");
         blackoutToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.Blackout)), "BLACKOUT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.Blackout = value);
         AddTooltip(blackoutToggle.gameObject, "BLACKOUT: Turns off level lighting and gives every player a headlamp.");
+        var headlampRadiusRow = CreateSettingsRow(settings, nameof(LobbySettings.HeadlampRadius));
+        CreateText(headlampRadiusRow, "HEADLAMP RADIUS", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        headlampRadiusInput = CreateInput(headlampRadiusRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 6, value => plugin.lobbySettings.HeadlampRadius = value, TMP_InputField.CharacterValidation.Decimal);
+        AddNumericRange(headlampRadiusInput, 1f, 100f, true);
+        AddTooltip(headlampRadiusRow.gameObject, "HEADLAMP RADIUS: Headlamp radius. Allowed range: 1 to 100.");
+        var headlampAngleRow = CreateSettingsRow(settings, nameof(LobbySettings.HeadlampAngle));
+        CreateText(headlampAngleRow, "HEADLAMP ANGLE", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
+        headlampAngleInput = CreateInput(headlampAngleRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 6, value => plugin.lobbySettings.HeadlampAngle = value, TMP_InputField.CharacterValidation.Decimal);
+        AddNumericRange(headlampAngleInput, 1f, 180f, true);
+        AddTooltip(headlampAngleRow.gameObject, "HEADLAMP ANGLE: Headlamp cone angle in degrees. Allowed range: 1 to 180.");
         restrictLightToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.RestrictLight)), "RESTRICT LIGHT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.RestrictLight = value);
         AddTooltip(restrictLightToggle.gameObject, "RESTRICT LIGHT: Headlamp light is blocked by walls and props.");
         playerCollisionsToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.PlayerCollisions)), "PLAYER COLLISIONS", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.PlayerCollisions = value);

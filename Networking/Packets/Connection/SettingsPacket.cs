@@ -29,6 +29,8 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly bool NoNpcs;
     internal readonly bool BlackoutEnabled;
     internal readonly bool RestrictLightEnabled;
+    internal readonly float HeadlampRadius;
+    internal readonly float HeadlampAngle;
     internal readonly bool PropHunt;
     internal readonly ushort PropHuntTime;
     internal readonly byte PropHuntHunters;
@@ -44,7 +46,7 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly string GGSequence;
     internal readonly GunGameDeathMode GGOnDeath;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue, bool propHunt = false, ushort propHuntTime = 300, byte propHuntHunters = 1, float propHuntShotPenalty = 5f, float propHuntShotHealing = 15f, float propHuntTelekinesisPenalty = 5f, float propHuntTelekinesisInterval = 0.5f, float propHuntStunCooldown = 30f, float propHuntChangeCooldown = 30f, bool noNpcs = false, bool propHuntLocator = true, float propHuntLocatorCooldown = 30f)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue, bool propHunt = false, ushort propHuntTime = 300, byte propHuntHunters = 1, float propHuntShotPenalty = 5f, float propHuntShotHealing = 15f, float propHuntTelekinesisPenalty = 5f, float propHuntTelekinesisInterval = 0.5f, float propHuntStunCooldown = 30f, float propHuntChangeCooldown = 30f, bool noNpcs = false, bool propHuntLocator = true, float propHuntLocatorCooldown = 30f, float headlampRadius = 12f, float headlampAngle = 64f)
     {
         PropHuntLocator = propHuntLocator;
         PropHuntLocatorCooldown = LobbySettings.ClampPropHuntValue(propHuntLocatorCooldown, 30f, 0f, 3600f);
@@ -87,6 +89,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         NoNpcs = noNpcs;
         BlackoutEnabled = blackoutEnabled;
         RestrictLightEnabled = restrictLightEnabled;
+        HeadlampRadius = LobbySettings.ClampPropHuntValue(headlampRadius, 12f, 1f, 100f);
+        HeadlampAngle = LobbySettings.ClampPropHuntValue(headlampAngle, 64f, 1f, 180f);
         GunGame = gunGame;
         GGSequence = ggSequence ?? "";
         GGOnDeath = ggOnDeath;
@@ -141,6 +145,8 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteBoolean(NoNpcs);
         writer.WriteBoolean(PropHuntLocator);
         writer.WriteSingle(PropHuntLocatorCooldown);
+        writer.WriteSingle(HeadlampRadius);
+        writer.WriteSingle(HeadlampAngle);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -148,37 +154,39 @@ internal readonly struct SettingsPacket : INetworkPacket
         var pvp = reader.ReadByte() != 0; var grab = reader.ReadByte() != 0; var unconscious = reader.ReadByte() != 0;
         var respawn = reader.ReadByte() != 0; var atStart = reader.ReadByte() != 0; var time = reader.ReadUInt16(); var max = reader.ReadByte();
         var collisions = reader.ReadByte() != 0; var cheats = reader.ReadByte() != 0; var swap = reader.ReadByte() != 0;
-        var scaleChanging = reader.Remaining >= 1 ? reader.ReadByte() != 0 : true; var scale = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
-        var brutal = reader.Remaining >= 1 && reader.ReadByte() != 0; var observer = reader.Remaining >= 1 ? reader.ReadByte() != 0 : true;
-        var teams = reader.Remaining >= 1 && reader.ReadByte() != 0; var cfg = reader.Remaining > 0 ? reader.ReadBinaryString() : "";
-        var startingWeapon = reader.Remaining > 0 ? reader.ReadBinaryString() : "Default";
-        var respawnWeapon = reader.Remaining > 0 ? reader.ReadBinaryString() : "Default";
-        var startingAmmo = reader.Remaining > 0 ? reader.ReadBinaryString() : LobbyAmmoRules.StartingDefault;
-        var respawnAmmo = reader.Remaining > 0 ? reader.ReadBinaryString() : LobbyAmmoRules.RespawnDefault;
-        var lives = reader.Remaining >= sizeof(ushort) ? reader.ReadUInt16() : (ushort)0;
-        var autoRestart = reader.Remaining >= 1 && reader.ReadByte() != 0;
-        var healthFactor = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
-        var regenFactor = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 1f;
-        var blackoutEnabled = reader.Remaining >= 1 && reader.ReadByte() != 0;
-        var restrictLightEnabled = reader.Remaining >= 1 && reader.ReadByte() != 0;
-        var gunGame = reader.Remaining >= 1 && reader.ReadByte() != 0;
-        var ggSequence = reader.Remaining > 0 ? reader.ReadBinaryString() : "";
-        var ggOnDeath = reader.Remaining >= 1 ? (GunGameDeathMode)reader.ReadByte() : GunGameDeathMode.Reset;
+        var scaleChanging = reader.ReadByte() != 0; var scale = reader.ReadSingle();
+        var brutal = reader.ReadByte() != 0; var observer = reader.ReadByte() != 0;
+        var teams = reader.ReadByte() != 0; var cfg = reader.ReadBinaryString();
+        var startingWeapon = reader.ReadBinaryString();
+        var respawnWeapon = reader.ReadBinaryString();
+        var startingAmmo = reader.ReadBinaryString();
+        var respawnAmmo = reader.ReadBinaryString();
+        var lives = reader.ReadUInt16();
+        var autoRestart = reader.ReadByte() != 0;
+        var healthFactor = reader.ReadSingle();
+        var regenFactor = reader.ReadSingle();
+        var blackoutEnabled = reader.ReadByte() != 0;
+        var restrictLightEnabled = reader.ReadByte() != 0;
+        var gunGame = reader.ReadByte() != 0;
+        var ggSequence = reader.ReadBinaryString();
+        var ggOnDeath = (GunGameDeathMode)reader.ReadByte();
         if (!System.Enum.IsDefined(typeof(GunGameDeathMode), ggOnDeath)) ggOnDeath = GunGameDeathMode.Reset;
-        var uniformHP = reader.Remaining >= 1 && reader.ReadBoolean();
-        var uhpValue = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : LobbyHealthRule.DefaultUniformHPValue;
-        var propHunt = reader.Remaining >= 1 && reader.ReadBoolean();
-        var propHuntTime = reader.Remaining >= 2 ? reader.ReadUInt16() : (ushort)300;
-        var hunters = reader.Remaining >= 1 ? reader.ReadByte() : (byte)1;
-        var propHuntShotPenalty = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 5f;
-        var propHuntShotHealing = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 15f;
-        var propHuntTelekinesisPenalty = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 5f;
-        var propHuntTelekinesisInterval = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 0.5f;
-        var propHuntStunCooldown = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 30f;
-        var propHuntChangeCooldown = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 30f;
-        var noNpcs = reader.Remaining >= 1 && reader.ReadBoolean();
-        var propHuntLocator = reader.Remaining >= 1 && reader.ReadBoolean();
-        var propHuntLocatorCooldown = reader.Remaining >= sizeof(float) ? reader.ReadSingle() : 30f;
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue, propHunt, propHuntTime, hunters, propHuntShotPenalty, propHuntShotHealing, propHuntTelekinesisPenalty, propHuntTelekinesisInterval, propHuntStunCooldown, propHuntChangeCooldown, noNpcs, propHuntLocator, propHuntLocatorCooldown);
+        var uniformHP = reader.ReadBoolean();
+        var uhpValue = reader.ReadSingle();
+        var propHunt = reader.ReadBoolean();
+        var propHuntTime = reader.ReadUInt16();
+        var hunters = reader.ReadByte();
+        var propHuntShotPenalty = reader.ReadSingle();
+        var propHuntShotHealing = reader.ReadSingle();
+        var propHuntTelekinesisPenalty = reader.ReadSingle();
+        var propHuntTelekinesisInterval = reader.ReadSingle();
+        var propHuntStunCooldown = reader.ReadSingle();
+        var propHuntChangeCooldown = reader.ReadSingle();
+        var noNpcs = reader.ReadBoolean();
+        var propHuntLocator = reader.ReadBoolean();
+        var propHuntLocatorCooldown = reader.ReadSingle();
+        var headlampRadius = reader.ReadSingle();
+        var headlampAngle = reader.ReadSingle();
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue, propHunt, propHuntTime, hunters, propHuntShotPenalty, propHuntShotHealing, propHuntTelekinesisPenalty, propHuntTelekinesisInterval, propHuntStunCooldown, propHuntChangeCooldown, noNpcs, propHuntLocator, propHuntLocatorCooldown, headlampRadius, headlampAngle);
     }
 }
