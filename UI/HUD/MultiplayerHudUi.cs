@@ -473,7 +473,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         {
             var body = remote.Body;
             if (body == null || body.rb == null) continue;
-            var visibility = VoyagerBody.PvpVoyagerVisibility(body);
+            var showStats = !MultiplayerSession.PvpEnabled || TeamSystem.IsTeammate(remote.PeerId);
+            var visibility = showStats ? 1f : VoyagerBody.PvpVoyagerVisibility(body);
             if (PropHuntSystem.IsProp(body) || !BlackoutRule.IsVisibleInHeadlamp(body)) visibility = 0f;
             if (visibility <= 0.01f)
             {
@@ -483,7 +484,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 continue;
             }
             var scale = Mathf.Clamp(Mathf.Abs(body.characterScale), 0.7f, 1.8f);
-            Vector3 position = body.inVehicle ? body.transform.position : (Vector3)body.rb.position;
+            var position = body.inVehicle ? body.transform.position : (Vector3) body.rb.position;
             var screen = camera.WorldToScreenPoint(position + Vector3.up * (1.35f * scale));
             if (screen.z <= 0f) continue;
             activeNameTags.Add(body);
@@ -506,7 +507,6 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
                 tag.Background.raycastTarget = false;
                 nameTags[body] = tag;
             }
-            var showStats = !MultiplayerSession.PvpEnabled || TeamSystem.Same(MultiplayerSession.LocalPeerId, remote.PeerId);
             var percent = showStats && NametagSettings.Health && body.maxHealth > 0f
                 ? Mathf.Clamp(body.health / body.maxHealth * 100f, 0f, 100f) : -1f;
             var health = percent < 0f ? -1 : Mathf.RoundToInt(percent);
@@ -680,8 +680,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
             active.Add(body);
 
-            CoopMarker marker;
-            if (!coopMarkers.TryGetValue(body, out marker))
+            if (!coopMarkers.TryGetValue(body, out var marker))
             {
                 marker = CreateCoopMarker();
                 coopMarkers[body] = marker;

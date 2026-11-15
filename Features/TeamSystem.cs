@@ -149,8 +149,11 @@ internal static partial class TeamSystem
                                                               playerTeams.TryGetValue(first, out var a) &&
                                                               playerTeams.TryGetValue(second, out var b) && a == b;
 
-    public static bool IsTeammate(BodyScript other) => Same(MultiplayerSession.LocalPeerId, NetworkAvatarManager.PeerIdOfBody(other));
+    public static bool IsTeammate(BodyScript other) => IsTeammate(NetworkAvatarManager.PeerIdOfBody(other));
 
+    public static bool IsTeammate(ushort other) => Same(MultiplayerSession.LocalPeerId, other);
+
+    
     internal static string Name(ushort id) => playerTeams.TryGetValue(id, out var value) ? value : "";
 
     internal static bool MatchesSpawnTeam(ushort id, string value)
