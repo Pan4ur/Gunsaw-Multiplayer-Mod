@@ -486,7 +486,10 @@ internal class NetworkAvatarReplication : MonoBehaviour
         lastRemoteHealth = remoteBody.health;
         lastRemoteAlive = remoteBody.isAlive;
         if (MultiplayerSession.IsHost && wasRemoteAlive && !lastRemoteAlive)
+        {
+            ScoreboardSystem.NoteHostPlayerDeath(remotePeerId);
             remoteBody.DropAllWeapons();
+        }
         if (lastRemoteAlive && !wasRemoteAlive)
         {
             if (MultiplayerSession.IsHost)

@@ -30,6 +30,7 @@ internal static class ScoreboardSystem
 {
     private static readonly Dictionary<ushort, PlayerPerformance> scores = [];
     private static readonly Dictionary<ushort, int> hostKills = [];
+    private static readonly Dictionary<ushort, int> hostKillStreaks = [];
     private static readonly HashSet<ushort> hostPvpVictims = [];
     private static int scene = int.MinValue, localDeaths;
     private static int localPvpHeadShots, localPvpKills;
@@ -47,6 +48,7 @@ internal static class ScoreboardSystem
         {
             scores.Clear();
             hostKills.Clear();
+            hostKillStreaks.Clear();
             hostPvpVictims.Clear();
             scene = int.MinValue;
             preserveForNextScene = false;
@@ -64,6 +66,7 @@ internal static class ScoreboardSystem
             {
                 scores.Clear();
                 hostKills.Clear();
+                hostKillStreaks.Clear();
                 hostPvpVictims.Clear();
                 localDeaths = 0;
                 localPvpHeadShots = localPvpKills = 0;
@@ -76,7 +79,11 @@ internal static class ScoreboardSystem
         var body = PlayerScript.player?.bodyScript;
         if (body != null)
         {
-            if (localWasAlive && !body.isAlive) localDeaths++;
+            if (localWasAlive && !body.isAlive)
+            {
+                localDeaths++;
+                NoteHostPlayerDeath(MultiplayerSession.LocalPeerId);
+            }
             if (MultiplayerSession.IsHost && !localWasAlive && body.isAlive)
                 NoteHostPlayerRespawn(MultiplayerSession.LocalPeerId);
             localWasAlive = body.isAlive;
@@ -100,8 +107,7 @@ internal static class ScoreboardSystem
         while (MultiplayerSession.TryTakePlayerKill(out senderId, out killPacket))
         {
             if (!MultiplayerSession.IsHost || senderId == 0 || killPacket.KillerId == 0 || killPacket.KillerId == senderId) continue;
-            hostKills[killPacket.KillerId] = KillsFor(killPacket.KillerId) + 1;
-            if (killPacket.KillerId == MultiplayerSession.LocalPeerId) GunGameRule.RecordKill();
+            RecordHostKill(killPacket.KillerId, true);
             NetworkAvatarManager.RoutePlayerKillScreenEffect(killPacket.KillerId);
         }
 
@@ -127,19 +133,33 @@ internal static class ScoreboardSystem
         var killer = NetworkAvatarManager.DamageSourceFor(victim);
         if (killer == null) return;
         var peerId = killer == PlayerScript.player?.bodyScript ? MultiplayerSession.LocalPeerId : (NetworkAvatarManager.ReplicaForBody(killer)?.remotePeerId ?? 0);
-        if (peerId != 0)
-        {
-            hostKills[peerId] = KillsFor(peerId) + 1;
-            if (peerId == MultiplayerSession.LocalPeerId) GunGameRule.RecordKill();
-        }
+        if (peerId != 0) RecordHostKill(peerId, false);
     }
 
     internal static void RecordHostPvpKill(ushort killerPeerId, ushort victimPeerId)
     {
         if (!MultiplayerSession.IsHost || !MultiplayerSession.PvpEnabled || killerPeerId == 0 ||
             victimPeerId == 0 || killerPeerId == victimPeerId || !hostPvpVictims.Add(victimPeerId)) return;
-        hostKills[killerPeerId] = KillsFor(killerPeerId) + 1;
-        if (killerPeerId == MultiplayerSession.LocalPeerId) GunGameRule.RecordKill();
+        RecordHostKill(killerPeerId, true);
+    }
+
+    private static void RecordHostKill(ushort peerId, bool playerKill)
+    {
+        hostKills[peerId] = KillsFor(peerId) + 1;
+        if (peerId == MultiplayerSession.LocalPeerId) GunGameRule.RecordKill();
+        if (!playerKill) return;
+        var streak = hostKillStreaks.TryGetValue(peerId, out var previous) ? previous + 1 : 1;
+        hostKillStreaks[peerId] = streak;
+        if (streak >= 3)
+        {
+            var name = NetworkAvatarUtilities.SanitizePlayerName(MultiplayerSession.PlayerName(peerId));
+            MultiplayerSession.BroadcastSystemChat($"<color=#75E06B>Watch out, {name} is on a kill streak: {streak}!</color>", richText: true);
+        }
+    }
+
+    internal static void NoteHostPlayerDeath(ushort peerId)
+    {
+        if (MultiplayerSession.IsHost) hostKillStreaks.Remove(peerId);
     }
 
     internal static void NoteHostPlayerRespawn(ushort peerId)
