@@ -43,7 +43,8 @@ internal static class PropHuntSystem
         SceneManager.GetActiveScene().name != "LevelSelect" && SceneManager.GetActiveScene().name != "LevelEditor";
     internal static bool BlocksInput => Enabled && (phase == PropHuntPhase.Waiting || phase >= PropHuntPhase.PropsWin ||
         !alive.Contains(MultiplayerSession.LocalPeerId) || (IsHunter(MultiplayerSession.LocalPeerId) && phase == PropHuntPhase.Hiding));
-    internal static bool IsProp(BodyScript body) => Enabled && body != null && props.ContainsKey(NetworkAvatarManager.PeerIdOfBody(body));
+    internal static bool IsProp(ushort peer) => Enabled && props.ContainsKey(peer);
+    internal static bool IsProp(BodyScript body) => body != null && IsProp(NetworkAvatarManager.PeerIdOfBody(body));
     internal static bool CanShoot(WeaponScript weapon) => !Enabled || (phase == PropHuntPhase.Hunting &&
         IsHunter(NetworkAvatarManager.PeerIdOfBody(weapon.body)) && alive.Contains(NetworkAvatarManager.PeerIdOfBody(weapon.body)) && weapon.stats == Magnum());
 

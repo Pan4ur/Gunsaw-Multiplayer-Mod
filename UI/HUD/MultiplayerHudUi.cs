@@ -203,7 +203,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         playersPanel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.5f);
         playersPanel.GetComponent<Image>().raycastTarget = false;
         ScreenAnchor(playersPanel.GetComponent<RectTransform>(), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -20f));
-        playersText = Text(playersPanel.transform, "", Vector2.zero, new Vector2(1040f, 290f), 18, TextAlignmentOptions.Top);
+        playersText = Text(playersPanel.transform, "", Vector2.zero, new Vector2(1040f, 290f), 18, TextAlignmentOptions.TopLeft);
         playersText.autoSizeTextContainer = false;
         playersText.enableAutoSizing = false;
         playersText.margin = Vector4.zero;
@@ -336,7 +336,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private void UpdatePlayers()
     {
-        var header = Monospace("PLAYER                 PING    K    D     AIM      HS     DMG     RANK");
+        var header = Monospace("PLAYER".PadRight(22) + "PING" + "  " + "K".PadLeft(3) + "  " + "D".PadLeft(3) + "  " +
+            "AIM".PadLeft(6) + "  " + "HS".PadLeft(6) + "  " + "DMG".PadLeft(6) + "     RANK" +
+            (PropHuntSystem.Enabled ? "   ROLE  " : ""));
         if (!TeamSystem.Enabled)
         {
             var text = header + "\n\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
@@ -346,14 +348,16 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             return;
         }
         var grouped = header;
-        foreach (var team in TeamSystem.Names())
+        foreach (var team in TeamSystem.Names().Concat(new[] { "" }))
         {
-            grouped += "\n\n<color=#" + TeamSystem.Hex(team) + ">" + team.ToUpperInvariant() + "  " + TeamKills(team) + "</color>";
+            var lines = "";
             if (TeamSystem.Name(MultiplayerSession.LocalPeerId) == team)
-                grouped += "\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
+                lines += "\n" + PlayerScoreLine(MultiplayerSession.LocalPeerId, MultiplayerSession.LocalPlayerName,
                     MultiplayerSession.IsHost ? 0 : MultiplayerSession.PingMs, MultiplayerSession.IsHost);
             foreach (var remote in NetworkAvatarManager.RemotePlayers())
-                if (TeamSystem.Name(remote.PeerId) == team) grouped += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
+                if (TeamSystem.Name(remote.PeerId) == team) lines += "\n" + PlayerScoreLine(remote.PeerId, remote.Name, remote.PingMs, remote.PeerId == 1);
+            if (team == "" && lines == "") continue;
+            grouped += "\n\n<color=#" + TeamSystem.Hex(team) + ">" + (team == "" ? "NO TEAM" : team.ToUpperInvariant()) + "  " + TeamKills(team) + "</color>" + lines;
         }
         SetPlayersText(grouped);
     }
@@ -376,6 +380,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     private static string PlayerScoreLine(ushort peerId, string name, int ping, bool host)
     {
+        if (host) ping = 0;
         var score = ScoreboardSystem.ForPlayer(peerId);
         var rank = ScoreboardSystem.Rank(score);
         var displayName = (host ? "[HOST] " : "") + name;
@@ -384,7 +389,8 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         return Monospace(displayName.PadRight(22) + (ping >= 0 ? ping.ToString().PadLeft(4) : "   -") + "  " +
             score.Kills.ToString().PadLeft(3) + "  " + score.Deaths.ToString().PadLeft(3) + "  " +
             score.Accuracy.ToString("0.00").PadLeft(6) + "  " + score.HeadshotRatio.ToString("0.00").PadLeft(6) + "  " +
-            score.DamageRatio.ToString("0.00").PadLeft(6) + "     <color=" + ScoreboardSystem.RankColor(rank) + ">" + rank + "</color>");
+            score.DamageRatio.ToString("0.00").PadLeft(6) + "     <color=" + ScoreboardSystem.RankColor(rank) + ">" + rank.PadRight(4) + "</color>" +
+            (PropHuntSystem.Enabled ? "   " + (PropHuntSystem.IsHunter(peerId) ? "HUNTER" : PropHuntSystem.IsProp(peerId) ? "PROP" : "-").PadRight(6) : ""));
     }
 
     private static string Monospace(string value) => "<mspace=0.72em>" + value + "</mspace>";
@@ -649,7 +655,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         if (!MultiplayerHud.IsTyping && !Controls.IsTextInputSelected && Input.GetKeyDown(Controls.keys[Controls.TOGGLE_PLAYER_MARKERS]))
             coopMarkersVisible = !coopMarkersVisible;
 
-        if (camera == null || MultiplayerSession.PvpEnabled || !coopMarkersVisible)
+        if (camera == null || !coopMarkersVisible)
         {
             HideCoopMarkers(active);
             return;
@@ -659,6 +665,9 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
         foreach (var remote in NetworkAvatarManager.RemotePlayers())
         {
+            if (MultiplayerSession.PvpEnabled && !TeamSystem.IsTeammate(remote.PeerId))
+                continue;
+
             var body = remote.Body;
 
             if (body == null)
