@@ -360,6 +360,7 @@ internal sealed class NpcReplication : MonoBehaviour
     {
         id = "";
         if (!IsNpc(body, localBody)) return false;
+        SawTuner.Apply(body);
         id = StableId(body);
         var root = NpcRoot(body);
         if (!root.activeSelf) root.SetActive(true);
@@ -1098,6 +1099,7 @@ internal sealed class NpcReplication : MonoBehaviour
                 GunsawMultiplayerPlugin.LogInfo("Could not wake NPC proxy " + id + ": " + e.GetType().Name + ": " + e.Message);
             }
         }
+        SawTuner.Apply(body);
         InitializeSeasonalHats(root);
         ClearWeaponBackShows(body);
         var proxy = new NpcProxy

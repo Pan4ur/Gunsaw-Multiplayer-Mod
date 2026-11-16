@@ -59,6 +59,7 @@ internal static class LocalCharacterCreationPatch
         if (__instance == null || __instance.bodyScript == null) return;
         var root = __instance.bodyScript.transform.root;
         root.position = CustomLevelSpawnSelection.RandomizePosition(root.position);
+        SawTuner.Apply(__instance.bodyScript);
         LobbyRegenRule.Apply(__instance.bodyScript, MultiplayerSession.RegenFactor);
         LobbyHealthRule.RestoreFull(__instance.bodyScript);
         BlackoutRule.RegisterBody(__instance.bodyScript);

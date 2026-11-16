@@ -178,6 +178,7 @@ internal static class MultiplayerPlayerSlowmoPatch
     private static bool Prefix(PlayerScript __instance, out MultiplayerTimeControl.SlowmoKeyState __state)
     {
         __state = default(MultiplayerTimeControl.SlowmoKeyState);
+        if (__instance != null) SawTuner.Apply(__instance.bodyScript);
         if (MultiplayerSession.IsActive && __instance != null)
             LobbyHealthRule.Apply(__instance.bodyScript, MultiplayerSession.HealthFactor);
         if (MultiplayerSession.IsActive && __instance != null)
@@ -520,6 +521,7 @@ internal static class MultiplayerVanillaBodySwitchPatch
         if (!MultiplayerSession.IsInLobby) return true;
         var player = PlayerScript.player;
         if (player != null && player.bodyScript != null && !player.bodyScript.isAlive) return false;
+        if (limb != null && limb.body != null) limb.body.GetComponent<SawTunerBodyState>()?.RestoreNpc();
         return true;
     }
 }

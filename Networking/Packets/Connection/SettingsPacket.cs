@@ -1,5 +1,9 @@
 internal readonly struct SettingsPacket : INetworkPacket
 {
+    internal readonly int SawTunerRevision;
+    internal readonly string SawTuner;
+    internal readonly bool SawTunerPlayers;
+    internal readonly bool SawTunerNpcs;
     internal readonly bool PvpEnabled;
     internal readonly bool CanGrabPlayers;
     internal readonly bool GrabOnlyUnconscious;
@@ -46,8 +50,12 @@ internal readonly struct SettingsPacket : INetworkPacket
     internal readonly string GGSequence;
     internal readonly GunGameDeathMode GGOnDeath;
 
-    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue, bool propHunt = false, ushort propHuntTime = 300, byte propHuntHunters = 1, float propHuntShotPenalty = 5f, float propHuntShotHealing = 15f, float propHuntTelekinesisPenalty = 5f, float propHuntTelekinesisInterval = 0.5f, float propHuntStunCooldown = 30f, float propHuntChangeCooldown = 30f, bool noNpcs = false, bool propHuntLocator = true, float propHuntLocatorCooldown = 30f, float headlampRadius = 12f, float headlampAngle = 64f)
+    internal SettingsPacket(bool pvpEnabled, bool canGrabPlayers, bool grabOnlyUnconscious, bool allowRespawn, bool respawnAtStart, ushort respawnTimeSeconds, byte maxPlayers, bool playerCollisions, bool cheatsEnabled, bool allowSwap, bool allowScaleChanging, float initialScale, bool brutalModeEnabled, bool allowObserver, bool teams = false, string teamsCfg = "", string startingWeapon = "Default", string respawnWeapon = "Default", string startingAmmo = LobbyAmmoRules.StartingDefault, string respawnAmmo = LobbyAmmoRules.RespawnDefault, ushort numberOfLives = 0, bool autoRestart = false, float healthFactor = 1f, float regenFactor = 1f, bool blackoutEnabled = false, bool restrictLightEnabled = false, bool gunGame = false, string ggSequence = "", GunGameDeathMode ggOnDeath = GunGameDeathMode.Reset, bool uniformHP = false, float uhpValue = LobbyHealthRule.DefaultUniformHPValue, bool propHunt = false, ushort propHuntTime = 300, byte propHuntHunters = 1, float propHuntShotPenalty = 5f, float propHuntShotHealing = 15f, float propHuntTelekinesisPenalty = 5f, float propHuntTelekinesisInterval = 0.5f, float propHuntStunCooldown = 30f, float propHuntChangeCooldown = 30f, bool noNpcs = false, bool propHuntLocator = true, float propHuntLocatorCooldown = 30f, float headlampRadius = 12f, float headlampAngle = 64f, int sawTunerRevision = 0, string sawTuner = "", bool sawTunerPlayers = true, bool sawTunerNpcs = false)
     {
+        SawTunerRevision = sawTunerRevision;
+        SawTuner = sawTuner ?? "";
+        SawTunerPlayers = sawTunerPlayers;
+        SawTunerNpcs = sawTunerNpcs;
         PropHuntLocator = propHuntLocator;
         PropHuntLocatorCooldown = LobbySettings.ClampPropHuntValue(propHuntLocatorCooldown, 30f, 0f, 3600f);
         PropHunt = propHunt;
@@ -147,6 +155,10 @@ internal readonly struct SettingsPacket : INetworkPacket
         writer.WriteSingle(PropHuntLocatorCooldown);
         writer.WriteSingle(HeadlampRadius);
         writer.WriteSingle(HeadlampAngle);
+        writer.WriteInt32(SawTunerRevision);
+        writer.WriteBinaryString(SawTuner);
+        writer.WriteBoolean(SawTunerPlayers);
+        writer.WriteBoolean(SawTunerNpcs);
     }
 
     internal static SettingsPacket Read(ref PacketReader reader)
@@ -187,6 +199,22 @@ internal readonly struct SettingsPacket : INetworkPacket
         var propHuntLocatorCooldown = reader.ReadSingle();
         var headlampRadius = reader.ReadSingle();
         var headlampAngle = reader.ReadSingle();
-        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue, propHunt, propHuntTime, hunters, propHuntShotPenalty, propHuntShotHealing, propHuntTelekinesisPenalty, propHuntTelekinesisInterval, propHuntStunCooldown, propHuntChangeCooldown, noNpcs, propHuntLocator, propHuntLocatorCooldown, headlampRadius, headlampAngle);
+        var sawTunerRevision = 0;
+        var sawTuner = "";
+        if (reader.Remaining > 0)
+        {
+            sawTunerRevision = reader.ReadInt32();
+            sawTuner = reader.ReadBinaryString();
+        }
+        var sawTunerPlayers = true;
+        var sawTunerNpcs = false;
+        if (reader.Remaining > 0)
+        {
+            sawTunerPlayers = reader.ReadBoolean();
+            sawTunerNpcs = reader.ReadBoolean();
+        }
+        if (sawTunerRevision < 0) throw new InvalidDataException("Invalid SawTuner revision.");
+        SawTunerValues.Parse(sawTuner);
+        return new SettingsPacket(pvp, grab, unconscious, respawn, atStart, time, max, collisions, cheats, swap, scaleChanging, scale, brutal, observer, teams, cfg, startingWeapon, respawnWeapon, startingAmmo, respawnAmmo, lives, autoRestart, healthFactor, regenFactor, blackoutEnabled, restrictLightEnabled, gunGame, ggSequence, ggOnDeath, uniformHP, uhpValue, propHunt, propHuntTime, hunters, propHuntShotPenalty, propHuntShotHealing, propHuntTelekinesisPenalty, propHuntTelekinesisInterval, propHuntStunCooldown, propHuntChangeCooldown, noNpcs, propHuntLocator, propHuntLocatorCooldown, headlampRadius, headlampAngle, sawTunerRevision, sawTuner, sawTunerPlayers, sawTunerNpcs);
     }
 }

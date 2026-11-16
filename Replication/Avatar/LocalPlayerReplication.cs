@@ -262,7 +262,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         return new PlayerSnapshotVisualState(renderers, lights, state == null ? Array.Empty<byte>() : state.FacialExpressions);
     }
 
-    protected static string ResolveCharacterPrefab(BodyScript body)
+    public static string ResolveCharacterPrefab(BodyScript body)
     {
         var fallback = string.IsNullOrEmpty(selectedCharacterPrefab)
             ? PlayerPrefs.GetString("charPrefab")

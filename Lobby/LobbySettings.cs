@@ -13,6 +13,12 @@ internal sealed class LobbySettings
 {
     [LobbySetting("Password", "Password required to join new lobbies. Leave empty for an open lobby.", "--password")]
     public string Password = "";
+    [LobbySetting("SawTuner", "Per-specie stat overrides.")]
+    public string SawTuner = "";
+    [LobbySetting("SawTunerPlayers", "Apply SawTuner overrides to players.")]
+    public bool SawTunerPlayers = true;
+    [LobbySetting("SawTunerNpcs", "Apply SawTuner overrides to NPCs.")]
+    public bool SawTunerNpcs;
     [LobbySetting("Pvp", "Enable PvP in new lobbies.", "--pvp")]
     public bool Pvp;
     [LobbySetting("CanGrab", "Allow player grabbing in new lobbies.", "--can-grab")]
@@ -150,6 +156,7 @@ internal sealed class LobbySettings
 
     internal ParsedLobbySettings Parse(int defaultMaxPlayers)
     {
+        SawTuner = global::SawTuner.Normalize(SawTuner, clampToRange: true);
         if (!int.TryParse(PropHuntTime, out var propHuntTime)) propHuntTime = 300;
         PropHuntTime = Mathf.Clamp(propHuntTime, 1, 3600).ToString();
         if (!int.TryParse(PropHuntHunters, out var hunters)) hunters = 1;

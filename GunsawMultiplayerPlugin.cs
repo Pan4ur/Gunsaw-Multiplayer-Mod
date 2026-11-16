@@ -1260,6 +1260,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         {
             name = requestedLobbyName,
             password = settings.Password,
+            sawTuner = SawTunerValues.ApiOverrides(settings.SawTuner),
+            sawTunerPlayers = settings.SawTunerPlayers,
+            sawTunerNpcs = settings.SawTunerNpcs,
             hostName = requestedPlayerName,
             map = map,
             players = players,
@@ -1459,6 +1462,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     [Serializable]
     private sealed class CreateLobbyRequest
     {
+        public SawTunerOverride[] sawTuner = [];
+        public bool sawTunerPlayers = true;
+        public bool sawTunerNpcs;
         public string password = "";
         public string name = "";
         public string hostName = "";

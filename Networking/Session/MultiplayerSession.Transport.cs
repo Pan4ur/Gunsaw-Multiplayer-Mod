@@ -484,8 +484,7 @@ internal static partial class MultiplayerSession
         foreach (var packet in due) SendPacketBlocking(client, cancellation, packet);
     }
 
-    private static void SendPacketBlocking(UdpClient client, CancellationTokenSource cancellation,
-        OutboundPacket packet)
+    private static void SendPacketBlocking(UdpClient client, CancellationTokenSource cancellation, OutboundPacket packet)
     {
         lock (sendLock)
         {
@@ -519,6 +518,8 @@ internal static partial class MultiplayerSession
                     Interlocked.Increment(ref sentPackets);
                     if (!packet.Priority && fragmentCount > 1 && sendQueue.TryDequeuePriority(out var urgent))
                         SendPacketBlocking(client, cancellation, urgent);
+                    if (!packet.Priority && fragmentCount > 1 && packet.Type == PacketType.Graffiti && sendQueue.TryDequeueState(out var state))
+                        SendPacketBlocking(client, cancellation, state);
                     if (fragmentCount > 16 && (index & 3) == 3) Thread.Sleep(1);
                 }
             }

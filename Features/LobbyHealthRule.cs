@@ -28,10 +28,11 @@ internal static class LobbyHealthRule
             state.BaseMaxHealth = baseMaxHealth > 0f ? baseMaxHealth : body.maxHealth > 0f ? body.maxHealth : body.health;
         if (state.BaseDyingStateThreshold == 0f) state.BaseDyingStateThreshold = body.dyingStateTreshold;
         var uniformHP = MultiplayerSession.IsActive && MultiplayerSession.UniformHP;
-        body.maxHealth = uniformHP ? ClampUniformHPValue(MultiplayerSession.UHPValue) : state.BaseMaxHealth * factor;
-        var thresholdFactor = uniformHP && state.BaseMaxHealth > 0f ? body.maxHealth / state.BaseMaxHealth : factor;
+        body.maxHealth = uniformHP ? ClampUniformHPValue(MultiplayerSession.UHPValue) : SawTuner.Value(body, 0, state.BaseMaxHealth) * factor;
+        var thresholdFactor = state.BaseMaxHealth > 0f ? body.maxHealth / state.BaseMaxHealth : factor;
         body.dyingStateTreshold = state.BaseDyingStateThreshold * thresholdFactor;
         body.health = Mathf.Min(body.health, body.maxHealth);
+        body.stamina = Mathf.Min(body.stamina, body.maxHealth);
     }
 
     internal static void RestoreFull(BodyScript body)

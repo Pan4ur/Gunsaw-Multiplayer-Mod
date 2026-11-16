@@ -160,6 +160,7 @@ internal static partial class MultiplayerSession
         isHost = true;
         MultiplayerSession.lobbyId = lobbyId ?? "";
         if (connectionMode != ConnectionMode.Relay) EnableP2P();
+        SawTuner.Reset();
         ApplyHostSettings(settings, parsed, false);
         LobbySettingsReceived = true;
         TeamSystem.Configure(TeamsEnabled, TeamsCfg);
@@ -204,6 +205,7 @@ internal static partial class MultiplayerSession
                 p2pConnectStartedTicks = DateTime.UtcNow.Ticks;
             }
             isHost = false;
+            SawTuner.Reset();
             PvpEnabled = false;
             CanGrabPlayers = false;
             GrabOnlyUnconscious = false;
@@ -733,6 +735,7 @@ internal static partial class MultiplayerSession
         SendDisconnectImmediately();
         CloseSocket();
         isHost = false;
+        SawTuner.Reset();
         PvpEnabled = false;
         CanGrabPlayers = false;
         GrabOnlyUnconscious = false;
@@ -820,6 +823,13 @@ internal static partial class MultiplayerSession
         var changes = new List<string>();
         foreach (var field in typeof(SettingsPacket).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic))
         {
+            if (field.Name == nameof(SettingsPacket.SawTunerRevision)) continue;
+            if (field.Name == nameof(SettingsPacket.SawTuner))
+            {
+                if (previous.SawTuner != current.SawTuner)
+                    changes.Add("SawTuner updated (" + SawTunerValues.Parse(current.SawTuner).Count + " overrides).");
+                continue;
+            }
             var before = field.GetValue(previous);
             var after = field.GetValue(current);
             if (Equals(before, after)) continue;
@@ -840,15 +850,17 @@ internal static partial class MultiplayerSession
 
     private static SettingsPacket CreateSettingsPacket()
     {
+        var tuning = SawTuner.Snapshot;
         return new SettingsPacket(PvpEnabled, CanGrabPlayers, GrabOnlyUnconscious, AllowRespawn,
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown, NoNpcs, PropHuntLocator, PropHuntLocatorCooldown, HeadlampRadius, HeadlampAngle);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown, NoNpcs, PropHuntLocator, PropHuntLocatorCooldown, HeadlampRadius, HeadlampAngle, tuning.Revision, tuning.Overrides, tuning.Players, tuning.Npcs);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
     {
+        SawTuner.Configure(settings.SawTuner, settings.SawTunerPlayers, settings.SawTunerNpcs);
         PropHuntLocator = settings.PropHuntLocator;
         PropHuntLocatorCooldown = LobbySettings.ParsePropHuntValue(settings.PropHuntLocatorCooldown, 30f, 0f, 3600f);
         PropHuntEnabled = settings.PropHunt;

@@ -145,6 +145,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
     protected virtual void LateUpdate()
     {
         TickRemote();
+        SawTuner.Apply(remoteBody, remotePrefabPath);
+        if (remoteBody != null) LobbyHealthRule.Apply(remoteBody, MultiplayerSession.HealthFactor);
 
         if (!MultiplayerSession.IsConnected || remoteAvatar == null)
             return;
@@ -212,8 +214,9 @@ internal class NetworkAvatarReplication : MonoBehaviour
         RemoveReplicaScarfArtifacts(avatar);
         remoteBody.WakeUp();
         var prefabBody = prefab.GetComponentInChildren<BodyScript>(true);
-        LobbyHealthRule.Apply(remoteBody, MultiplayerSession.HealthFactor, prefabBody.health * 2f);
         remoteBody.isPlayer = true;
+        SawTuner.Apply(remoteBody, prefabPath);
+        LobbyHealthRule.Apply(remoteBody, MultiplayerSession.HealthFactor, prefabBody.health * 2f);
         BlackoutRule.RegisterBody(remoteBody);
         remoteBody.dropWeapon = false;
         remoteBody.team = RemoteTeam(localBody);

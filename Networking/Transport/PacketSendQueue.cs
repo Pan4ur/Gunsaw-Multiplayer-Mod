@@ -80,12 +80,26 @@ internal sealed class PacketSendQueue
         lock (sync) return Dequeue(priority, out packet);
     }
 
-    private bool Dequeue(LinkedList<OutboundPacket> queue, out OutboundPacket packet)
+    internal bool TryDequeueState(out OutboundPacket packet)
     {
-        if (queue.First == null) { packet = default; return false; }
-        var first = queue.First;
+        lock (sync)
+        {
+            for (var node = normal.First; node != null; node = node.Next)
+                if (node.Value.Policy.Replaceable && !node.Value.Reliable)
+                    return Dequeue(node, out packet);
+            packet = default;
+            return false;
+        }
+    }
+
+    private bool Dequeue(LinkedList<OutboundPacket> queue, out OutboundPacket packet)
+        => Dequeue(queue.First, out packet);
+
+    private bool Dequeue(LinkedListNode<OutboundPacket> first, out OutboundPacket packet)
+    {
+        if (first == null) { packet = default; return false; }
         packet = first.Value;
-        queue.RemoveFirst();
+        first.List.Remove(first);
         Recycle(first);
         if (packet.Policy.Replaceable && !packet.Reliable)
         {

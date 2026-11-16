@@ -4,7 +4,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-internal sealed class MultiplayerLobbyUi : MonoBehaviour
+internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
 {
     private GunsawMultiplayerPlugin plugin;
     private GameObject root;
@@ -47,6 +47,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text teamsEditorTitle, teamsEditorHint, teamsEditorError;
     private List<LobbyTeamEntry> teamsDraft = new();
     private static readonly string[] teamColors = { "red", "orange", "yellow", "green", "teal", "cyan", "blue", "purple", "magenta", "white", "grey", "black" };
+    private Toggle sawTunerPlayersToggle = null!, sawTunerNpcsToggle = null!;
     private Toggle propHuntLocatorToggle;
     private TMP_InputField propHuntLocatorCooldownInput;
     private Toggle propHuntToggle;
@@ -216,6 +217,8 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetModeButton(ggResetButton, ggOnDeath == GunGameDeathMode.Reset);
         SetModeButton(ggRollbackButton, ggOnDeath == GunGameDeathMode.Rollback);
         SetModeButton(ggNoneButton, ggOnDeath == GunGameDeathMode.None);
+        SetToggle(sawTunerPlayersToggle, viewingLobbySettings ? SawTuner.ApplyToPlayers : plugin.lobbySettings.SawTunerPlayers);
+        SetToggle(sawTunerNpcsToggle, viewingLobbySettings ? SawTuner.ApplyToNpcs : plugin.lobbySettings.SawTunerNpcs);
         SetToggle(grabToggle, viewingLobbySettings ? MultiplayerSession.CanGrabPlayers : plugin.lobbySettings.CanGrab);
         SetToggle(downToggle, viewingLobbySettings ? MultiplayerSession.GrabOnlyUnconscious : plugin.lobbySettings.GrabOnlyUnconscious);
         SetToggle(respawnToggle, viewingLobbySettings ? MultiplayerSession.AllowRespawn : plugin.lobbySettings.AllowRespawn);
@@ -245,6 +248,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         SetAmmoInputs(respawnAmmoInputs, viewingLobbySettings ? MultiplayerSession.RespawnAmmo : plugin.lobbySettings.RespawnAmmo);
         SetLobbySettingsInteractable(!viewingLobbySettings, viewingLobbySettings ? false : plugin.lobbySettings.AllowRespawn);
         RefreshSettingsVisibility();
+        RefreshSawTuner();
         SetModeButton(p2pButton, plugin.lobbySettings.ConnectionMode == ConnectionMode.P2P);
         SetModeButton(relayButton, plugin.lobbySettings.ConnectionMode == ConnectionMode.Relay);
         SetModeButton(autoButton, plugin.lobbySettings.ConnectionMode == ConnectionMode.Auto);
@@ -284,6 +288,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
 
     private void SetLobbySettingsInteractable(bool interactable, bool allowRespawn)
     {
+        sawTunerPlayersToggle.interactable = sawTunerNpcsToggle.interactable = interactable;
         lobbyInput.interactable = interactable;
         passwordInput.interactable = interactable;
         maxPlayersInput.interactable = interactable;
@@ -382,6 +387,7 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
     private void Create(MainMenuManager menu)
     {
         lobbyWeapons = WeaponPresetProvider.AllWeapons();
+        CaptureSawTunerPortraits(menu);
         displayedStartingWeapons = displayedRespawnWeapons = displayedSequence = displayedTeams = null;
         settingToggles.Clear();
         settingLabels.Clear();
@@ -655,6 +661,14 @@ internal sealed class MultiplayerLobbyUi : MonoBehaviour
         ggRollbackButton.onClick.AddListener(() => { plugin.lobbySettings.GGOnDeath = GunGameDeathMode.Rollback; RefreshPendingSettings(); });
         ggNoneButton.onClick.AddListener(() => { plugin.lobbySettings.GGOnDeath = GunGameDeathMode.None; RefreshPendingSettings(); });
         AddTooltip(ggDeathRow.gameObject, "ON DEATH: Reset starts the sequence over, Rollback moves back one weapon, None keeps the current weapon.");
+
+        var tunerRow = CreateSettingsRow(settings, nameof(LobbySettings.SawTuner));
+        CreateText(tunerRow, "SAWTUNER", new Vector2(-170f, 0f), new Vector2(180f, 32f), 14);
+        var tunerButton = CreateButton(tunerRow, "EDIT", new Vector2(150f, 0f), new Vector2(210f, 36f));
+        tunerButton.onClick.AddListener(OpenSawTuner);
+        AddTooltip(tunerButton.gameObject, "SAWTUNER: Tune individual specie stats.");
+        sawTunerPlayersToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.SawTunerPlayers)), "∟ APPLY TO PLAYERS", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.SawTunerPlayers = value);
+        sawTunerNpcsToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.SawTunerNpcs)), "∟ APPLY TO NPCs", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.SawTunerNpcs = value);
 
         foreach (Transform row in settingsRows)
         {

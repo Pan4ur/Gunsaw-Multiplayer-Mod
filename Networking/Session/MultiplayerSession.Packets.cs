@@ -324,8 +324,13 @@ internal static partial class MultiplayerSession
             else if (!isHost && decodedPacket.Type == PacketType.Settings && senderId == hostPeerId)
             {
                 if (decodedPacket.Payload.Count < 11) continue;
-                var reader = new PacketReader(decodedPacket.Payload);
-                var settings = SettingsPacket.Read(ref reader);
+                SettingsPacket settings;
+                try
+                {
+                    var reader = new PacketReader(decodedPacket.Payload);
+                    settings = SettingsPacket.Read(ref reader);
+                }
+                catch (Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); continue; }
                 PvpEnabled = settings.PvpEnabled;
                 CanGrabPlayers = settings.CanGrabPlayers;
                 GrabOnlyUnconscious = CanGrabPlayers && settings.GrabOnlyUnconscious;
@@ -371,7 +376,14 @@ internal static partial class MultiplayerSession
                 HeadlampRadius = settings.HeadlampRadius;
                 HeadlampAngle = settings.HeadlampAngle;
                 LobbySettingsReceived = true;
-                GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() => TeamSystem.Configure(settings.Teams, settings.TeamsCfg));
+                var receivingSocket = receiveSocket;
+                GunsawMultiplayerPlugin.Instance?.RunOnMainThread(() =>
+                {
+                    if (socket != receivingSocket || isHost) return;
+                    TeamSystem.Configure(settings.Teams, settings.TeamsCfg);
+                    try { SawTuner.Receive(settings.SawTunerRevision, settings.SawTuner, settings.SawTunerPlayers, settings.SawTunerNpcs); }
+                    catch (ArgumentException exception) { GunsawMultiplayerPlugin.LogInfo("Rejected SawTuner settings: " + exception.Message); }
+                });
                 lock (statusLock)
                     maxPlayers = Math.Max(2, Math.Min(64, (int)settings.MaxPlayers));
                 SetStatus("Lobby settings updated.");
