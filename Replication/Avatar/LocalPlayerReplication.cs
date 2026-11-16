@@ -710,10 +710,12 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
 
     internal static void SuppressSpectatorDeathEffects(PlayerScript player)
     {
-        if (!MultiplayerSession.IsInLobby || Instance == null || !Instance.spectating || Instance.CanRespawn ||
-            player == null || player.bodyScript == null || player.bodyScript.isAlive) return;
-        if (player.deathNoise != null) player.deathNoise.color = Color.clear;
+        if (!MultiplayerSession.IsInLobby || player == null || player.bodyScript == null || player.bodyScript.isAlive) return;
         if (player.deathText != null) player.deathText.SetActive(false);
+        if (player.swapText != null && player.swapText.transform.parent != null)
+            player.swapText.transform.parent.gameObject.SetActive(false);
+        if (Instance == null || !Instance.spectating || Instance.CanRespawn) return;
+        if (player.deathNoise != null) player.deathNoise.color = Color.clear;
         if (player.crosshair != null) player.crosshair.gameObject.SetActive(false);
         if (player.crossDot != null) player.crossDot.gameObject.SetActive(false);
         if (player.crossLine != null) player.crossLine.gameObject.SetActive(false);
