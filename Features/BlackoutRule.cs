@@ -63,6 +63,7 @@ internal static class BlackoutRule
     private static readonly HashSet<BlackoutShadowCaster> shadowCasters = [];
     private static BodyScript localBodyWithHeadlamp;
     private static bool restrictLightApplied;
+    private static bool turnOffLampsApplied;
     private static AudioClip headlampToggleSound;
 
     internal static bool IsApplied => applied;
@@ -85,7 +86,7 @@ internal static class BlackoutRule
         UpdateRestrictLightShadows();
 
         var sceneHandle = UnityEngine.SceneManagement.SceneManager.GetActiveScene().handle;
-        if (applied && sceneHandle == appliedSceneHandle)
+        if (applied && sceneHandle == appliedSceneHandle && turnOffLampsApplied == MultiplayerSession.TurnOffLamps)
             return;
 
         applied = true;
@@ -147,11 +148,22 @@ internal static class BlackoutRule
         foreach (var scarf in UnityEngine.Object.FindObjectsOfType<ScarfPhysics>())
             ApplyScarfMaterial(scarf);
 
+        turnOffLampsApplied = MultiplayerSession.TurnOffLamps;
         foreach (var light in UnityEngine.Object.FindObjectsOfType<Light2D>())
         {
             if (light == null || IsLevelGlobalLight(light) || light.GetComponentInParent<Headlamp>() != null ||
                 light.GetComponentInParent<FireScript>() != null)
                 continue;
+
+            if (!turnOffLampsApplied && IsLevelLamp(light))
+            {
+                if (disabledLights.TryGetValue(light, out var enabled))
+                {
+                    light.enabled = enabled;
+                    disabledLights.Remove(light);
+                }
+                continue;
+            }
 
             if (!disabledLights.ContainsKey(light))
                 disabledLights.Add(light, light.enabled);
@@ -758,6 +770,10 @@ internal static class BlackoutRule
         var loader = light == null ? null : light.GetComponentInParent<LevelLoader>();
         return loader != null && loader.globalLight == light;
     }
+
+    private static bool IsLevelLamp(Light2D light) => light.CompareTag("Lamp") || light.name.StartsWith("Lamp (") ||
+        light.GetComponentInParent<ColorLampTag>() != null || light.GetComponentInParent<ToggleableLampRuntime>() != null ||
+        light.GetComponentsInChildren<Collider2D>(true).Any(collider => collider.CompareTag("Lamp") || collider.name.StartsWith("Lamp ("));
 
     private static void ApplyToNewSpriteRenderer(SpriteRenderer renderer)
     {

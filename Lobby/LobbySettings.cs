@@ -80,6 +80,9 @@ internal sealed class LobbySettings
     public bool NoNpcs;
     [LobbySetting("Blackout", "Enables darkness with a headlamp on every player.")]
     public bool Blackout;
+    [LobbySetting("TurnOffLamps", "Turns off level lamps during blackout.")]
+    [LobbySettingVisibleWhen(nameof(Blackout))]
+    public bool TurnOffLamps = true;
     [LobbySetting("HeadlampRadius", "Headlamp radius.")]
     [LobbySettingVisibleWhen(nameof(Blackout))]
     public string HeadlampRadius = "12";

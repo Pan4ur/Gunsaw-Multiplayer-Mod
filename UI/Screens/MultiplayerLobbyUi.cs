@@ -17,7 +17,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
     private TMP_Text template;
     private Button templateButton;
     private TMP_InputField nameInput, lobbyInput, maxPlayersInput, respawnInput, numberOfLivesInput, healthFactorInput, uhpValueInput, regenFactorInput, headlampRadiusInput, headlampAngleInput, initialScaleInput, serverInput;
-    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, noNpcsToggle, blackoutToggle, restrictLightToggle, gunGameToggle, uniformHPToggle;
+    private Toggle pvpToggle, grabToggle, downToggle, respawnToggle, autoRestartToggle, respawnAtStartToggle, playerCollisionsToggle, cheatsToggle, allowSwapToggle, allowScaleChangingToggle, allowObserverToggle, teamsToggle, noNpcsToggle, blackoutToggle, turnOffLampsToggle, restrictLightToggle, gunGameToggle, uniformHPToggle;
     private TMP_InputField[] startingAmmoInputs, respawnAmmoInputs;
     private Button[] startingWeaponButtons, respawnWeaponButtons;
     private string? displayedStartingWeapons, displayedRespawnWeapons;
@@ -187,6 +187,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         SetInput(regenFactorInput, viewingLobbySettings ? MultiplayerSession.RegenFactor.ToString("0.##") : plugin.lobbySettings.RegenFactor);
         SetToggle(noNpcsToggle, viewingLobbySettings ? MultiplayerSession.NoNpcs : plugin.lobbySettings.NoNpcs);
         SetToggle(blackoutToggle, viewingLobbySettings ? MultiplayerSession.BlackoutEnabled : plugin.lobbySettings.Blackout);
+        SetToggle(turnOffLampsToggle, viewingLobbySettings ? MultiplayerSession.TurnOffLamps : plugin.lobbySettings.TurnOffLamps);
         SetInput(headlampRadiusInput, viewingLobbySettings ? MultiplayerSession.HeadlampRadius.ToString("0.##") : plugin.lobbySettings.HeadlampRadius);
         SetInput(headlampAngleInput, viewingLobbySettings ? MultiplayerSession.HeadlampAngle.ToString("0.##") : plugin.lobbySettings.HeadlampAngle);
         SetToggle(restrictLightToggle, viewingLobbySettings ? MultiplayerSession.RestrictLightEnabled : plugin.lobbySettings.RestrictLight);
@@ -300,6 +301,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         regenFactorInput.interactable = interactable;
         noNpcsToggle.interactable = interactable;
         blackoutToggle.interactable = interactable;
+        turnOffLampsToggle.interactable = interactable && plugin.lobbySettings.Blackout;
         headlampRadiusInput.interactable = interactable && plugin.lobbySettings.Blackout;
         headlampAngleInput.interactable = interactable && plugin.lobbySettings.Blackout;
         restrictLightToggle.interactable = interactable && plugin.lobbySettings.Blackout;
@@ -550,6 +552,8 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         AddTooltip(noNpcsToggle.gameObject, "NO NPCs: Prevents NPCs from spawning when levels load, including NPC spawners.");
         blackoutToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.Blackout)), "BLACKOUT", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.Blackout = value);
         AddTooltip(blackoutToggle.gameObject, "BLACKOUT: Turns off level lighting and gives every player a headlamp.");
+        turnOffLampsToggle = CreateToggle(CreateSettingsRow(settings, nameof(LobbySettings.TurnOffLamps)), "Turn off lamps", Vector2.zero, new Vector2(520f, 40f), value => plugin.lobbySettings.TurnOffLamps = value);
+        AddTooltip(turnOffLampsToggle.gameObject, "Turn off lamps: Turns off level lamps during blackout. Enabled by default.");
         var headlampRadiusRow = CreateSettingsRow(settings, nameof(LobbySettings.HeadlampRadius));
         CreateText(headlampRadiusRow, "HEADLAMP RADIUS", new Vector2(-115f, 0f), new Vector2(290f, 32f), 14);
         headlampRadiusInput = CreateInput(headlampRadiusRow, new Vector2(195f, 0f), new Vector2(120f, 36f), 6, value => plugin.lobbySettings.HeadlampRadius = value, TMP_InputField.CharacterValidation.Decimal);

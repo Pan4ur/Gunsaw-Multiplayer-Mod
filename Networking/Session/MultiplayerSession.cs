@@ -238,6 +238,7 @@ internal static partial class MultiplayerSession
             AllowObserver = true;
             NoNpcs = false;
             BlackoutEnabled = false;
+            TurnOffLamps = true;
             RestrictLightEnabled = false;
             HeadlampRadius = 12f;
             HeadlampAngle = 64f;
@@ -440,6 +441,7 @@ internal static partial class MultiplayerSession
     internal static bool PvpEnabled { get; private set; }
     internal static bool NoNpcs { get; private set; }
     internal static bool BlackoutEnabled { get; private set; }
+    internal static bool TurnOffLamps { get; private set; } = true;
     internal static bool RestrictLightEnabled { get; private set; }
     internal static float HeadlampRadius { get; private set; } = 12f;
     internal static float HeadlampAngle { get; private set; } = 64f;
@@ -772,6 +774,7 @@ internal static partial class MultiplayerSession
         AllowObserver = true;
         NoNpcs = false;
         BlackoutEnabled = false;
+        TurnOffLamps = true;
         RestrictLightEnabled = false;
         HeadlampRadius = 12f;
         HeadlampAngle = 64f;
@@ -855,7 +858,7 @@ internal static partial class MultiplayerSession
             RespawnAtStart, (ushort)RespawnTimeSeconds, (byte)MaxPlayers, PlayerCollisions, CheatsEnabled,
             AllowSwap, AllowScaleChanging, InitialScale, BrutalModeEnabled, AllowObserver, TeamsEnabled, TeamsCfg,
             StartingWeapon, RespawnWeapon, StartingAmmo, RespawnAmmo, (ushort)NumberOfLives, AutoRestart,
-            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown, NoNpcs, PropHuntLocator, PropHuntLocatorCooldown, HeadlampRadius, HeadlampAngle, tuning.Revision, tuning.Overrides, tuning.Players, tuning.Npcs);
+            HealthFactor, RegenFactor, BlackoutEnabled, RestrictLightEnabled, GunGameEnabled, GGSequence, GGOnDeath, UniformHP, UHPValue, PropHuntEnabled, PropHuntTime, PropHuntHunters, PropHuntShotPenalty, PropHuntShotHealing, PropHuntTelekinesisPenalty, PropHuntTelekinesisInterval, PropHuntStunCooldown, PropHuntChangeCooldown, NoNpcs, PropHuntLocator, PropHuntLocatorCooldown, HeadlampRadius, HeadlampAngle, tuning.Revision, tuning.Overrides, tuning.Players, tuning.Npcs, TurnOffLamps);
     }
 
     private static void ApplyHostSettings(LobbySettings settings, ParsedLobbySettings parsed, bool updating)
@@ -901,6 +904,7 @@ internal static partial class MultiplayerSession
         RegenFactor = LobbyRegenRule.Clamp(parsed.RegenFactor);
         NoNpcs = settings.NoNpcs;
         BlackoutEnabled = settings.Blackout;
+        TurnOffLamps = settings.TurnOffLamps;
         RestrictLightEnabled = settings.RestrictLight;
         HeadlampRadius = parsed.HeadlampRadius;
         HeadlampAngle = parsed.HeadlampAngle;

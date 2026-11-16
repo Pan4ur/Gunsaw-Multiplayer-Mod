@@ -372,6 +372,7 @@ internal static partial class MultiplayerSession
                 RegenFactor = settings.RegenFactor;
                 NoNpcs = settings.NoNpcs;
                 BlackoutEnabled = settings.BlackoutEnabled;
+                TurnOffLamps = settings.TurnOffLamps;
                 RestrictLightEnabled = settings.RestrictLightEnabled;
                 HeadlampRadius = settings.HeadlampRadius;
                 HeadlampAngle = settings.HeadlampAngle;
