@@ -132,13 +132,6 @@ internal sealed class EditorDocument
         return (new EditorEditPacket(local.Epoch, target.Session, target.Revision, 0, environment, changes.ToArray()), conflicts);
     }
 
-    internal bool CanClose(int transition, ushort[] peers, IReadOnlyDictionary<ushort, EditorCloseReadyPacket> acknowledgements)
-    {
-        var checksum = Checksum();
-        return peers.All(peer => acknowledgements.TryGetValue(peer, out var ready) && ready.Session == Session &&
-            ready.Transition == transition && (ready.Recovered || ready.Revision == Revision && ready.Checksum == checksum));
-    }
-
     internal bool Contains(EditorEditPacket edit) => edit.Changes.All(change =>
         Same(Objects.TryGetValue(change.Id, out var current) ? current.Part : null, change.Part) &&
         (change.Part == null || current.Scale.Equals(change.Scale))) &&

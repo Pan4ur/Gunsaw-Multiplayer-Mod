@@ -22,13 +22,10 @@ internal sealed class LevelEditorReplication : MonoBehaviour
     private EditorEditPacket? pending;
     private EditorEditPacket? cachedDraft;
     private (EditorDocument Base, EditorEditPacket Edit)? deferredDraft;
-    private readonly Dictionary<ushort, EditorCloseReadyPacket> closeReady = new();
     private EditorClosePacket? initialClose;
-    private Action? hostTransition;
     private int transition;
     private bool closing;
     private bool leaving;
-    private bool executingTransition;
     private bool recoveryPreserved;
     private string savedRecoveryJson = "";
     private string savedRecoveryPath = "";
@@ -89,9 +86,8 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         }
     }
 
-    internal static bool CanLeave => IsLocalEditor || instance == null || instance.editor == null || !MultiplayerSession.IsActive ||
-        instance.executingTransition || instance.failed && instance.recoveryPreserved || instance.ready && !instance.failed && !instance.closing &&
-        (MultiplayerSession.IsHosting || instance.pending == null && !instance.HasLocalChanges());
+    internal static bool CanLeave => IsLocalEditor || instance == null || instance.editor == null || !MultiplayerSession.IsActive || MultiplayerSession.IsHosting ||
+        instance.failed && instance.recoveryPreserved || instance.ready && !instance.failed && !instance.closing && instance.pending == null && !instance.HasLocalChanges();
 
     internal static bool CanSave(LevelEditor value)
     {
@@ -308,11 +304,9 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         pending = null;
         cachedDraft = null;
         deferredDraft = null;
-        closeReady.Clear();
         initialClose = null;
-        hostTransition = null;
         transition = 0;
-        closing = leaving = executingTransition = false;
+        closing = leaving = false;
         nextCloseSend = 0f;
         ready = false;
         failed = false;
@@ -468,10 +462,6 @@ internal sealed class LevelEditorReplication : MonoBehaviour
                 break;
             case EditorClosePacket close when !MultiplayerSession.IsHosting && close.Epoch == epoch:
                 ReceiveClose(close);
-                break;
-            case EditorCloseReadyPacket acknowledged when MultiplayerSession.IsHosting && acknowledged.Epoch == epoch:
-                if (closing && acknowledged.Session == document.Session && acknowledged.Transition == transition)
-                    closeReady[peer] = acknowledged;
                 break;
         }
     }
@@ -863,8 +853,9 @@ internal sealed class LevelEditorReplication : MonoBehaviour
 
     private bool TryLeave(bool playtest)
     {
-        if (executingTransition) return true;
         FlushInspector();
+        if (MultiplayerSession.IsHosting)
+            return true;
         if (failed)
         {
             if (playtest)
@@ -873,29 +864,11 @@ internal sealed class LevelEditorReplication : MonoBehaviour
                 return false;
             }
             
-            if (MultiplayerSession.IsHosting)
-                CancelClosing();
-            
             return TryPreserveRecovery();
         }
         
         if (!ready) 
             return !playtest;
-        
-        if (MultiplayerSession.IsHosting)
-        {
-            if (!closing)
-            {
-                closing = true;
-                transition++;
-                closeReady.Clear();
-                nextCloseSend = 0f;
-                hostTransition = playtest ? () => editor!.PlayTest() : () => editor!.BackToMenu();
-                CommitLocal();
-            }
-            editor!.SetInfoText("Waiting for editors to finish. Esc cancels.");
-            return false;
-        }
         
         if (closing)
             return false;
@@ -969,57 +942,10 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         editor!.SetInfoText(closing ? "Host is closing the editor. Finishing local edits..." : "Editor close cancelled.");
     }
 
-    private void CancelClosing()
-    {
-        if (!closing)
-            return;
-        
-        MultiplayerSession.Send(new EditorClosePacket(epoch, document.Session, transition, false));
-        closing = false;
-        hostTransition = null;
-        closeReady.Clear();
-        editor!.SetInfoText("Editor close cancelled.");
-    }
-
     private void TickClosing()
     {
         if (!closing || Time.frameCount < captureAfterFrame)
             return;
-        
-        if (MultiplayerSession.IsHosting)
-        {
-            if (failed || Input.GetKeyDown(KeyCode.Escape))
-            {
-                CancelClosing();
-                return;
-            }
-            
-            CommitLocal();
-            
-            var peers = MultiplayerSession.PeerIds();
-            if (document.CanClose(transition, peers, closeReady))
-            {
-                var action = hostTransition;
-                hostTransition = null;
-                executingTransition = true;
-                try
-                {
-                    action?.Invoke();
-                }
-                finally
-                {
-                    executingTransition = false;
-                }
-                return;
-            }
-            
-            if (Time.unscaledTime < nextCloseSend) 
-                return;
-            
-            nextCloseSend = Time.unscaledTime + 1f;
-            MultiplayerSession.Send(new EditorClosePacket(epoch, document.Session, transition, true));
-            return;
-        }
         
         if (Time.unscaledTime < nextCloseSend)
             return;
