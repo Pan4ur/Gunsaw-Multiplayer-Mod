@@ -116,8 +116,9 @@ internal static class ScoreboardSystem
         var mission = MissionManager.main;
         var localKills = MultiplayerSession.IsHost ? KillsFor(MultiplayerSession.LocalPeerId) : ForPlayer(MultiplayerSession.LocalPeerId).Kills;
        
-        var local = mission == null ? new PlayerPerformance(0, 0, localPvpHeadShots, localDamageDealt + localPvpDamageDealt, localDamageReceived, localKills, localDeaths) : new
-            PlayerPerformance(mission.hitShots, mission.missedShots, mission.headShots + localPvpHeadShots, Mathf.Max(localDamageDealt, mission.damageDealt) + localPvpDamageDealt, Mathf.Max(localDamageReceived, Mathf.Max(0f, mission.damageReceived - localPvpDamageDealt)), localKills, localDeaths);
+        var local = mission == null ? 
+            new PlayerPerformance(0, 0, localPvpHeadShots, localDamageDealt + localPvpDamageDealt, localDamageReceived, localKills, localDeaths) : 
+            new PlayerPerformance(mission.hitShots, mission.missedShots, mission.headShots + localPvpHeadShots, Mathf.Max(localDamageDealt, mission.damageDealt) + localPvpDamageDealt, Mathf.Max(localDamageReceived, Mathf.Max(0f, mission.damageReceived - localPvpDamageDealt)), localKills, localDeaths);
        
         scores[MultiplayerSession.LocalPeerId] = local;
         
@@ -184,11 +185,6 @@ internal static class ScoreboardSystem
         if (critical) localPvpHeadShots++;
     }
 
-    internal static void RecordLocalPvpKill()
-    {
-        if (MultiplayerSession.PvpEnabled) localPvpKills++;
-    }
-
     internal static bool IsMvp(ushort peerId)
     {
         if (!scores.TryGetValue(peerId, out var candidate) || candidate.Kills <= 0) return false;
@@ -239,9 +235,9 @@ internal static class ScoreboardSystem
 
     private static int KillsFor(ushort peerId) => hostKills.TryGetValue(peerId, out var kills) ? kills : 0;
 
-    private static PlayerPerformance FromPacket(PlayerPerformancePacket packet) => new(packet.HitShots,
-        packet.MissedShots, packet.HeadShots, packet.DamageDealt, packet.DamageReceived, packet.Kills, packet.Deaths);
+    private static PlayerPerformance FromPacket(PlayerPerformancePacket packet) => 
+        new(packet.HitShots, packet.MissedShots, packet.HeadShots, packet.DamageDealt, packet.DamageReceived, packet.Kills, packet.Deaths);
 
-    private static PlayerPerformancePacket ToPacket(ushort peerId, PlayerPerformance score) => new(peerId, score.Hits,
-        score.Misses, score.Heads, score.DamageDealt, score.DamageReceived, score.Kills, score.Deaths);
+    private static PlayerPerformancePacket ToPacket(ushort peerId, PlayerPerformance score) => 
+        new(peerId, score.Hits, score.Misses, score.Heads, score.DamageDealt, score.DamageReceived, score.Kills, score.Deaths);
 }
