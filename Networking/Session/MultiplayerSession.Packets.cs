@@ -13,8 +13,11 @@ internal static partial class MultiplayerSession
             if (packet.Array == null) return;
             lock (statusLock)
                 if (isHost && blockedPeers.Contains(senderId)) continue;
+            var decodedPacket = default(PayloadPacket);
+            try
+            {
             if (!ProcessReliablePacket(ref packet, senderId)) continue;
-            if (!PacketCodec.TryDecode(packet, out var decodedPacket)) continue;
+            if (!PacketCodec.TryDecode(packet, out decodedPacket)) continue;
             if (IsEditorPacket(decodedPacket.Type))
                 ReceiveEditorPacket(senderId, decodedPacket);
             else if (decodedPacket.Type == PacketType.Hello && isHost)
@@ -42,7 +45,7 @@ internal static partial class MultiplayerSession
                 SetStatus(connectedName + " connected. Sent scene " + hostScene + ".");
                 if (joined) BroadcastSystemChat(connectedName + " joined the game.", true);
             }
-            else if ((decodedPacket.Type == PacketType.Accepted) && !isHost)
+            else if (decodedPacket.Type == PacketType.Accepted && !isHost && senderId == hostPeerId)
             {
                 lock (statusLock)
                 {
@@ -65,6 +68,7 @@ internal static partial class MultiplayerSession
                 var disconnect = DisconnectPacket.Read(ref reader);
                 if (disconnect.Reason == DisconnectReason.PeerLeft)
                 {
+                    if (isHost || senderId != hostPeerId) continue;
                     var departedPeerId = disconnect.PeerId;
                     if (departedPeerId != 0 && departedPeerId != localPeerId && departedPeerId != senderId)
                         DropPeer(departedPeerId, false, PlayerName(departedPeerId) + " left the lobby.");
@@ -77,7 +81,7 @@ internal static partial class MultiplayerSession
                     PlayerName(senderId) + " left the lobby.");
                 continue;
             }
-            else if (!isHost && decodedPacket.Type == PacketType.CustomLevel)
+            else if (!isHost && decodedPacket.Type == PacketType.CustomLevel && senderId == hostPeerId)
             {
                 if (decodedPacket.Payload.Count < 12) continue;
                 var reader = new PacketReader(decodedPacket.Payload);
@@ -92,7 +96,7 @@ internal static partial class MultiplayerSession
                 suggestion = new CustomLevelSuggestionPacket(suggestion.LevelCode, Math.Max(0, Math.Min(8192, suggestion.SizeKiB)));
                 EnqueueCustomLevelSuggestion(senderId, suggestion);
             }
-            else if (!isHost && decodedPacket.Type == PacketType.Scene)
+            else if (!isHost && decodedPacket.Type == PacketType.Scene && senderId == hostPeerId)
             {
                 var reader = new PacketReader(decodedPacket.Payload);
                 var payload = ScenePacket.Read(ref reader).Scene;
@@ -265,13 +269,13 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.NpcSnapshot)
+            else if (!isHost && decodedPacket.Type == PacketType.NpcSnapshot && senderId == hostPeerId)
             {
                 if (decodedPacket.Payload.Count < 12) continue;
                 var reader = new PacketReader(decodedPacket.Payload);
                 ReceiveNpcChunk(senderId, NpcSnapshotPacket.Read(ref reader));
             }
-            else if (!isHost && decodedPacket.Type == PacketType.NpcSpeech)
+            else if (!isHost && decodedPacket.Type == PacketType.NpcSpeech && senderId == hostPeerId)
             {
                 try { var reader = new PacketReader(decodedPacket.Payload); EnqueueEvent(npcSpeech, senderId, NpcSpeechPacket.Read(ref reader)); }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
@@ -294,7 +298,7 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.PlayerDamage)
+            else if (!isHost && decodedPacket.Type == PacketType.PlayerDamage && senderId == hostPeerId)
             {
                 try
                 {
@@ -484,7 +488,7 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.PlayerTeleport)
+            else if (!isHost && decodedPacket.Type == PacketType.PlayerTeleport && senderId == hostPeerId)
             {
                 try
                 {
@@ -493,7 +497,7 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.VehicleEject)
+            else if (!isHost && decodedPacket.Type == PacketType.VehicleEject && senderId == hostPeerId)
             {
                 try
                 {
@@ -522,7 +526,7 @@ internal static partial class MultiplayerSession
                 }
                 catch (System.Exception exception) { LogPacketDrop(decodedPacket.Type, senderId, decodedPacket.Payload.Count, exception); }
             }
-            else if (!isHost && decodedPacket.Type == PacketType.MissionFinished)
+            else if (!isHost && decodedPacket.Type == PacketType.MissionFinished && senderId == hostPeerId)
             {
                 try
                 {
@@ -673,6 +677,13 @@ internal static partial class MultiplayerSession
                     Send(new HostPingPacket(senderId, (ushort)ping));
             }
             lock (statusLock) TouchPeerLocked(senderId, null);
+            }
+            catch (Exception exception) when (exception is InvalidDataException || exception is EndOfStreamException ||
+                exception is ArgumentException || exception is FormatException || exception is OverflowException ||
+                exception is IndexOutOfRangeException)
+            {
+                LogPacketDrop(decodedPacket.Type, senderId, packet.Count, exception);
+            }
             }
         }
         catch (ObjectDisposedException) { }

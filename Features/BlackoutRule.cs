@@ -10,6 +10,8 @@ internal static class BlackoutRule
     private static readonly Dictionary<Light2D, float> globalLightIntensities = new();
     private static readonly Dictionary<Camera, Color> backgroundColors = new();
     private static readonly Dictionary<SpriteRenderer, Material> originalMaterials = new();
+    private static readonly HashSet<SpriteRenderer> lampSprites = [];
+    private static readonly Dictionary<SpriteRenderer, MaterialPropertyBlock> lampSpriteProperties = new();
     private static readonly Dictionary<ParticleSystemRenderer, Material> originalParticleMaterials = new();
     private static readonly Dictionary<Texture, Material> particleLitMaterials = new();
     private static readonly Dictionary<SpriteShapeRenderer, Material[]> originalGroundMaterials = new();
@@ -30,7 +32,7 @@ internal static class BlackoutRule
     private static Material scarfLitMaterial;
     private static Material unlitMaterial;
     private static AssetBundle headlampBundle;
-    internal static Material headlampMaterial;
+    private static Material headlampMaterial;
     private static bool triedHeadlampMaterial;
     private static readonly Vector4[] headlampShaderData = new Vector4[16];
     private static readonly Vector4[] headlampShaderSettings = new Vector4[16];
@@ -67,6 +69,8 @@ internal static class BlackoutRule
     private static AudioClip headlampToggleSound;
 
     internal static bool IsApplied => applied;
+    internal static bool UseHeadlampShader => litMaterial != null && litMaterial == headlampMaterial;
+    private static bool ShouldTurnOffLamps => MultiplayerSession.TurnOffLamps || MultiplayerSession.RestrictLightEnabled;
 
     internal static void Tick()
     {
@@ -82,16 +86,16 @@ internal static class BlackoutRule
 
         ProcessHeadlampPackets();
         RegisterRespawnedLocalBody();
-        TickHeadlamps();
         UpdateRestrictLightShadows();
 
         var sceneHandle = UnityEngine.SceneManagement.SceneManager.GetActiveScene().handle;
-        if (applied && sceneHandle == appliedSceneHandle && turnOffLampsApplied == MultiplayerSession.TurnOffLamps)
-            return;
-
-        applied = true;
-        appliedSceneHandle = sceneHandle;
-        ApplyScene();
+        if (!applied || sceneHandle != appliedSceneHandle || turnOffLampsApplied != ShouldTurnOffLamps)
+        {
+            applied = true;
+            appliedSceneHandle = sceneHandle;
+            ApplyScene();
+        }
+        TickHeadlamps();
     }
 
     private static bool CanApplyBlackout()
@@ -125,6 +129,13 @@ internal static class BlackoutRule
 
     private static void ApplyScene()
     {
+        if (turnOffLampsApplied != ShouldTurnOffLamps)
+        {
+            RestoreMaterials();
+            litMaterial = null;
+        }
+        turnOffLampsApplied = ShouldTurnOffLamps;
+
         restrictLightApplied = false;
         UpdateRestrictLightShadows();
         foreach (var body in UnityEngine.Object.FindObjectsOfType<BodyScript>())
@@ -142,20 +153,18 @@ internal static class BlackoutRule
         }
 
         DimLevelLighting();
-        GraffitiSystem.SetBlackoutMaterials(true);
-        ApplyDismembermentEffectPrefabMaterials();
-        ApplyLitMaterials();
-        foreach (var scarf in UnityEngine.Object.FindObjectsOfType<ScarfPhysics>())
-            ApplyScarfMaterial(scarf);
-
-        turnOffLampsApplied = MultiplayerSession.TurnOffLamps;
+        lampSprites.Clear();
         foreach (var light in UnityEngine.Object.FindObjectsOfType<Light2D>())
         {
             if (light == null || IsLevelGlobalLight(light) || light.GetComponentInParent<Headlamp>() != null ||
                 light.GetComponentInParent<FireScript>() != null)
                 continue;
 
-            if (!turnOffLampsApplied && IsLevelLamp(light))
+            var lamp = GetLevelLampRoot(light);
+            if (lamp != null)
+                lampSprites.UnionWith(lamp.GetComponentsInChildren<SpriteRenderer>(true));
+
+            if (!turnOffLampsApplied && lamp != null)
             {
                 if (disabledLights.TryGetValue(light, out var enabled))
                 {
@@ -170,6 +179,13 @@ internal static class BlackoutRule
 
             light.enabled = false;
         }
+
+        GetLitMaterial();
+        GraffitiSystem.SetBlackoutMaterials(true);
+        ApplyDismembermentEffectPrefabMaterials();
+        ApplyLitMaterials();
+        foreach (var scarf in UnityEngine.Object.FindObjectsOfType<ScarfPhysics>())
+            ApplyScarfMaterial(scarf);
     }
 
     private static void UpdateRestrictLightShadows()
@@ -489,7 +505,7 @@ internal static class BlackoutRule
 
     private static void PrepareHeadlampRendering(Camera camera)
     {
-        if (headlampRenderingFrame == Time.frameCount || !CanApplyBlackout() || headlampMaterial == null)
+        if (headlampRenderingFrame == Time.frameCount || !CanApplyBlackout() || !UseHeadlampShader)
             return;
             
         headlampRenderingFrame = Time.frameCount;
@@ -596,7 +612,7 @@ internal static class BlackoutRule
         if (litMaterial != null)
             return litMaterial;
 
-        var customMaterial = GetHeadlampMaterial();
+        var customMaterial = ShouldTurnOffLamps ? GetHeadlampMaterial() : null;
 
         if (customMaterial != null)
         {
@@ -630,15 +646,7 @@ internal static class BlackoutRule
             return;
 
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteRenderer>())
-        {
-            if (renderer == null || renderer.GetComponent<GraffitiMaterialMarker>() != null || renderer.name.StartsWith("HotPlate", StringComparison.OrdinalIgnoreCase) ||
-                originalMaterials.ContainsKey(renderer))
-                continue;
-
-            originalMaterials.Add(renderer, renderer.sharedMaterial);
-            renderer.sharedMaterial = material;
-            BindSpriteTexture(renderer);
-        }
+            ApplyToNewSpriteRenderer(renderer);
 
         foreach (var renderer in UnityEngine.Object.FindObjectsOfType<SpriteShapeRenderer>())
         {
@@ -771,15 +779,34 @@ internal static class BlackoutRule
         return loader != null && loader.globalLight == light;
     }
 
-    private static bool IsLevelLamp(Light2D light) => light.CompareTag("Lamp") || light.name.StartsWith("Lamp (") ||
-        light.GetComponentInParent<ColorLampTag>() != null || light.GetComponentInParent<ToggleableLampRuntime>() != null ||
-        light.GetComponentsInChildren<Collider2D>(true).Any(collider => collider.CompareTag("Lamp") || collider.name.StartsWith("Lamp ("));
+    private static Component GetLevelLampRoot(Light2D light)
+    {
+        Component root = light.GetComponentInParent<ToggleableLampRuntime>();
+        if (root == null)
+            root = light.GetComponentInParent<ColorLampTag>();
+        if (root != null)
+            return root;
+
+        return light.CompareTag("Lamp") || light.name.StartsWith("Lamp (") ||
+               light.GetComponentsInChildren<Collider2D>(true).Any(collider => collider.CompareTag("Lamp") || collider.name.StartsWith("Lamp ("))
+            ? light : null;
+    }
 
     private static void ApplyToNewSpriteRenderer(SpriteRenderer renderer)
     {
-        if (!applied || renderer == null || litMaterial == null ||
+        if (!applied || renderer == null || litMaterial == null || renderer.GetComponent<GraffitiMaterialMarker>() != null ||
             renderer.name.StartsWith("HotPlate", StringComparison.OrdinalIgnoreCase) || originalMaterials.ContainsKey(renderer))
             return;
+
+        if (lampSprites.Contains(renderer))
+        {
+            if (!turnOffLampsApplied)
+                return;
+
+            var properties = new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(properties);
+            lampSpriteProperties.Add(renderer, properties);
+        }
 
         originalMaterials.Add(renderer, renderer.sharedMaterial);
         renderer.sharedMaterial = litMaterial;
@@ -1124,11 +1151,32 @@ internal static class BlackoutRule
         ReleaseHeadlampVisibility();
         restrictLightApplied = false;
         localBodyWithHeadlamp = null;
+        RestoreMaterials();
+        lampSprites.Clear();
+        GraffitiSystem.SetBlackoutMaterials(false);
+        chainlinkFenceCache.Clear();
 
+        foreach (var lamp in UnityEngine.Object.FindObjectsOfType<Headlamp>())
+            if (lamp != null)
+                UnityEngine.Object.Destroy(lamp.gameObject);
+
+        RemoveRestrictLightShadows();
+
+        foreach (var fireLight in UnityEngine.Object.FindObjectsOfType<BlackoutFireLight>())
+            if (fireLight != null)
+                UnityEngine.Object.Destroy(fireLight.gameObject);
+    }
+
+    private static void RestoreMaterials()
+    {
         foreach (var pair in originalMaterials)
             if (pair.Key != null)
                 pair.Key.sharedMaterial = pair.Value;
         originalMaterials.Clear();
+        foreach (var pair in lampSpriteProperties)
+            if (pair.Key != null)
+                pair.Key.SetPropertyBlock(pair.Value);
+        lampSpriteProperties.Clear();
 
         foreach (var pair in originalParticleMaterials)
             if (pair.Key != null)
@@ -1149,18 +1197,9 @@ internal static class BlackoutRule
             if (pair.Key != null)
                 pair.Key.sharedMaterial = pair.Value;
         originalLineMaterials.Clear();
-        GraffitiSystem.SetBlackoutMaterials(false);
-        chainlinkFenceCache.Clear();
-
-        foreach (var lamp in UnityEngine.Object.FindObjectsOfType<Headlamp>())
-            if (lamp != null)
-                UnityEngine.Object.Destroy(lamp.gameObject);
-
-        RemoveRestrictLightShadows();
-
-        foreach (var fireLight in UnityEngine.Object.FindObjectsOfType<BlackoutFireLight>())
-            if (fireLight != null)
-                UnityEngine.Object.Destroy(fireLight.gameObject);
+        if (scarfLitMaterial != null)
+            UnityEngine.Object.Destroy(scarfLitMaterial);
+        scarfLitMaterial = null;
     }
 }
 
@@ -1220,7 +1259,7 @@ internal sealed class Headlamp : MonoBehaviour
         var elapsed = Time.unscaledTime - transitionStarted;
         var target = Enabled ? TurnOnAnimation(elapsed) : Mathf.Lerp(fromMain, 0f, Mathf.Clamp01(elapsed / 0.05f));
         var faceTarget = Enabled ? target * 0.11666667f : Mathf.Lerp(fromFace, 0f, Mathf.Clamp01(elapsed / 0.05f));
-        var useShader = BlackoutRule.headlampMaterial != null;
+        var useShader = BlackoutRule.UseHeadlampShader;
 
         if (mainLight != null)
         {
