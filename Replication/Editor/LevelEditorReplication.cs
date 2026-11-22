@@ -1107,8 +1107,8 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         if (lockIcon != null)
         {
             var pixelsPerUnit = lockIcon.sprite.pixelsPerUnit;
-            lockSprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.editor-lock.png", pixelsPerUnit, Vector2.one * 0.5f);
-            unlockSprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.editor-unlock.png", pixelsPerUnit, Vector2.one * 0.5f);
+            lockSprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.editor-lock.png", pixelsPerUnit, Vector2.one * 0.5f);
+            unlockSprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.editor-unlock.png", pixelsPerUnit, Vector2.one * 0.5f);
         }
         
         lockControl.gameObject.SetActive(true);

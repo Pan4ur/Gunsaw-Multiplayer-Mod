@@ -14,7 +14,7 @@ internal sealed class NametagPreview
         characterRect.anchoredPosition = new Vector2(322f, -150f);
         characterRect.sizeDelta = new Vector2(200f, 150f);
         var characterImage = character.GetComponent<Image>();
-        characterImage.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.orange-nametag-preview.png", 100f, new Vector2(0.5f, 0.5f));
+        characterImage.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.orange-nametag-preview.png", 100f, new Vector2(0.5f, 0.5f));
         characterImage.preserveAspect = true;
         characterImage.raycastTarget = false;
 

@@ -2163,7 +2163,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
                 lockIcon.transform.SetParent(row.transform, false);
                 SetRect(lockIcon.GetComponent<RectTransform>(), new Vector2(170f, 4f), new Vector2(24f, 24f));
                 var image = lockIcon.GetComponent<Image>();
-                image.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.editor-lock.png", 16f, new Vector2(0.5f, 0.5f));
+                image.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.Assets.UI.editor-lock.png", 16f, new Vector2(0.5f, 0.5f));
                 image.preserveAspect = true;
                 AddTooltip(lockIcon, "Password required");
             }
