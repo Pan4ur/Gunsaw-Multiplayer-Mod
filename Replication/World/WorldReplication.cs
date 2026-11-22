@@ -1191,15 +1191,15 @@ public class WorldReplication : MonoBehaviour
 
         switch (type)
         {
-            case InteractionType.MedicalStationUse:
-                MedicalStationRuntime.TryUse(packet.TargetId, peerId);
+            case InteractionType.StationUse:
+                StationRuntime.TryUse(packet.TargetId, peerId);
                 return;
 
             case InteractionType.WorldHistoryRequest:
                 nextSnapshot = 0f;
                 nextFullWorldSnapshot = 0f;
                 SendLampHistory(peerId);
-                MedicalStationRuntime.SendHistory(peerId);
+                StationRuntime.SendHistory(peerId);
                 return;
 
             case InteractionType.ButtonActivate:
@@ -1332,9 +1332,9 @@ public class WorldReplication : MonoBehaviour
 
     private void ApplyRemoteWorldInteraction(WorldInteractionPacket packet)
     {
-        if (packet.InteractionType == InteractionType.MedicalStationUsed)
+        if (packet.InteractionType == InteractionType.StationUsed)
         {
-            MedicalStationRuntime.ApplyUsed(packet);
+            StationRuntime.ApplyUsed(packet);
             return;
         }
         if (packet.InteractionType != InteractionType.LampBreak) return;
@@ -1345,7 +1345,7 @@ public class WorldReplication : MonoBehaviour
     private void RequestWorldHistory()
     {
         if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost) return;
-        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.WorldHistoryRequest, 0UL), 1);
+        MultiplayerSession.Send(new WorldInteractionPacket(InteractionType.WorldHistoryRequest, 0UL), MultiplayerSession.HostPeerId);
     }
 
     private void SendLampHistory(ushort peerId)

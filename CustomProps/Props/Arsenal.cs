@@ -33,10 +33,7 @@ internal sealed class ArsenalPropDefinition : CustomPropDefinition<ArsenalData>
 
     public override void CreateRuntime(GameObject gameObject, ArsenalData data)
     {
-        var renderer = gameObject.AddComponent<SpriteRenderer>();
-        renderer.sprite = Icon;
-        renderer.sortingLayerName = "Background";
-        renderer.sortingOrder = 999;
+        CustomPropVisual.AddSprite(gameObject, Icon);
         gameObject.AddComponent<ArsenalRuntime>().Configure(data);
     }
 }
@@ -44,12 +41,21 @@ internal sealed class ArsenalPropDefinition : CustomPropDefinition<ArsenalData>
 internal sealed class ArsenalRuntime : MonoBehaviour
 {
     private ArsenalData data;
+    private SpriteRenderer pickupPrompt;
     private readonly HashSet<ushort> suppliedPlayers = [];
     internal float Radius => data == null ? 2.5f : Mathf.Max(0.5f, data.radius);
 
     internal void Configure(ArsenalData value)
     {
         data = value ?? new ArsenalData();
+        var prompt = new GameObject("Arsenal Pickup Prompt");
+        prompt.transform.SetParent(transform, false);
+        prompt.transform.SetPositionAndRotation(transform.position + Vector3.up * 2f, Quaternion.identity);
+        pickupPrompt = prompt.AddComponent<SpriteRenderer>();
+        pickupPrompt.sprite = EmbeddedSpriteLoader.Load("GunsawMultiplayer.CustomProps.Assets.pickup-b.png", 28f, new Vector2(0.5f, 0.5f));
+        pickupPrompt.sortingLayerName = "Foreground";
+        pickupPrompt.sortingOrder = 999;
+        pickupPrompt.enabled = false;
     }
 
     internal List<WeaponPreset> Weapons()
@@ -81,10 +87,15 @@ internal sealed class ArsenalRuntime : MonoBehaviour
     private void Update()
     {
         var body = PlayerScript.player == null ? null : PlayerScript.player.bodyScript;
-        if (body == null || !body.isAlive) return;
-        if (((Vector2)(body.transform.position - transform.position)).sqrMagnitude > Radius * Radius) return;
-        ArsenalMenu.NotifyNearby(this);
-        if (Input.GetKeyDown(KeyCode.B) && !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen) ArsenalMenu.Open(this);
+        var nearby = body != null && body.isAlive && ((Vector2) (body.transform.position - transform.position)).sqrMagnitude <= Radius * Radius;
+        if (nearby)
+            ArsenalMenu.NotifyNearby(this);
+            
+        var canOpen = nearby && !MultiplayerHud.IsTyping && !ArsenalMenu.IsOpen;
+        if (canOpen && Input.GetKeyDown(KeyCode.B)) 
+            ArsenalMenu.Open(this);
+        
+        pickupPrompt.enabled = canOpen && !ArsenalMenu.IsOpen;
     }
 }
 
@@ -113,11 +124,6 @@ internal sealed class ArsenalMenu : MonoBehaviour
     internal static bool IsOpen => instance != null && instance.menu != null && instance.menu.activeSelf;
     internal static bool BlocksPause => IsOpen || Time.frameCount == closedFrame;
     internal static bool ConsumesWhineKey(KeyCode key) => key == KeyCode.B && (IsOpen || (instance != null && Time.unscaledTime <= instance.nearbyUntil));
-
-    internal static string Prompt => instance != null && !instance.menu.activeSelf &&
-                                     Time.unscaledTime <= instance.nearbyUntil
-        ? "PRESS [B] TO OPEN ARSENAL"
-        : "";
 
     internal static void NotifyNearby(ArsenalRuntime value)
     {

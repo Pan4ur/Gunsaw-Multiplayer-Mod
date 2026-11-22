@@ -26,7 +26,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
     private Vector2 chatPointerDown;
     private bool chatLinkPressed;
     private readonly List<TMP_Text> debugMarkers = new();
-    private readonly Dictionary<MedicalStationRuntime, TMP_Text> medicalStationTimers = new();
+    private readonly Dictionary<StationRuntime, TMP_Text> stationTimers = new();
     private readonly Dictionary<BodyScript, NametagVisual> nameTags = new();
     private readonly HashSet<BodyScript> activeNameTags = new();
     private readonly List<BodyScript> staleNameTags = new();
@@ -38,7 +38,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
 
     internal void Configure(MultiplayerHud hud)
     {
-        if (!MultiplayerSession.IsInLobby && string.IsNullOrEmpty(ArsenalMenu.Prompt) && !MedicalStationRuntime.HasCooldowns && !HasActiveChatAnimation(hud))
+        if (!MultiplayerSession.IsInLobby && !StationRuntime.HasCooldowns && !HasActiveChatAnimation(hud))
         {
             if (root != null) root.SetActive(false);
             return;
@@ -51,7 +51,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         }
         
         if (!root.activeSelf) root.SetActive(true);
-        UpdateMedicalStationTimers();
+        UpdateStationTimers();
         if (!MultiplayerSession.IsInLobby)
         {
             SetActive(hostPanel, false);
@@ -66,8 +66,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             spectatorHint.gameObject.SetActive(false);
             respawnText.gameObject.SetActive(false);
             statsText.gameObject.SetActive(false);
-            activationText.text = ArsenalMenu.Prompt;
-            activationText.gameObject.SetActive(!string.IsNullOrEmpty(ArsenalMenu.Prompt));
+            activationText.gameObject.SetActive(false);
             return;
         }
         SetActive(hostPanel, MultiplayerSession.IsHosting);
@@ -93,12 +92,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             UpdateSpectator();
             UpdateStatusPrompts();
 
-            if (!string.IsNullOrEmpty(ArsenalMenu.Prompt))
-            {
-                activationText.text = ArsenalMenu.Prompt;
-                activationText.gameObject.SetActive(true);
-            }
-            else if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) && !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
+            if ((WorldReplication.Instance == null || !WorldReplication.Instance.HasActivationPrompt) && !string.IsNullOrEmpty(PlayerCarrySystem.Prompt))
             {
                 activationText.text = PlayerCarrySystem.Prompt;
                 activationText.gameObject.SetActive(true);
@@ -323,7 +317,7 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         if (!string.IsNullOrEmpty(countdown)) respawnText.text = countdown;
         activationText.text = "PRESS [USE] TO REACTIVATE";
         activationText.gameObject.SetActive((WorldReplication.Instance != null && WorldReplication.Instance.HasActivationPrompt) ||
-            !string.IsNullOrEmpty(PlayerCarrySystem.Prompt) || !string.IsNullOrEmpty(ArsenalMenu.Prompt));
+            !string.IsNullOrEmpty(PlayerCarrySystem.Prompt));
     }
     
     internal static string RespawnCountdownText()
@@ -547,10 +541,10 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
         foreach (var body in staleNameTags) nameTags.Remove(body);
     }
 
-    private void UpdateMedicalStationTimers()
+    private void UpdateStationTimers()
     {
-        var stale = new List<MedicalStationRuntime>();
-        foreach (var pair in medicalStationTimers)
+        var stale = new List<StationRuntime>();
+        foreach (var pair in stationTimers)
         {
             if (pair.Key == null)
             {
@@ -559,22 +553,22 @@ internal sealed class MultiplayerHudUi : MonoBehaviour
             }
             else if (pair.Value != null) pair.Value.gameObject.SetActive(false);
         }
-        foreach (var station in stale) medicalStationTimers.Remove(station);
+        foreach (var station in stale) stationTimers.Remove(station);
         var camera = Camera.main;
         if (camera == null) return;
-        foreach (var station in MedicalStationRuntime.All)
+        foreach (var station in StationRuntime.All)
         {
             if (station == null || !station.isActiveAndEnabled || station.CooldownRemaining <= 0f) continue;
-            var screen = camera.WorldToScreenPoint(station.transform.position + Vector3.up * 1.2f);
+            var screen = camera.WorldToScreenPoint(station.PromptPosition);
             if (screen.z <= 0f) continue;
-            if (!medicalStationTimers.TryGetValue(station, out var text) || text == null)
+            if (!stationTimers.TryGetValue(station, out var text) || text == null)
             {
                 text = Text(root.transform, "", Vector2.zero, new Vector2(120f, 30f), 18f, TextAlignmentOptions.Center);
                 text.fontStyle = FontStyles.Bold;
                 text.raycastTarget = false;
                 text.outlineColor = Color.black;
                 text.outlineWidth = 0.22f;
-                medicalStationTimers[station] = text;
+                stationTimers[station] = text;
             }
             text.text = station.CooldownText;
             text.rectTransform.anchoredPosition = CanvasPosition(screen);

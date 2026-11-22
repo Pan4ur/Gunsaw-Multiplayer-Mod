@@ -12,6 +12,7 @@ internal static class CustomPropBootstrap
         CustomPropRegistry.Register(new HubDefinition());
         CustomPropRegistry.Register(new ArsenalPropDefinition());
         CustomPropRegistry.Register(new MedicalStationPropDefinition());
+        CustomPropRegistry.Register(new AmmoBoxPropDefinition());
         CustomPropRegistry.Register(new NoPvpZoneDefinition());
         CustomPropRegistry.Register(new PlayerDetectorDefinition());
         CustomPropRegistry.Register(new ActivateOnStartDefinition());

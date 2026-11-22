@@ -10,8 +10,8 @@ internal enum InteractionType : byte
     WeaponDrop = 9,
     LampBreak = 10,
     WorldHistoryRequest = 11,
-    MedicalStationUse = 12,
-    MedicalStationUsed = 13
+    StationUse = 12,
+    StationUsed = 13
 }
 
 internal readonly struct WorldInteractionPacket : INetworkPacket
@@ -56,11 +56,11 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
         writer.WriteUInt64(TargetId);
         switch (InteractionType)
         {
-            case InteractionType.MedicalStationUse:
+            case InteractionType.StationUse:
             case InteractionType.ButtonActivate:
             case InteractionType.DoorActivate:
                 return;
-            case InteractionType.MedicalStationUsed:
+            case InteractionType.StationUsed:
                 writer.WriteUInt16((ushort)WeaponSlot);
                 writer.WriteBoolean(Manual);
                 writer.WriteInt32(PreviousAmmo);
@@ -99,8 +99,8 @@ internal readonly struct WorldInteractionPacket : INetworkPacket
         var targetId = reader.ReadUInt64();
         switch (operation)
         {
-            case InteractionType.MedicalStationUse: return new WorldInteractionPacket(operation, targetId);
-            case InteractionType.MedicalStationUsed: return new WorldInteractionPacket(operation, targetId, weaponSlot: reader.ReadUInt16(), manual: reader.ReadBoolean(), previousAmmo: reader.ReadInt32(), damage: reader.ReadSingle());
+            case InteractionType.StationUse: return new WorldInteractionPacket(operation, targetId);
+            case InteractionType.StationUsed: return new WorldInteractionPacket(operation, targetId, weaponSlot: reader.ReadUInt16(), manual: reader.ReadBoolean(), previousAmmo: reader.ReadInt32(), damage: reader.ReadSingle());
             case InteractionType.ButtonActivate: return new WorldInteractionPacket(InteractionType.ButtonActivate, targetId);
             case InteractionType.DoorActivate: return new WorldInteractionPacket(InteractionType.DoorActivate, targetId);
             case InteractionType.ZoneActivate: return new WorldInteractionPacket(InteractionType.ZoneActivate,targetId, manual: reader.ReadBoolean());
