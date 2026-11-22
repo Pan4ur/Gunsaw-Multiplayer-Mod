@@ -156,6 +156,14 @@ internal sealed class HeadlessLobbyService : IDisposable
             SendHelp(senderId);
             return true;
         }
+        if (string.Equals(command, "!stop", StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsOperator(senderId)) 
+                Application.Quit(0);
+            else 
+                SendChat("Only the lobby operator can stop the server.", senderId);
+            return true;
+        }
         if (string.Equals(command, "!tps", StringComparison.OrdinalIgnoreCase))
         {
             UpdateTps();
@@ -397,7 +405,7 @@ internal sealed class HeadlessLobbyService : IDisposable
 
     private static void SendHelp(ushort targetPeerId)
     {
-        SendChat("Maps: !vote change <name>; scenes: actualLevel1/campaign6; !vote restart | !tps | !votedefault | !help", targetPeerId);
+        SendChat("Maps: !vote change <name>; scenes: actualLevel1/campaign6; !vote restart | !tps | !votedefault | !help | !stop", targetPeerId);
     }
 
     private static void SendChat(string text, ushort targetPeerId = 0)
