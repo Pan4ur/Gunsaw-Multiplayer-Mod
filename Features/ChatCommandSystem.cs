@@ -3,63 +3,84 @@ using UnityEngine;
 
 internal sealed class ChatCommandSystem
 {
+    private static readonly Dictionary<string, Func<string, bool>> commands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["/kill"] = message => message.Length == 5 && Kill(),
+        ["/me"] = Emote,
+        ["/spawn"] = Spawn,
+        ["/swap"] = Swap,
+        ["/tp"] = Teleport,
+        ["/ban"] = Ban,
+        ["/kick"] = Kick,
+        ["/scale"] = Scale,
+        ["/clearblood"] = _ => LevelCleanupSystem.Clear(),
+        ["/changeteam"] = ChangeTeam,
+        ["/balanceteams"] = BalanceTeams
+    };
+
+    internal static IEnumerable<string> CommandNames => commands.Keys;
+
+    internal static void Register(string command, Action<string> handler)
+    {
+        if (string.IsNullOrEmpty(command) || command.Length < 2 || command[0] != '/' || command.Any(char.IsWhiteSpace))
+            throw new ArgumentException("A slash command without whitespace is required.", nameof(command));
+        
+        if (handler == null)
+            throw new ArgumentNullException(nameof(handler));
+        
+        commands.Add(command, message =>
+        {
+            GunsawMultiplayer.MultiplayerApi.Invoke(command, () => handler(message.Substring(command.Length).Trim()));
+            return true;
+        });
+    }
+
     internal bool TryHandle(string message)
     {
-        if (!MultiplayerSession.IsInLobby) 
+        if (!MultiplayerSession.IsInLobby || string.IsNullOrEmpty(message) || message[0] != '/')
             return false;
-        
-        if (string.Equals(message, "/kill", StringComparison.OrdinalIgnoreCase))
-            return Kill();
-        if (IsCommand(message, "/me"))
+
+        var end = 1;
+        while (end < message.Length && !char.IsWhiteSpace(message[end])) end++;
+        return commands.TryGetValue(message.Substring(0, end), out var handler) && handler(message);
+    }
+
+    private static bool Emote(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message.Substring(3)))
+            MultiplayerHud.AddSystemMessage("Usage: /me <text>");
+        else if (MultiplayerSession.IsHost)
+            TryBroadcastActionRequest(MultiplayerSession.LocalPeerId, message);
+        else if (MultiplayerSession.IsConnected && MultiplayerSession.HostPeerId != 0 && ChatService.TryCreate(message, false, out var packet))
+            MultiplayerSession.Send(packet, MultiplayerSession.HostPeerId);
+        return true;
+    }
+
+    private static bool ChangeTeam(string message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.Substring(11)))
+            MultiplayerHud.AddSystemMessage("Usage: /changeteam.");
+        else if (!TeamSystem.Enabled)
+            MultiplayerHud.AddSystemMessage("Teams are disabled in this lobby.");
+        else
+            TeamSystem.ChangeTeam();
+        return true;
+    }
+
+    private static bool BalanceTeams(string message)
+    {
+        if (!MultiplayerSession.IsHost)
+            MultiplayerHud.AddSystemMessage("Only the lobby host can use /balanceteams.");
+        else if (!string.IsNullOrWhiteSpace(message.Substring(13)))
+            MultiplayerHud.AddSystemMessage("Usage: /balanceteams.");
+        else if (!TeamSystem.Enabled)
+            MultiplayerHud.AddSystemMessage("Teams are disabled in this lobby.");
+        else
         {
-            if (string.IsNullOrWhiteSpace(message.Substring(3)))
-                MultiplayerHud.AddSystemMessage("Usage: /me <text>");
-            else if (MultiplayerSession.IsHost)
-                TryBroadcastActionRequest(MultiplayerSession.LocalPeerId, message);
-            else if (MultiplayerSession.IsConnected && MultiplayerSession.HostPeerId != 0 && ChatService.TryCreate(message, false, out var packet))
-                MultiplayerSession.Send(packet, MultiplayerSession.HostPeerId);
-            return true;
+            TeamSystem.BalanceTeams();
+            MultiplayerHud.AddSystemMessage("Teams balanced.");
         }
-        if (IsCommand(message, "/spawn"))
-            return Spawn(message);
-        if (IsCommand(message, "/swap"))
-            return Swap(message);
-        if (IsCommand(message, "/tp"))
-            return Teleport(message);
-        if (IsCommand(message, "/ban"))
-            return Ban(message);
-        if (IsCommand(message, "/kick"))
-            return Kick(message);
-        if (IsCommand(message, "/scale"))
-            return Scale(message);
-        if (IsCommand(message, "/clearblood"))
-            return LevelCleanupSystem.Clear();
-        if (IsCommand(message, "/changeteam"))
-        {
-            if (!string.IsNullOrWhiteSpace(message.Substring(11)))
-                MultiplayerHud.AddSystemMessage("Usage: /changeteam.");
-            else if (!TeamSystem.Enabled)
-                MultiplayerHud.AddSystemMessage("Teams are disabled in this lobby.");
-            else
-                TeamSystem.ChangeTeam();
-            return true;
-        }
-        if (IsCommand(message, "/balanceteams"))
-        {
-            if (!MultiplayerSession.IsHost)
-                MultiplayerHud.AddSystemMessage("Only the lobby host can use /balanceteams.");
-            else if (!string.IsNullOrWhiteSpace(message.Substring(13)))
-                MultiplayerHud.AddSystemMessage("Usage: /balanceteams.");
-            else if (!TeamSystem.Enabled)
-                MultiplayerHud.AddSystemMessage("Teams are disabled in this lobby.");
-            else
-            {
-                TeamSystem.BalanceTeams();
-                MultiplayerHud.AddSystemMessage("Teams balanced.");
-            }
-            return true;
-        }
-        return false;
+        return true;
     }
 
     internal static bool TryBroadcastActionRequest(ushort senderId, string message)
@@ -81,7 +102,7 @@ internal sealed class ChatCommandSystem
         return true;
     }
 
-    private bool Kill()
+    private static bool Kill()
     {
         if (!LocalPlayerReplication.KillLocalPlayer(PlayerDeathCause.SelfKill))
             MultiplayerHud.AddSystemMessage("You are dead already.");
@@ -89,7 +110,7 @@ internal sealed class ChatCommandSystem
         return true;
     }
 
-    private bool Spawn(string message)
+    private static bool Spawn(string message)
     {
         if (MultiplayerSession.PvpEnabled)
         {
@@ -131,7 +152,7 @@ internal sealed class ChatCommandSystem
         return true;
     }
 
-    private bool Swap(string message)
+    private static bool Swap(string message)
     {
         if (MultiplayerSession.IsActive && !MultiplayerSession.AllowSwap)
         {
@@ -158,7 +179,7 @@ internal sealed class ChatCommandSystem
         return true;
     }
 
-    private bool Teleport(string message)
+    private static bool Teleport(string message)
     {
         if (!MultiplayerSession.IsConnected)
             return true;
@@ -208,7 +229,7 @@ internal sealed class ChatCommandSystem
         return true;
     }
 
-    private bool Ban(string message)
+    private static bool Ban(string message)
     {
         if (!GunsawMultiplayerPlugin.Instance.CanBanPlayers)
         {

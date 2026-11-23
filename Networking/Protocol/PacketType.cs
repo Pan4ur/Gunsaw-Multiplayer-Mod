@@ -65,5 +65,7 @@ internal enum PacketType : byte
     NpcImpulse = 0x42,
     PropHunt = 0x43,
     DoorState = 0x44,
-    DuneEat = 0x45
+    DuneEat = 0x45,
+    AddonManifest = 0x46,
+    AddonMessage = 0x47
 }

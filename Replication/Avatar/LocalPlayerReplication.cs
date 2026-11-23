@@ -1029,7 +1029,7 @@ internal sealed class LocalPlayerReplication : NetworkAvatarReplication
         if (body.weaponAmmos == null) body.weaponAmmos = new List<int>();
         while (body.weaponAmmos.Count < body.weapons.Count) body.weaponAmmos.Add(0);
 
-        if (body.currentWeapon < 0 || body.currentWeapon >= 3)
+        if (body.currentWeapon < 0 || body.currentWeapon >= body.weapons.Count)
             body.currentWeapon = 0;
     }
 

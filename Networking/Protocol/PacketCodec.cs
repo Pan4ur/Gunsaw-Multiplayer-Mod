@@ -5,7 +5,7 @@ internal static class PacketCodec
     internal const int MaxPayloadLength = 16 * 1024 * 1024;
     private const int CompressionThreshold = 1024;
 
-    internal static byte[] Encode<TPacket>(TPacket packet) where TPacket : struct, INetworkPacket
+    internal static byte[] Encode<TPacket>(TPacket packet) where TPacket : struct, IGamePacket
     {
         var writer = new PacketWriter(128);
         PacketHeader.Write(ref writer, packet.Type);
@@ -13,7 +13,7 @@ internal static class PacketCodec
         return FinishEncoding(writer.ToArray(), packet.Type, packet.Settings.Compress);
     }
 
-    internal static byte[] Encode(INetworkPacket packet)
+    internal static byte[] Encode(IGamePacket packet)
     {
         if (packet == null) return [];
         var writer = new PacketWriter(128);
@@ -22,7 +22,7 @@ internal static class PacketCodec
         return FinishEncoding(writer.ToArray(), packet.Type, packet.Settings.Compress);
     }
 
-    private static byte[] FinishEncoding(byte[] data, PacketType type, bool compress)
+    internal static byte[] FinishEncoding(byte[] data, PacketType type, bool compress)
     {
         var payloadLength = data.Length - PacketHeader.Size;
         if (payloadLength > PayloadLimit(type)) throw new InvalidDataException("Packet payload is too large.");
@@ -75,5 +75,12 @@ internal static class PacketCodec
         }
     }
 
-    private static int PayloadLimit(PacketType type) => type == PacketType.Graffiti ? GraffitiSystem.MaxPacketPayloadBytes : MaxPayloadLength + (type == PacketType.Reliable ? ReliablePacket.HeaderSize : 0);
+    private static int PayloadLimit(PacketType type) => type switch
+    {
+        PacketType.Graffiti => GraffitiSystem.MaxPacketPayloadBytes,
+        PacketType.AddonManifest => MultiplayerSession.AddonManifestLimit,
+        PacketType.AddonMessage => MultiplayerSession.AddonMessageLimit,
+        PacketType.Reliable => MaxPayloadLength + ReliablePacket.HeaderSize,
+        _ => MaxPayloadLength
+    };
 }

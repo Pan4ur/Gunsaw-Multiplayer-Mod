@@ -565,6 +565,8 @@ internal static partial class MultiplayerSession
             localP2PAddress = null;
             p2pKey = null;
             p2pPeers.Clear();
+            addonPeers.Clear();
+            addonInbox.Clear();
         }
         cancellation?.Cancel();
         sendSignal.Set();

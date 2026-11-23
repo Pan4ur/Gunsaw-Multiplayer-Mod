@@ -1491,6 +1491,26 @@ internal sealed class NpcReplication : MonoBehaviour
     internal static BodyScript HostNpcForId(ulong id) =>
         MultiplayerSession.IsHost && Instance != null && Instance.hostNpcs.TryGetValue(Instance.ResolveWireId(id), out var body) ? body : null;
 
+    internal static ulong GetNpcId(BodyScript body)
+    {
+        var instance = Instance;
+        if (body == null || instance == null || instance.activeSceneHandle != SceneManager.GetActiveScene().handle)
+            return 0;
+        if (MultiplayerSession.IsHost)
+            return IsHostNpc(body) ? instance.WireId(instance.hostIds[body]) : 0;
+        return ClientNpcId(body);
+    }
+
+    internal static BodyScript? GetNpcBody(ulong id)
+    {
+        var instance = Instance;
+        if (id == 0 || instance == null || instance.activeSceneHandle != SceneManager.GetActiveScene().handle)
+            return null;
+        if (MultiplayerSession.IsHost) return HostNpcForId(id);
+        return instance.clientNpcs.TryGetValue(instance.ResolveWireId(id), out var proxy) && proxy.ReceivedFirstState
+            ? proxy.Body : null;
+    }
+
     private void ApplyClientDamage(ushort peerId, NpcDamagePacket packet)
     {
         var id = ResolveWireId(packet.NpcId);

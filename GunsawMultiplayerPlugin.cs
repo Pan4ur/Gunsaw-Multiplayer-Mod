@@ -155,6 +155,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         lock (mainThreadActionsLock)
             while (mainThreadActions.Count > 0) mainThreadActions.Dequeue()();
         MultiplayerSession.UpdateConnection();
+        MultiplayerSession.UpdateAddonChannels();
         ushort suggestingPeer;
         CustomLevelSuggestionPacket suggestion;
         while (MultiplayerSession.TryTakeCustomLevelSuggestion(out suggestingPeer, out suggestion))
@@ -751,6 +752,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         hostedLobbyDisplayName = lobbyName;
         multiplayerLobbyUi.NoteAppliedLobbySettings(lobbySettings, lobbyName);
         status = "Lobby settings updated.";
+        GunsawMultiplayer.MultiplayerApi.NotifyHostSettingsApplied();
         if (!string.IsNullOrEmpty(hostedLobbyId) && !string.IsNullOrEmpty(hostRelayKey))
         {
             try
@@ -954,6 +956,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 multiplayerLobbyUi.NoteAppliedLobbySettings(settings, requestedLobbyName);
                 avatarReplication.Configure(requestedPlayerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = requestedLobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
                 headlessLobbyService.OnLobbyCreated(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
+                GunsawMultiplayer.MultiplayerApi.NotifyHostSettingsApplied();
             });
         }
         catch (Exception exception) { RunOnMainThread(() => status = "Could not create lobby: " + exception.Message); }

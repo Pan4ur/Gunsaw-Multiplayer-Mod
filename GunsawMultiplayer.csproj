@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>GunsawMultiplayer</AssemblyName>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Examples/**/bin/**;Examples/**/obj/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Examples\**\*.cs" />

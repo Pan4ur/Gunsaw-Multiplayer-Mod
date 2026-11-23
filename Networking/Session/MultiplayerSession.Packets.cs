@@ -18,6 +18,11 @@ internal static partial class MultiplayerSession
             {
             if (!ProcessReliablePacket(ref packet, senderId)) continue;
             if (!PacketCodec.TryDecode(packet, out decodedPacket)) continue;
+            if (decodedPacket.Type is PacketType.AddonManifest or PacketType.AddonMessage)
+            {
+                ReceiveAddonPacket(receiveSocket, senderId, decodedPacket);
+                continue;
+            }
             if (IsEditorPacket(decodedPacket.Type))
                 ReceiveEditorPacket(senderId, decodedPacket);
             else if (decodedPacket.Type == PacketType.Hello && isHost)
@@ -724,7 +729,7 @@ internal static partial class MultiplayerSession
         try
         {
             var reader = new PacketReader(payload.Payload);
-            INetworkPacket packet = payload.Type switch
+            IGamePacket packet = payload.Type switch
             {
                 PacketType.EditorCursor => EditorCursorPacket.Read(ref reader),
                 PacketType.EditorSnapshotRequest => EditorSnapshotRequestPacket.Read(ref reader),
@@ -819,6 +824,7 @@ internal static partial class MultiplayerSession
         lock (statusLock)
         {
             departedName = PlayerName(peerId);
+            addonPeers.Remove(peerId);
             if (!peers.Remove(peerId)) return;
             peerListRevision++;
             p2pPeers.Remove(peerId);

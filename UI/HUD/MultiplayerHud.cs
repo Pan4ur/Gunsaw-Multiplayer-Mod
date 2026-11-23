@@ -10,7 +10,6 @@ internal sealed partial class MultiplayerHud : MonoBehaviour
 {
     private static readonly Regex tagRegex = new(@"<(/?)([A-Za-z][\w:-]*)[^>]*>", RegexOptions.Compiled);
     private static readonly HashSet<string> selfClosingTags = ["br", "page", "space", "sprite"];
-    private static readonly string[] chatCommands = ["/kill", "/me", "/spawn", "/swap", "/tp", "/ban", "/kick", "/scale", "/clearblood", "/changeteam", "/balanceteams"];
     private static readonly Regex emojiRegex = new(@":([^:\s]*)(:?)\z", RegexOptions.Compiled);
     private static readonly List<string> emojiNames = ["roza", "expie", "milky", "dune"];
     private static string savedChatDraft = "";
@@ -687,7 +686,7 @@ internal sealed partial class MultiplayerHud : MonoBehaviour
             var separator = input.IndexOfAny([' ', '\t']);
             if (separator < 0)
             {
-                foreach (var command in chatCommands)
+                foreach (var command in ChatCommandSystem.CommandNames)
                     if (command.StartsWith(input, StringComparison.OrdinalIgnoreCase)) 
                         chatSuggestions.Add(command);
                 return;
