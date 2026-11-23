@@ -1,4 +1,4 @@
-internal readonly struct WorldExplosionPacket : INetworkPacket
+internal readonly struct WorldExplosionPacket : IGamePacket
 {
     internal readonly ulong SourceId;
     internal readonly float PositionX;

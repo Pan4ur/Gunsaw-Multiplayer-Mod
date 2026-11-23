@@ -1,6 +1,6 @@
 using UnityEngine;
 
-internal readonly struct EditorCursorPacket : INetworkPacket
+internal readonly struct EditorCursorPacket : IGamePacket
 {
     internal readonly ushort Peer;
     internal readonly uint Sequence;

@@ -4,7 +4,7 @@ internal enum DisconnectReason : byte
     ClientClosed = 1
 }
 
-internal readonly struct DisconnectPacket : INetworkPacket
+internal readonly struct DisconnectPacket : IGamePacket
 {
     internal readonly DisconnectReason Reason;
     internal readonly ushort PeerId;

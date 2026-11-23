@@ -1,4 +1,4 @@
-internal readonly struct ReliablePacket : INetworkPacket
+internal readonly struct ReliablePacket : IGamePacket
 {
     internal const int HeaderSize = PacketHeader.Size + sizeof(int);
     internal readonly int SequenceId;

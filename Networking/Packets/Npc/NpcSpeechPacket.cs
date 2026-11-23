@@ -1,4 +1,4 @@
-internal readonly struct NpcSpeechPacket : INetworkPacket
+internal readonly struct NpcSpeechPacket : IGamePacket
 {
     internal readonly ulong NpcId;
     internal readonly string Text;

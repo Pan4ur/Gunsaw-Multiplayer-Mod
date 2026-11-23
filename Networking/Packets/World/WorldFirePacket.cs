@@ -1,4 +1,4 @@
-internal readonly struct WorldFirePacket : INetworkPacket
+internal readonly struct WorldFirePacket : IGamePacket
 {
     internal readonly bool Exists;
     internal readonly string Id;

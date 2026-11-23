@@ -1,4 +1,4 @@
-internal readonly struct PlayerCarryPacket : INetworkPacket
+internal readonly struct PlayerCarryPacket : IGamePacket
 {
     internal readonly bool Carrying;
     internal readonly ushort CarrierId, TargetId;

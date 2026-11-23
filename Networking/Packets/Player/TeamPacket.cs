@@ -1,4 +1,4 @@
-internal readonly struct TeamPacket : INetworkPacket
+internal readonly struct TeamPacket : IGamePacket
 {
     internal readonly ushort PlayerId;
     internal readonly string Team;

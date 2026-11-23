@@ -1,18 +1,18 @@
-internal readonly struct ObserverEventPacket : INetworkPacket
+internal readonly struct ObserverEventPacket : IGamePacket
 {
     public PacketType Type => PacketType.Observer;
     public DeliverySettings Settings => DeliverySettings.Lossless;
     public void Write(ref PacketWriter writer) { }
 }
 
-internal readonly struct ObserverKillPacket : INetworkPacket
+internal readonly struct ObserverKillPacket : IGamePacket
 {
     public PacketType Type => PacketType.ObserverKill;
     public DeliverySettings Settings => DeliverySettings.Lossless;
     public void Write(ref PacketWriter writer) { }
 }
 
-internal readonly struct ObserverStatePacket : INetworkPacket
+internal readonly struct ObserverStatePacket : IGamePacket
 {
     internal readonly float PositionX;
     internal readonly float PositionY;

@@ -21,7 +21,7 @@ internal readonly struct WorldInputState
     }
 }
 
-internal readonly struct WorldInputPacket : INetworkPacket
+internal readonly struct WorldInputPacket : IGamePacket
 {
     internal readonly WorldInputState[] States;
 

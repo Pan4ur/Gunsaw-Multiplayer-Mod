@@ -16,7 +16,7 @@ internal enum PropHuntAction : byte
     ChangeResult
 }
 
-internal readonly struct PropHuntPacket : INetworkPacket
+internal readonly struct PropHuntPacket : IGamePacket
 {
     internal readonly int Epoch;
     internal readonly uint Sequence;

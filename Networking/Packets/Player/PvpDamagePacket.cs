@@ -1,4 +1,4 @@
-internal readonly struct PvpDamagePacket : INetworkPacket
+internal readonly struct PvpDamagePacket : IGamePacket
 {
     internal readonly float Amount;
     internal readonly bool Critical;

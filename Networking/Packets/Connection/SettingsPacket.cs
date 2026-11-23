@@ -1,4 +1,4 @@
-internal readonly struct SettingsPacket : INetworkPacket
+internal readonly struct SettingsPacket : IGamePacket
 {
     internal readonly int SawTunerRevision;
     internal readonly string SawTuner;

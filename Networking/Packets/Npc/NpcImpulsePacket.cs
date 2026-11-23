@@ -1,4 +1,4 @@
-internal readonly struct NpcImpulsePacket : INetworkPacket
+internal readonly struct NpcImpulsePacket : IGamePacket
 {
     internal readonly ulong NpcId;
     internal readonly ulong RigidBodyId;

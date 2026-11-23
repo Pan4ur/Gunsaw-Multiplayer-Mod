@@ -1,4 +1,4 @@
-internal readonly struct PlayerSoundPacket : INetworkPacket
+internal readonly struct PlayerSoundPacket : IGamePacket
 {
     internal readonly uint SoundId;
     internal readonly float PositionX;

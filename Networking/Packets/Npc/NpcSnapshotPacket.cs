@@ -1,4 +1,4 @@
-internal readonly struct NpcSnapshotPacket : INetworkPacket
+internal readonly struct NpcSnapshotPacket : IGamePacket
 {
     internal readonly int TransferId;
     internal readonly ushort ChunkIndex;

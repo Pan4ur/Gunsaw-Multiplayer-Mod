@@ -1,4 +1,4 @@
-internal readonly struct PingPacket : INetworkPacket
+internal readonly struct PingPacket : IGamePacket
 {
     internal readonly long Timestamp;
 

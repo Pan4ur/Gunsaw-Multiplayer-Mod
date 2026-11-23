@@ -1,4 +1,4 @@
-internal readonly struct PlayerPerformancePacket : INetworkPacket
+internal readonly struct PlayerPerformancePacket : IGamePacket
 {
     internal readonly ushort PlayerId;
     internal readonly int HitShots, MissedShots, HeadShots, Kills, Deaths;

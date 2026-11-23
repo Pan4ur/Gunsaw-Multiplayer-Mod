@@ -1,4 +1,4 @@
-internal readonly struct PlayerTeleportPacket : INetworkPacket
+internal readonly struct PlayerTeleportPacket : IGamePacket
 {
     internal readonly float PositionX;
     internal readonly float PositionY;

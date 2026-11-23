@@ -1,4 +1,4 @@
-internal readonly struct HostPingPacket : INetworkPacket
+internal readonly struct HostPingPacket : IGamePacket
 {
     internal readonly ushort PeerId;
     internal readonly ushort PingMs;

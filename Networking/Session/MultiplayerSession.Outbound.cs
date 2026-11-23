@@ -1,6 +1,6 @@
 internal static partial class MultiplayerSession
 {
-    private static bool SendPacket(INetworkPacket packet, ushort targetId = 0, bool? priority = null)
+    private static bool SendPacket(IGamePacket packet, ushort targetId = 0, bool? priority = null)
     {
         if (packet == null)
             return false;
@@ -11,7 +11,7 @@ internal static partial class MultiplayerSession
         return accepted;
     }
 
-    private static bool TrySendPacket(INetworkPacket packet, ushort targetId = 0, bool? priority = null)
+    private static bool TrySendPacket(IGamePacket packet, ushort targetId = 0, bool? priority = null)
     {
         var generation = 0;
         var slot = 0;

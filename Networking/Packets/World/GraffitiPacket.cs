@@ -1,4 +1,4 @@
-internal readonly struct GraffitiPacket : INetworkPacket
+internal readonly struct GraffitiPacket : IGamePacket
 {
     internal const int MetadataBytes = sizeof(int) + sizeof(ushort) + sizeof(uint) + sizeof(float) * 4 + sizeof(int);
     internal readonly int SceneEpoch;

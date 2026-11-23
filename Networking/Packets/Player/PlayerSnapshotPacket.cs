@@ -19,7 +19,7 @@ internal enum PlayerDeathCause : byte
     EatenByDune
 }
 
-internal readonly struct PlayerSnapshotPacket : INetworkPacket
+internal readonly struct PlayerSnapshotPacket : IGamePacket
 {
     internal readonly int Sequence;
     internal readonly ulong MechanismId;

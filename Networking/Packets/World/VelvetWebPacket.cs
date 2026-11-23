@@ -1,4 +1,4 @@
-internal readonly struct VelvetWebPacket : INetworkPacket
+internal readonly struct VelvetWebPacket : IGamePacket
 {
     internal readonly float PositionX;
     internal readonly float PositionY;

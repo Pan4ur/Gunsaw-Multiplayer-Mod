@@ -6,7 +6,7 @@ internal readonly struct ShotVisualDirection
     internal ShotVisualDirection(float x, float y) { X = x; Y = y; }
 }
 
-internal readonly struct ShotVisualPacket : INetworkPacket
+internal readonly struct ShotVisualPacket : IGamePacket
 {
     internal readonly float OriginX;
     internal readonly float OriginY;

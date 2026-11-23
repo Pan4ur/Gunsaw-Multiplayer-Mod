@@ -1,4 +1,4 @@
-internal readonly struct VehicleEjectPacket : INetworkPacket
+internal readonly struct VehicleEjectPacket : IGamePacket
 {
     public VehicleEjectPacket() { }
 

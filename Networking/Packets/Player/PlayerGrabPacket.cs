@@ -1,4 +1,4 @@
-internal readonly struct PlayerGrabPacket : INetworkPacket
+internal readonly struct PlayerGrabPacket : IGamePacket
 {
     internal readonly bool IsGrabbing;
     internal readonly byte PartKind;

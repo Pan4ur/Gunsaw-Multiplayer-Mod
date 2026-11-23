@@ -1,4 +1,4 @@
-internal readonly struct CustomLevelSuggestionPacket : INetworkPacket
+internal readonly struct CustomLevelSuggestionPacket : IGamePacket
 {
     internal readonly string LevelCode;
     internal readonly int SizeKiB;

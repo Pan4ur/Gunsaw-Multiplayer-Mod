@@ -1,4 +1,4 @@
-internal readonly struct CustomLevelPacket : INetworkPacket
+internal readonly struct CustomLevelPacket : IGamePacket
 {
     internal readonly int TransferId;
     internal readonly ushort ChunkIndex;

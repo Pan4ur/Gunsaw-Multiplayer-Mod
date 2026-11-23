@@ -9,7 +9,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
     private static LevelEditorReplication? instance;
     private const float CursorSyncInterval = 1f / 30f;
     private const int MaxBufferedBytes = 16 * 1024 * 1024;
-    private static readonly ConcurrentQueue<(ushort Peer, INetworkPacket Packet, int Size)> incoming = new();
+    private static readonly ConcurrentQueue<(ushort Peer, IGamePacket Packet, int Size)> incoming = new();
     private static long incomingBytes;
     private static int captureAfterFrame;
     private readonly Dictionary<Guid, LevelPartGame> objects = new();
@@ -132,7 +132,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
 
     internal static void DeferCapture() => captureAfterFrame = Time.frameCount + 1;
 
-    internal static void Enqueue(ushort peer, INetworkPacket packet, int size)
+    internal static void Enqueue(ushort peer, IGamePacket packet, int size)
     {
         if (incoming.Count >= 2048) 
             return;
@@ -434,7 +434,7 @@ internal sealed class LevelEditorReplication : MonoBehaviour
         MultiplayerSession.Send(new EditorCommitPacket(epoch, document.Session, revision, edit.Request, author, document.AllowedEditors, document.Checksum(), edit.Environment, changes));
     }
 
-    private void Receive(ushort peer, INetworkPacket packet, int size)
+    private void Receive(ushort peer, IGamePacket packet, int size)
     {
         if (failed && packet is not EditorClosePacket && packet is not EditorCloseReadyPacket)
             return;

@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-internal struct PacketWriter
+public struct PacketWriter
 {
     [StructLayout(LayoutKind.Explicit)]
     private struct SingleBits
@@ -25,42 +25,42 @@ internal struct PacketWriter
         if (required > data.Length) Array.Resize(ref data, Math.Max(required, data.Length * 2));
     }
 
-    internal void WriteByte(byte value)
+    public void WriteByte(byte value)
     {
         Reserve(1);
         data[length++] = value;
     }
 
-    internal void WriteInt32(int value) => WriteUInt32((uint)value);
+    public void WriteInt32(int value) => WriteUInt32((uint)value);
     
-    internal void WriteInt16(short value) => WriteUInt16((ushort)value);
+    public void WriteInt16(short value) => WriteUInt16((ushort)value);
     
-    internal void WriteInt64(long value) => WriteUInt64((ulong)value);
+    public void WriteInt64(long value) => WriteUInt64((ulong)value);
     
-    internal void WriteUInt16(ushort value)
+    public void WriteUInt16(ushort value)
     {
         Reserve(2);
         data[length++] = (byte)value;
         data[length++] = (byte)(value >> 8);
     }
     
-    internal void WriteUInt32(uint value)
+    public void WriteUInt32(uint value)
     {
         Reserve(4);
         for (var i = 0; i < 4; i++) data[length++] = (byte)(value >> (8 * i));
     }
     
-    internal void WriteUInt64(ulong value)
+    public void WriteUInt64(ulong value)
     {
         Reserve(8);
         for (var i = 0; i < 8; i++) data[length++] = (byte)(value >> (8 * i));
     }
     
-    internal void WriteSingle(float value) => WriteUInt32(new SingleBits { Single = value }.UInt32);
+    public void WriteSingle(float value) => WriteUInt32(new SingleBits { Single = value }.UInt32);
     
-    internal void WriteBoolean(bool value) => WriteByte(value ? (byte)1 : (byte)0);
+    public void WriteBoolean(bool value) => WriteByte(value ? (byte)1 : (byte)0);
     
-    internal void WriteBinaryString(string value)
+    public void WriteBinaryString(string value)
     {
         value = value ?? "";
         var count = (uint)Encoding.UTF8.GetByteCount(value);
@@ -69,12 +69,12 @@ internal struct PacketWriter
         WriteUtf8(value);
     }
     
-    internal void WriteBytes(byte[] value)
+    public void WriteBytes(byte[] value)
     {
         if (value != null) WriteBytes(new ArraySegment<byte>(value));
     }
     
-    internal void WriteBytes(ArraySegment<byte> value)
+    public void WriteBytes(ArraySegment<byte> value)
     {
         if (value.Count == 0) return;
         Reserve(value.Count);
@@ -82,7 +82,7 @@ internal struct PacketWriter
         length += value.Count;
     }
     
-    internal void WriteUtf8(string value)
+    public void WriteUtf8(string value)
     {
         value = value ?? "";
         Reserve(Encoding.UTF8.GetByteCount(value));

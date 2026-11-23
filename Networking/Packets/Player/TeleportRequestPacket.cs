@@ -1,4 +1,4 @@
-internal readonly struct TeleportRequestPacket : INetworkPacket
+internal readonly struct TeleportRequestPacket : IGamePacket
 {
     internal readonly ushort TargetPeerId;
 

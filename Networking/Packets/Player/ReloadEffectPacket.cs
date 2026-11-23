@@ -1,4 +1,4 @@
-internal readonly struct ReloadEffectPacket : INetworkPacket
+internal readonly struct ReloadEffectPacket : IGamePacket
 {
     internal readonly bool Mag;
 

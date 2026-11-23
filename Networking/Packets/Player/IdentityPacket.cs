@@ -1,4 +1,4 @@
-internal readonly struct IdentityPacket : INetworkPacket
+internal readonly struct IdentityPacket : IGamePacket
 {
     internal readonly string Name;
     internal readonly string Prefab;

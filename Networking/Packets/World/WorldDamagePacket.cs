@@ -10,7 +10,7 @@ internal readonly struct WorldDamageEntry
     }
 }
 
-internal readonly struct WorldDamagePacket : INetworkPacket
+internal readonly struct WorldDamagePacket : IGamePacket
 {
     internal readonly WorldDamageEntry[] Entries;
 

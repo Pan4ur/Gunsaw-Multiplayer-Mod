@@ -1,6 +1,6 @@
 using UnityEngine;
 
-internal readonly struct PlayerStatePacket : INetworkPacket
+internal readonly struct PlayerStatePacket : IGamePacket
 {
     internal readonly float Health, Stamina, BurnIntensity, SusnessMultiplier, CharacterScale;
     internal readonly bool IsAlive, CanBeGrabbed, HasNoLegs, IsDecapitated, InventoryChanged, IncludesVisualState;

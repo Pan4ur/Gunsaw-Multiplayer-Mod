@@ -1,4 +1,4 @@
-internal readonly struct PlayerWoundPacket : INetworkPacket
+internal readonly struct PlayerWoundPacket : IGamePacket
 {
     private readonly PacketType packetType;
     private readonly short LimbIndex;

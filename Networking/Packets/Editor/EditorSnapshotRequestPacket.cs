@@ -1,4 +1,4 @@
-internal readonly struct EditorSnapshotRequestPacket : INetworkPacket
+internal readonly struct EditorSnapshotRequestPacket : IGamePacket
 {
     internal readonly int Epoch;
 

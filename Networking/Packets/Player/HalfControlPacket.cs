@@ -1,4 +1,4 @@
-internal readonly struct HalfControlPacket : INetworkPacket
+internal readonly struct HalfControlPacket : IGamePacket
 {
     internal readonly float Duration;
 

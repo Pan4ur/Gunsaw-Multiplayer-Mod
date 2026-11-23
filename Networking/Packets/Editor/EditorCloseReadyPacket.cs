@@ -1,4 +1,4 @@
-internal readonly struct EditorCloseReadyPacket : INetworkPacket
+internal readonly struct EditorCloseReadyPacket : IGamePacket
 {
     internal readonly int Epoch;
     internal readonly Guid Session;

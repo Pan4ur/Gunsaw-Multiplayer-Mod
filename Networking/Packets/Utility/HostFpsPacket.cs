@@ -1,4 +1,4 @@
-internal readonly struct HostFpsPacket : INetworkPacket
+internal readonly struct HostFpsPacket : IGamePacket
 {
     internal readonly ushort FPS;
 

@@ -36,7 +36,7 @@ internal readonly struct EnvironmentLampPowerState : IEquatable<EnvironmentLampP
         Id == other.Id && Powered == other.Powered && Intensity.Equals(other.Intensity) && Color.r == other.Color.r && Color.g == other.Color.g && Color.b == other.Color.b && Color.a == other.Color.a;
 }
 
-internal readonly struct WorldEnvironmentPacket : INetworkPacket
+internal readonly struct WorldEnvironmentPacket : IGamePacket
 {
     internal readonly int SceneEpoch;
     internal readonly float GravityX;

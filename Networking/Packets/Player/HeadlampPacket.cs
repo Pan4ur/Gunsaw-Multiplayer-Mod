@@ -1,4 +1,4 @@
-internal readonly struct HeadlampPacket : INetworkPacket
+internal readonly struct HeadlampPacket : IGamePacket
 {
     internal readonly ushort OwnerId;
     internal readonly bool Enabled;

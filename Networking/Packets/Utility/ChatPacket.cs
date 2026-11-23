@@ -1,4 +1,4 @@
-internal readonly struct ChatPacket : INetworkPacket
+internal readonly struct ChatPacket : IGamePacket
 {
     internal readonly int MessageId;
     internal readonly bool IsSystem;

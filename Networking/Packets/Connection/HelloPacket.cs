@@ -1,4 +1,4 @@
-internal readonly struct HelloPacket : INetworkPacket
+internal readonly struct HelloPacket : IGamePacket
 {
     internal readonly string PlayerName;
 

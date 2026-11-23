@@ -1,4 +1,4 @@
-﻿internal readonly struct PeerNamePacket : INetworkPacket
+﻿internal readonly struct PeerNamePacket : IGamePacket
 {
     internal readonly ushort PeerId;
     internal readonly string Name;

@@ -1,4 +1,4 @@
-internal readonly struct ReliableAckPacket : INetworkPacket
+internal readonly struct ReliableAckPacket : IGamePacket
 {
     internal readonly int SequenceId;
 

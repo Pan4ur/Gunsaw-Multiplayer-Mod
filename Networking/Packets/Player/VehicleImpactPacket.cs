@@ -1,4 +1,4 @@
-internal readonly struct VehicleImpactPacket : INetworkPacket
+internal readonly struct VehicleImpactPacket : IGamePacket
 {
     internal readonly float Impact;
     internal readonly float PositionX;

@@ -1,6 +1,6 @@
 using System.Text;
 
-internal readonly struct ScenePacket : INetworkPacket
+internal readonly struct ScenePacket : IGamePacket
 {
     internal readonly string Scene;
 

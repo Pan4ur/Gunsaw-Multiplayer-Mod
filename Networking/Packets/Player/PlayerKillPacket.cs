@@ -1,4 +1,4 @@
-internal readonly struct PlayerKillPacket : INetworkPacket
+internal readonly struct PlayerKillPacket : IGamePacket
 {
     internal readonly ushort KillerId;
 

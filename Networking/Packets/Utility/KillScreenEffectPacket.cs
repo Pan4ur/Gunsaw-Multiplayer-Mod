@@ -1,4 +1,4 @@
-internal readonly struct KillScreenEffectPacket : INetworkPacket
+internal readonly struct KillScreenEffectPacket : IGamePacket
 {
     public PacketType Type => PacketType.KillScreenEffect;
     

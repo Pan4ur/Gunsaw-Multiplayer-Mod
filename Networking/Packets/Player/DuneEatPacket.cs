@@ -1,4 +1,4 @@
-internal readonly struct DuneEatPacket : INetworkPacket
+internal readonly struct DuneEatPacket : IGamePacket
 {
     internal readonly uint RequestId;
     internal readonly ulong NpcId;

@@ -14,7 +14,7 @@ internal enum InteractionType : byte
     StationUsed = 13
 }
 
-internal readonly struct WorldInteractionPacket : INetworkPacket
+internal readonly struct WorldInteractionPacket : IGamePacket
 {
     internal readonly InteractionType InteractionType;
     internal readonly ulong TargetId;

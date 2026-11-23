@@ -187,7 +187,7 @@ internal readonly struct WorldBodySnapshot
     }
 }
 
-internal readonly struct WorldSnapshotPacket : INetworkPacket
+internal readonly struct WorldSnapshotPacket : IGamePacket
 {
     internal readonly int SceneEpoch;
     internal readonly int Sequence;

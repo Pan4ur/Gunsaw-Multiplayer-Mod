@@ -1,6 +1,6 @@
 internal static partial class MultiplayerSession
 {
-    internal static bool Send(INetworkPacket packet, ushort targetPeerId = 0, bool? priority = null)
+    internal static bool Send(IGamePacket packet, ushort targetPeerId = 0, bool? priority = null)
     {
         return SendPacket(packet, targetPeerId, priority);
     }

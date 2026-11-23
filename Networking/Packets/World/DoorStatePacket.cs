@@ -31,7 +31,7 @@ internal readonly struct DoorStateEntry
     }
 }
 
-internal readonly struct DoorStatePacket : INetworkPacket
+internal readonly struct DoorStatePacket : IGamePacket
 {
     internal readonly DoorStateOpCode OpCode;
     internal readonly int SceneEpoch;

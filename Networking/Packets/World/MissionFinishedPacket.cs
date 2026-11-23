@@ -1,4 +1,4 @@
-internal readonly struct MissionFinishedPacket : INetworkPacket
+internal readonly struct MissionFinishedPacket : IGamePacket
 {
     public PacketType Type => PacketType.MissionFinished;
     public DeliverySettings Settings => DeliverySettings.Lossless;

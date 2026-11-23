@@ -1,4 +1,4 @@
-internal readonly struct NpcDamagePacket : INetworkPacket
+internal readonly struct NpcDamagePacket : IGamePacket
 {
     internal readonly ulong NpcId;
     internal readonly float Amount;

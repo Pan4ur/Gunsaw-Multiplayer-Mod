@@ -1,4 +1,4 @@
-internal readonly struct PlayerSpecialLinesPacket : INetworkPacket
+internal readonly struct PlayerSpecialLinesPacket : IGamePacket
 {
     internal readonly PlayerSnapshotLineState Levitator, CrystalTongue;
 
