@@ -1,3 +1,4 @@
+using GunsawMultiplayer;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -80,6 +81,11 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
     private Button customLevelActionButton;
     private GameObject updateIndicator;
     private Transform settingsRows;
+    private readonly HashSet<string> builtAddonSections = new(StringComparer.Ordinal);
+    private readonly List<(Toggle Control, Func<bool> Read, string Owner)> addonToggles = new();
+    private readonly List<(Button Control, bool AllowGuests)> addonButtons = new();
+    private readonly List<Action<bool>> addonValueRefresh = new();
+    private bool pendingAddonSettings;
     private readonly Dictionary<string, Toggle> settingToggles = new();
     private readonly Dictionary<string, string> settingLabels = new();
     private Func<string, bool> readSettingBoolean;
@@ -174,6 +180,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
 
         SetInput(nameInput, plugin.playerName);
         var viewingLobbySettings = MultiplayerSession.IsActive && !MultiplayerSession.IsHost;
+        RefreshAddonLobbySections(viewingLobbySettings);
         SetInput(passwordInput, viewingLobbySettings ? "" : plugin.lobbySettings.Password);
         if (passwordDialog != null && passwordDialog.activeSelf && (Input.GetKeyDown(KeyCode.Escape) || !plugin.CanJoinLobby))
             ClosePasswordDialog();
@@ -481,6 +488,10 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         clearSearch.onClick.AddListener(() => search.text = "");
         var settings = CreateSettingsScroll(lobbyGroup.transform, new Vector2(0f, -35f), new Vector2(600f, 440f));
         settingsRows = settings;
+        builtAddonSections.Clear();
+        addonToggles.Clear();
+        addonButtons.Clear();
+        addonValueRefresh.Clear();
         settingsEmpty = CreateText(lobbyGroup.transform, "No matching settings", new Vector2(0f, 120f), new Vector2(540f, 36f), 16, TextAlignmentOptions.Center);
         settingsEmpty.gameObject.SetActive(false);
         var presetsRow = CreatePanel(lobbyGroup.transform, new Vector2(0f, 210f), new Vector2(600f, 42f)).transform;
@@ -1599,8 +1610,133 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         customLevelSuggestionDialog.SetActive(false);
     }
 
+    private void RefreshAddonLobbySections(bool viewingLobbySettings)
+    {
+        foreach (var registration in MultiplayerApi.LobbySections)
+        {
+            var guid = registration.Key;
+            var section = registration.Value;
+            if (!builtAddonSections.Add(guid)) continue;
+            var sectionKey = "Addon:" + builtAddonSections.Count;
+            var searchLabel = section.Title + " " + string.Join(" ", section.Toggles.Select(toggle => toggle.Label)
+                .Concat(section.Inputs.Select(input => input.Label))
+                .Concat(section.Choices.SelectMany(choice => new[] { choice.Label }.Concat(choice.Options)))
+                .Concat(section.Buttons.Select(button => button.Label)));
+            var rowIndex = 0;
+            Transform AddRow()
+            {
+                var row = CreateSettingsRow(settingsRows, sectionKey + ":" + rowIndex++);
+                settingLabels.Add(row.name, searchLabel);
+                return row;
+            }
+
+            var header = AddRow();
+            header.GetComponent<LayoutElement>().preferredHeight = 34f;
+            header.GetComponent<Image>().color = new Color(0.23f, 0.15f, 0.11f, 1f);
+            var title = CreateText(header, section.Title, Vector2.zero, new Vector2(520f, 34f), 14, TextAlignmentOptions.MidlineLeft, FontStyles.Bold);
+            title.richText = false;
+            title.raycastTarget = false;
+            foreach (var (label, read, write) in section.Toggles)
+            {
+                var toggle = CreateToggle(AddRow(), label, Vector2.zero, new Vector2(520f, 40f), value =>
+                {
+                    MultiplayerApi.Invoke(guid, () => write(value));
+                    pendingAddonSettings = true;
+                }, false);
+                addonToggles.Add((toggle, read, guid));
+            }
+
+            foreach (var (label, read, write, length, kind, range) in section.Inputs)
+            {
+                var row = AddRow();
+                var isText = kind == LobbySection.InputKind.Text;
+                var labelWidth = isText ? 185f : 290f;
+                CreateText(row, label, new Vector2(labelWidth * 0.5f - 260f, 0f), new Vector2(labelWidth, 32f), 14).richText = false;
+                var input = CreateInput(row, new Vector2(isText ? 95f : 195f, 0f), new Vector2(isText ? 330f : 120f, 36f),
+                    length, value =>
+                    {
+                        if (MultiplayerSession.IsActive && !MultiplayerSession.IsHost) return;
+                        MultiplayerApi.Invoke(guid, () => pendingAddonSettings |= write(value));
+                    }, kind == LobbySection.InputKind.Integer ? TMP_InputField.CharacterValidation.Integer : TMP_InputField.CharacterValidation.None,
+                    commitOnEndEdit: !isText);
+                input.textComponent.richText = false;
+                if (!isText) input.textComponent.alignment = TextAlignmentOptions.Center;
+                if (range != null) AddNumericRange(input, range);
+                addonValueRefresh.Add(viewing =>
+                {
+                    input.interactable = !viewing;
+                    MultiplayerApi.Invoke(guid, () => SetInput(input, read() ?? ""));
+                });
+            }
+
+            foreach (var (label, options, read, write) in section.Choices)
+                BuildAddonChoice(AddRow(), guid, label, options, read, write);
+
+            foreach (var (label, click, allowGuests) in section.Buttons)
+            {
+                var button = CreateButton(AddRow(), label, Vector2.zero, new Vector2(520f, 38f));
+                button.onClick.AddListener(() => MultiplayerApi.Invoke(guid, click));
+                addonButtons.Add((button, allowGuests));
+            }
+        }
+
+        foreach (var (control, read, owner) in addonToggles)
+        {
+            control.interactable = !viewingLobbySettings;
+            MultiplayerApi.Invoke(owner, () => SetToggle(control, read()));
+        }
+
+        foreach (var (control, allowGuests) in addonButtons)
+            control.interactable = !viewingLobbySettings || allowGuests;
+
+        foreach (var refresh in addonValueRefresh) refresh(viewingLobbySettings);
+    }
+
+    private void BuildAddonChoice(Transform row, string guid, string label, string[] options, Func<int> read, Action<int> write)
+    {
+        var columns = Math.Min(3, options.Length);
+        var lines = (options.Length - 1) / columns + 1;
+        var y = (lines - 1) * 23f;
+        var slotWidth = 324f / columns;
+        row.GetComponent<LayoutElement>().preferredHeight = lines * 46f;
+        CreateText(row, label, new Vector2(-162f, y), new Vector2(196f, 32f), 14).richText = false;
+        var buttons = new Button[options.Length];
+        for (var index = 0; index < options.Length; index++)
+        {
+            var choice = index;
+            var position = new Vector2(-64f + slotWidth * (index % columns + 0.5f), y - 46f * (index / columns));
+            var button = CreateButton(row, options[index], position, new Vector2(slotWidth - 6f, 36f));
+            var caption = button.GetComponentInChildren<TMP_Text>();
+            caption.richText = false;
+            caption.overflowMode = TextOverflowModes.Ellipsis;
+            button.onClick.AddListener(() => MultiplayerApi.Invoke(guid, () =>
+            {
+                if (read() == choice) return;
+                write(choice);
+                pendingAddonSettings = true;
+                RefreshPendingSettings();
+            }));
+            buttons[index] = button;
+        }
+
+        var previous = int.MinValue;
+        addonValueRefresh.Add(viewing =>
+        {
+            foreach (var button in buttons) button.interactable = !viewing;
+            MultiplayerApi.Invoke(guid, () =>
+            {
+                var selected = read();
+                if (selected == previous) return;
+                previous = selected;
+                for (var index = 0; index < buttons.Length; index++)
+                    SetModeButton(buttons[index], index == selected);
+            });
+        });
+    }
+
     internal void NoteAppliedLobbySettings(LobbySettings settings, string name)
     {
+        pendingAddonSettings = false;
         appliedSettings = JsonUtility.ToJson(settings) + "\n" + name;
         RefreshPendingSettings();
     }
@@ -1608,7 +1744,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
     private void RefreshPendingSettings()
     {
         pendingSettings = plugin != null && MultiplayerSession.IsHosting && appliedSettings.Length > 0 &&
-            appliedSettings != JsonUtility.ToJson(plugin.lobbySettings) + "\n" + plugin.lobbyName;
+            (pendingAddonSettings || appliedSettings != JsonUtility.ToJson(plugin.lobbySettings) + "\n" + plugin.lobbyName);
     }
 
     internal static string CycleLabel(string value, int offset)
@@ -1705,7 +1841,8 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         var visible = 0;
         foreach (Transform row in settingsRows)
         {
-            var matches = LobbySettingsSchema.IsVisible(row.name, readSettingBoolean) &&
+            var matches = (row.name.StartsWith("Addon:", StringComparison.Ordinal) ||
+                LobbySettingsSchema.IsVisible(row.name, readSettingBoolean)) &&
                 MatchesSettingSearch(settingLabels[row.name], settingsQuery);
             if (row.gameObject.activeSelf != matches)
             {
@@ -1877,13 +2014,18 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         var culture = System.Globalization.CultureInfo.InvariantCulture;
         var format = floatNum ? "0.0#" : "0";
 
-        var range = "[" + minimum.ToString(format, culture) + ".." + maximum.ToString(format, culture) + "]";
+        AddNumericRange(input, "[" + minimum.ToString(format, culture) + ".." + maximum.ToString(format, culture) + "]");
+    }
+
+    private void AddNumericRange(TMP_InputField input, string range)
+    {
         var label = CreateText(input.transform, range, new Vector2(-input.GetComponent<RectTransform>().sizeDelta.x * 0.5f - 80f, 0f), new Vector2(140f, 24f), 11, TextAlignmentOptions.Right);
         label.color = new Color(0.58f, 0.58f, 0.58f, 0.38f);
         label.raycastTarget = false;
     }
 
-    private TMP_InputField CreateInput(Transform parent, Vector2 position, Vector2 size, int limit, Action<string> changed, TMP_InputField.CharacterValidation validation = TMP_InputField.CharacterValidation.None)
+    private TMP_InputField CreateInput(Transform parent, Vector2 position, Vector2 size, int limit, Action<string> changed,
+        TMP_InputField.CharacterValidation validation = TMP_InputField.CharacterValidation.None, bool commitOnEndEdit = false)
     {
         var go = new GameObject("Input", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(TMP_InputField));
         go.transform.SetParent(parent, false); SetRect(go.GetComponent<RectTransform>(), position, size);
@@ -1901,11 +2043,13 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         field.selectionColor = new Color(0.75f, 0.38f, 0.17f, 0.45f);
         field.characterValidation = validation;
         if (validation != TMP_InputField.CharacterValidation.None) text.alignment = TextAlignmentOptions.Center;
-        field.onValueChanged.AddListener(value => { changed(value); RefreshPendingSettings(); });
+        void Commit(string value) { changed(value); RefreshPendingSettings(); }
+        if (commitOnEndEdit) field.onEndEdit.AddListener(Commit);
+        else field.onValueChanged.AddListener(Commit);
         return field;
     }
 
-    private Toggle CreateToggle(Transform parent, string label, Vector2 position, Vector2 size, Action<bool> changed)
+    private Toggle CreateToggle(Transform parent, string label, Vector2 position, Vector2 size, Action<bool> changed, bool registerSetting = true)
     {
         var go = new GameObject(label, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Toggle));
         go.transform.SetParent(parent, false);
@@ -1926,7 +2070,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         state.raycastTarget = false;
 
         var toggle = go.GetComponent<Toggle>();
-        settingToggles.Add(parent.name, toggle);
+        if (registerSetting) settingToggles.Add(parent.name, toggle);
         EnsureScrollForwarder(go);
         toggle.targetGraphic = back.GetComponent<Image>();
         toggle.graphic = check.GetComponent<Image>();

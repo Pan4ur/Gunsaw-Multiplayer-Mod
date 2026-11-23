@@ -429,62 +429,62 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static bool IsInLobby { get { lock (statusLock) return socket != null &&
+    public static bool IsInLobby { get { lock (statusLock) return socket != null &&
         relayConnected && (isHost || peers.Count > 0); } }
 
-    internal static bool IsConnected { get { lock (statusLock) return socket != null &&
+    public static bool IsConnected { get { lock (statusLock) return socket != null &&
         relayConnected && peers.Count > 0; } }
 
-    internal static bool IsActive { get { return socket != null; } }
-    internal static bool IsHosting { get { return socket != null && relayConnected && isHost; } }
-    internal static bool IsHost => IsHosting;
-    internal static bool PvpEnabled { get; private set; }
-    internal static bool NoNpcs { get; private set; }
-    internal static bool BlackoutEnabled { get; private set; }
-    internal static bool TurnOffLamps { get; private set; } = true;
-    internal static bool RestrictLightEnabled { get; private set; }
-    internal static float HeadlampRadius { get; private set; } = 12f;
-    internal static float HeadlampAngle { get; private set; } = 64f;
-    internal static bool TeamsEnabled { get; private set; }
-    internal static string TeamsCfg { get; private set; } = "";
-    internal static string StartingWeapon { get; private set; } = "Default";
-    internal static string RespawnWeapon { get; private set; } = "Default";
-    internal static bool PropHuntEnabled { get; private set; }
-    internal static ushort PropHuntTime { get; private set; } = 300;
-    internal static byte PropHuntHunters { get; private set; } = 1;
-    internal static float PropHuntShotPenalty { get; private set; } = 5f;
-    internal static float PropHuntShotHealing { get; private set; } = 15f;
-    internal static float PropHuntTelekinesisPenalty { get; private set; } = 5f;
-    internal static float PropHuntTelekinesisInterval { get; private set; } = 0.5f;
-    internal static float PropHuntStunCooldown { get; private set; } = 30f;
-    internal static float PropHuntChangeCooldown { get; private set; } = 30f;
-    internal static bool PropHuntLocator { get; private set; } = true;
-    internal static float PropHuntLocatorCooldown { get; private set; } = 30f;
-    internal static bool GunGameEnabled { get; private set; }
-    internal static string GGSequence { get; private set; } = "";
-    internal static GunGameDeathMode GGOnDeath { get; private set; } = GunGameDeathMode.Reset;
-    internal static string StartingAmmo { get; private set; } = LobbyAmmoRules.StartingDefault;
-    internal static string RespawnAmmo { get; private set; } = LobbyAmmoRules.RespawnDefault;
-    internal static bool LobbySettingsReceived { get; private set; }
-    internal static bool CanGrabPlayers { get; private set; }
-    internal static bool GrabOnlyUnconscious { get; private set; }
-    internal static bool AllowRespawn { get; private set; }
-    internal static int RespawnTimeSeconds { get; private set; }
-    internal static int NumberOfLives { get; private set; }
-    internal static string LobbyId => lobbyId;
-    internal static bool AutoRestart { get; private set; }
-    internal static bool UniformHP { get; private set; }
-    internal static float UHPValue { get; private set; } = LobbyHealthRule.DefaultUniformHPValue;
-    internal static float HealthFactor { get; private set; } = LobbyHealthRule.DefaultFactor;
-    internal static float RegenFactor { get; private set; } = LobbyRegenRule.DefaultFactor;
-    internal static bool RespawnAtStart { get; private set; }
-    internal static bool PlayerCollisions { get; private set; } = true;
-    internal static bool CheatsEnabled { get; private set; }
-    internal static bool AllowSwap { get; private set; } = true;
-    internal static bool AllowScaleChanging { get; private set; } = true;
-    internal static float InitialScale { get; private set; } = 1f;
-    internal static bool BrutalModeEnabled { get; private set; }
-    internal static bool AllowObserver { get; private set; } = true;
+    public static bool IsActive { get { return socket != null; } }
+    public static bool IsHosting { get { return socket != null && relayConnected && isHost; } }
+    public static bool IsHost => IsHosting;
+    public static bool PvpEnabled { get; private set; }
+    public static bool NoNpcs { get; private set; }
+    public static bool BlackoutEnabled { get; private set; }
+    public static bool TurnOffLamps { get; private set; } = true;
+    public static bool RestrictLightEnabled { get; private set; }
+    public static float HeadlampRadius { get; private set; } = 12f;
+    public static float HeadlampAngle { get; private set; } = 64f;
+    public static bool TeamsEnabled { get; private set; }
+    public static string TeamsCfg { get; private set; } = "";
+    public static string StartingWeapon { get; private set; } = "Default";
+    public static string RespawnWeapon { get; private set; } = "Default";
+    public static bool PropHuntEnabled { get; private set; }
+    public static ushort PropHuntTime { get; private set; } = 300;
+    public static byte PropHuntHunters { get; private set; } = 1;
+    public static float PropHuntShotPenalty { get; private set; } = 5f;
+    public static float PropHuntShotHealing { get; private set; } = 15f;
+    public static float PropHuntTelekinesisPenalty { get; private set; } = 5f;
+    public static float PropHuntTelekinesisInterval { get; private set; } = 0.5f;
+    public static float PropHuntStunCooldown { get; private set; } = 30f;
+    public static float PropHuntChangeCooldown { get; private set; } = 30f;
+    public static bool PropHuntLocator { get; private set; } = true;
+    public static float PropHuntLocatorCooldown { get; private set; } = 30f;
+    public static bool GunGameEnabled { get; private set; }
+    public static string GGSequence { get; private set; } = "";
+    public static GunGameDeathMode GGOnDeath { get; private set; } = GunGameDeathMode.Reset;
+    public static string StartingAmmo { get; private set; } = LobbyAmmoRules.StartingDefault;
+    public static string RespawnAmmo { get; private set; } = LobbyAmmoRules.RespawnDefault;
+    public static bool LobbySettingsReceived { get; private set; }
+    public static bool CanGrabPlayers { get; private set; }
+    public static bool GrabOnlyUnconscious { get; private set; }
+    public static bool AllowRespawn { get; private set; }
+    public static int RespawnTimeSeconds { get; private set; }
+    public static int NumberOfLives { get; private set; }
+    public static string LobbyId => lobbyId;
+    public static bool AutoRestart { get; private set; }
+    public static bool UniformHP { get; private set; }
+    public static float UHPValue { get; private set; } = LobbyHealthRule.DefaultUniformHPValue;
+    public static float HealthFactor { get; private set; } = LobbyHealthRule.DefaultFactor;
+    public static float RegenFactor { get; private set; } = LobbyRegenRule.DefaultFactor;
+    public static bool RespawnAtStart { get; private set; }
+    public static bool PlayerCollisions { get; private set; } = true;
+    public static bool CheatsEnabled { get; private set; }
+    public static bool AllowSwap { get; private set; } = true;
+    public static bool AllowScaleChanging { get; private set; } = true;
+    public static float InitialScale { get; private set; } = 1f;
+    public static bool BrutalModeEnabled { get; private set; }
+    public static bool AllowObserver { get; private set; } = true;
 
     internal static void SyncBrutalMode()
     {
@@ -501,7 +501,7 @@ internal static partial class MultiplayerSession
 
     internal static bool ReadBrutalMode() => PlayerPrefs.GetInt("difficulty") > 0;
 
-    internal static int PingMs
+    public static int PingMs
     {
         get
         {
@@ -512,12 +512,12 @@ internal static partial class MultiplayerSession
             }
         }
     }
-    internal static string LocalPlayerName { get { lock (statusLock) return localPlayerName; } }
-    internal static ushort LocalPeerId { get { lock (statusLock) return localPeerId; } }
-    internal static ushort HostPeerId { get { lock (statusLock) return hostPeerId; } }
-    internal static int MaxPlayers { get { lock (statusLock) return maxPlayers; } }
-    internal static int PlayerCount { get { lock (statusLock) return 1 + peers.Count; } }
-    internal static int PeerListRevision { get { lock (statusLock) return peerListRevision; } }
+    public static string LocalPlayerName { get { lock (statusLock) return localPlayerName; } }
+    public static ushort LocalPeerId { get { lock (statusLock) return localPeerId; } }
+    public static ushort HostPeerId { get { lock (statusLock) return hostPeerId; } }
+    public static int MaxPlayers { get { lock (statusLock) return maxPlayers; } }
+    public static int PlayerCount { get { lock (statusLock) return 1 + peers.Count; } }
+    public static int PeerListRevision { get { lock (statusLock) return peerListRevision; } }
 
     internal static bool TryTakePeerDisconnected(out ushort peerId)
     {
@@ -533,7 +533,7 @@ internal static partial class MultiplayerSession
         }
     }
     
-    internal static string ActiveTransport
+    public static string ActiveTransport
     {
         get
         {
@@ -556,7 +556,7 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static NetworkDebugStats DebugStats()
+    public static NetworkDebugStats DebugStats()
     {
         var ping = PingMs;
         lock (networkStatsLock)
@@ -606,12 +606,12 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static bool HasPeer(ushort peerId)
+    public static bool HasPeer(ushort peerId)
     {
         lock (statusLock) return peers.Contains(peerId);
     }
 
-    internal static string PlayerName(ushort peerId)
+    public static string PlayerName(ushort peerId)
     {
         lock (statusLock)
         {
@@ -621,12 +621,12 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static string PeerCharacterPrefab(ushort peerId)
+    public static string PeerCharacterPrefab(ushort peerId)
     {
         lock (statusLock) return peers.TryGet(peerId, out var peer) ? peer.CharacterPrefab : "";
     }
 
-    internal static int PeerPing(ushort peerId)
+    public static int PeerPing(ushort peerId)
     {
         lock (statusLock)
         {
@@ -635,7 +635,7 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static ushort[] PeerIds()
+    public static ushort[] PeerIds()
     {
         lock (statusLock)
         {
@@ -798,7 +798,7 @@ internal static partial class MultiplayerSession
         }
     }
 
-    internal static bool UpdateHostSettings(LobbySettings settings, ParsedLobbySettings parsed)
+    public static bool UpdateHostSettings(LobbySettings settings, ParsedLobbySettings parsed)
     {
         if (!IsHosting) return false;
         var previous = CreateSettingsPacket();
@@ -821,7 +821,7 @@ internal static partial class MultiplayerSession
         return true;
     }
 
-    internal static List<string> DescribeSettingsChanges(SettingsPacket previous, SettingsPacket current)
+    public static List<string> DescribeSettingsChanges(SettingsPacket previous, SettingsPacket current)
     {
         var changes = new List<string>();
         foreach (var field in typeof(SettingsPacket).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic))
@@ -969,7 +969,7 @@ internal static partial class MultiplayerSession
     private sealed class PeerPayload
     {
         internal ushort PeerId;
-        internal byte[] Data = new byte[0];
+        internal byte[] Data = [];
     }
 
     private sealed class PeerPacket<TPacket>
