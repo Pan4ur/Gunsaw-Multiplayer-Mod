@@ -12,11 +12,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private const string RootPath = "MP/CustomProp";
     private static readonly FieldInfo loadStringField = AccessTools.Field(typeof(LevelEditor), "loadString");
     private static readonly FieldInfo selectedField = AccessTools.Field(typeof(LevelEditor), "currentlySelected");
-    private static readonly List<CustomPropInstance> runtimeInstances = new List<CustomPropInstance>();
+    private static readonly List<CustomPropInstance> runtimeInstances = [];
     private static string runtimeSourceJson = string.Empty;
 
-    private readonly List<CustomPropInstance> instances = new List<CustomPropInstance>();
-    private readonly List<CustomPropMarker> markers = new List<CustomPropMarker>();
+    private readonly List<CustomPropInstance> instances = [];
+    private readonly List<CustomPropMarker> markers = [];
 
     private LevelEditor editor;
     private GameObject ghost;
@@ -24,8 +24,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
     private CustomPropMarker shownMarker;
     private bool listenersInstalled;
     private bool nativeInspectorCaptured;
-    private readonly List<NativeInputState> nativeInputs = new List<NativeInputState>();
-    private readonly List<NativeLabelState> nativeLabels = new List<NativeLabelState>();
+    private readonly List<NativeInputState> nativeInputs = [];
+    private readonly List<NativeLabelState> nativeLabels = [];
     private LevelPartGame editingLamp;
     private LevelPartGame editingLampAngle;
 
@@ -166,12 +166,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
         try { payload = JsonUtility.FromJson<CustomPropPayload>(part.team); }
         catch { return null; }
         if (payload == null || string.IsNullOrEmpty(payload.type)) return null;
-        if (string.Equals(payload.type, "MP/PlayerActivationZone", StringComparison.OrdinalIgnoreCase))
-            payload.type = "MP/PlayerDetector";
-
-        ICustomPropDefinition definition;
         object data = payload.data;
-        if (CustomPropRegistry.TryGet(payload.type, out definition))
+        if (CustomPropRegistry.TryGet(payload.type, out var definition))
             data = definition.DeserializeData(payload.data);
 
         return new CustomPropInstance
@@ -201,9 +197,8 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private static LevelPart ToPart(CustomPropInstance instance)
     {
-        ICustomPropDefinition definition;
         string serializedData;
-        if (CustomPropRegistry.TryGet(instance.TypeId, out definition))
+        if (CustomPropRegistry.TryGet(instance.TypeId, out var definition))
             serializedData = definition.SerializeData(instance.Data);
         else
             serializedData = instance.Data as string ?? string.Empty;
@@ -216,9 +211,11 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             data = serializedData
         };
 
-        var part = new LevelPart(instance.Position, instance.Rotation, RootPath);
-        part.team = JsonUtility.ToJson(payload);
-        part.size = instance.Size;
+        var part = new LevelPart(instance.Position, instance.Rotation, RootPath)
+        {
+            team = JsonUtility.ToJson(payload),
+            size = instance.Size
+        };
         return part;
     }
 
@@ -237,23 +234,22 @@ internal sealed class CustomPropEditorController : MonoBehaviour
 
     private CustomPropMarker CreateMarker(CustomPropInstance instance)
     {
-        ICustomPropDefinition definition;
-        CustomPropRegistry.TryGet(instance.TypeId, out definition);
+        CustomPropRegistry.TryGet(instance.TypeId, out var definition);
 
-        var gameObject = new GameObject(definition == null ? "Unknown Custom Prop" : definition.DisplayName);
-        gameObject.transform.SetParent(editor == null ? null : editor.transform);
-        gameObject.transform.position = instance.Position;
-        gameObject.transform.rotation = Quaternion.Euler(0f, 0f, instance.Rotation);
+        var go = new GameObject(definition == null ? "Unknown Custom Prop" : definition.DisplayName);
+        go.transform.SetParent(editor == null ? null : editor.transform);
+        go.transform.position = instance.Position;
+        go.transform.rotation = Quaternion.Euler(0f, 0f, instance.Rotation);
 
-        var renderer = gameObject.AddComponent<SpriteRenderer>();
+        var renderer = go.AddComponent<SpriteRenderer>();
         renderer.sprite = definition == null ? null : definition.Icon;
         renderer.sortingLayerName = "Foreground";
         renderer.sortingOrder = 250;
 
-        var collider = gameObject.AddComponent<CircleCollider2D>();
+        var collider = go.AddComponent<CircleCollider2D>();
         collider.radius = 0.7f;
 
-        var levelPart = gameObject.AddComponent<LevelPartGame>();
+        var levelPart = go.AddComponent<LevelPartGame>();
         levelPart.part = ToPart(instance);
         levelPart.showId = true;
         levelPart.showActiveId = true;
@@ -265,7 +261,7 @@ internal sealed class CustomPropEditorController : MonoBehaviour
             ? "This custom prop type is not installed: " + instance.TypeId
             : definition.Description;
 
-        var marker = gameObject.AddComponent<CustomPropMarker>();
+        var marker = go.AddComponent<CustomPropMarker>();
         marker.Instance = instance;
         marker.Definition = definition;
         NoPvpZoneDefinition.UpdateMarker(marker);

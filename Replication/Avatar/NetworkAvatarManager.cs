@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using static LocalPlayerReplication;
+using static MultiplayerSession;
 using static NetworkAvatarUtilities;
 
 internal sealed class NetworkAvatarManager : MonoBehaviour
@@ -58,7 +59,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static NetworkAvatarReplication GetOrCreateReplica(ushort peerId)
     {
         var local = LocalPlayerReplication.Instance;
-        if (local == null || peerId == 0 || peerId == MultiplayerSession.LocalPeerId) return null;
+        if (local == null || peerId == 0 || peerId == LocalPeerId) return null;
         NetworkAvatarReplication replica;
         if (replicas.TryGetValue(peerId, out replica) && replica != null) return replica;
         replica = local.gameObject.AddComponent<NetworkAvatarReplication>();
@@ -90,7 +91,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
                     Body = pair.Value.remoteBody,
                     AuthoritativePosition = pair.Value.lastAuthoritativePosition,
                     HasAuthoritativePosition = pair.Value.hasAuthoritativePosition,
-                    PingMs = MultiplayerSession.PeerPing(pair.Key)
+                    PingMs = PeerPing(pair.Key)
                 });
         result.Sort((left, right) => left.PeerId.CompareTo(right.PeerId));
         return result.ToArray();
@@ -116,7 +117,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     {
         var stale = new List<ushort>();
         foreach (var pair in replicas)
-            if (pair.Value == null || !MultiplayerSession.HasPeer(pair.Key)) stale.Add(pair.Key);
+            if (pair.Value == null || !HasPeer(pair.Key)) stale.Add(pair.Key);
         foreach (var peerId in stale)
         {
             NetworkAvatarReplication replica;
@@ -233,7 +234,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     internal static void RecordBodyColliderHit(BodyScript body, LimbScript limb)
     {
-        if (!MultiplayerSession.IsConnected ||
+        if (!IsConnected ||
             activeShotState == null ||
             activeShotState.Weapon == null ||
             body == null ||
@@ -298,7 +299,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
 
     private static void TryTakePropAuthority(Rigidbody2D rb)
     {
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || rb == null)
+        if (!IsConnected || IsHost || rb == null)
             return;
 
         var player = PlayerScript.player;
@@ -374,7 +375,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static void ReplicateExplosion(GameObject explosionObject, Vector2 position,
         float range, float force, bool playExplosionSound)
     {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || !NetworkAvatarUtilities.IsFinite(position.x) ||
+        if (!IsConnected || !IsHost || !NetworkAvatarUtilities.IsFinite(position.x) ||
             !NetworkAvatarUtilities.IsFinite(position.y) || !NetworkAvatarUtilities.IsFinite(range) || !NetworkAvatarUtilities.IsFinite(force) || range <= 0f || force <= 0f)
             return;
         GunsawMultiplayerPlugin.World?.BroadcastExplosion(explosionObject, position, range, force,
@@ -384,14 +385,14 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
     internal static void ConfigureProjectileCollisions(Component projectile, BodyScript shooter)
     {
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled) ||
+        if (!IsConnected || (PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled) ||
             LocalPlayerReplication.Instance == null || projectile == null || player == null ||
             shooter != player.bodyScript) return;
         
         foreach (var projectileCollider in projectile.GetComponentsInChildren<Collider2D>(true))
         foreach (var replica in replicas.Values)
         {
-            if (replica == null || (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId)))
+            if (replica == null || (PvpEnabled && !TeamSystem.Same(LocalPeerId, replica.remotePeerId)))
                 continue;
             
             foreach (var remoteCollider in replica.remoteColliderTriggers.Keys)
@@ -416,25 +417,19 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             var player = PlayerScript.player;
             var shooter = state == null || state.Weapon == null ? null : state.Weapon.body;
             var localPlayerShot = player != null && shooter == player.bodyScript;
-            var hostNpcShot = MultiplayerSession.IsHost && shooter != null && !shooter.isPlayer &&
+            var hostNpcShot = IsHost && shooter != null && !shooter.isPlayer &&
                 shooter.GetComponentInParent<NetworkReplica>() == null;
             if (!completed || state == null || state.Weapon == null || shooter == null ||
                 (!localPlayerShot && !hostNpcShot) ||
                 !CustomWeaponsCompatibility.DidFireWeapon(state.Weapon, state.AmmoBefore, state.CooldownBefore) ||
-                !MultiplayerSession.IsConnected) return;
+                !IsConnected) return;
             var targetPeers = new List<ushort>();
             foreach (var wound in state.Wounds)
                 if (wound.TargetPeerId != 0 && !targetPeers.Contains(wound.TargetPeerId))
                     targetPeers.Add(wound.TargetPeerId);
-            var directionCount = Math.Min(byte.MaxValue, state.ShotDirections.Count);
-            var exactDirections = new ShotVisualDirection[directionCount];
-            for (var index = 0; index < directionCount; index++)
-            {
-                var direction = state.ShotDirections[index];
-                exactDirections[index] = new ShotVisualDirection(direction.x, direction.y);
-            }
-            MultiplayerSession.Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x, state.Direction.y, state.Up.x, state.Up.y,
-                state.WeaponSprite, hostNpcShot, targetPeers.ToArray(), state.SpreadSeed, exactDirections, []));
+            
+            Send(new ShotVisualPacket(state.Origin.x, state.Origin.y, state.Direction.x, state.Direction.y, state.Up.x, state.Up.y,
+                state.WeaponSprite, hostNpcShot, [.. targetPeers], state.SpreadSeed, [..state.ShotDirections], []));
             foreach (var wound in state.Wounds)
                 SendRemotePlayerWound(wound, wound.BaseDamage > 20f || wound.Critical, shooter);
         }
@@ -445,7 +440,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
         Vector2 direction, GameObject splash)
     {
         var replica = limb == null ? null : NetworkAvatarManager.ReplicaForBody(limb.body);
-        if (!MultiplayerSession.IsConnected || activeShotState == null || replica == null ||
+        if (!IsConnected || activeShotState == null || replica == null ||
 weapon != activeShotState.Weapon) return;
         var limbs = replica.remoteBody.limbs ?? [];
         var limbIndex = limbs.IndexOf(limb);
@@ -477,11 +472,11 @@ weapon != activeShotState.Weapon) return;
         var target = RemoteBodyForPeer(wound.TargetPeerId);
         if (PropHuntSystem.FriendlyHunters(PeerIdOfBody(source), wound.TargetPeerId)) return;
         if (source != null && source.isPlayer && NoPvpZoneRuntime.Protects(target, wound.TargetPeerId)) return;
-        var type = MultiplayerSession.IsHost
+        var type = IsHost
             ? PacketType.PlayerDamage
             : PacketType.PvpDamage;
 
-        MultiplayerSession.Send(
+        Send(
             new PlayerWoundPacket(
                 type,
                 wound.LimbIndex,
@@ -559,13 +554,13 @@ weapon != activeShotState.Weapon) return;
             state.WeaponSprite = weapon.stats.name;
         }
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
+        if (!IsConnected || (PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
             LocalPlayerReplication.Instance == null || player == null || currentShooter != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
             if (replica != null && replica.remoteBody != null && replica.remoteBody.isAlive)
             {
-                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId) &&
+                if (PvpEnabled && !TeamSystem.Same(LocalPeerId, replica.remotePeerId) &&
                     !NoPvpZoneRuntime.Protects(replica.remoteBody, replica.remotePeerId))
                     continue;
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
@@ -583,13 +578,13 @@ weapon != activeShotState.Weapon) return;
         var state = new ShotState { PreviousShooter = currentShooter };
         currentShooter = attacker;
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || (MultiplayerSession.PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
+        if (!IsConnected || (PvpEnabled && !TeamSystem.Enabled && !PropHuntSystem.Enabled && !NoPvpZoneRuntime.HasZones) ||
             LocalPlayerReplication.Instance == null || player == null || attacker != player.bodyScript)
             return state;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
             if (replica != null)
             {
-                if (MultiplayerSession.PvpEnabled && !TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId) &&
+                if (PvpEnabled && !TeamSystem.Same(LocalPeerId, replica.remotePeerId) &&
                     !NoPvpZoneRuntime.Protects(replica.remoteBody, replica.remotePeerId))
                     continue;
                 foreach (var collider in replica.remoteColliderTriggers.Keys)
@@ -626,49 +621,49 @@ weapon != activeShotState.Weapon) return;
     {
         var result = Sound.Play(clip, position, twoDimensional, pitchShift, parent, volume, pitch);
         var player = PlayerScript.player;
-        if (clip != null && currentSoundBody != null && MultiplayerSession.IsConnected && player != null && currentSoundBody == player.bodyScript && !string.IsNullOrWhiteSpace(clip.name))
-            MultiplayerSession.Send(new PlayerSoundPacket(currentFootstepSurface < 0 ? PlayerActionSoundId(clip.name) : 0x80000000u | (uint)currentFootstepSurface, position.x, position.y, (byte)Mathf.Clamp(Mathf.RoundToInt(volume * 64f), 0, 255), (byte)Mathf.Clamp(Mathf.RoundToInt(pitch * 64f), 0, 255)));
+        if (clip != null && currentSoundBody != null && IsConnected && player != null && currentSoundBody == player.bodyScript && !string.IsNullOrWhiteSpace(clip.name))
+            Send(new PlayerSoundPacket(currentFootstepSurface < 0 ? PlayerActionSoundId(clip.name) : 0x80000000u | (uint)currentFootstepSurface, position.x, position.y, (byte)Mathf.Clamp(Mathf.RoundToInt(volume * 64f), 0, 255), (byte)Mathf.Clamp(Mathf.RoundToInt(pitch * 64f), 0, 255)));
         return result;
     }
 
     internal static void ReplicateWeaponPickup(BodyScript body)
     {
-        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
-        MultiplayerSession.Send(new PlayerSoundPacket(0x40000004u, body.transform.position.x, body.transform.position.y, 64, 64));
+        if (!IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        Send(new PlayerSoundPacket(0x40000004u, body.transform.position.x, body.transform.position.y, 64, 64));
     }
 
     internal static void ReplicatePain(BodyScript body)
     {
-        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        if (!IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
         if (body.painNoises == null || body.painNoises.Count == 0) return;
         var index = UnityEngine.Random.Range(0, body.painNoises.Count);
         if (body.painNoises[index] == null) return;
         var head = body.headTransform == null ? body.transform : body.headTransform;
-        MultiplayerSession.Send(new PlayerSoundPacket(0x10000000u | (uint)index, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
+        Send(new PlayerSoundPacket(0x10000000u | (uint)index, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
     }
 
     internal static void ReplicateScream(BodyScript body)
     {
-        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        if (!IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
         if (body.deathNoises == null || body.deathNoises.Count == 0) return;
         var index = UnityEngine.Random.Range(0, body.deathNoises.Count);
         if (body.deathNoises[index] == null) return;
         var head = body.headTransform == null ? body.transform : body.headTransform;
-        MultiplayerSession.Send(new PlayerSoundPacket(0x11000000u | (uint)index, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
+        Send(new PlayerSoundPacket(0x11000000u | (uint)index, head.position.x, head.position.y, 64, (byte)Mathf.Clamp(Mathf.RoundToInt(body.voicePitch * 64f), 0, 255)));
     }
 
     internal static void ReplicateTelekinesis(LevitatorScript levitator)
     {
         var body = levitator == null ? null : levitator.refBody;
-        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript || Time.unscaledTime < nextTelekinesisSound) return;
+        if (!IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript || Time.unscaledTime < nextTelekinesisSound) return;
         nextTelekinesisSound = Time.unscaledTime + 0.1f;
         var active = levitator.currentlyLevitating != null;
-        MultiplayerSession.Send(new PlayerSoundPacket(0x50000000u, body.transform.position.x, body.transform.position.y, active ? (byte)38 : (byte)0, active ? (byte)64 : (byte)0));
+        Send(new PlayerSoundPacket(0x50000000u, body.transform.position.x, body.transform.position.y, active ? (byte)38 : (byte)0, active ? (byte)64 : (byte)0));
     }
     internal static void ReplicateFootstep(BodyScript body, SType surface)
     {
-        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript || body.controlState != BodyScript.RagdollState.FullControl || body.inVehicle) return;
-        MultiplayerSession.Send(new PlayerSoundPacket(0x80000000u | (uint)surface, body.transform.position.x, body.transform.position.y, 38, 64));
+        if (!IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript || body.controlState != BodyScript.RagdollState.FullControl || body.inVehicle) return;
+        Send(new PlayerSoundPacket(0x80000000u | (uint)surface, body.transform.position.x, body.transform.position.y, 38, 64));
     }
     internal static void BuildAnimatedSoundCatalog()
     {
@@ -691,16 +686,16 @@ weapon != activeShotState.Weapon) return;
     internal static void ReplicateAnimatedSound(AnimatedBodyScript animatedBody, string soundName)
     {
         var body = animatedBody == null ? null : animatedBody.GetComponentInParent<BodyScript>();
-        if (!MultiplayerSession.IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
+        if (!IsConnected || body == null || PlayerScript.player == null || body != PlayerScript.player.bodyScript) return;
         BuildAnimatedSoundCatalog();
         ushort soundId;
         if (!animatedSoundIds.TryGetValue(soundName ?? "", out soundId)) return;
-        MultiplayerSession.Send(new PlayerSoundPacket(0x20000000u | soundId, body.transform.position.x, body.transform.position.y, 64, 64));
+        Send(new PlayerSoundPacket(0x20000000u | soundId, body.transform.position.x, body.transform.position.y, 64, 64));
     }
     
     internal static void PrepareNpcTarget(AIScript ai)
     {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || LocalPlayerReplication.Instance == null || ai == null || ai.body == null || ai.followPlayer)
+        if (!IsConnected || !IsHost || LocalPlayerReplication.Instance == null || ai == null || ai.body == null || ai.followPlayer)
             return;
         
         var player = PlayerScript.player;
@@ -751,14 +746,14 @@ weapon != activeShotState.Weapon) return;
         if (candidate.team == npc.team) 
             return false;
             
-        if (!MultiplayerSession.IsConnected || !TeamSystem.Enabled) 
+        if (!IsConnected || !TeamSystem.Enabled) 
             return true;
             
         var peerId = PeerIdOfBody(candidate);
         return peerId == 0 || TeamSystem.Name(peerId) != npc.team;
     }
 
-    internal static string RemoteTeam(BodyScript localBody) => MultiplayerSession.PvpEnabled ? PvpRemoteTeam : localBody.team;
+    internal static string RemoteTeam(BodyScript localBody) => PvpEnabled ? PvpRemoteTeam : localBody.team;
 
     internal static ShotState BeginProjectileExplosion(GameObject projectile)
     {
@@ -775,14 +770,14 @@ weapon != activeShotState.Weapon) return;
 
     internal static Collider2D[] ExcludeHostFromExplosion(Collider2D[] targets)
     {
-        if (!MultiplayerSession.IsHost)
+        if (!IsHost)
             return targets;
         
         var pl = PlayerScript.player;
         var other = currentShooter;
         if (pl == null || pl.bodyScript == null || other == null || !other.isPlayer || other == pl.bodyScript 
-            || MultiplayerSession.PvpEnabled && !TeamSystem.IsTeammate(other) &&
-            !NoPvpZoneRuntime.Protects(pl.bodyScript, MultiplayerSession.LocalPeerId))
+            || PvpEnabled && !TeamSystem.IsTeammate(other) &&
+            !NoPvpZoneRuntime.Protects(pl.bodyScript, LocalPeerId))
             return targets;
 
         return Array.FindAll(targets, c => c == null || c.GetComponentInParent<BodyScript>() != pl.bodyScript);
@@ -805,7 +800,7 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ReplicateProjectileImpact(GameObject projectile, Vector2 position)
     {
-        if (!MultiplayerSession.IsConnected || projectile == null || !IsFinite(position.x) || !IsFinite(position.y))
+        if (!IsConnected || projectile == null || !IsFinite(position.x) || !IsFinite(position.y))
             return;
         
         var rocket = projectile.GetComponentInChildren<RocketProjectile>(true);
@@ -814,14 +809,14 @@ weapon != activeShotState.Weapon) return;
         var shooter = ProjectileOwner(projectile);
         var player = PlayerScript.player;
         var localPlayerShot = shooter != null && player != null && shooter == player.bodyScript;
-        var hostNpcShot = MultiplayerSession.IsHost && shooter != null && !shooter.isPlayer && shooter.GetComponentInParent<NetworkReplica>() == null;
+        var hostNpcShot = IsHost && shooter != null && !shooter.isPlayer && shooter.GetComponentInParent<NetworkReplica>() == null;
        
         if (!localPlayerShot && !hostNpcShot)
             return;
        
         var weapon = shooter == null ? null : shooter.weapon;
         var trace = CaptureExplosionTrace(position);
-        MultiplayerSession.Send(new ProjectileImpactPacket(position.x, position.y,
+        Send(new ProjectileImpactPacket(position.x, position.y,
             NetworkAvatarUtilities.SpriteId(weapon == null || weapon.stats == null ? null : weapon.stats.sprite),
             trace.HasBackgroundCrack, trace.BackgroundCrackRotation, trace.BackgroundCrackFlipX,
             trace.BackgroundCrackFlipY, trace.HasFloorCrack, trace.FloorCrackPosition.x,
@@ -830,7 +825,7 @@ weapon != activeShotState.Weapon) return;
 
     internal static bool ShouldSuppressClientProjectileFires(GameObject projectile)
     {
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || projectile == null || (projectile.GetComponentInChildren<RocketProjectile>(true) == null &&
+        if (!IsConnected || IsHost || projectile == null || (projectile.GetComponentInChildren<RocketProjectile>(true) == null &&
              projectile.GetComponentInChildren<GrenadeScript>(true) == null)) 
             return false;
         var player = PlayerScript.player;
@@ -889,7 +884,7 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ReplicateVelvetWeb(VelvetScript velvet)
     {
-        if (!MultiplayerSession.IsConnected || velvet == null) return;
+        if (!IsConnected || velvet == null) return;
         var body = velvet.GetComponent<BodyScript>();
         var player = PlayerScript.player;
         if (body == null || player == null || body != player.bodyScript || body.headTransform == null) return;
@@ -908,12 +903,12 @@ weapon != activeShotState.Weapon) return;
         var direction = (Vector2) web.transform.right;
         if (direction.sqrMagnitude < 0.01f) return;
         var normalizedDirection = direction.normalized;
-        MultiplayerSession.Send(new VelvetWebPacket(web.transform.position.x, web.transform.position.y, normalizedDirection.x, normalizedDirection.y));
+        Send(new VelvetWebPacket(web.transform.position.x, web.transform.position.y, normalizedDirection.x, normalizedDirection.y));
     }
 
     internal static void ReplicateTeleportZone(TeleportZone zone, int activationId)
     {
-        if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId || zone.teleportPoint == null)
+        if (!IsHost || zone == null || zone.id != activationId || zone.teleportPoint == null)
             return;
         var collider = zone.GetComponent<BoxCollider2D>();
         if (collider == null) return;
@@ -939,15 +934,15 @@ weapon != activeShotState.Weapon) return;
             if (!teleported.Contains(replica.remoteBody) && !IsInsideTeleportZone(replica.remoteBody, zone.transform, collider)) 
                 continue;
             
-            if (MultiplayerSession.IsHost)
-                MultiplayerSession.Send(new PlayerTeleportPacket(zone.teleportPoint.position.x, zone.teleportPoint.position.y), replica.remotePeerId);
+            if (IsHost)
+                Send(new PlayerTeleportPacket(zone.teleportPoint.position.x, zone.teleportPoint.position.y), replica.remotePeerId);
         }
     }
 
     internal static List<SuppressedTeleportBody> SuppressRemoteTeleportEffects(TeleportZone zone, int activationId)
     {
         var suppressed = new List<SuppressedTeleportBody>();
-        if (!MultiplayerSession.IsHost || zone == null || zone.id != activationId)
+        if (!IsHost || zone == null || zone.id != activationId)
             return suppressed;
         
         var collider = zone.GetComponent<BoxCollider2D>();
@@ -998,7 +993,7 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ApplyRemoteTeleport(BodyScript body, PlayerTeleportPacket packet)
     {
-        if (body == null || MultiplayerSession.IsHost)
+        if (body == null || IsHost)
             return;
         
         var position = new Vector2(packet.PositionX, packet.PositionY);
@@ -1025,14 +1020,14 @@ weapon != activeShotState.Weapon) return;
 
     internal static void RouteVehicleImpact(BodyScript body, float impact, Vector2 position, Vector2 velocityChange)
     {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || body == null || !NetworkAvatarUtilities.IsFinite(impact) || impact <= 6f) 
+        if (!IsConnected || !IsHost || body == null || !NetworkAvatarUtilities.IsFinite(impact) || impact <= 6f) 
             return;
         
         var replica = NetworkAvatarManager.ReplicaForBody(body);
         if (replica == null || replica.remotePeerId == 0 || !replica.receivedFirstSnapshot || KartPassengers.IsProtectedPassenger(body)) 
             return;
         
-        MultiplayerSession.Send(new VehicleImpactPacket(impact, position.x, position.y, true, velocityChange.x, velocityChange.y), replica.remotePeerId);
+        Send(new VehicleImpactPacket(impact, position.x, position.y, true, velocityChange.x, velocityChange.y), replica.remotePeerId);
     }
 
     internal static void ApplyVehicleImpact(BodyScript body, VehicleImpactPacket packet)
@@ -1066,7 +1061,7 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ApplyVehicleEject(BodyScript body)
     {
-        if (body != null && !MultiplayerSession.IsHost && body.inVehicle)
+        if (body != null && !IsHost && body.inVehicle)
         {
             Vector2 yVelocity = (Vector2)body.curVehicle.mainPart.transform.up * 10f;
             body.ExitVehicle();
@@ -1078,20 +1073,20 @@ weapon != activeShotState.Weapon) return;
 
     internal static void HandleTeleportRequest(ushort requesterId, TeleportRequestPacket request)
     {
-        if (!MultiplayerSession.IsHost || MultiplayerSession.PvpEnabled || requesterId == 0) return;
-        var target = request.TargetPeerId == MultiplayerSession.LocalPeerId
+        if (!IsHost || PvpEnabled || requesterId == 0) return;
+        var target = request.TargetPeerId == LocalPeerId
             ? (PlayerScript.player == null ? null : PlayerScript.player.bodyScript)
             : NetworkAvatarManager.RemoteBodyForPeer(request.TargetPeerId);
         if (target == null || !target.isAlive) return;
         var position = CustomLevelSpawnSelection.RandomizePosition(target.transform.position);
         if (!NetworkAvatarUtilities.IsFinite(position.x) || !NetworkAvatarUtilities.IsFinite(position.y)) return;
-        MultiplayerSession.Send(new PlayerTeleportPacket(position.x, position.y, true), requesterId);
+        Send(new PlayerTeleportPacket(position.x, position.y, true), requesterId);
     }
     
     internal static void UpdateRemotePlayerPropCollisions(Rigidbody2D prop, NetworkAvatarReplication? onlyReplica = null)
     {
         if (prop == null) return;
-        var ignore = MultiplayerSession.IsHost || WorldReplication.Instance == null || !WorldReplication.Instance.bodies.locallyControlledUntil.ContainsKey(prop);
+        var ignore = IsHost || WorldReplication.Instance == null || !WorldReplication.Instance.bodies.locallyControlledUntil.ContainsKey(prop);
         var propColliders = prop.GetComponentsInChildren<Collider2D>(true);
         if (propColliders == null || propColliders.Length == 0) return;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
@@ -1118,7 +1113,7 @@ weapon != activeShotState.Weapon) return;
     internal static void TryGrabRemotePlayer(LevitatorScript levitator)
     {
         if (LocalPlayerReplication.Instance == null || levitator == null || levitator.currentlyLevitating != null ||
-            !MultiplayerSession.IsConnected || !MultiplayerSession.CanGrabPlayers) return;
+            !IsConnected || !CanGrabPlayers) return;
         var camera = Camera.main;
         if (camera == null || levitator.refBody == null) return;
         var mouse = (Vector2)camera.ScreenToWorldPoint(Input.mousePosition);
@@ -1166,12 +1161,12 @@ weapon != activeShotState.Weapon) return;
         }
         if (levitator.currentlyLevitating.GetComponentInParent<NetworkReplica>() == null) return;
         var body = levitator.currentlyLevitating.GetComponentInParent<BodyScript>();
-        if (!MultiplayerSession.CanGrabPlayers || !CanGrabBody(body)) levitator.UnGrab();
+        if (!CanGrabPlayers || !CanGrabBody(body)) levitator.UnGrab();
     }
 
     internal static void QueueRemoteGrab(LevitatorScript levitator)
     {
-        if (LocalPlayerReplication.Instance == null || !MultiplayerSession.IsConnected || levitator == null) return;
+        if (LocalPlayerReplication.Instance == null || !IsConnected || levitator == null) return;
         var target = levitator.currentlyLevitating;
         var prop = target == null ? null : target.GetComponent<PropHuntHitbox>();
         var targetBody = prop != null ? RemoteBodyForPeer(prop.Peer) : target == null ? null : target.GetComponentInParent<BodyScript>();
@@ -1200,22 +1195,22 @@ weapon != activeShotState.Weapon) return;
         if (hasTarget)
         {
             if (LocalPlayerReplication.Instance.outgoingGrabPeerId != 0 && LocalPlayerReplication.Instance.outgoingGrabPeerId != replica.remotePeerId)
-                MultiplayerSession.Send(new PlayerGrabPacket(false), LocalPlayerReplication.Instance.outgoingGrabPeerId);
-            MultiplayerSession.Send(new PlayerGrabPacket(true, kind, index, levitator.point.x,
+                Send(new PlayerGrabPacket(false), LocalPlayerReplication.Instance.outgoingGrabPeerId);
+            Send(new PlayerGrabPacket(true, kind, index, levitator.point.x,
                 levitator.point.y, localPoint.x, localPoint.y), replica.remotePeerId);
             LocalPlayerReplication.Instance.outgoingGrabPeerId = replica.remotePeerId;
             return;
         }
         if (LocalPlayerReplication.Instance.outgoingGrabPeerId == 0) return;
-        MultiplayerSession.Send(new PlayerGrabPacket(false), LocalPlayerReplication.Instance.outgoingGrabPeerId);
+        Send(new PlayerGrabPacket(false), LocalPlayerReplication.Instance.outgoingGrabPeerId);
         LocalPlayerReplication.Instance.outgoingGrabPeerId = 0;
     }
 
     internal static bool CanGrabBody(BodyScript body)
     {
-        if (body == null || !MultiplayerSession.CanGrabPlayers) return false;
+        if (body == null || !CanGrabPlayers) return false;
         if (PropHuntSystem.Enabled) return PropHuntSystem.CanBeGrabbed(body);
-        if (!MultiplayerSession.GrabOnlyUnconscious) return true;
+        if (!GrabOnlyUnconscious) return true;
         var replica = NetworkAvatarManager.ReplicaForBody(body);
         if (replica != null) return replica.remoteCanBeGrabbed;
         return CanGrabOnlyState(body);
@@ -1232,7 +1227,7 @@ weapon != activeShotState.Weapon) return;
     internal static bool HandleHostRemoteDamaged(BodyScript body, bool critical)
     {
         var replica = NetworkAvatarManager.ReplicaForBody(body);
-        if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
+        if (!IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         var amount = LobbyHealthRule.ClampDamage(body, replica.lastRemoteHealth - body.health);
         if (amount > 0.001f &&
             activeShotState != null &&
@@ -1264,7 +1259,7 @@ weapon != activeShotState.Weapon) return;
     internal static bool HandleHostRemoteDeath(BodyScript body)
     {
         var replica = NetworkAvatarManager.ReplicaForBody(body);
-        if (!MultiplayerSession.IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
+        if (!IsConnected || replica == null || !replica.receivedFirstSnapshot) return false;
         body.health = replica.lastRemoteHealth;
         body.isAlive = replica.lastRemoteAlive;
         RouteRemotePlayerDamage(replica, Mathf.Max(1f, replica.lastRemoteHealth + 1f), true);
@@ -1318,7 +1313,7 @@ weapon != activeShotState.Weapon) return;
 
         if (replica != null)
         {
-            if (TeamSystem.Same(MultiplayerSession.LocalPeerId, replica.remotePeerId))
+            if (TeamSystem.Same(LocalPeerId, replica.remotePeerId))
                 return;
        
             if (currentShooter != null && currentShooter.isPlayer && currentShooter != replica.remoteBody &&
@@ -1328,12 +1323,12 @@ weapon != activeShotState.Weapon) return;
                 return;   
         }
         
-        if (MultiplayerSession.PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
+        if (PvpEnabled && currentShooter == PlayerScript.player?.bodyScript)
             ScoreboardSystem.RecordLocalPvpHit(amount, critical);
         
-        if (MultiplayerSession.IsHost)
+        if (IsHost)
         {
-            if (currentShooter == null || !currentShooter.isPlayer || MultiplayerSession.PvpEnabled)
+            if (currentShooter == null || !currentShooter.isPlayer || PvpEnabled)
                 SendRemotePlayerDamage(replica.remotePeerId, amount, critical, currentShooter);
             
             return;
@@ -1345,18 +1340,18 @@ weapon != activeShotState.Weapon) return;
         var localPlayer = PlayerScript.player;
 
         if (localPlayer == null || currentShooter != localPlayer.bodyScript) return;
-        MultiplayerSession.Send(new PvpDamagePacket(amount, critical), replica.remotePeerId);
+        Send(new PvpDamagePacket(amount, critical), replica.remotePeerId);
     }
 
     internal static bool IsRozaShot => activeShotState?.Weapon != null && activeShotState.Weapon.isRoza;
 
     internal static bool ShouldCancelExplosionDamage() =>
-        !MultiplayerSession.IsHost && activeShotState?.IsExplosion == true && PlayerScript.player != null && currentShooter == PlayerScript.player.bodyScript;
+        !IsHost && activeShotState?.IsExplosion == true && PlayerScript.player != null && currentShooter == PlayerScript.player.bodyScript;
 
     private static void SendRemotePlayerDamage(ushort targetPeerId, float amount, bool critical, BodyScript source)
     {
-        if (MultiplayerSession.IsHost)
-            MultiplayerSession.Send(PlayerDamagePacket.Damage(amount, critical, source != null && source.isPlayer,
+        if (IsHost)
+            Send(PlayerDamagePacket.Damage(amount, critical, source != null && source.isPlayer,
                 PeerIdOfBody(source), DamageSourceName(source), DamageWeapon(source)), targetPeerId);
     }
 
@@ -1364,13 +1359,13 @@ weapon != activeShotState.Weapon) return;
     {
         if (body == null || !body.isPlayer) return 0;
         var player = PlayerScript.player;
-        return body == player?.bodyScript ? MultiplayerSession.LocalPeerId : ReplicaForBody(body)?.remotePeerId ?? 0;
+        return body == player?.bodyScript ? LocalPeerId : ReplicaForBody(body)?.remotePeerId ?? 0;
     }
 
     internal static void RecordNetworkPlayerDamageSource(BodyScript victim, PlayerDamagePacket packet)
     {
         if (victim == null) return;
-        var source = packet.SourcePeerId == MultiplayerSession.LocalPeerId ? PlayerScript.player?.bodyScript :
+        var source = packet.SourcePeerId == LocalPeerId ? PlayerScript.player?.bodyScript :
             NetworkAvatarManager.RemoteBodyForPeer(packet.SourcePeerId);
         if (source != null) SetDamageSource(victim, source, packet.SourceWeapon);
         else SetDamageSourceName(victim, packet.SourceName, packet.SourceWeapon);
@@ -1383,7 +1378,7 @@ weapon != activeShotState.Weapon) return;
         if (source.isPlayer)
         {
             var player = PlayerScript.player;
-            if (player != null && player.bodyScript == source) return MultiplayerSession.LocalPlayerName;
+            if (player != null && player.bodyScript == source) return LocalPlayerName;
             return NetworkAvatarManager.RemoteNameForBody(source);
         }
         if (!string.IsNullOrWhiteSpace(source.characterName)) return source.characterName.Trim();
@@ -1404,9 +1399,9 @@ weapon != activeShotState.Weapon) return;
         if (PropHuntSystem.IsProtectedHunter(body))
             return;
             
-        if (playerDamage.HasPlayerSource && PropHuntSystem.FriendlyHunters(playerDamage.SourcePeerId, MultiplayerSession.LocalPeerId)) return;
-        if (playerDamage.HasPlayerSource && playerDamage.SourcePeerId != MultiplayerSession.LocalPeerId &&
-            NoPvpZoneRuntime.Protects(body, MultiplayerSession.LocalPeerId)) return;
+        if (playerDamage.HasPlayerSource && PropHuntSystem.FriendlyHunters(playerDamage.SourcePeerId, LocalPeerId)) return;
+        if (playerDamage.HasPlayerSource && playerDamage.SourcePeerId != LocalPeerId &&
+            NoPvpZoneRuntime.Protects(body, LocalPeerId)) return;
         if (playerDamage.Effect == PlayerDamageEffect.Damage &&
             playerDamage.Amount == PlayerDamagePacket.TriggerDeathDamage)
         {
@@ -1578,12 +1573,12 @@ weapon != activeShotState.Weapon) return;
     internal static bool BlockNetworkPlayerDrop(BodyScript body, bool allWeapons)
     {
         var player = PlayerScript.player;
-        if ((!MultiplayerSession.IsConnected && !MultiplayerSession.IsHosting) || body == null) return false;
+        if ((!IsConnected && !IsHosting) || body == null) return false;
         var isLocalPlayer = player != null && body == player.bodyScript;
         var isStartingPlayerBody = body.GetComponentInParent<PlayerScript>() != null;
         if (!isLocalPlayer && !isStartingPlayerBody && !body.isPlayer && !NetworkAvatarManager.IsRemoteAvatarBody(body)) return false;
-        if (allWeapons && MultiplayerSession.IsHost && (isLocalPlayer || NetworkAvatarManager.IsRemoteAvatarBody(body))) return false;
-        if (isLocalPlayer && !MultiplayerSession.IsHost && body.isAlive && !allWeapons)
+        if (allWeapons && IsHost && (isLocalPlayer || NetworkAvatarManager.IsRemoteAvatarBody(body))) return false;
+        if (isLocalPlayer && !IsHost && body.isAlive && !allWeapons)
         {
             ClearDroppedWeapon(body, false);
             return true;
@@ -1615,9 +1610,9 @@ weapon != activeShotState.Weapon) return;
     
     internal static void ApplyPvpDamage(BodyScript body, ushort senderId, PlayerDamagePacket packet)
     {
-        if (!MultiplayerSession.PvpEnabled || body == null || TeamSystem.Same(MultiplayerSession.LocalPeerId, senderId) ||
-            NoPvpZoneRuntime.Protects(body, MultiplayerSession.LocalPeerId)) return;
-        var source = senderId == MultiplayerSession.LocalPeerId ? body : NetworkAvatarManager.RemoteBodyForPeer(senderId);
+        if (!PvpEnabled || body == null || TeamSystem.Same(LocalPeerId, senderId) ||
+            NoPvpZoneRuntime.Protects(body, LocalPeerId)) return;
+        var source = senderId == LocalPeerId ? body : NetworkAvatarManager.RemoteBodyForPeer(senderId);
         RecordDamageSource(body, source);
         ApplyPlayerDamage(body, packet);
     }
@@ -1642,7 +1637,7 @@ weapon != activeShotState.Weapon) return;
 
     internal static void ApplyInitialLobbyScale(BodyScript body)
     {
-        if (!MultiplayerSession.IsActive)
+        if (!IsActive)
         {
             if (initialScaleAppliedBody != null && initialScaleAppliedBody.characterScale > 0f && initialScaleBase > 0f)
             {
@@ -1657,7 +1652,7 @@ weapon != activeShotState.Weapon) return;
             return;
         }
         if (body == null) return;
-        var target = MultiplayerSession.InitialScale;
+        var target = InitialScale;
         if (body == initialScaleAppliedBody && Mathf.Abs(appliedInitialScale - target) < 0.001f) return;
         if (body != initialScaleAppliedBody) initialScaleBase = body.characterScale;
         if (float.IsNaN(initialScaleBase) || initialScaleBase <= 0f) return;
@@ -1707,7 +1702,7 @@ weapon != activeShotState.Weapon) return;
     internal static void TryCreateLocalKillBloodSplat(BodyScript victim)
     {
         var player = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || MultiplayerSession.IsHost || victim == null || victim.isRobot ||
+        if (!IsConnected || IsHost || victim == null || victim.isRobot ||
             player == null || player.bodyScript == null || currentShooter != player.bodyScript ||
             victim == player.bodyScript || victim.health > 0f || CameraFollow.cam == null ||
             CameraFollow.cam.DistanceFromCam(victim.transform.position) >= 4f) return;
@@ -1766,7 +1761,7 @@ weapon != activeShotState.Weapon) return;
         lastDamageSources[id] = source;
         lastDamageSourceNames.Remove(id);
         var player = PlayerScript.player;
-        var peerId = source == player?.bodyScript ? MultiplayerSession.LocalPeerId :
+        var peerId = source == player?.bodyScript ? LocalPeerId :
             NetworkAvatarManager.ReplicaForBody(source)?.remotePeerId ?? 0;
         if (peerId == 0) lastDamageSourcePeerIds.Remove(id);
         else lastDamageSourcePeerIds[id] = peerId;
@@ -1915,25 +1910,25 @@ weapon != activeShotState.Weapon) return;
 
     internal static void RouteNpcKillScreenEffect(BodyScript victim)
     {
-        if (!MultiplayerSession.IsConnected || !MultiplayerSession.IsHost || victim == null ||
+        if (!IsConnected || !IsHost || victim == null ||
             victim.isPlayer || !victim.isAlive) return;
         var killer = DamageSourceFor(victim);
         var replica = NetworkAvatarManager.ReplicaForBody(killer);
         if (replica == null || replica.remotePeerId == 0) return;
 
-        MultiplayerSession.Send(new KillScreenEffectPacket(), replica.remotePeerId);
+        Send(new KillScreenEffectPacket(), replica.remotePeerId);
         suppressNpcKillEffectFor = victim;
     }
 
     internal static void RoutePlayerKillScreenEffect(ushort killerPeerId)
     {
-        if (!MultiplayerSession.IsHosting || killerPeerId == 0) return;
-        if (killerPeerId == MultiplayerSession.LocalPeerId)
+        if (!IsHosting || killerPeerId == 0) return;
+        if (killerPeerId == LocalPeerId)
         {
             PlayKillScreenEffect();
             return;
         }
-        MultiplayerSession.Send(new KillScreenEffectPacket(), killerPeerId);
+        Send(new KillScreenEffectPacket(), killerPeerId);
     }
 
     internal static void PlayKillScreenEffect()
@@ -1976,7 +1971,7 @@ weapon != activeShotState.Weapon) return;
     {
         var replica = NetworkAvatarManager.ReplicaForBody(body);
         if (replica == null) return "Player";
-        var ping = MultiplayerSession.PeerPing(replica.remotePeerId);
+        var ping = PeerPing(replica.remotePeerId);
         var label = replica.remoteName + " [" + (ping < 0 ? "-" : ping.ToString()) + "]";
         if (!body.isAlive) return "DEAD " + label;
         if (!body.IsConsc()) return "K.O. " + label;
@@ -1988,7 +1983,7 @@ weapon != activeShotState.Weapon) return;
         var player = PlayerScript.player;
         return suppressedTargetScreenEffects > 0 ||
             Time.unscaledTime < suppressedCameraUntil ||
-            (MultiplayerSession.IsConnected && MultiplayerSession.PvpEnabled &&
+            (IsConnected && PvpEnabled &&
             player != null && player.bodyScript != null && currentShooter == player.bodyScript);
     }
 
@@ -2001,7 +1996,7 @@ weapon != activeShotState.Weapon) return;
     {
         var state = new TargetScreenEffectState();
         var localPlayer = PlayerScript.player;
-        if (!MultiplayerSession.IsConnected || target == null || localPlayer == null ||
+        if (!IsConnected || target == null || localPlayer == null ||
             localPlayer.bodyScript == null || target == localPlayer.bodyScript)
             return state;
         state.Suppress = true;
@@ -2067,15 +2062,15 @@ weapon != activeShotState.Weapon) return;
 
     internal static bool TryBroadcastSwapRequest(ushort senderId, string message)
     {
-        if (!MultiplayerSession.IsHost || string.IsNullOrWhiteSpace(message)) return false;
+        if (!IsHost || string.IsNullOrWhiteSpace(message)) return false;
         const string prefix = "/swap";
         if (!message.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
             (message.Length > prefix.Length && !char.IsWhiteSpace(message[prefix.Length]))) return false;
         var requested = message.Length == prefix.Length ? "" : message.Substring(prefix.Length).Trim();
-        if (!MultiplayerSession.AllowSwap) return true;
+        if (!AllowSwap) return true;
         if (!TryResolveCharacterPrefab(requested, out _, out var characterName)) return true;
-        var playerName = senderId == MultiplayerSession.LocalPeerId
-            ? MultiplayerSession.LocalPlayerName : MultiplayerSession.PlayerName(senderId);
+        var playerName = senderId == LocalPeerId
+            ? LocalPlayerName : PlayerName(senderId);
         BroadcastSwapAnnouncement(playerName, characterName);
         return true;
     }
@@ -2085,12 +2080,12 @@ weapon != activeShotState.Weapon) return;
         var message = playerName + " will respawn as " + characterName + ".";
         MultiplayerHud.AddSystemMessage(message);
         ChatPacket packet;
-        if (ChatService.TryCreate(message, true, out packet)) MultiplayerSession.Send(packet);
+        if (ChatService.TryCreate(message, true, out packet)) Send(packet);
     }
 
     internal static void EjectRemoteVehicleOccupants(VehicleBase vehicle)
     {
-        if (!MultiplayerSession.IsHost || vehicle == null) return;
+        if (!IsHost || vehicle == null) return;
         foreach (var replica in NetworkAvatarManager.replicas.Values)
         {
             if (replica == null || replica.remotePeerId == 0 || replica.remoteBody == null ||
@@ -2098,7 +2093,7 @@ weapon != activeShotState.Weapon) return;
             var body = replica.remoteBody;
             if (vehicle.occupant != body)
                 body.ExitVehicle();
-            MultiplayerSession.Send(new VehicleEjectPacket(), replica.remotePeerId);
+            Send(new VehicleEjectPacket(), replica.remotePeerId);
         }
     }
 
@@ -2152,7 +2147,7 @@ weapon != activeShotState.Weapon) return;
             if (identityChanged)
                 local.forceFullInventoryUntil = Time.unscaledTime + 0.5f;
             nextIdentity = Time.unscaledTime + 2f;
-            MultiplayerSession.Send(new IdentityPacket(local.localName, prefab));
+            Send(new IdentityPacket(local.localName, prefab));
         }
 
     }
@@ -2163,7 +2158,7 @@ weapon != activeShotState.Weapon) return;
         try
         {
             DuneEatReplication.Update();
-            if (!MultiplayerSession.IsHosting && !MultiplayerSession.IsConnected)
+            if (!IsHosting && !IsConnected)
             {
                 NetworkAvatarManager.DestroyAllReplicas();
                 ApplyInitialLobbyScale(null);
@@ -2174,7 +2169,7 @@ weapon != activeShotState.Weapon) return;
             var local = LocalPlayerReplication.Instance;
             if (local == null) return;
             LocalPlayerReplication.EnsureLocalPlayerSingleton();
-            MultiplayerSession.UpdatePing();
+            UpdatePing();
             if (SceneManager.GetActiveScene().name == "LevelSelect")
             {
                 SendLocalIdentity(local, LocalPlayerReplication.SelectedCharacterPrefab);
@@ -2188,8 +2183,8 @@ weapon != activeShotState.Weapon) return;
                 ? player.bodyScript.transform
                 : PlayerScript.globalBody;
             ApplyInitialLobbyScale(player.bodyScript);
-            LobbyHealthRule.Apply(player.bodyScript, MultiplayerSession.HealthFactor);
-            LobbyRegenRule.Apply(player.bodyScript, MultiplayerSession.RegenFactor);
+            LobbyHealthRule.Apply(player.bodyScript, HealthFactor);
+            LobbyRegenRule.Apply(player.bodyScript, RegenFactor);
             local.ApplyPendingRespawnLobbyLoadout(player.bodyScript);
             local.ApplyStartingLobbyLoadout(player.bodyScript);
             local.ApplyStartingLobbyAmmo(player.bodyScript);
@@ -2200,7 +2195,7 @@ weapon != activeShotState.Weapon) return;
 
             ushort senderId;
             HalfControlPacket halfControl;
-            while (MultiplayerSession.TryTakeHalfControl(out senderId, out halfControl))
+            while (TryTakeHalfControl(out senderId, out halfControl))
             {
                 if (!player.bodyScript.CanMove()) continue;
                 player.bodyScript.EnterHalfControl();
@@ -2208,23 +2203,23 @@ weapon != activeShotState.Weapon) return;
             }
 
             PlayerTeleportPacket playerTeleport;
-            while (MultiplayerSession.TryTakePlayerTeleport(out senderId, out playerTeleport))
+            while (TryTakePlayerTeleport(out senderId, out playerTeleport))
                 ApplyRemoteTeleport(player.bodyScript, playerTeleport);
 
             VehicleEjectPacket vehicleEject;
-            while (MultiplayerSession.TryTakeVehicleEject(out senderId, out vehicleEject))
+            while (TryTakeVehicleEject(out senderId, out vehicleEject))
                 ApplyVehicleEject(player.bodyScript);
 
             VehicleImpactPacket vehicleImpact;
-            while (MultiplayerSession.TryTakeVehicleImpact(out senderId, out vehicleImpact))
+            while (TryTakeVehicleImpact(out senderId, out vehicleImpact))
                 ApplyVehicleImpact(player.bodyScript, vehicleImpact);
 
             TeleportRequestPacket teleportRequest;
-            while (MultiplayerSession.TryTakeTeleportRequest(out senderId, out teleportRequest))
+            while (TryTakeTeleportRequest(out senderId, out teleportRequest))
                 HandleTeleportRequest(senderId, teleportRequest);
 
             PlayerDamagePacket playerDamage;
-            while (MultiplayerSession.TryTakePlayerDamage(out senderId, out playerDamage))
+            while (TryTakePlayerDamage(out senderId, out playerDamage))
             {
                 if (playerDamage.HasPlayerSource)
                     RecordNetworkPlayerDamageSource(player.bodyScript, playerDamage);
@@ -2233,39 +2228,35 @@ weapon != activeShotState.Weapon) return;
                 ApplyPlayerDamage(player.bodyScript, playerDamage);
             }
 
-            PlayerDamagePacket pvpDamage;
-            while (MultiplayerSession.TryTakePvpDamage(out senderId, out pvpDamage))
+            while (TryTakePvpDamage(out senderId, out var pvpDamage))
                 ApplyPvpDamage(player.bodyScript, senderId, pvpDamage);
-            ShotVisualPacket shotVisual;
-            while (MultiplayerSession.TryTakeShotVisual(out senderId, out shotVisual))
+            
+            while (TryTakeShotVisual(out senderId, out var shotVisual))
             {
-                if (MultiplayerSession.IsHost && !shotVisual.IsNpcShot)
+                if (IsHost && !shotVisual.IsNpcShot)
                     NpcReplication.AlertForRemoteShot(senderId, new Vector2(shotVisual.OriginX, shotVisual.OriginY));
-                var shooter = NetworkAvatarManager.GetOrCreateReplica(senderId);
+                var shooter = GetOrCreateReplica(senderId);
                 if (shooter != null)
                     shooter.PlayRemoteShot(shotVisual);
             }
 
-            ReloadEffectPacket reloadEffect;
-            while (MultiplayerSession.TryTakeReloadEffect(out senderId, out reloadEffect))
+            while (TryTakeReloadEffect(out senderId, out var reloadEffect))
             {
                 var reloader = NetworkAvatarManager.GetOrCreateReplica(senderId);
                 if (reloader != null)
                     reloader.PlayRemoteReloadEffect(reloadEffect);
             }
 
-            PlayerSoundPacket playerSound;
-            while (MultiplayerSession.TryTakePlayerSound(out senderId, out playerSound))
+            while (TryTakePlayerSound(out senderId, out var playerSound))
             {
                 var source = NetworkAvatarManager.GetOrCreateReplica(senderId);
                 if (source != null)
                     source.PlayRemotePlayerSound(playerSound);
             }
 
-            ProjectileImpactPacket projectileImpact;
-            while (MultiplayerSession.TryTakeProjectileImpact(out senderId, out projectileImpact))
+            while (TryTakeProjectileImpact(out senderId, out var projectileImpact))
             {
-                if (MultiplayerSession.IsHost && ApplyRemoteProjectileExplosion(senderId, projectileImpact))
+                if (IsHost && ApplyRemoteProjectileExplosion(senderId, projectileImpact))
                     continue;
                 var shooter = NetworkAvatarManager.GetOrCreateReplica(senderId);
                 if (shooter != null)
@@ -2273,7 +2264,7 @@ weapon != activeShotState.Weapon) return;
             }
 
             VelvetWebPacket velvetWeb;
-            while (MultiplayerSession.TryTakeVelvetWeb(out senderId, out velvetWeb))
+            while (TryTakeVelvetWeb(out senderId, out velvetWeb))
             {
                 var shooter = NetworkAvatarManager.GetOrCreateReplica(senderId);
                 if (shooter != null)
@@ -2281,7 +2272,7 @@ weapon != activeShotState.Weapon) return;
             }
 
             PlayerGrabPacket playerGrab;
-            while (MultiplayerSession.TryTakePlayerGrab(out senderId, out playerGrab))
+            while (TryTakePlayerGrab(out senderId, out playerGrab))
                 local.ReceivePlayerGrab(senderId, playerGrab);
             local.UpdateLocalRespawn(player);
             player = PlayerScript.player;
@@ -2290,14 +2281,14 @@ weapon != activeShotState.Weapon) return;
             if (player.bodyScript == null)
                 return;
             local.UpdateSpectator(player);
-            if (!MultiplayerSession.IsConnected) return;
+            if (!IsConnected) return;
 
             SendLocalIdentity(local, local.ResolveLocalCharacterPrefab(player.bodyScript));
 
             string identity;
-            while (MultiplayerSession.TryTakeIdentity(out senderId, out identity))
+            while (TryTakeIdentity(out senderId, out identity))
             {
-                if (MultiplayerSession.IsHost)
+                if (IsHost)
                     WorldReplication.Instance?.SendFullEnvironment(senderId);
                 var replica = NetworkAvatarManager.GetOrCreateReplica(senderId);
                 if (replica != null)
@@ -2305,7 +2296,7 @@ weapon != activeShotState.Weapon) return;
             }
 
             PlayerSnapshotPacket snapshot;
-            while (MultiplayerSession.TryTakeSnapshot(out senderId, out snapshot))
+            while (TryTakeSnapshot(out senderId, out snapshot))
             {
                 NetworkAvatarReplication replica;
                 if (NetworkAvatarManager.replicas.TryGetValue(senderId, out replica) && replica != null)
@@ -2320,7 +2311,7 @@ weapon != activeShotState.Weapon) return;
             }
 
             PlayerStatePacket state;
-            while (MultiplayerSession.TryTakePlayerState(out senderId, out state))
+            while (TryTakePlayerState(out senderId, out state))
             {
                 NetworkAvatarReplication replica;
                 if (NetworkAvatarManager.replicas.TryGetValue(senderId, out replica) && replica != null)
@@ -2328,7 +2319,7 @@ weapon != activeShotState.Weapon) return;
             }
 
             PlayerSpecialLinesPacket specialLines;
-            while (MultiplayerSession.TryTakePlayerSpecialLines(out senderId, out specialLines))
+            while (TryTakePlayerSpecialLines(out senderId, out specialLines))
             {
                 NetworkAvatarReplication replica;
                 if (NetworkAvatarManager.replicas.TryGetValue(senderId, out replica) && replica != null)
@@ -2343,24 +2334,24 @@ weapon != activeShotState.Weapon) return;
 
     public static void BroadcastDeathByTrigger(string team)
     {
-        if (!MultiplayerSession.IsHost || !MultiplayerSession.IsConnected || !string.Equals(team, "goodguys", StringComparison.OrdinalIgnoreCase))
+        if (!IsHost || !IsConnected || !string.Equals(team, "goodguys", StringComparison.OrdinalIgnoreCase))
             return;
 
         var packet = PlayerDamagePacket.Damage(PlayerDamagePacket.TriggerDeathDamage, false);
         foreach (var replica in replicas.Values)
             if (replica != null && replica.remotePeerId != 0)
-                MultiplayerSession.Send(packet, replica.remotePeerId);
+                Send(packet, replica.remotePeerId);
     }
 
     public static void BroadcastHalfControlByTrigger(string team, float duration)
     {
-        if (!MultiplayerSession.IsHost || !MultiplayerSession.IsConnected || (!string.IsNullOrEmpty(team) && !string.Equals(team, "goodguys", StringComparison.OrdinalIgnoreCase))) 
+        if (!IsHost || !IsConnected || (!string.IsNullOrEmpty(team) && !string.Equals(team, "goodguys", StringComparison.OrdinalIgnoreCase))) 
             return;
 
         var packet = new HalfControlPacket(duration);
         foreach (var replica in replicas.Values)
             if (replica != null && replica.remotePeerId != 0)
-                MultiplayerSession.Send(packet, replica.remotePeerId);
+                Send(packet, replica.remotePeerId);
     }
 
     internal struct ExplosionTrace

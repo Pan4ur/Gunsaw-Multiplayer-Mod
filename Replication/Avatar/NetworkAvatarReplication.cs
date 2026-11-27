@@ -1222,7 +1222,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
                 var projectileCount = Mathf.Clamp(preset.bulletAmount, 1, 64);
                 for (var index = 0; index < projectileCount; index++)
                 {
-                    var exactDirection = index < exactDirections.Length ? new Vector2(exactDirections[index].X, exactDirections[index].Y) : Vector2.zero;
+                    var exactDirection = index < exactDirections.Length ? exactDirections[index] : Vector2.zero;
                     var projectileDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
                     PlayRemoteProjectile(preset, origin, projectileDirection, !npcShot);
                 }
@@ -1235,15 +1235,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
         var count = Mathf.Clamp(preset.bulletAmount, 1, 12);
         for (var index = 0; index < count; index++)
         {
-            Vector2 exactDirection = Vector2.zero;
-
-            if (index < exactDirections.Length)
-            {
-                ShotVisualDirection dir = exactDirections[index];
-                exactDirection = new Vector2(dir.X, dir.Y);
-            }
-
-            Vector2 shotDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
+            var exactDirection = index < exactDirections.Length ? exactDirections[index] : Vector2.zero;
+            var shotDirection = exactDirection.sqrMagnitude > 0.01f ? exactDirection.normalized : (direction + up * (preset.bulletSpread * SpreadValue(spreadSeed, index))).normalized;
 
             CreateRemoteTracer(preset, origin, FindRemoteShotEnd(origin, shotDirection, !npcShot));
             CreateRemoteBulletImpact(preset, origin, shotDirection, !npcShot);
@@ -1288,8 +1281,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (renderer != null) renderer.sprite = sprite;
         var collider = magazine.GetComponent<BoxCollider2D>();
         if (collider != null && sprite.texture != null && sprite.pixelsPerUnit > 0f)
-            collider.size = new Vector2(sprite.texture.width / sprite.pixelsPerUnit,
-                sprite.texture.height / sprite.pixelsPerUnit);
+            collider.size = new Vector2(sprite.texture.width / sprite.pixelsPerUnit, sprite.texture.height / sprite.pixelsPerUnit);
         Destroy(magazine, 30f);
     }
 
@@ -1297,9 +1289,10 @@ internal class NetworkAvatarReplication : MonoBehaviour
     {
         if (CustomWeaponsCompatibility.TryGetProjectileVisual(preset, out var customProjectile))
         {
-            var customVisual = new GameObject("MP Custom Projectile Visual");
-            customVisual.transform.position = origin;
-            customVisual.transform.right = direction;
+            var customVisual = new GameObject("MP Custom Projectile Visual")
+            {
+                transform = { position = origin, right = direction }
+            };
             customVisual.AddComponent<SpriteRenderer>().sprite = customProjectile.Sprite;
             remoteProjectiles.Enqueue(new RemoteProjectileVisual { Visual = customVisual, ExpiresAt = Time.unscaledTime + customProjectile.Lifetime });
             StartCoroutine(MoveRemoteCustomProjectile(customVisual, direction, customProjectile.Speed, customProjectile.Lifetime, customProjectile.Ricochets, ignoreRemoteAvatar));
@@ -1346,9 +1339,10 @@ internal class NetworkAvatarReplication : MonoBehaviour
         }
         if (visual == null)
         {
-            visual = new GameObject("MP Projectile Visual");
-            visual.transform.position = origin;
-            visual.transform.right = direction;
+            visual = new GameObject("MP Projectile Visual")
+            {
+                transform = { position = origin, right = direction }
+            };
             var line = AddFallbackTracer(visual);
             line.SetPosition(0, origin - direction * 0.7f);
             line.SetPosition(1, origin);
@@ -1360,16 +1354,14 @@ internal class NetworkAvatarReplication : MonoBehaviour
             ExplosionSound = explosionSound,
             ExpiresAt = Time.unscaledTime + 5f
         });
+       
         if (ballisticGrenade)
-            StartCoroutine(MoveRemoteGrenade(visual, direction * speed, grenadeGravityScale,
-                ignoreRemoteAvatar));
+            StartCoroutine(MoveRemoteGrenade(visual, direction * speed, grenadeGravityScale, ignoreRemoteAvatar));
         else
-            StartCoroutine(MoveRemoteProjectile(visual, direction,
-                FindRemoteShotEnd(origin, direction, ignoreRemoteAvatar), speed, speedIncrease));
+            StartCoroutine(MoveRemoteProjectile(visual, direction, FindRemoteShotEnd(origin, direction, ignoreRemoteAvatar), speed, speedIncrease));
     }
 
-    private IEnumerator MoveRemoteProjectile(GameObject visual, Vector2 direction, Vector2 end,
-        float speed, float speedIncrease)
+    private static IEnumerator MoveRemoteProjectile(GameObject visual, Vector2 direction, Vector2 end, float speed, float speedIncrease)
     {
         var maximumLifetime = 2f;
         while (visual != null && maximumLifetime > 0f)
@@ -1389,8 +1381,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (visual != null) Destroy(visual);
     }
 
-    private IEnumerator MoveRemoteGrenade(GameObject visual, Vector2 velocity, float gravityScale,
-        bool ignoreRemoteAvatar)
+    private IEnumerator MoveRemoteGrenade(GameObject visual, Vector2 velocity, float gravityScale, bool ignoreRemoteAvatar)
     {
         var maximumLifetime = 5f;
         while (visual != null && maximumLifetime > 0f)
@@ -1411,8 +1402,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         if (visual != null) Destroy(visual);
     }
 
-    private IEnumerator MoveRemoteCustomProjectile(GameObject visual, Vector2 direction, float speed,
-        float lifetime, int ricochets, bool ignoreRemoteAvatar)
+    private IEnumerator MoveRemoteCustomProjectile(GameObject visual, Vector2 direction, float speed, float lifetime, int ricochets, bool ignoreRemoteAvatar)
     {
         while (visual != null && lifetime > 0f)
         {
@@ -1482,7 +1472,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
         return rocket == null && grenade == null ? null : result;
     }
 
-    private void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect, AudioClip explosionSound, ProjectileImpactPacket packet)
+    private static void CreateRemoteProjectileImpact(Vector2 position, GameObject impactEffect, AudioClip explosionSound, ProjectileImpactPacket packet)
     {
         if (impactEffect != null)
         {
@@ -1966,8 +1956,11 @@ internal class NetworkAvatarReplication : MonoBehaviour
             {
                 var count = Mathf.Min(manager.dismemberRender.Length, manager.dismemberSprites.Length);
                 for (var index = 0; index < count; index++)
-                    if (manager.dismemberRender[index] != null)
-                        manager.dismemberRender[index].sprite = manager.dismemberSprites[index];
+                {
+                    var render = manager.dismemberRender[index];
+                    if (render != null)
+                        render.sprite = manager.dismemberSprites[index];
+                }
             }
             if (showEffect) SpawnRemoteDismembermentEffects(remoteBody, manager);
         }
@@ -2075,10 +2068,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
         public bool local;
         public Transform mechanism;
         public Vector3 mechanismPosition;
-        public Vector3 MechanismOrigin => mechanism == null ? mechanismPosition :
-            new Vector3(mechanism.position.x, mechanism.position.y, 0f);
-        public Vector3 PositionAt(float progress) =>
-            Vector3.Lerp(fromPosition, position, progress) + MechanismOrigin;
+        public Vector3 MechanismOrigin => mechanism == null ? mechanismPosition : new Vector3(mechanism.position.x, mechanism.position.y, 0f);
+        public Vector3 PositionAt(float progress) => Vector3.Lerp(fromPosition, position, progress) + MechanismOrigin;
     }
 
     private sealed class RemoteProjectileVisual

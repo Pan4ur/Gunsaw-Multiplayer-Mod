@@ -1,10 +1,4 @@
-internal readonly struct ShotVisualDirection
-{
-    internal readonly float X;
-    internal readonly float Y;
-
-    internal ShotVisualDirection(float x, float y) { X = x; Y = y; }
-}
+using UnityEngine;
 
 internal readonly struct ShotVisualPacket : IGamePacket
 {
@@ -18,12 +12,11 @@ internal readonly struct ShotVisualPacket : IGamePacket
     internal readonly bool IsNpcShot;
     internal readonly ushort[] TargetPeerIds;
     internal readonly int SpreadSeed;
-    internal readonly ShotVisualDirection[] ExactDirections;
+    internal readonly Vector2[] ExactDirections;
     internal readonly string[] DestroyedLampIds;
 
     internal ShotVisualPacket(float originX, float originY, float directionX, float directionY, float upX,
-        float upY, string weaponSprite, bool isNpcShot, ushort[] targetPeerIds, int spreadSeed,
-        ShotVisualDirection[] exactDirections, string[] destroyedLampIds)
+        float upY, string weaponSprite, bool isNpcShot, ushort[] targetPeerIds, int spreadSeed, Vector2[] exactDirections, string[] destroyedLampIds)
     {
         OriginX = originX;
         OriginY = originY;
@@ -33,10 +26,10 @@ internal readonly struct ShotVisualPacket : IGamePacket
         UpY = upY;
         WeaponSprite = weaponSprite ?? "";
         IsNpcShot = isNpcShot;
-        TargetPeerIds = targetPeerIds ?? new ushort[0];
+        TargetPeerIds = targetPeerIds ?? [];
         SpreadSeed = spreadSeed;
-        ExactDirections = exactDirections ?? new ShotVisualDirection[0];
-        DestroyedLampIds = destroyedLampIds ?? new string[0];
+        ExactDirections = exactDirections ?? [];
+        DestroyedLampIds = destroyedLampIds ?? [];
     }
 
     public PacketType Type => PacketType.ShotVisual;
@@ -53,17 +46,17 @@ internal readonly struct ShotVisualPacket : IGamePacket
         writer.WriteSingle(UpY);
         writer.WriteBinaryString(WeaponSprite);
         writer.WriteBoolean(IsNpcShot);
-        writer.WriteUInt16((ushort)System.Math.Min(TargetPeerIds.Length, ushort.MaxValue));
+        writer.WriteUInt16((ushort) Math.Min(TargetPeerIds.Length, ushort.MaxValue));
         for (var index = 0; index < TargetPeerIds.Length && index < ushort.MaxValue; index++)
             writer.WriteUInt16(TargetPeerIds[index]);
         writer.WriteInt32(SpreadSeed);
-        writer.WriteByte((byte)System.Math.Min(ExactDirections.Length, byte.MaxValue));
+        writer.WriteByte((byte) Math.Min(ExactDirections.Length, byte.MaxValue));
         for (var index = 0; index < ExactDirections.Length && index < byte.MaxValue; index++)
         {
-            writer.WriteSingle(ExactDirections[index].X);
-            writer.WriteSingle(ExactDirections[index].Y);
+            writer.WriteSingle(ExactDirections[index].x);
+            writer.WriteSingle(ExactDirections[index].y);
         }
-        writer.WriteByte((byte)System.Math.Min(DestroyedLampIds.Length, byte.MaxValue));
+        writer.WriteByte((byte) Math.Min(DestroyedLampIds.Length, byte.MaxValue));
         for (var index = 0; index < DestroyedLampIds.Length && index < byte.MaxValue; index++)
             writer.WriteBinaryString(DestroyedLampIds[index] ?? "");
     }
@@ -81,9 +74,9 @@ internal readonly struct ShotVisualPacket : IGamePacket
         var targetPeerIds = new ushort[reader.Remaining >= sizeof(ushort) ? reader.ReadUInt16() : 0];
         for (var index = 0; index < targetPeerIds.Length; index++) targetPeerIds[index] = reader.ReadUInt16();
         var spreadSeed = reader.Remaining >= sizeof(int) ? reader.ReadInt32() : 0;
-        var exactDirections = new ShotVisualDirection[reader.Remaining > 0 ? reader.ReadByte() : 0];
+        var exactDirections = new Vector2[reader.Remaining > 0 ? reader.ReadByte() : 0];
         for (var index = 0; index < exactDirections.Length; index++)
-            exactDirections[index] = new ShotVisualDirection(reader.ReadSingle(), reader.ReadSingle());
+            exactDirections[index] = new Vector2(reader.ReadSingle(), reader.ReadSingle());
         var destroyedLampIds = new string[reader.Remaining > 0 ? reader.ReadByte() : 0];
         for (var index = 0; index < destroyedLampIds.Length; index++)
             destroyedLampIds[index] = reader.ReadBinaryString();

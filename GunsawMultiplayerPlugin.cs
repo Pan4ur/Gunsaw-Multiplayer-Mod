@@ -19,7 +19,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     internal const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
-    private const string DefaultRelayServer = "udp://expie.fun:27015";
+    private const string DefaultRelayServer = "udp://pl.expie.fun:27015";
     private const string CWF = "com.Jimmyking.CustomWeaponFramework";
 
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
@@ -88,7 +88,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         NametagSettings.Initialize();
         _chatCommandSystem = new ChatCommandSystem();
         firstBoot = !File.Exists(Config.ConfigFilePath);
-        masterUrl = Config.Bind("Network", "MasterUrl", "https://expie.fun", "Lobby directory URL.");
+        masterUrl = Config.Bind("Network", "MasterUrl", "https://pl.expie.fun", "Lobby directory URL.");
         string normalizedServer;
         if (TryNormalizeServerAddress(masterUrl.Value, out normalizedServer)) masterUrl.Value = normalizedServer;
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
