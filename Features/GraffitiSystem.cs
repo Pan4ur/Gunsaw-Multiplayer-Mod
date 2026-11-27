@@ -1,4 +1,3 @@
-using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -21,6 +20,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
     internal const int MaxPacketPayloadBytes = GraffitiPacket.MetadataBytes + MaxImageBytes;
     private const int MaxSourceImageBytes = 1_048_576;
     private const int MaxLibraryImages = 128;
+    private const int ThumbnailSize = 92;
     private const int MaxPlacedGraffiti = 32;
     private const int MaxIncomingPackets = 32;
     private const int MaxProcessedPerFrame = 2;
@@ -40,9 +40,11 @@ internal sealed class GraffitiSystem : MonoBehaviour
     private long nextGlobalGraffitiAt;
     private float nextHostBroadcastAt;
     private string folder;
-    private string selectedPath;
+    private string? selectedPath;
     private GameObject preview;
     private SpriteRenderer previewRenderer;
+    private Texture2D? previewTexture;
+    private Sprite? previewSprite;
     private float pressStarted;
     private bool holdingT, pickerOpen, placing;
     private int scrollCaptureFrame = -1;
@@ -59,6 +61,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
     private bool cursorVisibilityCaptured, previousCursorVisibility;
     private CursorLockMode previousCursorLockMode;
     private readonly Dictionary<string, Image> pickerItems = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<string> pendingPickerImages = new();
     private int sceneHandle = int.MinValue;
 
     internal static void Initialize(bool headless)
@@ -71,13 +74,13 @@ internal sealed class GraffitiSystem : MonoBehaviour
         if (headless) return;
         instance.folder = Path.Combine(BepInEx.Paths.PluginPath, "Graffiti");
         Directory.CreateDirectory(instance.folder);
-        instance.ScanLibrary();
         instance.libraryWatcher = new FileSystemWatcher(instance.folder, "*.*");
         instance.libraryWatcher.Changed += instance.OnLibraryChanged;
         instance.libraryWatcher.Created += instance.OnLibraryChanged;
         instance.libraryWatcher.Deleted += instance.OnLibraryChanged;
         instance.libraryWatcher.Renamed += instance.OnLibraryRenamed;
         instance.libraryWatcher.EnableRaisingEvents = true;
+        instance.ScanLibrary();
         instance.CreateInterface();
     }
 
@@ -193,11 +196,12 @@ internal sealed class GraffitiSystem : MonoBehaviour
         {
             pickerOpen = true;
             placing = false;
-            
-            if (preview != null)
-                preview.SetActive(false);
-            
-            pickerDirty = true;
+            SetPreviewTexture(null);
+            if (pickerScroll != null)
+            {
+                pickerScroll.StopMovement();
+                pickerScroll.verticalNormalizedPosition = 1f;
+            }
             if (!cursorVisibilityCaptured)
             {
                 previousCursorVisibility = Cursor.visible;
@@ -250,10 +254,28 @@ internal sealed class GraffitiSystem : MonoBehaviour
             Place();
     }
 
-    private void BeginPlacement(string path)
+    private void BeginPlacement(string? path)
     {
-        if (string.IsNullOrEmpty(path) || !library.TryGetValue(path, out var image))
+        LibraryImage? image = null;
+        if (path != null) library.TryGetValue(path, out image);
+        var sprite = image?.Sprite;
+        var texture = sprite == null && path != null && image != null ? LoadSourceTexture(path, true) : null;
+        if (sprite == null && texture == null && selectedPath == null)
         {
+            foreach (var candidate in library)
+            {
+                if (candidate.Key == path || candidate.Value.Sprite != null) continue;
+                texture = LoadSourceTexture(candidate.Key, true);
+                if (texture == null) continue;
+                path = candidate.Key;
+                break;
+            }
+        }
+        if (sprite == null && texture == null)
+        {
+            SetPreviewTexture(null);
+            placing = false;
+            selectedPath = null;
             noImagesNoticeUntil = Time.unscaledTime + 3f;
             return;
         }
@@ -272,8 +294,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
             previewRenderer.color = new Color(1f, 1f, 1f, 0.65f);
         }
 
-        previewRenderer.sprite = image.Sprite;
-        preview.SetActive(true);
+        SetPreviewTexture(texture, sprite);
     }
 
     private void UpdatePreview()
@@ -294,16 +315,18 @@ internal sealed class GraffitiSystem : MonoBehaviour
 
     private void Place()
     {
-        if (previewRenderer == null || previewRenderer.sprite == null || !library.TryGetValue(selectedPath, out var image)) 
-            return;
+        if (previewRenderer == null || previewRenderer.sprite == null) return;
+        var bytes = previewTexture != null ? EncodeTexture(previewTexture) : null;
+        if (bytes == null && selectedPath != null && library.TryGetValue(selectedPath, out var image))
+            bytes = image.Bytes;
+        if (bytes == null) return;
         
         var point = preview.transform.position;
         var rotation = Mathf.Repeat(previewRotation + 180f, 360f) - 180f;
         var ownerId = MultiplayerSession.LocalPeerId == 0 ? ushort.MaxValue : MultiplayerSession.LocalPeerId;
         uint id;
         do id = unchecked((uint)Guid.NewGuid().GetHashCode()); while (id == 0);
-        var packet = new GraffitiPacket(MultiplayerSession.CurrentSceneEpoch, ownerId, id, point.x, point.y,
-            previewScale, rotation, image.Bytes);
+        var packet = new GraffitiPacket(MultiplayerSession.CurrentSceneEpoch, ownerId, id, point.x, point.y, previewScale, rotation, bytes);
         Add(packet);
         
         if (MultiplayerSession.IsHosting)
@@ -372,7 +395,7 @@ internal sealed class GraffitiSystem : MonoBehaviour
         gameObject.transform.rotation = Quaternion.Euler(0f, 0f, packet.Rotation);
         gameObject.transform.localScale = Vector3.one * packet.Scale;
         gameObject.SetActive(ShowGraffiti);
-        var graffiti = new Graffiti(packet, gameObject, renderer, texture, sprite);
+        var graffiti = new Graffiti(gameObject, renderer, texture, sprite);
         graffiti.SetBlackoutMaterial(MultiplayerSession.BlackoutEnabled);
         placed.Add(key, graffiti);
         placedOrder.Enqueue(key);
@@ -539,60 +562,35 @@ internal sealed class GraffitiSystem : MonoBehaviour
 
     private void ScanLibrary()
     {
-        if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
+        if (string.IsNullOrEmpty(folder)) return;
         var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var paths = Directory.Exists(folder) ? Directory.EnumerateFiles(folder) : Array.Empty<string>();
         var cmp = StringComparison.OrdinalIgnoreCase;
         var candidates = 0;
-        foreach (var path in Directory.EnumerateFiles(folder))
+        foreach (var path in paths)
         {
             var extension = Path.GetExtension(path);
             if (!string.Equals(extension, ".png", cmp) && !string.Equals(extension, ".jpg", cmp) && !string.Equals(extension, ".jpeg", cmp)) 
                 continue;
 
             if (candidates++ >= MaxLibraryImages) break;
-            found.Add(path);
-            Texture2D texture = null;
             try
             {
-                var timestamp = File.GetLastWriteTimeUtc(path);
+                var file = new FileInfo(path);
+                if (file.Length <= 0 || file.Length > MaxSourceImageBytes) continue;
+                found.Add(path);
+                var timestamp = file.LastWriteTimeUtc;
                 if (library.TryGetValue(path, out var old) && old.Timestamp == timestamp)
                     continue;
 
-                var sourceBytes = File.ReadAllBytes(path);
-                if (sourceBytes.Length == 0 || sourceBytes.Length > MaxSourceImageBytes || !IsSourceImageSizeAllowed(sourceBytes))
-                    continue;
-
-                texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                if (!ImageConversion.LoadImage(texture, sourceBytes) || texture.width > MaxImageDimension ||
-                    texture.height > MaxImageDimension)
-                {
-                    Destroy(texture);
-                    texture = null;
-                    continue;
-                }
-
-                var networkBytes = EncodeTexture(texture);
-                if (networkBytes == null || networkBytes.Length > MaxImageBytes)
-                {
-                    Destroy(texture);
-                    texture = null;
-                    continue;
-                }
-                var sprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
-                if (old != null)
-                    old.Destroy();
-
-                library[path] = new LibraryImage(networkBytes, texture, sprite, timestamp);
-                texture = null;
-                if (placing && path == selectedPath && previewRenderer != null)
-                    previewRenderer.sprite = sprite;
-
+                old?.Destroy();
+                library[path] = new LibraryImage(timestamp);
                 pickerDirty = true;
+                if (placing && string.Equals(path, selectedPath, cmp))
+                    LoadSourceTexture(path, true).Let(it => SetPreviewTexture(it));
             }
-            catch (Exception)
-            {
-                if (texture != null) Destroy(texture);
-            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
 
         var removed = new List<string>();
@@ -607,16 +605,83 @@ internal sealed class GraffitiSystem : MonoBehaviour
             pickerDirty = true;
         }
 
-        if (!string.IsNullOrEmpty(selectedPath) && !library.ContainsKey(selectedPath))
-            Cancel();
+        if (selectedPath == null || library.ContainsKey(selectedPath)) return;
+        selectedPath = null;
+        if (placing) Cancel();
     }
 
-    private string FirstImagePath()
+    private string? FirstImagePath()
     {
         foreach (var path in library.Keys)
             return path;
-        
         return null;
+    }
+
+    private static Texture2D? LoadSourceTexture(string path, bool readable)
+    {
+        Texture2D? texture = null;
+        try
+        {
+            using var reader = new BinaryReader(File.OpenRead(path));
+            var length = reader.BaseStream.Length;
+            if (length is <= 0 or > MaxSourceImageBytes) 
+                return null;
+            var bytes = reader.ReadBytes((int)length);
+            if (bytes.Length != length || reader.BaseStream.ReadByte() >= 0 || !IsSourceImageSizeAllowed(bytes)) return null;
+
+            texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            if (texture.LoadImage(bytes, !readable) && texture is { width: <= MaxImageDimension, height: <= MaxImageDimension })
+                return texture;
+        }
+        catch (Exception) { }
+
+        if (texture != null) Destroy(texture);
+        return null;
+    }
+
+    private static Texture2D? CreateThumbnail(string path)
+    {
+        var source = LoadSourceTexture(path, false);
+        if (source == null) return null;
+
+        var previousTarget = RenderTexture.active;
+        var previousSrgb = GL.sRGBWrite;
+        RenderTexture? target = null;
+        Texture2D? thumbnail = null;
+        try
+        {
+            target = RenderTexture.GetTemporary(ThumbnailSize, ThumbnailSize, 0, RenderTextureFormat.ARGB32);
+            GL.sRGBWrite = target.sRGB;
+            Graphics.Blit(source, target);
+            RenderTexture.active = target;
+            thumbnail = new Texture2D(ThumbnailSize, ThumbnailSize, TextureFormat.RGBA32, false);
+            thumbnail.ReadPixels(new Rect(0, 0, ThumbnailSize, ThumbnailSize), 0, 0, false);
+            thumbnail.Apply(false, true);
+            return thumbnail;
+        }
+        catch (Exception)
+        {
+            thumbnail.Let(Destroy);
+            return null;
+        }
+        finally
+        {
+            RenderTexture.active = previousTarget;
+            GL.sRGBWrite = previousSrgb;
+            target.Let(RenderTexture.ReleaseTemporary);
+            Destroy(source);
+        }
+    }
+
+    private void SetPreviewTexture(Texture2D? texture, Sprite? librarySprite = null)
+    {
+        previewSprite.Let(Destroy);
+        previewTexture.Let(Destroy);
+        previewTexture = texture;
+        previewSprite = texture == null ? null : Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
+        var sprite = librarySprite != null ? librarySprite : previewSprite;
+        previewRenderer.Let(it => it.sprite = sprite);
+        preview.Let(it => it.SetActive(sprite != null));
     }
 
     private void Cancel()
@@ -624,13 +689,8 @@ internal sealed class GraffitiSystem : MonoBehaviour
         holdingT = false;
         pickerOpen = false;
         placing = false;
-        
-        if (preview != null) 
-            preview.SetActive(false);
-        
-        if (pickerRoot != null)
-            pickerRoot.SetActive(false);
-        
+        SetPreviewTexture(null);
+        pickerRoot?.SetActive(false);
         RestoreCursorVisibility();
     }
 
@@ -667,6 +727,13 @@ internal sealed class GraffitiSystem : MonoBehaviour
         
         if (pickerDirty) 
             RebuildPicker();
+        for (var index = 0; index < MaxProcessedPerFrame && pendingPickerImages.Count > 0; index++)
+        {
+            var path = pendingPickerImages.Dequeue();
+            var image = library[path];
+            image.Thumbnail ??= CreateThumbnail(path);
+            image.Thumbnail.Let(it => AddPickerItem(path, it));
+        }
     }
 
     private void OnDestroy()
@@ -678,14 +745,10 @@ internal sealed class GraffitiSystem : MonoBehaviour
         
         library.Clear();
         
-        if (preview != null)
-            Destroy(preview);
+        preview.Let(Destroy);
+        interfaceCanvas.Let(it => Destroy(it.gameObject));
         
-        if (interfaceCanvas != null)
-            Destroy(interfaceCanvas.gameObject);
-        
-        if (libraryWatcher != null) 
-            libraryWatcher.Dispose();
+        libraryWatcher?.Dispose();
         
         instance = null;
     }
@@ -748,49 +811,47 @@ internal sealed class GraffitiSystem : MonoBehaviour
     {
         pickerDirty = false;
         pickerItems.Clear();
+        pendingPickerImages.Clear();
         
         for (var index = pickerContent.transform.childCount - 1; index >= 0; index--)
             Destroy(pickerContent.transform.GetChild(index).gameObject);
         
-        var paths = new List<string>(library.Keys);
-        var count = paths.Count;
-        var columns = 7;
-        var rows = Mathf.Max(1, Mathf.CeilToInt(count / (float)columns));
-        ((RectTransform)pickerContent.transform).sizeDelta = new Vector2(840f, rows * 118f);
-        ((RectTransform)pickerContent.transform).anchoredPosition = Vector2.zero;
-        
-        for (var index = 0; index < count; index++)
-        {
-            var path = paths[index];
-            var column = index % columns;
-            var row = index / columns;
-            var item = new GameObject("Graffiti", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline), typeof(EventTrigger));
-            item.transform.SetParent(pickerContent.transform, false);
-            var itemRect = (RectTransform)item.transform;
-            Rect(itemRect, new Vector2((column - (columns - 1) * 0.5f) * 118f, -7f - row * 118f), new Vector2(104f, 104f));
-            itemRect.anchorMin = itemRect.anchorMax = new Vector2(0.5f, 1f);
-            itemRect.pivot = new Vector2(0.5f, 1f);
-            var itemImage = item.GetComponent<Image>();
-            itemImage.color = new Color(0.16f, 0.2f, 0.2f, 0.95f);
-            var outline = item.GetComponent<Outline>();
-            outline.effectColor = new Color(0.83f, 0.66f, 0.12f, 0f);
-            outline.effectDistance = new Vector2(3f, -3f);
-            pickerItems[path] = itemImage;
-            var raw = new GameObject("Image", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
-            raw.transform.SetParent(item.transform, false);
-            Rect((RectTransform)raw.transform, Vector2.zero, new Vector2(92f, 92f));
-            raw.GetComponent<RawImage>().texture = library[path].Texture;
-            var trigger = item.GetComponent<EventTrigger>();
-            var entry = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-            entry.callback.AddListener(_ => SelectPath(path));
-            trigger.triggers.Add(entry);
-            var scroll = new EventTrigger.Entry { eventID = EventTriggerType.Scroll };
-            scroll.callback.AddListener(data => pickerScroll?.OnScroll((PointerEventData)data));
-            trigger.triggers.Add(scroll);
-        }
+        var content = (RectTransform)pickerContent.transform;
+        content.sizeDelta = new Vector2(840f, 118f);
+        content.anchoredPosition = Vector2.zero;
+        foreach (var path in library.Keys)
+            pendingPickerImages.Enqueue(path);
+    }
 
-        if (pickerScroll != null) 
-            pickerScroll.verticalNormalizedPosition = 1f;
+    private void AddPickerItem(string path, Texture2D thumbnail)
+    {
+        const int columns = 7;
+        var column = pickerItems.Count % columns;
+        var row = pickerItems.Count / columns;
+        ((RectTransform)pickerContent.transform).sizeDelta = new Vector2(840f, (row + 1) * 118f);
+        var item = new GameObject("Graffiti", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline), typeof(EventTrigger));
+        item.transform.SetParent(pickerContent.transform, false);
+        var itemRect = (RectTransform)item.transform;
+        Rect(itemRect, new Vector2((column - (columns - 1) * 0.5f) * 118f, -7f - row * 118f), new Vector2(104f, 104f));
+        itemRect.anchorMin = itemRect.anchorMax = new Vector2(0.5f, 1f);
+        itemRect.pivot = new Vector2(0.5f, 1f);
+        var itemImage = item.GetComponent<Image>();
+        itemImage.color = new Color(0.16f, 0.2f, 0.2f, 0.95f);
+        var outline = item.GetComponent<Outline>();
+        outline.effectColor = new Color(0.83f, 0.66f, 0.12f, path == selectedPath ? 1f : 0f);
+        outline.effectDistance = new Vector2(3f, -3f);
+        pickerItems[path] = itemImage;
+        var raw = new GameObject("Image", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
+        raw.transform.SetParent(item.transform, false);
+        Rect((RectTransform)raw.transform, Vector2.zero, new Vector2(ThumbnailSize, ThumbnailSize));
+        raw.GetComponent<RawImage>().texture = thumbnail;
+        var trigger = item.GetComponent<EventTrigger>();
+        var entry = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+        entry.callback.AddListener(_ => SelectPath(path));
+        trigger.triggers.Add(entry);
+        var scroll = new EventTrigger.Entry { eventID = EventTriggerType.Scroll };
+        scroll.callback.AddListener(data => pickerScroll?.OnScroll((PointerEventData)data));
+        trigger.triggers.Add(scroll);
     }
 
     private void SelectPath(string path)
@@ -894,26 +955,29 @@ internal sealed class GraffitiSystem : MonoBehaviour
 
     private sealed class LibraryImage
     {
-        internal readonly byte[] Bytes;
-        internal readonly Texture2D Texture;
-        internal readonly Sprite Sprite;
+        internal Texture2D? Thumbnail;
+        internal readonly byte[]? Bytes;
+        internal readonly Sprite? Sprite;
         internal readonly DateTime Timestamp;
+        private readonly Texture2D? texture;
 
-        internal LibraryImage(byte[] bytes, Texture2D texture, Sprite sprite, DateTime timestamp)
+        internal LibraryImage(DateTime timestamp) => Timestamp = timestamp;
+
+        internal LibraryImage(byte[] bytes, Texture2D texture, Sprite sprite, DateTime timestamp) : this(timestamp)
         {
             Bytes = bytes;
-            Texture = texture;
+            this.texture = texture;
             Sprite = sprite;
-            Timestamp = timestamp;
         }
 
         internal void Destroy()
         {
-            if (Sprite != null) 
+            if (Thumbnail != null)
+                UnityEngine.Object.Destroy(Thumbnail);
+            if (Sprite != null)
                 UnityEngine.Object.Destroy(Sprite);
-            
-            if (Texture != null)
-                UnityEngine.Object.Destroy(Texture);
+            if (texture != null)
+                UnityEngine.Object.Destroy(texture);
         }
     }
 
@@ -931,16 +995,14 @@ internal sealed class GraffitiSystem : MonoBehaviour
 
     private sealed class Graffiti
     {
-        internal readonly GraffitiPacket Packet;
         private readonly GameObject gameObject;
         private readonly SpriteRenderer renderer;
         private readonly Texture2D texture;
         private readonly Sprite sprite;
         private Material material;
 
-        internal Graffiti(GraffitiPacket packet, GameObject gameObject, SpriteRenderer renderer, Texture2D texture, Sprite sprite)
+        internal Graffiti(GameObject gameObject, SpriteRenderer renderer, Texture2D texture, Sprite sprite)
         {
-            Packet = packet;
             this.gameObject = gameObject;
             this.renderer = renderer;
             this.texture = texture;
