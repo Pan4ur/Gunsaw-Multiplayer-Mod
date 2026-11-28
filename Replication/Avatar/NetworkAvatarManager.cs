@@ -159,7 +159,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             var crack = InstantiateExplosionCrack(backgroundCrack, position, Quaternion.Euler(0f, 0f, packet.BackgroundCrackRotation));
             SetCrackFlip(crack, packet.BackgroundCrackFlipX, packet.BackgroundCrackFlipY);
             if (crack != null) 
-                Destroy(crack, 120f);
+                Destroy(crack, LevelCleanupSystem.TraceLifetime);
         }
 
         var floorCrack = Resources.Load<GameObject>("Spawnables/FloorCrack");
@@ -168,7 +168,7 @@ internal sealed class NetworkAvatarManager : MonoBehaviour
             var crack = InstantiateExplosionCrack(floorCrack, new Vector2(packet.FloorCrackX, packet.FloorCrackY), Quaternion.identity);
             SetCrackFlip(crack, packet.FloorCrackFlipX, false);
             if (crack != null) 
-                Destroy(crack, 120f);
+                Destroy(crack, LevelCleanupSystem.TraceLifetime);
         }
     }
 

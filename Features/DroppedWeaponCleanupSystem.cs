@@ -13,7 +13,7 @@ internal static class DroppedWeaponCleanupSystem
         
         var lifetime = dropped.GetComponent<DroppedWeaponLifetime>();
         lifetime ??= dropped.gameObject.AddComponent<DroppedWeaponLifetime>();
-        lifetime.ExpiresAt = Time.unscaledTime + 60f;
+        lifetime.ExpiresAt = Time.unscaledTime + (MultiplayerSession.PvpEnabled ? 15f : 60f);
     }
 }
 

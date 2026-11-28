@@ -2005,7 +2005,7 @@ internal class NetworkAvatarReplication : MonoBehaviour
             var main = particles.main;
             main.startColor = body.bloodColor;
         }
-        Destroy(chunk, 120f);
+        Destroy(chunk, LevelCleanupSystem.TraceLifetime);
     }
 
     private void CacheDismembermentVisuals()

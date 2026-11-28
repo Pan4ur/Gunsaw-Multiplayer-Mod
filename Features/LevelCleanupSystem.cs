@@ -4,6 +4,8 @@ internal static class LevelCleanupSystem
 {
     private static readonly HashSet<GameObject> bloodProps = [];
 
+    internal static float TraceLifetime => MultiplayerSession.PvpEnabled ? 30f : 120f;
+
     internal static void Register(GameObject gameObject)
     {
         if (!MultiplayerSession.IsInLobby || gameObject == null || (gameObject.name != "BloodOnWall" && gameObject.name != "BloodDrop" &&
@@ -31,7 +33,7 @@ internal static class LevelCleanupSystem
 
 internal sealed class LevelPropLifetime : MonoBehaviour
 {
-    private void Awake() => Invoke(nameof(Expire), 120f);
+    private void Awake() => Invoke(nameof(Expire), LevelCleanupSystem.TraceLifetime);
 
     private void Expire()
     {
