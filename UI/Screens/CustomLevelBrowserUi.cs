@@ -94,6 +94,11 @@ internal sealed class CustomLevelBrowserUi
         cachedLevels = parsed;
     }
 
+    internal static string[] CatalogLevelNames() => cachedLevels.Select(level => level.name).Distinct().ToArray();
+
+    internal static string? CatalogLevelCode(string name) =>
+        cachedLevels.FirstOrDefault(level => string.Equals(level.name, name, StringComparison.OrdinalIgnoreCase))?.code;
+
     internal static void OpenEditorSaveDialog(GunsawMultiplayerPlugin plugin, LevelEditor editor, Button buttonTemplate, TMP_Text textTemplate)
     {
         if (plugin == null || editor == null || buttonTemplate == null || textTemplate == null || textTemplate.canvas == null) return;

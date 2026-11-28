@@ -382,7 +382,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
         if (showingLeaveLobbyButton == joinedAsClient) return;
         showingLeaveLobbyButton = false;
         closeLobbyButton.onClick.RemoveAllListeners();
-        closeLobbyButton.onClick.AddListener(plugin.CloseHostedLobby);
+        closeLobbyButton.onClick.AddListener(() => plugin.CloseHostedLobby());
     }
 
     private static void SetToggle(Toggle toggle, bool value)
@@ -724,7 +724,7 @@ internal sealed partial class MultiplayerLobbyUi : MonoBehaviour
             else plugin.CreateLobby();
         });
         closeLobbyButton = CreateButton(lobbyGroup.transform, "CLOSE LOBBY", new Vector2(155f, -350f), new Vector2(280f, 46f));
-        closeLobbyButton.onClick.AddListener(plugin.CloseHostedLobby);
+        closeLobbyButton.onClick.AddListener(() => plugin.CloseHostedLobby());
 
 
         var customGroup = CreateGroup(panel.transform, "CUSTOM LEVEL", new Vector2(-335f, 340f), new Vector2(600f, 90f));

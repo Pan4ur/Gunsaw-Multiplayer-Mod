@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gunsaw MP</title>
+  <link rel="stylesheet" href="/lobby.css">
+  <script src="/lobby.js" defer></script>
+</head>
+<body>
+  <main class="window">
+    <header class="top">
+      <h1>GUNSAW <em>MP</em> <span>//</span> <small id="version"></small></h1>
+      <label>Welcome back, <input id="host" aria-label="Host name" maxlength="32" autocomplete="off" disabled></label>
+    </header>
+    <div class="columns">
+      <div class="left">
+        <section class="panel">
+          <h2>LEVEL</h2>
+          <div class="bar">
+            <select id="scene" aria-label="Built-in level" disabled></select>
+            <button type="button" id="play-scene" disabled>PLAY</button>
+          </div>
+          <div class="bar">
+            <input id="map" aria-label="Custom level name" placeholder="Custom level name" list="maps">
+            <datalist id="maps"></datalist>
+            <button type="button" id="change" data-hosting>LOAD</button>
+            <button type="button" id="code" data-hosting>PASTE CODE</button>
+          </div>
+          <div class="bar">
+            <span id="map-name"></span>
+            <button type="button" id="restart" data-hosting>RESTART</button>
+            <button type="button" id="default" data-hosting>DEFAULT MAP</button>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>RELAY SERVER</h2>
+          <div class="bar">
+            <input id="server" aria-label="Relay server" maxlength="255" autocomplete="off" disabled>
+          </div>
+        </section>
+        <section class="panel player-panel">
+          <h2>LOBBY PLAYERS <span id="player-count"></span></h2>
+          <p id="status" role="status">Connecting to headless lobby…</p>
+          <ul id="players" aria-label="Connected players"></ul>
+        </section>
+      </div>
+      <section class="panel lobby">
+        <h2 id="lobby-title">NEW LOBBY</h2>
+        <form id="lobby-form">
+          <label class="lobby-name">LOBBY NAME <input id="lobby-name" maxlength="48" autocomplete="off" disabled></label>
+          <div class="bar search">
+            <input id="search" type="search" aria-label="Search lobby settings" placeholder="Search lobby settings…">
+            <button type="button" id="clear" aria-label="Clear search">×</button>
+          </div>
+          <div class="settings" id="settings" aria-label="Lobby settings">
+            <div class="bar preset-row">
+              <button type="button" id="presets">PRESETS</button>
+              <button type="button" id="reset" aria-label="Reset lobby settings" title="Reset lobby settings">RESET</button>
+            </div>
+            <div id="setting-rows"></div>
+            <p id="no-settings" hidden>No matching settings</p>
+          </div>
+          <div id="connection"></div>
+          <div class="bar lobby-actions">
+            <button id="apply" type="submit" disabled>CREATE LOBBY</button>
+            <button id="save" type="button" disabled>SAVE SETTINGS</button>
+            <button id="close" type="button" disabled hidden>CLOSE LOBBY</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  </main>
+  <dialog id="dialog" aria-labelledby="dialog-title">
+    <h2 id="dialog-title"></h2>
+    <div id="dialog-content"></div>
+    <div class="bar dialog-actions">
+      <button type="button" id="dialog-cancel">CLOSE</button>
+      <button type="button" id="dialog-apply">APPLY</button>
+    </div>
+  </dialog>
+</body>
+</html>

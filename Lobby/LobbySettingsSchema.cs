@@ -33,6 +33,8 @@ internal static class LobbySettingsSchema
 {
     private static readonly (FieldInfo Field, LobbySettingAttribute Option)[] fields = DiscoverFields();
     private static readonly Dictionary<string, LobbySettingVisibleWhenAttribute[]> visibility = DiscoverVisibility();
+    internal static IReadOnlyList<(FieldInfo Field, LobbySettingAttribute Option)> Fields => fields;
+    internal static IReadOnlyList<LobbySettingVisibleWhenAttribute> Visibility(string setting) => visibility[setting];
 
     internal static bool HasParent(string setting) => visibility[setting].Length > 0;
 
@@ -92,6 +94,12 @@ internal static class LobbySettingsSchema
                 var entry = config.Bind("Lobby", option.ConfigKey, (GunGameDeathMode)field.GetValue(currentSettings())!, option.Description);
                 field.SetValue(currentSettings(), entry.Value);
                 savers.Add(() => SetIfChanged(entry, (GunGameDeathMode)field.GetValue(currentSettings())!));
+            }
+            else if (field.FieldType == typeof(ConnectionMode))
+            {
+                var entry = config.Bind("Lobby", option.ConfigKey, (ConnectionMode)field.GetValue(currentSettings())!, option.Description);
+                field.SetValue(currentSettings(), entry.Value);
+                savers.Add(() => SetIfChanged(entry, (ConnectionMode)field.GetValue(currentSettings())!));
             }
             else throw new InvalidOperationException("Unsupported lobby config field: " + field.Name);
         }

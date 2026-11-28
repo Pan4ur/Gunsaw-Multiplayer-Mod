@@ -19,7 +19,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private const string ReleasesApiUrl = "https://api.github.com/repos/Pan4ur/Gunsaw-Multiplayer-Mod/releases/latest";
     internal const string CustomLevelsUrl = "https://github.com/jimmyking9999999/gunsaw-level-editor-plus/raw/refs/heads/main/Levels.json";
     private const string ServersUrl = "https://raw.githubusercontent.com/Pan4ur/Gunsaw-Multiplayer-Mod/main/Assets/servers.json";
-    private const string DefaultRelayServer = "udp://pl.expie.fun:27015";
+    private const string DefaultLobbyServer = "pl.expie.fun";
+    private const string DefaultRelayServer = "udp://" + DefaultLobbyServer + ":27015";
     private const string CWF = "com.Jimmyking.CustomWeaponFramework";
 
     internal static GunsawMultiplayerPlugin Instance { get; private set; }
@@ -39,7 +40,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     internal bool visible;
     internal string status = "Select an option.";
     internal string updateStatus = "Checking for updates..."; 
-    internal string lobbyServerAddress = "expie.fun";
+    internal string lobbyServerAddress = DefaultLobbyServer;
     internal string lobbyName = "Lobby";
     internal string playerName = "Player";
     internal LobbySettings lobbySettings = new();
@@ -73,6 +74,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     private int lastHostedPeerListRevision = -1;
     private bool shuttingDown;
     private bool joinInProgress;
+    internal bool CreatingLobby { get; private set; }
+    internal bool UpdatingLobby { get; private set; }
     private int lobbyRefreshVersion;
     private string joinedLobbyId = "";
     private int updateCheckInProgress;
@@ -88,7 +91,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         NametagSettings.Initialize();
         _chatCommandSystem = new ChatCommandSystem();
         firstBoot = !File.Exists(Config.ConfigFilePath);
-        masterUrl = Config.Bind("Network", "MasterUrl", "https://pl.expie.fun", "Lobby directory URL.");
+        masterUrl = Config.Bind("Network", "MasterUrl", "https://" + DefaultLobbyServer, "Lobby directory URL.");
         string normalizedServer;
         if (TryNormalizeServerAddress(masterUrl.Value, out normalizedServer)) masterUrl.Value = normalizedServer;
         lobbyServerAddress = DisplayServerAddress(masterUrl.Value);
@@ -722,6 +725,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void CreateLobby()
     {
+        if (CreatingLobby || MultiplayerSession.IsActive) return;
         try
         {
             if (string.IsNullOrWhiteSpace(lobbyName)) lobbyName = "Lobby";
@@ -730,9 +734,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             var requestedLobbyName = lobbyName;
             var requestedPlayerName = playerName;
             var body = JsonUtility.ToJson(BuildLobbyRequest(settings, parsed, requestedLobbyName, requestedPlayerName, "Host chooses level", 0, false));
-            ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(body, settings, parsed, requestedLobbyName, requestedPlayerName));
+            var server = masterUrl.Value.TrimEnd('/');
+            CreatingLobby = true;
+            status = "Creating lobby...";
+            ThreadPool.QueueUserWorkItem(_ => CreateLobbyInDirectory(server, body, settings, parsed, requestedLobbyName, requestedPlayerName));
         }
-        catch (Exception e) { status = "Could not create lobby: " + e.Message; }
+        catch (Exception e) { CreatingLobby = false; status = "Could not create lobby: " + e.Message; }
     }
 
     internal void UpdateHostedLobby()
@@ -761,23 +768,25 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
                 var server = masterUrl.Value.TrimEnd('/');
                 var lobbyId = hostedLobbyId;
                 var relayKey = hostRelayKey;
+                UpdatingLobby = true;
                 status = "Updating on lobby server...";
                 ThreadPool.QueueUserWorkItem(_ => UpdateHostedLobbyInDirectory(server, lobbyId, relayKey, body));
             }
             catch (Exception e)
             {
+                UpdatingLobby = false;
                 LogInfo("Could not update hosted lobby: " + e.Message);
                 status = "Could not update lobby server: " + e.Message;
             }
         }
     }
 
-    internal void CloseHostedLobby()
+    internal Task CloseHostedLobby()
     {
         if (!MultiplayerSession.IsHosting)
         {
             status = "No hosted lobby is active.";
-            return;
+            return Task.CompletedTask;
         }
         var lobbyId = hostedLobbyId;
         var relayKey = hostRelayKey;
@@ -785,6 +794,8 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         hostedLobbyId = "";
         hostedLobbyDisplayName = "";
         hostRelayKey = "";
+        UpdatingLobby = false;
+        headlessLobbyService.OnLobbyClosed();
         requestedHostScene = "";
         waitingForCustomLevel = false;
         waitingForCustomLevelTransferId = 0;
@@ -794,8 +805,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         nextHeartbeat = 0f;
         lastHostedPeerListRevision = -1;
         status = "Lobby closed.";
-        if (!string.IsNullOrEmpty(lobbyId) && !string.IsNullOrEmpty(relayKey))
-            DeleteHostedLobby(lobbyId, relayKey);
+        return !string.IsNullOrEmpty(lobbyId) && !string.IsNullOrEmpty(relayKey)
+            ? DeleteHostedLobby(lobbyId, relayKey)
+            : Task.CompletedTask;
     }
 
     internal void JoinLobby(string id)
@@ -876,7 +888,7 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         get
         {
             lock (joinLock)
-                return !joinInProgress && !MultiplayerSession.IsHosting && !MultiplayerSession.IsActive;
+                return !joinInProgress && !CreatingLobby && !MultiplayerSession.IsActive;
         }
     }
 
@@ -915,9 +927,13 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
 
     internal void BanPlayerFromCommand(string playerName, ushort peerId)
     {
+        var expectedPeer = MultiplayerSession.GetPeer(peerId);
+        if (!CanBanPlayers || expectedPeer == null || !string.Equals(expectedPeer.Name, playerName, StringComparison.OrdinalIgnoreCase)) return;
         var lobbyId = hostedLobbyId;
         var relayKey = hostRelayKey;
-        ThreadPool.QueueUserWorkItem(_ => BanPlayerInDirectory(lobbyId, relayKey, playerName, peerId));
+        var server = masterUrl.Value.TrimEnd('/');
+        status = "Banning " + playerName + "...";
+        ThreadPool.QueueUserWorkItem(_ => BanPlayerInDirectory(server, lobbyId, relayKey, playerName, peerId, expectedPeer));
     }
 
     private void ConnectRelay(string address, string lobbyId, string relayKey, ushort peerId, ushort hostPeerId,
@@ -939,11 +955,11 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         status = "Connecting via " + mode + " through UDP relay " + address + "...";
     }
 
-    private void CreateLobbyInDirectory(string body, LobbySettings settings, ParsedLobbySettings parsed, string requestedLobbyName, string requestedPlayerName)
+    private void CreateLobbyInDirectory(string server, string body, LobbySettings settings, ParsedLobbySettings parsed, string requestedLobbyName, string requestedPlayerName)
     {
         try
         {
-            var response = Http("POST", "/v1/lobbies", body, null);
+            var response = HttpAt(server, "POST", "/v1/lobbies", body, null);
             var lobbyId = JsonString(response, "id");
             var relayKey = JsonString(response, "hostRelayKey");
             var relayAddress = JsonString(response, "relayAddress");
@@ -952,14 +968,22 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey)) throw new InvalidDataException("Invalid directory response.");
             RunOnMainThread(() =>
             {
-                MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, settings, parsed, requestedPlayerName, hostPeerId);
+                CreatingLobby = false;
+                try { MultiplayerSession.StartHost(lobbyId, relayKey, relayAddress, settings, parsed, requestedPlayerName, hostPeerId); }
+                catch (Exception exception)
+                {
+                    MultiplayerSession.Shutdown();
+                    status = "Could not start lobby: " + exception.Message;
+                    DeleteHostedLobby(lobbyId, relayKey, server);
+                    return;
+                }
                 multiplayerLobbyUi.NoteAppliedLobbySettings(settings, requestedLobbyName);
                 avatarReplication.Configure(requestedPlayerName); multiplayerHud.ResetChat(); hostedLobbyId = lobbyId; hostedLobbyDisplayName = requestedLobbyName; hostRelayKey = relayKey; nextHeartbeat = Time.unscaledTime + 10f; status = "Lobby created, start a level.";
-                headlessLobbyService.OnLobbyCreated(lobbyId, relayKey, masterUrl.Value.TrimEnd('/'));
+                headlessLobbyService.OnLobbyCreated(lobbyId, relayKey, server);
                 GunsawMultiplayer.MultiplayerApi.NotifyHostSettingsApplied();
             });
         }
-        catch (Exception exception) { RunOnMainThread(() => status = "Could not create lobby: " + exception.Message); }
+        catch (Exception exception) { RunOnMainThread(() => { CreatingLobby = false; status = "Could not create lobby: " + exception.Message; }); }
     }
 
     private void FixedUpdate()
@@ -1040,24 +1064,33 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     
     internal void RunOnMainThread(Action action) { lock (mainThreadActionsLock) mainThreadActions.Enqueue(action); }
 
-    private void BanPlayerInDirectory(string lobbyId, string relayKey, string playerName, ushort expectedPeerId)
+    private void BanPlayerInDirectory(string server, string lobbyId, string relayKey, string playerName, ushort expectedPeerId, PeerState expectedPeer)
     {
         try
         {
             var body = JsonUtility.ToJson(new BanPlayerRequest { playerName = playerName, durationMinutes = 60 });
-            var response = Http("POST", "/v1/lobbies/" + lobbyId + "/ban", body, "Bearer " + relayKey);
-            var peerId = (ushort)Mathf.Clamp(JsonInt(response, "peerId"), 1, 65534);
-            if (peerId == 0) peerId = expectedPeerId;
-            var bannedPeerId = peerId;
+            var response = HttpAt(server, "POST", "/v1/lobbies/" + lobbyId + "/ban", body, "Bearer " + relayKey);
+            var bannedPeerId = JsonInt(response, "peerId");
             RunOnMainThread(() =>
             {
-                MultiplayerSession.KickPeer(bannedPeerId, playerName + " was banned for 60 minutes.");
+                if (hostedLobbyId != lobbyId || hostRelayKey != relayKey) return;
+                if (bannedPeerId != 0 && bannedPeerId != expectedPeerId)
+                {
+                    status = "The lobby directory reported a different player for the ban of " + playerName + ".";
+                    return;
+                }
+                if (ReferenceEquals(MultiplayerSession.GetPeer(expectedPeerId), expectedPeer))
+                    MultiplayerSession.KickPeer(expectedPeerId, playerName + " was banned for 60 minutes.");
                 status = playerName + " was banned for 60 minutes.";
             });
         }
         catch (Exception exception)
         {
-            RunOnMainThread(() => status = "Could not ban " + playerName + ": " + exception.Message);
+            RunOnMainThread(() =>
+            {
+                if (hostedLobbyId == lobbyId && hostRelayKey == relayKey)
+                    status = "Could not ban " + playerName + ": " + exception.Message;
+            });
         }
     }
 
@@ -1238,9 +1271,12 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
     {
         var scene = MultiplayerSession.GetHostMapName();
         var players = MultiplayerSession.PlayerCount;
+        var lobbyId = hostedLobbyId;
+        var relayKey = hostRelayKey;
+        var server = masterUrl.Value.TrimEnd('/');
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            try { Http("PUT", "/v1/lobbies/" + hostedLobbyId, "{\"players\":" + players + ",\"map\":\"" + EscapeJson(scene) + "\"}", "Bearer " + hostRelayKey); }
+            try { HttpAt(server, "PUT", "/v1/lobbies/" + lobbyId, "{\"players\":" + players + ",\"map\":\"" + EscapeJson(scene) + "\"}", "Bearer " + relayKey); }
             catch (Exception exception) { Logger.LogInfo("Lobby heartbeat failed: " + exception.Message); }
         });
     }
@@ -1250,9 +1286,10 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
         var lobbyId = hostedLobbyId;
         var relayKey = hostRelayKey;
         if (string.IsNullOrEmpty(lobbyId) || string.IsNullOrEmpty(relayKey) || peerId == 0) return;
+        var server = masterUrl.Value.TrimEnd('/');
         ThreadPool.QueueUserWorkItem(_ =>
         {
-            try { Http("DELETE", "/v1/lobbies/" + lobbyId + "/peers/" + peerId, null, "Bearer " + relayKey); }
+            try { HttpAt(server, "DELETE", "/v1/lobbies/" + lobbyId + "/peers/" + peerId, null, "Bearer " + relayKey); }
             catch (Exception exception) { Logger.LogInfo("Lobby peer removal failed: " + exception.Message); }
         });
     }
@@ -1312,8 +1349,9 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             HttpAt(server, "PUT", "/v1/lobbies/" + lobbyId, body, "Bearer " + relayKey);
             RunOnMainThread(() =>
             {
-                if (hostedLobbyId == lobbyId && hostRelayKey == relayKey)
-                    status = "Lobby settings updated.";
+                if (hostedLobbyId != lobbyId || hostRelayKey != relayKey) return;
+                UpdatingLobby = false;
+                status = "Lobby settings updated.";
             });
         }
         catch (Exception e)
@@ -1321,17 +1359,19 @@ public sealed class GunsawMultiplayerPlugin : BaseUnityPlugin
             Logger.LogInfo("Could not update hosted lobby: " + e.Message);
             RunOnMainThread(() =>
             {
-                if (hostedLobbyId == lobbyId && hostRelayKey == relayKey)
-                    status = "Could not update lobby server: " + e.Message;
+                if (hostedLobbyId != lobbyId || hostRelayKey != relayKey) return;
+                UpdatingLobby = false;
+                status = "Could not update lobby server: " + e.Message;
             });
         }
     }
 
-    private void DeleteHostedLobby(string lobbyId, string relayKey)
+    private Task DeleteHostedLobby(string lobbyId, string relayKey, string? server = null)
     {
-        ThreadPool.QueueUserWorkItem(_ =>
+        server ??= masterUrl.Value.TrimEnd('/');
+        return Task.Run(() =>
         {
-            try { Http("DELETE", "/v1/lobbies/" + lobbyId, null, "Bearer " + relayKey); }
+            try { HttpAt(server, "DELETE", "/v1/lobbies/" + lobbyId, null, "Bearer " + relayKey); }
             catch (Exception e) { Logger.LogInfo("Could not remove hosted lobby: " + e.Message); }
         });
     }

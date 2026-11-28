@@ -94,7 +94,7 @@ internal sealed class LobbySettings
     public bool RestrictLight;
     [LobbySetting("MaxPlayers", "Default maximum player count.", "--max-players")]
     public string MaxPlayers = "4";
-    [LobbySetting(null, "", "--connection")]
+    [LobbySetting("ConnectionMode", "Transport for new lobbies.", "--connection")]
     public ConnectionMode ConnectionMode = ConnectionMode.Relay;
     
     [LobbySetting("GunGame", "Advance through GG Sequence after each kill.", "--gungame")]

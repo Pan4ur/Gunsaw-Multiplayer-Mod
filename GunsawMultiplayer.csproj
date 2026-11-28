@@ -28,6 +28,7 @@
     <EmbeddedResource Include="CustomProps\Assets\lamp-intensity-changer.png" />
     <EmbeddedResource Include="CustomProps\Assets\logic-*.png" />
     <EmbeddedResource Include="Assets\UI\*.png" />
+    <EmbeddedResource Include="UI\Headless\*.html;UI\Headless\*.css;UI\Headless\*.js" />
     <EmbeddedResource Include="Assets\emoji.png" />
     <EmbeddedResource Include="Assets\Sounds\respawn.ogg"
                       LogicalName="GunsawMultiplayer.Assets.Sounds.respawn.ogg" />

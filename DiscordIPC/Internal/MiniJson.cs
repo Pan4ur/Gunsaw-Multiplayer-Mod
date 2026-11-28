@@ -6,10 +6,10 @@ namespace DiscordIPC.Internal
 {
     internal static class MiniJson
     {
-        public static object Deserialize(string json)
+        public static object Deserialize(string json, int maxDepth = int.MaxValue)
         {
             if (json == null) return null;
-            using (Parser parser = new Parser(json)) return parser.ParseValue();
+            using (Parser parser = new Parser(json, maxDepth)) return parser.ParseValue();
         }
 
         public static string Serialize(object obj)
@@ -22,10 +22,12 @@ namespace DiscordIPC.Internal
         private sealed class Parser : IDisposable
         {
             private readonly StringReader _reader;
+            private readonly int _maxDepth;
 
-            public Parser(string json)
+            public Parser(string json, int maxDepth)
             {
                 _reader = new StringReader(json);
+                _maxDepth = maxDepth;
             }
 
             public void Dispose()
@@ -33,16 +35,17 @@ namespace DiscordIPC.Internal
                 _reader.Dispose();
             }
 
-            public object ParseValue()
+            public object ParseValue(int depth = 0)
             {
+                if (depth > _maxDepth) throw new FormatException("JSON is nested too deeply.");
                 EatWhitespace();
                 int c = _reader.Peek();
                 if (c == -1) return null;
 
                 switch ((char)c)
                 {
-                    case '{': return ParseObject();
-                    case '[': return ParseArray();
+                    case '{': return ParseObject(depth);
+                    case '[': return ParseArray(depth);
                     case '"': return ParseString();
                     case 't': return ParseLiteral("true", true);
                     case 'f': return ParseLiteral("false", false);
@@ -51,7 +54,7 @@ namespace DiscordIPC.Internal
                 }
             }
 
-            private Dictionary<string, object> ParseObject()
+            private Dictionary<string, object> ParseObject(int depth)
             {
                 Dictionary<string, object> table = new Dictionary<string, object>();
                 _reader.Read();
@@ -70,7 +73,7 @@ namespace DiscordIPC.Internal
                     string key = ParseString();
                     EatWhitespace();
                     if (_reader.Read() != ':') throw new FormatException("Expected ':' in JSON object.");
-                    object value = ParseValue();
+                    object value = ParseValue(depth + 1);
                     table[key] = value;
 
                     EatWhitespace();
@@ -80,7 +83,7 @@ namespace DiscordIPC.Internal
                 }
             }
 
-            private List<object> ParseArray()
+            private List<object> ParseArray(int depth)
             {
                 List<object> array = new List<object>();
                 _reader.Read();
@@ -96,7 +99,7 @@ namespace DiscordIPC.Internal
                         return array;
                     }
 
-                    array.Add(ParseValue());
+                    array.Add(ParseValue(depth + 1));
                     EatWhitespace();
                     c = _reader.Read();
                     if (c == ']') return array;

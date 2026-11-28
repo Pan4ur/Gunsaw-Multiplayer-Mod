@@ -611,6 +611,11 @@ internal static partial class MultiplayerSession
         lock (statusLock) return peers.Contains(peerId);
     }
 
+    internal static PeerState? GetPeer(ushort peerId)
+    {
+        lock (statusLock) return peers.TryGet(peerId, out var peer) ? peer : null;
+    }
+
     public static string PlayerName(ushort peerId)
     {
         lock (statusLock)

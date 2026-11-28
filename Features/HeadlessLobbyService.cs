@@ -1,4 +1,5 @@
 using BepInEx;
+using BepInEx.Configuration;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -14,8 +15,13 @@ internal sealed class HeadlessLobbyService : IDisposable
 
     private readonly GunsawMultiplayerPlugin plugin;
     private readonly string[] commandLineArgs;
-    private readonly string operatorName; // maybe temporary save their secret key on host?
+    private string operatorName;
+    private PeerState? webOperator;
+    private HeadlessLobbyWeb? web;
+    private int levelChangeRevision;
+    private ConfigEntry<bool>? brutalMode;
     internal bool IsEnabled { get; }
+    internal string[] BuiltInScenes { get; private set; } = Array.Empty<string>();
     private bool startPending;
     private bool warningSkipped;
     private int hiddenAvatarScene = int.MinValue;
@@ -74,11 +80,24 @@ internal sealed class HeadlessLobbyService : IDisposable
     internal void Start()
     {
         if (!IsEnabled) return;
+        BuiltInScenes = Enumerable.Range(0, SceneManager.sceneCountInBuildSettings)
+            .Select(index => Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(index)))
+            .Where(scene => scene is not ("ViolenceWarning" or "LevelSelect" or "LevelEditor" or "LevelLoader"))
+            .ToArray();
+        web = new HeadlessLobbyWeb(plugin, this);
+        var port = LobbySettingsSchema.CommandLineValue(commandLineArgs, "--web-port");
+        web.Start(string.IsNullOrEmpty(port) ? 8765 : int.TryParse(port, out var parsed) ? parsed : 0);
         if (string.IsNullOrEmpty(plugin.customLevelJson))
         {
-            GunsawMultiplayerPlugin.LogInfo("Headless lobby disabled: no valid map.");
+            plugin.status = "No valid startup map. Create a lobby to load a level from the panel.";
+            GunsawMultiplayerPlugin.LogInfo(plugin.status);
             return;
         }
+        CreateLobby();
+    }
+
+    internal void CreateLobby()
+    {
         GunsawMultiplayerPlugin.LogInfo("Starting headless lobby.");
         if (SceneManager.GetActiveScene().name != "LevelSelect") SceneManager.LoadScene("LevelSelect");
         plugin.CreateLobby();
@@ -128,7 +147,18 @@ internal sealed class HeadlessLobbyService : IDisposable
     {
         if (!IsEnabled) return;
         StartKeepAlive(lobbyId, relayKey, directoryUrl);
-        startPending = true;
+        startPending = !string.IsNullOrEmpty(plugin.customLevelJson);
+    }
+
+    internal void OnLobbyClosed()
+    {
+        levelChangeRevision++;
+        keepAliveTimer?.Dispose();
+        keepAliveTimer = null;
+        startPending = false;
+        webOperator = null;
+        knownPeers.Clear();
+        votes.Clear();
     }
 
     internal void FixedTick()
@@ -272,7 +302,48 @@ internal sealed class HeadlessLobbyService : IDisposable
         }
     }
 
-    internal bool IsOperator(ushort senderId) => !string.IsNullOrEmpty(operatorName) && MultiplayerSession.HasPeer(senderId) && string.Equals(MultiplayerSession.PlayerName(senderId), operatorName, StringComparison.OrdinalIgnoreCase);
+    internal bool IsOperator(ushort senderId)
+    {
+        var peer = MultiplayerSession.GetPeer(senderId);
+        return peer != null && (ReferenceEquals(peer, webOperator) ||
+            (!string.IsNullOrEmpty(operatorName) && string.Equals(peer.Name, operatorName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    internal void SetOperator(PeerState? peer)
+    {
+        operatorName = "";
+        webOperator = peer;
+        plugin.status = peer == null ? "Operator removed." : peer.Name + " is now the lobby operator.";
+    }
+
+    internal void ManageLevel(string action, string value)
+    {
+        var loader = SceneLoader.main;
+        if (loader == null || loader.isLoading) throw new InvalidOperationException("Wait for the current level to finish loading.");
+        levelChangeRevision++;
+        switch (action)
+        {
+            case "restart":
+                RestartCurrentLevel();
+                break;
+            case "default":
+                StartCustomLevel(defaultMapJson);
+                break;
+            case "level":
+                var levelJson = CustomLevelCode.DecodeAndValidateLevelCode(value, 8 * 1024 * 1024);
+                StartCustomLevel(levelJson);
+                break;
+            case "change":
+                if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException("Enter a map or scene name.");
+                StartMapChange(value.Trim());
+                break;
+            case "scene":
+                var scene = FindBuiltInScene(value);
+                if (scene == null) throw new ArgumentException("Unknown built-in level.");
+                StartBuiltInLevel(scene);
+                break;
+        }
+    }
 
     private bool RegisterVote(ushort senderId, string target, string description)
     {
@@ -291,6 +362,7 @@ internal sealed class HeadlessLobbyService : IDisposable
             if (voters.Count < needed) return true;
         }
         votes.Clear();
+        levelChangeRevision++;
         SendChat((isOperator ? "Operator: " : "Vote passed: ") + description + ".");
         if (target == "restart") RestartCurrentLevel();
         else if (target == "default") StartCustomLevel(defaultMapJson);
@@ -300,26 +372,52 @@ internal sealed class HeadlessLobbyService : IDisposable
 
     private void StartMapChange(string mapOrScene)
     {
-        if (IsBuiltInScene(mapOrScene))
+        var scene = FindBuiltInScene(mapOrScene);
+        if (scene != null)
         {
-            try
-            {
-                MultiplayerSession.EndHostCustomLevel(mapOrScene);
-                SceneLoader.main.LoadScene(mapOrScene);
-            }
-            catch (Exception exception) { SendChat("Could not load scene: " + exception.Message); }
+            StartBuiltInLevel(scene);
+            return;
+        }
+        plugin.status = "Looking up map: " + mapOrScene + "...";
+        var cachedCode = CustomLevelBrowserUi.CatalogLevelCode(mapOrScene);
+        if (!string.IsNullOrEmpty(cachedCode))
+        {
+            try { StartCustomLevel(CustomLevelCode.DecodeAndValidateCatalogLevelCode(cachedCode)); }
+            catch (Exception exception) { ReportLevelError("Could not load map: " + exception.Message); }
             return;
         }
         SendChat("Looking up map: " + mapOrScene + "...");
+        var revision = levelChangeRevision;
         ThreadPool.QueueUserWorkItem(_ =>
         {
             try
             {
                 var catalog = new WebClient().DownloadString(GunsawMultiplayerPlugin.CustomLevelsUrl);
-                plugin.RunOnMainThread(() => LoadCatalogMap(catalog, mapOrScene));
+                plugin.RunOnMainThread(() =>
+                {
+                    if (MultiplayerSession.IsHosting && revision == levelChangeRevision)
+                        LoadCatalogMap(catalog, mapOrScene);
+                });
             }
-            catch (Exception exception) { plugin.RunOnMainThread(() => SendChat("Could not load map: " + exception.Message)); }
+            catch (Exception exception)
+            {
+                plugin.RunOnMainThread(() =>
+                {
+                    if (revision == levelChangeRevision) ReportLevelError("Could not load map: " + exception.Message);
+                });
+            }
         });
+    }
+
+    private void StartBuiltInLevel(string scene)
+    {
+        try
+        {
+            MultiplayerSession.EndHostCustomLevel(scene);
+            SceneLoader.main.LoadScene(scene);
+            plugin.status = "Loading " + scene + "...";
+        }
+        catch (Exception exception) { ReportLevelError("Could not load scene: " + exception.Message); }
     }
 
     private void LoadCatalogMap(string catalog, string requestedName)
@@ -343,7 +441,7 @@ internal sealed class HeadlessLobbyService : IDisposable
             var mapJson = CustomLevelCode.DecodeAndValidateCatalogLevelCode(match.code);
             StartCustomLevel(mapJson);
         }
-        catch (Exception exception) { SendChat("Could not load map: " + exception.Message); }
+        catch (Exception exception) { ReportLevelError("Could not load map: " + exception.Message); }
     }
 
     private void StartCustomLevel(string levelJson)
@@ -351,12 +449,15 @@ internal sealed class HeadlessLobbyService : IDisposable
         try
         {
             if (string.IsNullOrWhiteSpace(levelJson)) throw new InvalidDataException("no default map is loaded");
+            if (SceneLoader.main == null || SceneLoader.main.isLoading) throw new InvalidOperationException("A scene change is already in progress.");
             plugin.customLevelJson = levelJson;
-            MultiplayerSession.StartHostCustomLevel(levelJson, Compression.Compress(levelJson));
+            plugin.customLevelCode = Compression.Compress(levelJson);
+            MultiplayerSession.StartHostCustomLevel(levelJson, plugin.customLevelCode);
             MultiplayerSession.NotifyHostSceneReload("LevelLoader", true);
             plugin.StartCustomLevelLocally(levelJson);
+            plugin.status = "Loading custom level...";
         }
-        catch (Exception exception) { SendChat("Could not load map: " + exception.Message); }
+        catch (Exception exception) { ReportLevelError("Could not load map: " + exception.Message); }
     }
 
     private void RestartCurrentLevel()
@@ -366,18 +467,18 @@ internal sealed class HeadlessLobbyService : IDisposable
             var loader = SceneLoader.main;
             if (loader == null) throw new InvalidOperationException("scene loader is not ready");
             loader.LoadScene(SceneManager.GetActiveScene().name);
+            plugin.status = "Restarting level...";
         }
-        catch (Exception exception) { SendChat("Could not restart level: " + exception.Message); }
+        catch (Exception exception) { ReportLevelError("Could not restart level: " + exception.Message); }
     }
 
-    private static bool IsBuiltInScene(string value)
+    private void ReportLevelError(string message)
     {
-        value = (value ?? "").Trim();
-        if (value.StartsWith("actualLevel", StringComparison.OrdinalIgnoreCase)) value = value.Substring("actualLevel".Length);
-        else if (value.StartsWith("campaign", StringComparison.OrdinalIgnoreCase)) value = value.Substring("campaign".Length);
-        else return false;
-        return int.TryParse(value, out _);
+        plugin.status = message;
+        SendChat(message);
     }
+    private string? FindBuiltInScene(string value) =>
+        BuiltInScenes.FirstOrDefault(scene => string.Equals(scene, value, StringComparison.OrdinalIgnoreCase));
 
     private static string NormalizeLevelName(string value)
     {
@@ -416,7 +517,8 @@ internal sealed class HeadlessLobbyService : IDisposable
 
     private void ApplyCommandLineOptions()
     {
-        PlayerPrefs.SetInt("difficulty", LobbySettingsSchema.HasCommandLineFlag(commandLineArgs, "--brutal") ? 1 : 0);
+        brutalMode = plugin.Config.Bind("Headless", "BrutalMode", false, "Enable brutal mode on headless startup.");
+        PlayerPrefs.SetInt("difficulty", LobbySettingsSchema.HasCommandLineFlag(commandLineArgs, "--brutal") || brutalMode.Value ? 1 : 0);
         var value = LobbySettingsSchema.CommandLineValue(commandLineArgs, "--master");
         if (!string.IsNullOrWhiteSpace(value) && GunsawMultiplayerPlugin.TryNormalizeServerAddress(value, out var normalized))
         {
@@ -432,8 +534,16 @@ internal sealed class HeadlessLobbyService : IDisposable
         GunsawMultiplayerPlugin.LogInfo("Headless settings: lobby=" + plugin.lobbyName + ", host=" + plugin.playerName + ", max=" + plugin.lobbySettings.MaxPlayers + ".");
     }
 
+    internal void SaveDifficulty(bool brutal)
+    {
+        if (MultiplayerSession.ReadBrutalMode() == brutal) return;
+        PlayerPrefs.SetInt("difficulty", brutal ? 1 : 0);
+        if (brutalMode != null) brutalMode.Value = brutal;
+    }
+
     public void Dispose()
     {
+        web?.Dispose();
         keepAliveTimer?.Dispose();
         keepAliveTimer = null;
         if (ReferenceEquals(Instance, this)) Instance = null;

@@ -128,7 +128,9 @@ The relay/lobby service lives in [LobbyServer](https://github.com/Pan4ur/Gunsaw-
 This mode launches Gunsaw without graphics in minimized mode. As a result, GPU usage drops to zero and RAM usage decreases slightly. This is necessary for hosting a lobby 24/7, for example, on a VPS. Players can also manage the lobby through voting
 
 ### Windows
-Open a terminal in the game directory and run Gunsaw.exe with the required arguments:
+Run [Start-Headless.bat](Start-Headless.bat) with BepInEx and Gunsaw Multiplayer installed. The launcher uses the Windows display language for English or Russian prompts. With a valid startup map it opens the lobby automatically. Without a startup map, use the admin panel to create the lobby and choose a level. The game log is displayed in the launcher console and saved to `headless.log`. Closing that console stops the headless server.
+
+You can also open a terminal in the game directory and run Gunsaw.exe directly:
 
 ```powershell
 .\Gunsaw.exe -batchmode -nographics -headlessLobby -headlessMap ".\default_map.txt" -logFile - --master "https://pl.expie.fun" --name "HEADLESS LOBBY" --host "HOST" --max-players 16 --pvp --can-grab --allow-respawn --respawn-seconds 5 --respawn-at-start 2>&1 | Tee-Object -FilePath ".\headless.log"
@@ -144,6 +146,14 @@ chmod +x Gunsaw run_bepinex.sh
 ```
 
 CTRL + C to stop
+
+### Local admin panel
+
+Open [http://127.0.0.1:8765/](http://127.0.0.1:8765/) on the headless host. Use `--web-port <port>` to change the port. For a remote headless host, forward the port with `ssh -N -L 8765:127.0.0.1:8765 user@server` and open the same address in your browser.
+
+Use the panel to edit lobby settings and presets, change or restart the level, and manage connected players. **Close Lobby** also stops the headless server. Set the host name, relay server, and connection mode before creating the lobby. Bans use the lobby directory's 60-minute ban. Operator rights assigned in the panel last for the player's current connection. The operator can change maps without a vote, submit a map directly, and stop the server with `!stop`.
+
+Choose a built-in map from **Built-in level** and click **Play**. The default relay address is `pl.expie.fun`.
 
 ### Startup args
 
