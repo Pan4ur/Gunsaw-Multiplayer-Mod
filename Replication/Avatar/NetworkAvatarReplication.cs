@@ -95,8 +95,8 @@ internal class NetworkAvatarReplication : MonoBehaviour
             return;
         }
         if (remoteAvatar == null) return;
-        UpdateRemoteLineInterpolation(remoteLevitLine, remoteLevitInterpolation);
-        UpdateRemoteLineInterpolation(remoteCrystalTongueLine, remoteCrystalTongueInterpolation);
+        UpdateRemoteLineInterpolation(remoteLevitLine, remoteLevitLine == null ? null : remoteLevitLine.gameObject, remoteLevitInterpolation);
+        UpdateRemoteLineInterpolation(remoteCrystalTongueLine, null, remoteCrystalTongueInterpolation);
         if (PlayerCarrySystem.MustLockRemoteCarryPose(remoteBody))
         {
             targets.Clear();
@@ -265,10 +265,12 @@ internal class NetworkAvatarReplication : MonoBehaviour
         remoteName = "Player";
         remoteLevitLine = null;
         remoteCrystalTongueLine = null;
+        remoteLevitInterpolation.Active = false;
+        remoteCrystalTongueInterpolation.Active = false;
         remoteScarf = null;
         remoteScarfHold = null;
         remoteFires.Clear();
-        remoteRigidbodies = new Rigidbody2D[0];
+        remoteRigidbodies = [];
         remotePhysicsModeKnown = false;
         feetOffsetFrom = 0f;
         feetOffsetTarget = float.NaN;

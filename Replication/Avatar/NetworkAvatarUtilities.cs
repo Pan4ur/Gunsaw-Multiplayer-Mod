@@ -174,10 +174,16 @@ internal static class NetworkAvatarUtilities
         interpolation.Active = true;
     }
 
-    internal static void UpdateRemoteLineInterpolation(LineRenderer line, RemoteLineInterpolation interpolation)
+    internal static void UpdateRemoteLineInterpolation(LineRenderer line, GameObject container, RemoteLineInterpolation interpolation)
     {
         if (line == null || !interpolation.Active || interpolation.To == null || interpolation.From == null) return;
-        var progress = Mathf.Clamp01((Time.unscaledTime - interpolation.StartedAt) / SnapshotInterval);
+        var elapsed = Time.unscaledTime - interpolation.StartedAt;
+        if (elapsed >= 0.5f)
+        {
+            SetRemoteLineTarget(line, container, default, interpolation);
+            return;
+        }
+        var progress = Mathf.Clamp01(elapsed / SnapshotInterval);
         for (var i = 0; i < interpolation.To.Length; i++)
             line.SetPosition(i, Vector3.Lerp(interpolation.From[i], interpolation.To[i], progress));
     }
